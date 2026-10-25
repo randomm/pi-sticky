@@ -19,19 +19,15 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { KeybindingsManager as TuiKeybindingsManager } from "@earendil-works/pi-tui";
+import { disposeCustomCalls, disposeWidgetEntry } from "./component-dispose.ts";
+import type {
+  CustomOptions,
+  RecordedCustomCall,
+  RecordedNotification,
+  RecordedWidget,
+  WidgetFactory,
+} from "./recorded-ui-types.ts";
 import { createOverlayHandle, createPlainTheme, createStubTui } from "./ui-stubs.ts";
-
-export type WidgetFactory = (tui: TUI, theme: Theme) => Component & { dispose?: () => void };
-
-export interface RecordedWidget {
-  content: string[] | WidgetFactory;
-  placement: WidgetPlacement;
-}
-
-export interface RecordedNotification {
-  message: string;
-  type?: "info" | "warning" | "error";
-}
 
 /** pi's editor factory type, reached through the UI context so no deep import is needed. */
 type EditorFactory = Parameters<ExtensionUIContext["setEditorComponent"]>[0];
@@ -51,25 +47,8 @@ type CustomFactory<T> = (
   keybindings: KeybindingsManager,
   done: (result: T) => void,
 ) => CustomComponent | Promise<CustomComponent>;
-interface CustomOptions {
-  overlay?: boolean;
-  overlayOptions?: OverlayOptions | (() => OverlayOptions);
-  onHandle?: (handle: OverlayHandle) => void;
-}
 /** The component a `custom()` factory returns; exported so tests can type their fixtures. */
 export type { CustomComponent };
-
-/** A `ctx.ui.custom()` call captured for replay: options, result, handle and component. */
-export interface RecordedCustomCall {
-  /** Result handed to `done()` by the extension, or undefined while still open. */
-  result: unknown;
-  /** Options the extension passed to `custom()`, kept so tests can assert overlay config. */
-  options?: CustomOptions;
-  /** Overlay handle recorded through `onHandle`, so tests can drive focus and visibility. */
-  handle?: OverlayHandle;
-  /** Component returned by the factory; `lastCustom()` replays it. */
-  component?: Component & { dispose?: () => void };
-}
 
 /**
  * ExtensionUIContext that records everything the extension asks the UI to do and can
@@ -155,14 +134,35 @@ export class RecordingUi implements ExtensionUIContext {
     content: string[] | WidgetFactory | undefined,
     options?: { placement?: WidgetPlacement },
   ): void {
-    if (content === undefined) {
-      this.widgets.delete(key);
-      return;
-    }
+    // pi disposes the component a key previously held before installing the new one, in
+    // either placement; the recorder does the same so a test can assert on teardown.
+    this.#disposeWidget(key);
+    if (content === undefined) return;
     this.widgets.set(key, {
       content,
       placement: options?.placement ?? "aboveEditor",
     });
+  }
+
+  /**
+   * Dispose every recorded component and forget the widgets: what pi's interactive mode does
+   * in `clearExtensionWidgets()` / `resetExtensionUI()`, and what the harness calls on
+   * `dispose()` so a panel's teardown code runs in tests.
+   *
+   * Idempotent: a component is disposed at most once per key and per `custom()` call, so a
+   * repeated `dispose()` cannot double-dispose a component whose teardown is not reentrant.
+   */
+  dispose(): void {
+    for (const key of [...this.widgets.keys()]) this.#disposeWidget(key);
+    disposeCustomCalls(this.customCalls);
+  }
+
+  /** Dispose and drop the component registered under `key`, whatever its placement. */
+  #disposeWidget(key: string): void {
+    const widget = this.widgets.get(key);
+    if (!widget) return;
+    this.widgets.delete(key);
+    disposeWidgetEntry(widget, (factory) => factory(createStubTui(), this.theme));
   }
 
   // --- custom components -----------------------------------------------------

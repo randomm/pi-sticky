@@ -164,9 +164,17 @@ test("RecordingUi keeps editor text across set, get and paste", () => {
   ui.pasteToEditor(" pasted");
   expect(ui.getEditorText()).toBe("draft pasted");
 
-  const factory = () => linesComponent(["editor"]);
-  ui.setEditorComponent(factory as never);
-  expect(ui.getEditorComponent()).toBe(factory as never);
+  // pi's editor factory must return a real EditorComponent, so the fixture carries the two
+  // members the recorder never calls; the component body is still a plain stub.
+  const factory = () => ({
+    render: () => ["editor"],
+    invalidate: () => {},
+    handleInput: () => {},
+    getText: () => "editor",
+    setText: () => {},
+  });
+  ui.setEditorComponent(factory);
+  expect(ui.getEditorComponent()).toBe(factory);
   ui.setEditorComponent(undefined);
   expect(ui.getEditorComponent()).toBeUndefined();
 });
@@ -185,7 +193,7 @@ test("RecordingUi records custom calls and replays the component with input", as
 
   const opened = ui.custom(
     (_tui, _theme, _keybindings, done) => {
-      queueMicrotask(() => done("selected" as never));
+      queueMicrotask(() => done("selected"));
       return component;
     },
     { overlay: true },

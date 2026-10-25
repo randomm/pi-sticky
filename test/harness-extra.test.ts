@@ -15,7 +15,7 @@ import {
 } from "./harness.ts";
 
 test("messageText joins text blocks and passes string content through", () => {
-  expect(messageText({ role: "user", content: "plain", timestamp: 0 } as never)).toBe("plain");
+  expect(messageText({ role: "user", content: "plain", timestamp: 0 })).toBe("plain");
   expect(
     messageText({
       role: "user",
@@ -24,7 +24,7 @@ test("messageText joins text blocks and passes string content through", () => {
         { type: "image", data: "aGk=", mimeType: "image/png" },
       ],
       timestamp: 0,
-    } as never),
+    }),
   ).toBe("one");
 });
 

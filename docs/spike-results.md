@@ -16,12 +16,18 @@ All five tested assumptions held; none of the "if it is false" fallbacks is need
 
 ## Harness facts later tickets rely on
 
-Confirmed by reading `test/harness.ts`, `test/recording-ui.ts` and the harness tests.
+Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts`, `harness-text.ts`,
+`harness-session.ts`, `recording-ui.ts`, `recorded-ui-types.ts`, `component-dispose.ts`),
+`test/ui-context-for-pi.ts`, `test/ui-stubs.ts` and the harness tests.
 
 - **Isolation.** A fresh `mkdtemp` dir is passed as both `cwd` and `agentDir` to `DefaultResourceLoader` and
   `SessionManager.create`, with `noExtensions: true`, so no configured extension and no `~/.pi` package is
-  discovered. `PI_OFFLINE=1` is set inside `createHarness()`. `dispose()` waits for the session to idle before
-  removing the dir (an in-flight prompt would re-create it) and is idempotent.
+  discovered. `PI_OFFLINE=1` is set at module scope in `test/harness.ts`, before any pi object is
+  constructed — not inside `createHarness()`, so a test that builds a pi object of its own is already
+  offline. `buildSession()` owns the dir: if any step after `mkdtempSync()` throws, the half-built session is
+  disposed and the dir removed before the error is rethrown, so a failed `createHarness()` leaks nothing.
+  `dispose()` awaits `session.abort()` first, then removes the dir in a `finally`, so the dir goes even when a
+  teardown step throws; it is idempotent.
 - **Faux provider needs no API key.** `fauxProvider()` is registered through an inline factory
   (`pi.registerProvider(faux.provider)`) so it reaches the model registry when the runner flushes provider
   registrations at extension load; it ships `auth.apiKey.resolve: async () => ({ auth: {} })`, so no key or
@@ -54,8 +60,24 @@ Confirmed by reading `test/harness.ts`, `test/recording-ui.ts` and the harness t
   handler or an error listener were bound. The harness always supplies `commandContextActions` and `onError`,
   and `uiContext` in tui/rpc, so `session.reload()` (wired as the `reload` command-context action) is a usable
   rebuild trigger; `bindExtensions()` itself emits the pending `session_start` (`reason: "startup"`).
-- **Extension errors fail the test.** `onError` collects `ExtensionError`s and `h.run()` throws the first one
-  after the run settles. The queue is cleared at the start of each `run()`, so a failure in run 1 does not
-  fail run 2.
-- **Command-context actions are partly stubbed.** `navigateTree` goes to the real session; `newSession`, `fork`
+- **An exhausted faux queue fails the run.** pi does **not** reject when the queue is empty: the turn ends
+  with an assistant message whose `stopReason` is `"error"` and `errorMessage` `"No more faux responses
+  queued"`, and `prompt()` resolves. `run()` therefore inspects the assistant messages its own run appended
+  (the transcript length before the run bounds them) and rejects naming the `errorMessage`, so an unscripted
+  run cannot pass green. Only the run's own turns are consulted unless its slice holds no assistant message at
+  all, in which case the newest one in the transcript is — so an error turn from an earlier run cannot fail a
+  run that ended normally.
+- **Extension errors fail the run, all of them.** `onError` pushes every `ExtensionError` onto `h.errors`
+  (readonly, oldest first) and nothing is ever cleared. `run()` throws only the errors that arrived while it
+  was in flight: one plain `Error` for a single one, an `AggregateError` for several, each carrying its
+  `ExtensionError` (`extensionPath`, `event`, `error`, `stack`) as its `cause`. Errors raised between runs —
+  a `session_start`, `session_tree` or `reload` handler — stay in `h.errors` instead of being discarded, and
+  the next `run()` does not re-throw them.
+- **`dispose()` runs pi's shutdown path.** Like `AgentSessionRuntime.dispose()`, it emits `session_shutdown`
+  (`reason: "quit"`) through `session.extensionRunner` before `session.dispose()`, then calls
+  `RecordingUi.dispose()`, which disposes every recorded widget component and every `custom()` component
+  once — pi's own behaviour in `setExtensionWidget` / `clearExtensionWidgets`. `setWidget(key, undefined)` and
+  replacing a key dispose the component it held.
+- **Command-context actions are partly stubbed.** `navigateTree` goes to the real session, `options` and all
+  (so `{ summarize: true }` really summarizes); `newSession`, `fork`
   and `switchSession` return `{ cancelled: false }` without replacing the session; `waitForIdle` is the real one.

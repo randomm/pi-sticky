@@ -65,8 +65,16 @@ export function createStubTui(): TUI {
     children,
     terminal: { columns: 80, rows: 24 },
     fullRedraws: 0,
-    render: () => [],
-    invalidate: noop,
+    // pi-tui's Container concatenates its children's lines, and the composite widgets a
+    // factory builds rely on that, so the stub does the same rather than returning nothing.
+    render: (width: number) => {
+      const lines: string[] = [];
+      for (const child of children) lines.push(...child.render(width));
+      return lines;
+    },
+    invalidate: () => {
+      for (const child of children) child.invalidate?.();
+    },
     addChild: (component: Component) => {
       children.push(component);
     },

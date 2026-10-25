@@ -21,42 +21,69 @@ import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent"
 import type { RecordingUi } from "./recording-ui.ts";
 
 /**
- * Every method member of `ExtensionUIContext`. The type is the source of truth: a member
- * missing from this list makes the object literal below fail to compile, so the list cannot
- * silently drift when pi adds a UI member.
+ * Every member of pi's `ExtensionUIContext`, keyed by name, with how the wrapper builds it:
+ * `"method"` for a function bound to the recorder, `"data"` for a value copied across.
+ *
+ * This map is the single source of truth and is exhaustive **in both directions** at compile
+ * time: it is typed `Record<keyof ExtensionUIContext, MemberKind>`, so a member pi adds is a
+ * missing key (compile error) and a member pi drops is an extra key (compile error). The
+ * wrapper below iterates its keys, so it can never forward something the type does not
+ * declare, and a member declared here but absent from the recorder fails the `satisfies`
+ * check on `RecordingUi`.
  */
-const UI_METHODS = [
-  "select",
-  "confirm",
-  "input",
-  "notify",
-  "onTerminalInput",
-  "setStatus",
-  "setWorkingMessage",
-  "setWorkingVisible",
-  "setWorkingIndicator",
-  "setHiddenThinkingLabel",
-  "setWidget",
-  "setFooter",
-  "setHeader",
-  "setTitle",
-  "custom",
-  "pasteToEditor",
-  "setEditorText",
-  "getEditorText",
-  "editor",
-  "addAutocompleteProvider",
-  "setEditorComponent",
-  "getEditorComponent",
-  "getAllThemes",
-  "getTheme",
-  "setTheme",
-  "getToolsExpanded",
-  "setToolsExpanded",
-] as const satisfies readonly (keyof ExtensionUIContext)[];
+const UI_MEMBERS = {
+  select: "method",
+  confirm: "method",
+  input: "method",
+  notify: "method",
+  onTerminalInput: "method",
+  setStatus: "method",
+  setWorkingMessage: "method",
+  setWorkingVisible: "method",
+  setWorkingIndicator: "method",
+  setHiddenThinkingLabel: "method",
+  setWidget: "method",
+  setFooter: "method",
+  setHeader: "method",
+  setTitle: "method",
+  custom: "method",
+  pasteToEditor: "method",
+  setEditorText: "method",
+  getEditorText: "method",
+  editor: "method",
+  addAutocompleteProvider: "method",
+  setEditorComponent: "method",
+  getEditorComponent: "method",
+  theme: "data",
+  getAllThemes: "method",
+  getTheme: "method",
+  setTheme: "method",
+  getToolsExpanded: "method",
+  setToolsExpanded: "method",
+} as const satisfies Record<keyof ExtensionUIContext, "method" | "data">;
 
-/** Every member pi's spread keeps from a class instance: just the data properties. */
-const UI_DATA_MEMBERS = ["theme"] as const satisfies readonly (keyof ExtensionUIContext)[];
+/**
+ * Compile-time proof that the recorder implements what the map claims. `RecordingUi` must be
+ * assignable to a shape whose `"method"` members are callable: a recorder that drops one is a
+ * type error here, not an `undefined` in front of an extension. The check lives in a type
+ * position, so nothing is constructed when this module is imported.
+ */
+type MemberMap = typeof UI_MEMBERS;
+type RequiredMembers = {
+  [K in keyof MemberMap as MemberMap[K] extends "method" ? K : never]: () => unknown;
+};
+type DataMembers = {
+  [K in keyof MemberMap as MemberMap[K] extends "data" ? K : never]: unknown;
+};
+type Assert<Checks extends readonly true[]> = Checks;
+export type UiMembersMatchRecorder = Assert<
+  [
+    RecordingUi extends RequiredMembers ? true : false,
+    RecordingUi extends DataMembers ? true : false,
+  ] extends readonly true[]
+    ? true
+    : never
+>;
 
 /**
  * A plain object carrying every `ExtensionUIContext` member as an own property, bound to
@@ -65,20 +92,15 @@ const UI_DATA_MEMBERS = ["theme"] as const satisfies readonly (keyof ExtensionUI
 export function uiContextForPi(ui: RecordingUi): ExtensionUIContext {
   const source = ui as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const name of UI_METHODS) {
+  for (const [name, kind] of Object.entries(UI_MEMBERS)) {
     const member = source[name];
-    if (typeof member === "function") {
-      out[name] = (member as (...args: unknown[]) => unknown).bind(ui);
-    }
-  }
-  for (const name of UI_DATA_MEMBERS) {
-    out[name] = ui[name] as Theme;
+    out[name] =
+      kind === "method" && typeof member === "function"
+        ? (member as (...args: unknown[]) => unknown).bind(ui)
+        : (member as Theme);
   }
   return out as unknown as ExtensionUIContext;
 }
 
 /** The member names forwarded to pi — exported so tests can assert on the shape. */
-export const FORWARDED_UI_MEMBERS: readonly string[] = [
-  ...UI_METHODS,
-  ...UI_DATA_MEMBERS,
-] as readonly string[];
+export const FORWARDED_UI_MEMBERS: readonly string[] = Object.keys(UI_MEMBERS);

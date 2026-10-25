@@ -264,7 +264,7 @@ test("A5 message combines with another extension's systemPrompt", async () => {
     // extension message travels as its own model-visible message.
     const leading = h.requests[0]?.messages[0];
     expect(leading?.role).toBe("system");
-    expect(messageText(leading ?? ({} as never))).toContain("X-MARK");
+    expect(leading ? messageText(leading) : "").toContain("X-MARK");
   } finally {
     await h.dispose();
   }
