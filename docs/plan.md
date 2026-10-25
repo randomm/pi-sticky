@@ -329,7 +329,11 @@ pi-sticky/
 │   └── mirror.ts        phase 2 file mirror
 └── test/
     ├── harness.ts       SDK session with faux provider and a recording UI
-    ├── spike.test.ts    A1–A6
+    ├── recording-ui.ts  RecordingUi: setWidget/setStatus/notify/editor/custom recorder + renderWidget
+    ├── ui-stubs.ts      stub TUI, theme and overlay handle for renderWidget and panel tests
+    ├── spike.test.ts    smoke test and A1–A5 (A6 verified in source, see research-summary)
+    ├── harness.test.ts  harness and RecordingUi behaviour
+    ├── harness-extra.test.ts  command-context actions, appendScript, messageText, stubs
     └── <module>.test.ts one test file per src module
 ```
 
