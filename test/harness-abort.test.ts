@@ -5,6 +5,7 @@
  * behaviour in `harness-teardown.test.ts`.
  */
 import { expect, test } from "bun:test";
+import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { assertTurnSucceeded } from "./harness-run.ts";
 import { createHarness, reply } from "./harness.ts";
 
@@ -57,6 +58,75 @@ function abortableStream(h: { faux: { provider: unknown } }): void {
     };
   };
 }
+
+test("assertTurnSucceeded does not fall back to the transcript before `since`", () => {
+  // An error turn from an earlier run is outside the run's slice, so it cannot fail this one:
+  // the slice is authoritative, and a run that appended nothing is green whatever the older
+  // transcript holds.
+  const turn = (stopReason: string) => ({ role: "assistant", stopReason, errorMessage: "WHY" });
+  expect(() => assertTurnSucceeded([turn("error"), turn("stop")], 1)).not.toThrow();
+  // The run appended nothing and the only turn in the transcript is older than it: green.
+  expect(() => assertTurnSucceeded([turn("error")], 1)).not.toThrow();
+  // A branch that shrank under the run (navigateTree) is treated as an empty slice.
+  expect(() => assertTurnSucceeded([turn("error")], 7)).not.toThrow();
+});
+
+test("a command-only run is green after an earlier run ended in an error turn", async () => {
+  const probe: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.registerCommand("probe", { description: "Probe", handler: async () => {} });
+  };
+  const h = await createHarness({ factories: [probe] });
+  try {
+    // Run 1: nothing queued, so pi ends the turn with stopReason "error" and the run rejects.
+    await expect(h.run("go")).rejects.toThrow("No more faux responses queued");
+    // Run 2: a registered extension command consumes the prompt, appends nothing, and makes
+    // no model request. It must resolve green even though the newest assistant turn in the
+    // transcript is the error turn from run 1.
+    await h.run("/probe");
+    expect(h.faux.state.callCount).toBe(1);
+    expect(h.requests).toHaveLength(1);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a run whose transcript shrank under it does not throw", async () => {
+  // A branch shrink — navigateTree, or a reload that rebuilds the transcript — can leave
+  // fewer messages than the count `run()` recorded when it began, so `since > messages.length`.
+  // The unit assertion pins the contract; the harness-level half is that a run after a shrink
+  // still reports green rather than reading a stale slice.
+  const turn = (stopReason: string) => ({ role: "assistant", stopReason, errorMessage: "WHY" });
+  expect(() => assertTurnSucceeded([turn("error")], 4)).not.toThrow();
+  expect(() => assertTurnSucceeded([], 4)).not.toThrow();
+
+  const h = await createHarness();
+  try {
+    h.script([reply("one")]);
+    await h.run("a");
+    const firstUser = h
+      .branch()
+      .find((entry) => entry.type === "message" && entry.message?.role === "user");
+    expect(firstUser).toBeDefined();
+    const navigated = await h.session.navigateTree(firstUser?.id ?? "", { summarize: false });
+    expect(navigated.cancelled).toBe(false);
+    await h.session.waitForIdle();
+    h.script([reply("two")]);
+    await h.run("b");
+    expect(h.faux.state.callCount).toBe(2);
+    // The shrink half, forced: pi keeps the full agent transcript after a navigation, so the
+    // `since > length` shape is produced here by dropping it back to one message, which is
+    // what a rebuild does to the finalized transcript.
+    const before = h.session.messages.length;
+    (h.session as unknown as { agent: { state: { messages: unknown[] } } }).agent.state.messages =
+      h.session.messages.slice(0, 1);
+    expect(h.session.messages.length).toBeLessThan(before);
+    h.script([reply("three")]);
+    await h.run("c");
+    expect(h.faux.state.callCount).toBe(3);
+  } finally {
+    await h.dispose();
+  }
+});
 
 test("run() rejects when the turn is aborted mid-stream", async () => {
   const h = await createHarness();

@@ -15,6 +15,7 @@
  * handler, or a throwing `session_shutdown` handler during teardown) stay in `h.errors` for a
  * test to assert on instead of being discarded or re-thrown by the next run.
  */
+import type { StopReason } from "@earendil-works/pi-ai";
 import type { ExtensionError } from "@earendil-works/pi-coding-agent";
 
 /** An assistant message's terminal state, narrowed from pi's wide `Message`. */
@@ -29,8 +30,17 @@ type ToolResult = { role: string; toolName?: string; isError?: boolean; content?
  * tool, and a deferred response the model is still expected to deliver. Anything else the
  * union can hold — `"error"`, `"aborted"`, or a turn left `"pending"` because the stream never
  * reached its terminal event — means the turn did not finish, and a test must not see it green.
+ *
+ * `satisfies readonly StopReason[]` ties the list to pi's union: a member pi removes is a
+ * compile error here rather than a string that silently never matches, and one pi adds still
+ * reaches the reject path below, since only these values count as complete.
  */
-const COMPLETED_STOP_REASONS: readonly string[] = ["stop", "length", "toolUse", "deferred"];
+const COMPLETED_STOP_REASONS = [
+  "stop",
+  "length",
+  "toolUse",
+  "deferred",
+] as const satisfies readonly StopReason[];
 
 /**
  * Reject when the turns this run appended did not complete: an assistant turn whose
@@ -40,19 +50,17 @@ const COMPLETED_STOP_REASONS: readonly string[] = ["stop", "length", "toolUse", 
  * before the run, so only the newer entries belong to it, and an error or abort from an earlier
  * run cannot fail a run that did nothing wrong.
  *
- * The fallback to the newest assistant message in the whole transcript covers a run whose
- * failing turn arrived without being counted in the slice — a queued turn, for instance — and
- * is only consulted when the run appended nothing at all.
+ * The run's own slice is the only evidence consulted: there is no fallback to an older turn.
+ * A command-only run (`/probe` handled by an inline extension) appends nothing and makes no
+ * model request, and the newest assistant message in the transcript is then the last turn of a
+ * *previous* run — which is exactly the case the fallback used to misread as this run's failure.
+ * `since` may also exceed `messages.length` when the branch shrank under the run
+ * (`navigateTree`, or a `reload` that rebuilds the transcript); that is treated as an empty
+ * slice, i.e. a green run, for the same reason: nothing in it belongs to the run.
  */
 export function assertTurnSucceeded(messages: readonly unknown[], since: number): void {
-  const appended = messages.slice(since);
+  const appended = since > messages.length ? [] : messages.slice(since);
   const turns = appended.filter(isAssistantTurn);
-  if (turns.length === 0 && appended.length === 0) {
-    const stale = lastAssistantTurn(messages);
-    if (stale && !incompleteTurn(stale)) {
-      throw new Error(turnFailure(stale));
-    }
-  }
   const failed = turns.find((turn) => !incompleteTurn(turn));
   if (failed) {
     throw new Error(turnFailure(failed));
@@ -71,7 +79,10 @@ function isAssistantTurn(message: unknown): message is AssistantTurn {
 
 /** Whether the turn ran to a conclusion; a missing stopReason counts as incomplete. */
 function incompleteTurn(turn: AssistantTurn): boolean {
-  return turn.stopReason !== undefined && COMPLETED_STOP_REASONS.includes(turn.stopReason);
+  return (
+    turn.stopReason !== undefined &&
+    (COMPLETED_STOP_REASONS as readonly string[]).includes(turn.stopReason)
+  );
 }
 
 /** The rejection text: names the stopReason, and pi's own reason when it gave one. */
@@ -93,14 +104,6 @@ function toolResultText(result: ToolResult): string {
     .filter((value): value is string => typeof value === "string")
     .join("\n");
   return text === "" ? "no error text" : text;
-}
-
-function lastAssistantTurn(messages: readonly unknown[]): AssistantTurn | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (isAssistantTurn(message)) return message;
-  }
-  return undefined;
 }
 
 /**

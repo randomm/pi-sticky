@@ -340,11 +340,14 @@ pi-sticky/
     ├── ui-stubs.ts      stub TUI, theme and overlay handle for renderWidget and panel tests
     ├── component-dispose.ts  dispose a recorded widget entry once, surviving a throwing factory
     ├── file-size.test.ts  300-line cap on every TS file in src/ and test/
+    ├── index.test.ts      src/index.ts loads as an extension factory without throwing
     ├── spike.test.ts    smoke test and A1–A5 (A6 verified in source, see research-summary)
     ├── harness.test.ts  harness and RecordingUi behaviour
+    ├── recording-ui.test.ts  recorder teardown, stub-TUI render(), the exhaustive uiContext member map
     ├── harness-errors.test.ts  faux-queue, extension-error and failing-tool-result runs
-    ├── harness-abort.test.ts  aborted mid-stream turn and the full stopReason matrix
+    ├── harness-abort.test.ts  aborted mid-stream turn, the full stopReason matrix, run-slice authority
     ├── harness-teardown.test.ts  session_shutdown, widget/custom disposal, temp-dir removal
+    ├── harness-lifecycle.test.ts  failed-build cleanup, in-flight dispose, torn-down run(), overlapping temp dirs
     ├── harness-dispose.test.ts  private temp dir mode and dispose() idempotency
     ├── harness-extra.test.ts  command-context actions, appendScript, messageText, stubs
     └── <module>.test.ts one test file per src module

@@ -48,8 +48,12 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   TUI, a colourless theme and a `KeybindingsManager` from `@earendil-works/pi-tui` (pi's subclass is not
   exported from the package root), records options/handle/component, and resolves when `done()` is called — a
   factory that never calls it still resolves `undefined` on a microtask, so an overlay test cannot hang.
-  `ui.lastCustom()` gives `render(width)` and `sendInput(data)` (→ `handleInput`); `ui.renderWidget(key, width)`
-  replays a `setWidget` factory the same way.
+  **`custom()` captures only a `done()` called in the same turn.** The promise is raced against a
+  `queueMicrotask`, so a `done()` from a later macrotask — a `sendInput()` keypress handled after the await,
+  or a timer — is recorded on `customCalls[i].result` but the *awaited* value is `undefined`. Assert on
+  `ui.customCalls[i].result` for anything driven from outside the turn; assert on the awaited value only when
+  the factory calls `done()` synchronously or on a microtask. `ui.lastCustom()` gives `render(width)` and
+  `sendInput(data)` (→ `handleInput`); `ui.renderWidget(key, width)` replays a `setWidget` factory the same way.
 - **Modes.** `bindExtensions({ mode })` alone decides `ctx.hasUI`: pi compares the context it bound
   against its own internal no-op object, so the harness passes no `uiContext` for `print`/`json` and
   `hasUI` is false there. TUI and RPC bind the `RecordingUi` — through the own-property wrapper in
@@ -65,9 +69,12 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   with an assistant message whose `stopReason` is `"error"` and `errorMessage` `"No more faux responses
   queued"`, and `prompt()` resolves. `run()` therefore inspects the assistant messages its own run appended
   (the transcript length before the run bounds them) and rejects naming the `errorMessage`, so an unscripted
-  run cannot pass green. Only the run's own turns are consulted when the run appended nothing at all, in
-  which case the newest assistant message in the transcript is — so an error turn from an earlier run cannot
-  fail a run that did nothing wrong.
+  run cannot pass green. **The run's own slice is the only evidence consulted** — there is no fallback to an
+  older turn, because a command-only run (`/probe` handled by an inline extension) appends nothing and makes
+  no model request, and the newest assistant message in the transcript then belongs to a *previous* run: with
+  such a fallback a green command run after a failed one was rejected. A slice whose `since` exceeds the
+  transcript length — a branch that shrank under the run (`navigateTree`, or a reload that rebuilds the
+  finalized transcript) — is treated as empty, i.e. green.
 - **A failing tool call fails the run.** pi's agent loop turns a throwing `execute()` — and a result that
   sets `isError: true` — into a `toolResult` message flagged `isError`, and does **not** route it through
   `onError`, so neither the errored turn nor `h.errors` sees it. `run()` also rejects when its own slice
@@ -95,7 +102,13 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   `setTimeout(0)` is not enough, and before `settlePendingWrites()` a harness disposed while another was being
   built leaked `auth.json`/`models-store.json` in roughly one disposal in five (sequential runs never leaked,
   which is why the suite was green). `test/harness-lifecycle.test.ts` asserts it with overlapping harnesses.
-  A post-`dispose()` `run()` resurrects `auth.json` for the same reason — always `dispose()` last.
+  A post-`dispose()` `run()` resurrects `auth.json` for the same reason — always `dispose()` last. Since then
+  the harness refuses it: `run()`, `branch()` and `branchSnapshots()` throw
+  `run() called after dispose(): the session and its temp dir are gone` once `dispose()` has run, so a run
+  cannot resolve green against a torn-down session and cannot re-create the directory. A run that was already
+  in flight when `dispose()` started resolves rather than rejecting — teardown aborts its prompt, which would
+  otherwise surface as an unhandled rejection in the test that disposed. `script()`, `appendScript()` and
+  `summarizeWith()` stay callable: they touch only the faux queue.
 - **Command-context actions are partly stubbed.** `navigateTree` goes to the real session, `options` and all
   (so `{ summarize: true }` really summarizes); `newSession`, `fork`
   and `switchSession` return `{ cancelled: false }` without replacing the session; `waitForIdle` is the real one.

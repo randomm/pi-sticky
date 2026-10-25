@@ -216,6 +216,22 @@ test("RecordingUi records custom calls and replays the component with input", as
   expect(await ui.custom(() => component)).toBeUndefined();
 });
 
+test("RecordingUi.custom() captures only a done() from the same turn", async () => {
+  // The promise is raced against a queueMicrotask, which is what keeps an overlay test from
+  // hanging. The cost: a done() that fires from a later macrotask — a keypress or a timer —
+  // arrives after the race, so the awaited value is undefined while the call record still gets
+  // it. A test that drives a component from outside the turn must assert on customCalls[i].
+  const ui = new RecordingUi();
+  const opened = ui.custom((_tui, _theme, _keybindings, done) => {
+    setTimeout(() => done("from-a-timer"), 5);
+    return linesComponent(["late"]);
+  });
+  expect(await opened).toBeUndefined();
+  expect(ui.customCalls[0]?.result).toBeUndefined();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(ui.customCalls[0]?.result).toBe("from-a-timer");
+});
+
 test("RecordingUi answers dialogs from its canned queue and records the calls", async () => {
   const ui = new RecordingUi();
   ui.dialogAnswers.push("action", true, "typed text", "editor text");

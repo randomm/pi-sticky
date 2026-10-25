@@ -94,12 +94,17 @@ export interface Harness {
    * `session.prompt(prompt)` awaited until the run has settled, then rejected when the run
    * failed: an errored assistant turn (an empty faux queue among them), a tool result pi
    * flagged `isError` — what a throwing `execute()` becomes — or one or more extension errors
-   * raised while it was in flight.
+   * raised while it was in flight. Rejects immediately once `dispose()` has run; a run that
+   * was already in flight when `dispose()` started resolves, because teardown — not the run —
+   * owns that outcome.
    */
   run(prompt: string): Promise<void>;
-  /** Entries on the current branch, oldest first. */
+  /** Entries on the current branch, oldest first. Rejects once `dispose()` has run. */
   branch(): SessionEntryLike[];
-  /** Tool-result details and custom entry data on the current branch, oldest first. */
+  /**
+   * Tool-result details and custom entry data on the current branch, oldest first.
+   * Rejects once `dispose()` has run.
+   */
   branchSnapshots(): unknown[];
   /** Temp directory used as both `cwd` and `agentDir`. */
   dir: string;
@@ -126,6 +131,16 @@ export const call = (name: string, args: CallArgs) =>
 export const reply = (text: string) => fauxAssistantMessage(text);
 
 /**
+ * What `run()`, `branch()` and `branchSnapshots()` throw after `dispose()`. Driving the session
+ * afterwards is not merely pointless: pi's fire-and-forget provider refresh re-creates the
+ * temp directory that `disposeHarness()` just removed (see `harness-settle.ts`), and a prompt
+ * against the dead session resolves green — a test would read a torn-down harness as a pass.
+ * `script()`, `appendScript()` and `summarizeWith()` are deliberately *not* guarded: they only
+ * touch the faux queue, which lives outside the session and the temp dir.
+ */
+const TORN_DOWN = "run() called after dispose(): the session and its temp dir are gone";
+
+/**
  * Build a session with the faux provider and a recording UI. The faux provider is
  * registered through an inline extension factory, so it reaches the model registry during
  * the initial extension load, when `pi.registerProvider()` flushes.
@@ -133,6 +148,10 @@ export const reply = (text: string) => fauxAssistantMessage(text);
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   const built = await buildSession(options);
   const { session, ui, faux, errors } = built;
+  // Set by dispose() below. A WeakSet lives in harness-build.ts for the teardown itself; this
+  // flag is the harness's own view of the same fact, so the public methods can refuse work on
+  // a session that no longer exists.
+  let tornDown = false;
 
   return {
     session,
@@ -147,21 +166,42 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     appendScript: (steps) => faux.appendResponses(steps),
     summarizeWith: (text) => faux.appendResponses([fauxAssistantMessage(text)]),
     run: async (prompt: string) => {
+      // Refused up front when the harness is already torn down. A run that was *already* in
+      // flight when dispose() started resolves instead: disposeHarness() aborts the prompt and
+      // pi's abort path makes the assistant turn non-complete, so re-judging those turns would
+      // report teardown as a test failure — and an un-awaited rejection in a `finally`-style
+      // teardown would fail the test outright. Teardown, not the run, owns that outcome; the
+      // post-settle guard below still refuses to report a torn-down session as a green run.
+      if (tornDown) throw new Error(TORN_DOWN);
       // The count before the run bounds which assistant messages and which errors are its own.
       const since = session.messages.length;
       errors.beginRun();
       await session.prompt(prompt);
       await session.waitForIdle();
+      if (tornDown) return;
       assertTurnSucceeded(session.messages, since);
       const during = errors.errorsDuringRun();
       if (during.length > 0) throw runFailure(during);
     },
-    branch: () => session.sessionManager.getBranch() as unknown as SessionEntryLike[],
-    branchSnapshots: () =>
-      branchSnapshots(session.sessionManager.getBranch() as unknown as SessionEntryLike[]),
+    branch: () => {
+      if (tornDown) throw new Error(TORN_DOWN);
+      return branch();
+    },
+    branchSnapshots: () => {
+      if (tornDown) throw new Error(TORN_DOWN);
+      return branchSnapshots(branch());
+    },
     dir: built.dir,
-    dispose: () => disposeHarness(built),
+    dispose: async () => {
+      tornDown = true;
+      await disposeHarness(built);
+    },
   };
+
+  /** The branch of a live session, without the teardown guard the public methods apply. */
+  function branch(): SessionEntryLike[] {
+    return session.sessionManager.getBranch() as unknown as SessionEntryLike[];
+  }
 }
 
 /** Tool-result details and `custom` entry data on the branch, oldest first. */

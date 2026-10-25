@@ -9,7 +9,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { createHarness, reply } from "./harness.ts";
 
 /** Harness temp directories currently present in the OS temp dir. */
@@ -30,12 +30,54 @@ test("dispose() settles an in-flight prompt before removing the temp directory",
   const dir = h.dir;
   expect(existsSync(dir)).toBe(true);
   h.script([reply("one"), reply("two")]);
-  // Deliberately un-awaited: dispose must still leave nothing behind.
+  // Deliberately un-awaited: dispose must still leave nothing behind. `run()` resolves when
+  // teardown wins the race — the assertion below is about the directory, not the verdict.
   const inFlight = h.run("a");
   await h.dispose();
   await inFlight.catch(() => undefined);
   expect(existsSync(dir)).toBe(false);
   await h.dispose();
+  expect(existsSync(dir)).toBe(false);
+});
+
+test("run() after dispose() rejects and does not resurrect the temp directory", async () => {
+  // pi's `void`ed provider refresh reaches FileAuthStorageBackend.withLockAsync(), which
+  // calls ensureParentDir()/ensureFileExists() before anything else — so driving the session
+  // after teardown re-creates the directory rmSync() just removed, and the prompt itself
+  // resolves green because the faux queue is empty and pi reports that as an `error` turn
+  // rather than a rejection. Both halves are asserted: the rejection, and the dir staying gone.
+  const h = await createHarness();
+  const dir = h.dir;
+  h.script([reply("ok")]);
+  await h.run("go");
+  await h.dispose();
+  expect(existsSync(dir)).toBe(false);
+  await expect(h.run("after")).rejects.toThrow(
+    "run() called after dispose(): the session and its temp dir are gone",
+  );
+  expect(existsSync(dir)).toBe(false);
+  // The other session-driving methods are guarded the same way; script/appendScript/
+  // summarizeWith only touch the faux queue, so they stay callable (asserted below).
+  expect(() => h.branch()).toThrow(/after dispose/);
+  expect(() => h.branchSnapshots()).toThrow(/after dispose/);
+  h.script([reply("late")]);
+  h.appendScript([reply("later")]);
+  h.summarizeWith("summary");
+  expect(h.faux.getPendingResponseCount()).toBe(3);
+  expect(existsSync(dir)).toBe(false);
+});
+
+test("an extension command run after dispose() is refused too", async () => {
+  // A command-only prompt appends no assistant turn, so without the guard it resolves green
+  // while pi is already torn down — the shape a `/pins`-style command test would hit.
+  const probe: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.registerCommand("probe", { description: "Probe", handler: async () => {} });
+  };
+  const h = await createHarness({ factories: [probe] });
+  const dir = h.dir;
+  await h.run("/probe");
+  await h.dispose();
+  await expect(h.run("/probe")).rejects.toThrow(/after dispose/);
   expect(existsSync(dir)).toBe(false);
 });
 
