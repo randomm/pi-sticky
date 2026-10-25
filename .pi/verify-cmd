@@ -1,0 +1,3 @@
+# Develop-gate verification for pi-sticky: lint, types, then tests with the
+# 80% coverage gate from bunfig.toml. Mirrors CI (.github/workflows/ci.yml).
+bun run check && bun test

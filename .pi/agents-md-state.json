@@ -1,0 +1,68 @@
+[
+  {
+    "key": "operator:coverage",
+    "value": "≥80% line and function coverage, enforced by bunfig.toml ([test] coverageThreshold = 0.8); `bun test` fails below it",
+    "provenance": "asked",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "operator:review-blocking",
+    "value": "Review findings are blocking at HIGH severity and above; MEDIUM and LOW findings may be deferred to follow-up issues.",
+    "provenance": "asked",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "operator:merge-authority",
+    "value": "If all project quality gates have been met (code reviews, CI, linters, type checks etc) LLMs / agents are allowed to squash merge PRs.",
+    "provenance": "asked",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "operator:intent",
+    "value": "A small pi extension: the main agent pins messages for the user (pin_for_user tool); pins stay visible in a toggleable right-hand panel until resolved, and the user can reply to a specific pin from the main editor.",
+    "provenance": "asked",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:minimalist-engineering",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:git-workflow",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:documentation-policy",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:issue-driven-development",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:code-review-doctrine",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:context7-protocol",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  },
+  {
+    "key": "scaffolded:testing-standards",
+    "value": "scaffolded",
+    "provenance": "auto",
+    "date": "2026-10-25"
+  }
+]

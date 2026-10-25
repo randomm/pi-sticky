@@ -1,0 +1,13 @@
+# Supply-chain defence: refuse any npm package version published in the last
+# 4 days (60 * 60 * 24 * 4 seconds). Requires bun >= 1.2.20.
+[install]
+minimumReleaseAge = 345600
+# Add a name only for a vetted urgent release; keep this list empty otherwise.
+minimumReleaseAgeExcludes = []
+
+# Coverage is a gate, not a report: `bun test` fails below 80% line or
+# function coverage.
+[test]
+coverage = true
+coverageSkipTestFiles = true
+coverageThreshold = 0.8
