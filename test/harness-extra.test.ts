@@ -6,7 +6,6 @@
  */
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import {
   createHarness,
   createOverlayHandle,
@@ -14,8 +13,6 @@ import {
   messageText,
   reply,
 } from "./harness.ts";
-
-const NO_PARAMS = Type.Object({});
 
 test("messageText joins text blocks and passes string content through", () => {
   expect(messageText({ role: "user", content: "plain", timestamp: 0 } as never)).toBe("plain");
@@ -175,6 +172,29 @@ test("harness surfaces extension errors raised during a run", async () => {
   try {
     h.script([reply("ok")]);
     await expect(h.run("go")).rejects.toThrow("PROBE-BOOM");
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("a later run does not re-throw an error from an earlier one", async () => {
+  let failOnce = true;
+  const boom: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.on("agent_start", () => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error("FIRST-BOOM");
+      }
+    });
+  };
+  const h = await createHarness({ factories: [boom] });
+  try {
+    h.script([reply("one")]);
+    await expect(h.run("go")).rejects.toThrow("FIRST-BOOM");
+    // The stale error must not fail a run in which nothing went wrong.
+    h.script([reply("two")]);
+    await h.run("again");
+    expect(h.faux.state.callCount).toBe(2);
   } finally {
     await h.dispose();
   }

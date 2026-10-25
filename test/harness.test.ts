@@ -9,8 +9,72 @@ import type { Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type ExtensionMode, call, createHarness, linesComponent, reply } from "./harness.ts";
 import { RecordingUi } from "./recording-ui.ts";
+import { FORWARDED_UI_MEMBERS, uiContextForPi } from "./ui-context-for-pi.ts";
 
 const NO_PARAMS = Type.Object({});
+
+/**
+ * Regression guard for the class-vs-own-property trap: pi's `wrapUIPromptContext` does
+ * `{ ...uiContext }`, which keeps only own enumerable properties, so a bare `RecordingUi`
+ * instance hands extensions a `ctx.ui` whose prototype methods are all `undefined`.
+ */
+test("every ExtensionUIContext member survives the wrapper pi spreads", () => {
+  const ui = new RecordingUi();
+  const bound = uiContextForPi(ui);
+  const missing = FORWARDED_UI_MEMBERS.filter((name) => !(name in bound));
+  expect(missing).toEqual([]);
+  // Methods are own properties, so pi's spread keeps them; the recorder itself is a class.
+  expect(Object.prototype.hasOwnProperty.call(bound, "setWidget")).toBe(true);
+  expect(Object.getPrototypeOf(bound)).toBe(Object.prototype);
+  expect(Object.keys(new RecordingUi())).not.toContain("setWidget");
+  // Bound to the recorder: calling through the wrapper records on the store.
+  bound.setWidget("pi-sticky", ["via wrapper"], { placement: "belowEditor" });
+  expect(ui.widgets.get("pi-sticky")).toEqual({
+    content: ["via wrapper"],
+    placement: "belowEditor",
+  });
+});
+
+test("an extension calling ctx.ui through the harness is recorded", async () => {
+  const probe: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.registerTool({
+      name: "probe",
+      label: "Probe",
+      description: "Call ctx.ui members",
+      parameters: NO_PARAMS,
+      execute: async (_id, _params, _signal, _onUpdate, ctx) => {
+        ctx.ui.setWidget("pi-sticky", ["pin A"], { placement: "belowEditor" });
+        ctx.ui.setStatus("pi-sticky", "2 pins");
+        ctx.ui.notify("pinned", "info");
+        ctx.ui.setEditorText("draft from extension");
+        ctx.ui.setTitle("pi-sticky: 2 pins");
+        return {
+          content: [{ type: "text", text: `editor:${ctx.ui.getEditorText()}` }],
+          details: null,
+        };
+      },
+    });
+  };
+  const h = await createHarness({ factories: [probe] });
+  try {
+    h.script([call("probe", {}), reply("done")]);
+    await h.run("go");
+    // A missing method becomes a tool error result rather than a rejected run, so the
+    // recordings below are what prove the extension reached the recorder.
+    expect(h.ui.renderWidget("pi-sticky", 80)).toEqual(["pin A"]);
+    expect(h.ui.widgets.get("pi-sticky")).toEqual({
+      content: ["pin A"],
+      placement: "belowEditor",
+    });
+    expect(h.ui.statuses.get("pi-sticky")).toBe("2 pins");
+    expect(h.ui.notifications).toEqual([{ message: "pinned", type: "info" }]);
+    expect(h.ui.getEditorText()).toBe("draft from extension");
+    expect(h.ui.titles).toEqual(["pi-sticky: 2 pins"]);
+    expect(JSON.stringify(h.requests[1])).toContain("editor:draft from extension");
+  } finally {
+    await h.dispose();
+  }
+});
 
 test("harness binds a mode that has no UI and reports it to the extension", async () => {
   let mode: ExtensionMode | undefined;

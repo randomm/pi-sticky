@@ -20,7 +20,8 @@ Confirmed by reading `test/harness.ts`, `test/recording-ui.ts` and the harness t
 
 - **Isolation.** A fresh `mkdtemp` dir is passed as both `cwd` and `agentDir` to `DefaultResourceLoader` and
   `SessionManager.create`, with `noExtensions: true`, so no configured extension and no `~/.pi` package is
-  discovered. `PI_OFFLINE=1` is set inside `createHarness()`. `dispose()` removes the dir and is idempotent.
+  discovered. `PI_OFFLINE=1` is set inside `createHarness()`. `dispose()` waits for the session to idle before
+  removing the dir (an in-flight prompt would re-create it) and is idempotent.
 - **Faux provider needs no API key.** `fauxProvider()` is registered through an inline factory
   (`pi.registerProvider(faux.provider)`) so it reaches the model registry when the runner flushes provider
   registrations at extension load; it ships `auth.apiKey.resolve: async () => ({ auth: {} })`, so no key or
@@ -42,15 +43,19 @@ Confirmed by reading `test/harness.ts`, `test/recording-ui.ts` and the harness t
   factory that never calls it still resolves `undefined` on a microtask, so an overlay test cannot hang.
   `ui.lastCustom()` gives `render(width)` and `sendInput(data)` (→ `handleInput`); `ui.renderWidget(key, width)`
   replays a `setWidget` factory the same way.
-- **Modes.** `bindExtensions({ mode })` alone decides `ctx.hasUI`: pi compares the bound context against its
-  internal no-op object, so the harness passes no `uiContext` for `print`/`json` and `hasUI` is false there.
-  TUI and RPC bind the `RecordingUi`.
+- **Modes.** `bindExtensions({ mode })` alone decides `ctx.hasUI`: pi compares the context it bound
+  against its own internal no-op object, so the harness passes no `uiContext` for `print`/`json` and
+  `hasUI` is false there. TUI and RPC bind the `RecordingUi` — through the own-property wrapper in
+  `test/ui-context-for-pi.ts`, because pi hands extensions `{ ...uiContext }` and a class instance
+  would lose every prototype method. `hasUI` stays `true` even for a degraded context, so it is not
+  evidence that the recorder is wired: assert on `h.ui`, not on `hasUI`.
 - **Reload re-fires `session_start`.** `session.reload()` emits `session_shutdown` (`reason: "reload"`) and then
   `session_start` with `reason: "reload"` — but only when a UI context, command context actions, a shutdown
   handler or an error listener were bound. The harness always supplies `commandContextActions` and `onError`,
   and `uiContext` in tui/rpc, so `session.reload()` (wired as the `reload` command-context action) is a usable
   rebuild trigger; `bindExtensions()` itself emits the pending `session_start` (`reason: "startup"`).
 - **Extension errors fail the test.** `onError` collects `ExtensionError`s and `h.run()` throws the first one
-  after the run settles.
+  after the run settles. The queue is cleared at the start of each `run()`, so a failure in run 1 does not
+  fail run 2.
 - **Command-context actions are partly stubbed.** `navigateTree` goes to the real session; `newSession`, `fork`
   and `switchSession` return `{ cancelled: false }` without replacing the session; `waitForIdle` is the real one.

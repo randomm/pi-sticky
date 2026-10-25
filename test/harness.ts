@@ -40,9 +40,11 @@ import {
   createCodemodeExtension,
 } from "@earendil-works/pi-coding-agent";
 import { RecordingUi } from "./recording-ui.ts";
+import { uiContextForPi } from "./ui-context-for-pi.ts";
 
 export type { RecordedCustomCall, RecordedWidget, WidgetFactory } from "./recording-ui.ts";
 export { RecordingUi } from "./recording-ui.ts";
+export { FORWARDED_UI_MEMBERS, uiContextForPi } from "./ui-context-for-pi.ts";
 export {
   createOverlayHandle,
   createPlainTheme,
@@ -187,10 +189,12 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   const errors: ExtensionError[] = [];
   const mode = options.mode ?? "tui";
   // Only TUI and RPC have a UI. print and json bind no uiContext at all, which is what
-  // makes `ctx.hasUI` false: pi compares the bound context against its no-op object.
+  // makes `ctx.hasUI` false: pi compares the bound context against its own no-op object.
+  // The bound context is the own-property wrapper, not the recorder instance — see
+  // `ui-context-for-pi.ts` for why pi's `{ ...uiContext }` makes a class instance unusable.
   const hasDialogUi = mode === "tui" || mode === "rpc";
   await session.bindExtensions({
-    ...(hasDialogUi ? { uiContext: ui } : {}),
+    ...(hasDialogUi ? { uiContext: uiContextForPi(ui) } : {}),
     mode,
     commandContextActions: {
       waitForIdle: () => session.waitForIdle(),
@@ -215,6 +219,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     appendScript: (steps) => faux.appendResponses(steps),
     summarizeWith: (text) => faux.appendResponses([fauxAssistantMessage(text)]),
     run: async (prompt: string) => {
+      // Clear first: an error collected by an earlier run must not fail every later one.
+      errors.length = 0;
       await session.prompt(prompt);
       await session.waitForIdle();
       if (errors.length > 0) {
@@ -228,6 +234,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     dir,
     dispose: async () => {
       session.dispose();
+      // An un-awaited prompt can still be in flight and re-create sessions/ or auth.json
+      // after the removal, so settle first and delete twice.
+      await session.waitForIdle().catch(() => undefined);
+      rmSync(dir, { recursive: true, force: true });
       rmSync(dir, { recursive: true, force: true });
     },
   };
