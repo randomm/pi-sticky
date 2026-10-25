@@ -9,9 +9,11 @@
  * `AgentSessionRuntime.dispose()`: `session.abort()` settles an in-flight prompt first, then
  * `session_shutdown` (`reason: "quit"`) is emitted through the session's extension runner so
  * extensions and the recorded components get their teardown, then `session.dispose()` runs.
+ * The one step pi's own teardown does not need is the settle before removal, which waits out
+ * writes pi leaves in flight behind a `void`ed provider refresh — see `settlePendingWrites()`.
  * Cleanup is a `try`/`finally`, so the directory is removed even when a handler throws.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -139,10 +141,11 @@ async function buildInto(dir: string, options: HarnessOptions): Promise<BuiltHar
 }
 
 /**
- * Settle the session, run pi's shutdown path, then remove the temp directory. `abort()` is
- * awaited first so an in-flight prompt cannot re-create `sessions/` or `auth.json` after the
- * removal, and the recorder teardown, `session.dispose()` and the removal all sit in
- * `finally`, so a throwing widget factory or shutdown handler cannot leave them undone.
+ * Settle the session, run pi's shutdown path, wait out anything still writing into the temp
+ * directory, then remove it. `abort()` is awaited first so an in-flight prompt cannot re-create
+ * `sessions/` or `auth.json` after the removal, and the recorder teardown, `session.dispose()`
+ * and the removal all sit in `finally`, so a throwing widget factory or shutdown handler cannot
+ * leave them undone.
  */
 export async function disposeHarness(built: BuiltHarness, dir: string): Promise<void> {
   try {
@@ -158,10 +161,10 @@ export async function disposeHarness(built: BuiltHarness, dir: string): Promise<
     if (runner.hasHandlers("session_shutdown")) {
       await runner.emit({ type: "session_shutdown", reason: "quit" });
     }
-    // A prompt that was still streaming when dispose() was called has now been aborted but
-    // has not yet finished persisting its turn; waiting once more closes the window in which
-    // it would re-create sessions/ or auth.json after the removal below.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Everything still in flight writes inside the temp dir: a turn that was streaming when
+    // dispose() was called has been aborted but not yet persisted, and pi's provider
+    // registration left a refresh running. Wait them out, or the removal below races them.
+    await settlePendingWrites(dir);
   } finally {
     // Both teardown steps run in `finally` so no throw from a recorder can leave the session
     // live or the directory behind. Each is guarded because pi's own runtime does the same:
@@ -178,6 +181,91 @@ export async function disposeHarness(built: BuiltHarness, dir: string): Promise<
       // Teardown is best-effort.
     }
     rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** How long `settlePendingWrites()` waits in total before it gives up and lets removal run. */
+const SETTLE_TIMEOUT_MS = 500;
+/** Floor for the quiet window `settlePendingWrites()` requires before it stops waiting. */
+const SETTLE_QUIET_MS = 10;
+/** Ceiling for that window, so a writer that never stops cannot hold teardown hostage. */
+const SETTLE_QUIET_MAX_MS = 100;
+/** Poll interval for the same wait; one timer per round when the directory is already quiet. */
+const SETTLE_POLL_MS = 10;
+
+/**
+ * Wait until nothing is still writing inside `dir`, so that `rmSync()` is the last word.
+ *
+ * `pi.registerProvider()` ends up in `ModelRuntime.registerNativeProvider()`, whose last
+ * statement is `void this.refresh({ allowNetwork: false })` — fire-and-forget, with no handle
+ * on the promise afterwards. That refresh reaches `FileAuthStorageBackend.withLockAsync()` for
+ * both `auth.json` and `models-store.json` (both under `agentDir`, i.e. inside this harness's
+ * temp dir), and that method calls `ensureParentDir()`/`ensureFileExists()` before it does
+ * anything else — so a *read* of either file re-creates it. `AgentSession.dispose()` cancels
+ * neither: it aborts the agent and invalidates the runner, and the refresh is neither.
+ *
+ * Removal therefore cannot simply follow `abort()`. A single `setTimeout(0)` does not cover an
+ * I/O-backed refresh, and a harness disposed while another is being built leaves `auth.json`
+ * and `models-store.json` behind in roughly one disposal in five (measured; sequential runs
+ * never leak, which is why the suite passes). So poll the directory and require a *quiet
+ * window* — no entry newer than the previous sample for `quietMs` — before returning. The
+ * window starts at `SETTLE_QUIET_MS` and doubles each time activity is seen, up to
+ * `SETTLE_QUIET_MAX_MS`: a turn aborted mid-stream keeps writing on `setTimeout` delays (faux
+ * schedules a chunk every few milliseconds) and must not be mistaken for quiet on a single idle
+ * poll. Then hand the macrotask back once more, so a write already scheduled at that point lands
+ * before the caller removes the tree. The whole wait is bounded by `SETTLE_TIMEOUT_MS`:
+ * teardown must never hang a test because a writer never settles.
+ */
+async function settlePendingWrites(dir: string): Promise<void> {
+  const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+  let quietMs = SETTLE_QUIET_MS;
+  let previous = newestEntryTime(dir);
+  let quietSince = Date.now();
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+    const current = newestEntryTime(dir);
+    if (current !== previous) {
+      previous = current;
+      quietSince = Date.now();
+      quietMs = Math.min(quietMs * 2, SETTLE_QUIET_MAX_MS);
+      continue;
+    }
+    if (Date.now() - quietSince >= quietMs) break;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Newest mtime among the entries of `dir`, or 0 when it is gone or empty. One `readdirSync` and
+ * one `statSync` per entry per round: the dirs hold a handful of files, and the caller polls at
+ * `SETTLE_POLL_MS`, so this stays well below anything a test would notice.
+ */
+function newestEntryTime(dir: string): number {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  let newest = 0;
+  for (const name of names) {
+    // An entry that cannot be stat'ed counts as just-written, so a file disappearing mid-sample
+    // keeps the loop polling another round rather than ending the wait early.
+    newest = Math.max(newest, entryTime(join(dir, name)));
+  }
+  return newest;
+}
+
+/**
+ * mtime of `path`, or "now" when it cannot be read. Treating an unreadable entry as just
+ * written keeps the quiet-window loop polling another round rather than ending the wait early,
+ * which is what an entry deleted between the readdir and the stat would otherwise do.
+ */
+function entryTime(path: string): number {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return Date.now();
   }
 }
 

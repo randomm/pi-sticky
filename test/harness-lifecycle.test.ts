@@ -1,7 +1,8 @@
 /**
  * Tests for the harness's construction and teardown paths that the happy-path tests never
- * reach: a failed build must not leak its temp directory, and dispose must settle an
- * in-flight prompt before removing it.
+ * reach: a failed build must not leak its temp directory, dispose must settle an in-flight
+ * prompt before removing it, and it must also wait out the writes pi leaves running behind a
+ * `void`ed provider refresh — which only shows up when harnesses overlap.
  */
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -50,6 +51,36 @@ test("a failed harness creation removes its temp directory and reports why", asy
   const leaked = harnessDirs().filter((dir) => !before.includes(dir));
   expect(leaked).toEqual([]);
   for (const dir of leaked) rmSync(join(tmpdir(), dir), { recursive: true, force: true });
+});
+
+/**
+ * Regression guard for the cleanup race a sequential suite cannot see. `registerProvider()`
+ * ends in `void ModelRuntime.refresh(...)`, which writes `auth.json` and `models-store.json`
+ * under `agentDir` — inside the harness's temp dir — long after `abort()` has resolved. When a
+ * harness is being built while another is disposed, that fire-and-forget write lands after
+ * `rmSync()` and the directory survives: measured at roughly one disposal in five before the
+ * settle in `disposeHarness()`, and never in sequential runs. Building several harnesses at
+ * once is a plausible pattern for the later panel tests, so the leak is asserted here rather
+ * than left to flake. Ten concurrent build/run/dispose cycles fail the assertion about half the
+ * time without the settle (9 of 18 baseline runs) and have not passed green in 15 runs with it;
+ * fewer trials pass the race by luck.
+ */
+test("overlapping harnesses leave no temp directory behind", async () => {
+  const before = harnessDirs();
+  const harnesses = await Promise.all(
+    Array.from({ length: 10 }, async () => {
+      const h = await createHarness();
+      h.script([reply("ok")]);
+      await h.run("go");
+      return h;
+    }),
+  );
+  await Promise.all(harnesses.map((h) => h.dispose()));
+  // A grace period, so a leak that only needs longer to land still fails the assertion.
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const leaked = harnessDirs().filter((dir) => !before.includes(dir));
+  for (const dir of leaked) rmSync(join(tmpdir(), dir), { recursive: true, force: true });
+  expect(leaked).toEqual([]);
 });
 
 test("the harness module sets PI_OFFLINE before any session is built", () => {

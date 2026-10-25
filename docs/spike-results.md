@@ -26,8 +26,9 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   constructed — not inside `createHarness()`, so a test that builds a pi object of its own is already
   offline. `buildSession()` owns the dir: if any step after `mkdtempSync()` throws, the half-built session is
   disposed and the dir removed before the error is rethrown, so a failed `createHarness()` leaks nothing.
-  `dispose()` awaits `session.abort()` first, then removes the dir in a `finally`, so the dir goes even when a
-  teardown step throws; it is idempotent.
+  `dispose()` awaits `session.abort()`, then waits out any write still in flight inside the dir (see
+  **pi writes into the temp dir behind a `void`ed refresh** below), then removes the dir in a `finally`, so the
+  dir goes even when a teardown step throws; it is idempotent.
 - **Faux provider needs no API key.** `fauxProvider()` is registered through an inline factory
   (`pi.registerProvider(faux.provider)`) so it reaches the model registry when the runner flushes provider
   registrations at extension load; it ships `auth.apiKey.resolve: async () => ({ auth: {} })`, so no key or
@@ -83,6 +84,18 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   once — pi's own behaviour in `setExtensionWidget` / `clearExtensionWidgets`. `setWidget(key, undefined)` and
   replacing a key dispose the component it held. Every teardown step sits in a `finally` and is guarded, so
   a factory or `dispose()` that throws cannot leave the session undisposed or the temp directory behind.
+- **pi writes into the temp dir behind a `void`ed refresh, so `dispose()` has to wait for it.**
+  `pi.registerProvider()` ends in `ModelRuntime.registerNativeProvider()`, whose last statement is
+  `void this.refresh({ allowNetwork: false })` — fire-and-forget, and there is no handle on that promise
+  afterwards. The refresh touches `auth.json` and `models-store.json`, both under `agentDir` (i.e. inside the
+  harness's temp dir), and `FileAuthStorageBackend.withLockAsync()` calls `ensureParentDir()`/`ensureFileExists()`
+  before anything else — so even a *read* of either file re-creates it. `AgentSession.dispose()` cancels neither:
+  it aborts the agent and invalidates the extension runner, and the refresh is neither. That is pi behaviour the
+  harness absorbs, not a bug in the harness, but it means removal cannot simply follow `abort()`: a single
+  `setTimeout(0)` is not enough, and before `settlePendingWrites()` a harness disposed while another was being
+  built leaked `auth.json`/`models-store.json` in roughly one disposal in five (sequential runs never leaked,
+  which is why the suite was green). `test/harness-lifecycle.test.ts` asserts it with overlapping harnesses.
+  A post-`dispose()` `run()` resurrects `auth.json` for the same reason — always `dispose()` last.
 - **Command-context actions are partly stubbed.** `navigateTree` goes to the real session, `options` and all
   (so `{ summarize: true }` really summarizes); `newSession`, `fork`
   and `switchSession` return `{ cancelled: false }` without replacing the session; `waitForIdle` is the real one.
