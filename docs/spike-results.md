@@ -64,9 +64,13 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   with an assistant message whose `stopReason` is `"error"` and `errorMessage` `"No more faux responses
   queued"`, and `prompt()` resolves. `run()` therefore inspects the assistant messages its own run appended
   (the transcript length before the run bounds them) and rejects naming the `errorMessage`, so an unscripted
-  run cannot pass green. Only the run's own turns are consulted unless its slice holds no assistant message at
-  all, in which case the newest one in the transcript is — so an error turn from an earlier run cannot fail a
-  run that ended normally.
+  run cannot pass green. Only the run's own turns are consulted when the run appended nothing at all, in
+  which case the newest assistant message in the transcript is — so an error turn from an earlier run cannot
+  fail a run that did nothing wrong.
+- **A failing tool call fails the run.** pi's agent loop turns a throwing `execute()` — and a result that
+  sets `isError: true` — into a `toolResult` message flagged `isError`, and does **not** route it through
+  `onError`, so neither the errored turn nor `h.errors` sees it. `run()` also rejects when its own slice
+  holds an `isError` tool result, naming the tool and the result's text.
 - **Extension errors fail the run, all of them.** `onError` pushes every `ExtensionError` onto `h.errors`
   (readonly, oldest first) and nothing is ever cleared. `run()` throws only the errors that arrived while it
   was in flight: one plain `Error` for a single one, an `AggregateError` for several, each carrying its
@@ -77,7 +81,8 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   (`reason: "quit"`) through `session.extensionRunner` before `session.dispose()`, then calls
   `RecordingUi.dispose()`, which disposes every recorded widget component and every `custom()` component
   once — pi's own behaviour in `setExtensionWidget` / `clearExtensionWidgets`. `setWidget(key, undefined)` and
-  replacing a key dispose the component it held.
+  replacing a key dispose the component it held. Every teardown step sits in a `finally` and is guarded, so
+  a factory or `dispose()` that throws cannot leave the session undisposed or the temp directory behind.
 - **Command-context actions are partly stubbed.** `navigateTree` goes to the real session, `options` and all
   (so `{ summarize: true }` really summarizes); `newSession`, `fork`
   and `switchSession` return `{ cancelled: false }` without replacing the session; `waitForIdle` is the real one.

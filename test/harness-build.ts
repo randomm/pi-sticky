@@ -141,7 +141,8 @@ async function buildInto(dir: string, options: HarnessOptions): Promise<BuiltHar
 /**
  * Settle the session, run pi's shutdown path, then remove the temp directory. `abort()` is
  * awaited first so an in-flight prompt cannot re-create `sessions/` or `auth.json` after the
- * removal, and `finally` guarantees the directory goes even if a teardown step throws.
+ * removal, and the recorder teardown, `session.dispose()` and the removal all sit in
+ * `finally`, so a throwing widget factory or shutdown handler cannot leave them undone.
  */
 export async function disposeHarness(built: BuiltHarness, dir: string): Promise<void> {
   try {
@@ -157,13 +158,25 @@ export async function disposeHarness(built: BuiltHarness, dir: string): Promise<
     if (runner.hasHandlers("session_shutdown")) {
       await runner.emit({ type: "session_shutdown", reason: "quit" });
     }
-    built.ui.dispose();
-    built.session.dispose();
     // A prompt that was still streaming when dispose() was called has now been aborted but
     // has not yet finished persisting its turn; waiting once more closes the window in which
     // it would re-create sessions/ or auth.json after the removal below.
     await new Promise((resolve) => setTimeout(resolve, 0));
   } finally {
+    // Both teardown steps run in `finally` so no throw from a recorder can leave the session
+    // live or the directory behind. Each is guarded because pi's own runtime does the same:
+    // a teardown that throws must not mask the reason we got here.
+    try {
+      built.ui.dispose();
+    } catch {
+      // RecordingUi.dispose() already guards components and factories; anything left over is
+      // harness-internal and must not fail the test's teardown.
+    }
+    try {
+      built.session.dispose();
+    } catch {
+      // Teardown is best-effort.
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 }

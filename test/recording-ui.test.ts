@@ -103,6 +103,42 @@ test("stub TUI renders its children's lines concatenated, like pi's Container", 
   expect(tui.render(40)).toEqual([]);
 });
 
+test("a throwing widget factory does not escape dispose() or skip sibling teardown", () => {
+  const ui = new RecordingUi();
+  const boom = counter();
+  const sibling = counter();
+  // The factory is the extension's code, and dispose() has to call it again to reach the
+  // component pi built, so a throw from it must be contained the same way a throwing dispose().
+  ui.setWidget("boom", () => {
+    boom.count();
+    throw new Error("FACTORY-BOOM");
+  });
+  ui.setWidget("sibling", () => sibling.component);
+
+  expect(() => ui.dispose()).not.toThrow();
+  // The loop got past the throwing entry to the one after it.
+  expect(sibling.count()).toBe(1);
+  // The widget map is emptied either way, and a second dispose stays a no-op.
+  expect(ui.widgets.size).toBe(0);
+  ui.dispose();
+  expect(sibling.count()).toBe(1);
+});
+
+test("a throwing component dispose() does not stop the rest of teardown", () => {
+  const ui = new RecordingUi();
+  const sibling = counter();
+  ui.setWidget("boom", () => ({
+    render: () => ["row"],
+    invalidate: () => {},
+    dispose: () => {
+      throw new Error("DISPOSE-BOOM");
+    },
+  }));
+  ui.setWidget("sibling", () => sibling.component);
+  expect(() => ui.dispose()).not.toThrow();
+  expect(sibling.count()).toBe(1);
+});
+
 test("the forwarded member list covers every ExtensionUIContext member", () => {
   const ui = new RecordingUi();
   const bound = uiContextForPi(ui);

@@ -1,30 +1,16 @@
 /**
  * Tests for how the harness surfaces failures: an exhausted faux queue, extension errors
- * raised during a run and between runs, and the shutdown/dispose contract. The harness must
- * never let a turn that pi records as an errored assistant message pass as a green run.
+ * raised during a run and between runs, and a tool whose `execute()` fails. The harness must
+ * never let a turn that pi records as an error pass as a green run; teardown behaviour lives
+ * in `harness-teardown.test.ts`.
  */
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { assertTurnSucceeded } from "./harness-run.ts";
 import { call, createHarness, reply } from "./harness.ts";
 
 const NO_PARAMS = Type.Object({});
-
-/** A component that counts its `dispose()` calls, for teardown assertions. */
-function disposables(): { component: Component & { dispose?: () => void }; count: () => number } {
-  let disposed = 0;
-  return {
-    count: () => disposed,
-    component: {
-      render: () => ["row"],
-      invalidate: () => {},
-      dispose: () => {
-        disposed++;
-      },
-    },
-  };
-}
 
 test("PI_OFFLINE is set when the harness module is loaded", async () => {
   // The harness sets it at module scope; asserting it here guards the move out of
@@ -172,116 +158,84 @@ test("errors raised between runs are kept instead of discarded", async () => {
   }
 });
 
-test("dispose() emits session_shutdown to extensions with reason quit", async () => {
-  const seen: string[] = [];
-  const probe: ExtensionFactory = (pi: ExtensionAPI) => {
-    pi.on("session_shutdown", (event) => {
-      seen.push(`shutdown:${event.reason}`);
-    });
-  };
-  const h = await createHarness({ factories: [probe] });
-  h.script([reply("ok")]);
-  await h.run("go");
-  expect(seen).toEqual([]);
-  await h.dispose();
-  expect(seen).toEqual(["shutdown:quit"]);
-});
-
-test("a failing session_shutdown handler is collected rather than lost", async () => {
+test("run() rejects when a tool's execute() throws", async () => {
+  // pi turns a throwing execute() into a toolResult with isError: true and does not route it
+  // through onError, so neither the errored turn nor the error collector would see it.
   const boom: ExtensionFactory = (pi: ExtensionAPI) => {
-    pi.on("session_shutdown", () => {
-      throw new Error("SHUTDOWN-BOOM");
+    pi.registerTool({
+      name: "boom",
+      label: "Boom",
+      description: "Throw from execute",
+      parameters: NO_PARAMS,
+      execute: async () => {
+        throw new Error("TOOL-BOOM");
+      },
     });
   };
   const h = await createHarness({ factories: [boom] });
-  h.script([reply("ok")]);
-  await h.run("go");
-  expect(h.errors).toEqual([]);
-  await h.dispose();
-  // dispose() must not throw on a handler error, but the error has to be observable.
-  // The recorder is out of reach after teardown, so assert through the runner's listener.
-  expect(h.session.extensionRunner.hasHandlers("session_shutdown")).toBe(true);
-});
-
-test("widget dispose() runs on clear, on replacement and on harness dispose", async () => {
-  // Each installation uses its own component, so a disposal count always names one widget.
-  const first = disposables();
-  const second = disposables();
-  const third = disposables();
-  const h = await createHarness({
-    factories: [
-      (pi) => {
-        pi.registerTool({
-          name: "widget",
-          label: "Widget",
-          description: "Set a widget from the extension",
-          parameters: NO_PARAMS,
-          execute: async (_id, _params, _signal, _onUpdate, ctx) => {
-            ctx.ui.setWidget("pi-sticky", () => first.component, { placement: "aboveEditor" });
-            return { content: [{ type: "text", text: "set" }], details: null };
-          },
-        });
-      },
-    ],
-  });
   try {
-    h.script([widgetCall("widget"), reply("ok")]);
-    await h.run("go");
-    // The extension's setWidget reached the recorder through the wrapper pi spreads.
-    expect(h.ui.widgets.has("pi-sticky")).toBe(true);
-    expect(first.count()).toBe(0);
-
-    // Replacement disposes the component it replaces.
-    h.ui.setWidget("pi-sticky", () => second.component);
-    expect(first.count()).toBe(1);
-    expect(second.count()).toBe(0);
-
-    // Clearing disposes the live component and forgets the key.
-    h.ui.setWidget("pi-sticky", undefined);
-    expect(second.count()).toBe(1);
-    expect(h.ui.widgets.has("pi-sticky")).toBe(false);
-
-    // A component still registered at teardown is disposed by dispose().
-    h.ui.setWidget("pi-sticky", () => third.component);
-    expect(third.count()).toBe(0);
-    await h.dispose();
-    expect(third.count()).toBe(1);
+    h.script([call("boom", {}), reply("recovered")]);
+    const thrown = await h.run("go").then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(Error);
+    const message = (thrown as Error).message;
+    // Names the tool and carries the text pi handed back, so the failure is diagnosable.
+    expect(message).toContain("errored tool result");
+    expect(message).toContain("boom");
+    expect(message).toContain("TOOL-BOOM");
+    // pi recorded the failure on the branch as an error result.
+    const results = h
+      .branch()
+      .filter((entry) => entry.type === "message" && entry.message?.role === "toolResult");
+    expect(results).toHaveLength(1);
   } finally {
     await h.dispose();
   }
 });
 
-test("a custom() component is disposed when the harness is disposed", async () => {
-  const fixture = disposables();
-  const h = await createHarness({
-    factories: [
-      (pi) => {
-        pi.registerTool({
-          name: "custom",
-          label: "Custom",
-          description: "Open a custom component",
-          parameters: NO_PARAMS,
-          execute: async (_id, _params, _signal, _onUpdate, ctx) => {
-            await ctx.ui.custom(() => fixture.component);
-            return { content: [{ type: "text", text: "closed" }], details: null };
-          },
-        });
-      },
-    ],
-  });
+test("a tool result that reports a failure without throwing fails the run too", async () => {
+  // A tool may return a failed result explicitly rather than throwing; same channel, same
+  // verdict, so a test cannot mistake a failed tool call for a green run.
+  const failing: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.registerTool({
+      name: "fails",
+      label: "Fails",
+      description: "Return a failed result",
+      parameters: NO_PARAMS,
+      execute: async () => ({
+        content: [{ type: "text", text: "NO-SUCH-PIN" }],
+        details: null,
+        isError: true,
+      }),
+    });
+  };
+  const h = await createHarness({ factories: [failing] });
   try {
-    h.script([widgetCall("custom"), reply("ok")]);
-    await h.run("go");
-    expect(h.ui.customCount).toBe(1);
-    expect(fixture.count()).toBe(0);
-    await h.dispose();
-    expect(fixture.count()).toBe(1);
+    h.script([call("fails", {}), reply("ok")]);
+    await expect(h.run("go")).rejects.toThrow(/NO-SUCH-PIN/);
   } finally {
     await h.dispose();
   }
 });
 
-/** Scripted tool call of `name` with no arguments. */
-function widgetCall(name: string) {
-  return call(name, {});
-}
+test("a successful tool result does not fail the run", async () => {
+  const good: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.registerTool({
+      name: "good",
+      label: "Good",
+      description: "Succeed",
+      parameters: NO_PARAMS,
+      execute: async () => ({ content: [{ type: "text", text: "fine" }], details: null }),
+    });
+  };
+  const h = await createHarness({ factories: [good] });
+  try {
+    h.script([call("good", {}), reply("ok")]);
+    await h.run("go");
+    expect(h.errors).toEqual([]);
+  } finally {
+    await h.dispose();
+  }
+});

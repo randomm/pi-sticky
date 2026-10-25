@@ -334,6 +334,8 @@ pi-sticky/
     ├── ui-stubs.ts      stub TUI, theme and overlay handle for renderWidget and panel tests
     ├── spike.test.ts    smoke test and A1–A5 (A6 verified in source, see research-summary)
     ├── harness.test.ts  harness and RecordingUi behaviour
+    ├── harness-errors.test.ts  faux-queue, extension-error and failing-tool-result runs
+    ├── harness-teardown.test.ts  session_shutdown, widget/custom disposal, temp-dir removal
     ├── harness-extra.test.ts  command-context actions, appendScript, messageText, stubs
     └── <module>.test.ts one test file per src module
 ```

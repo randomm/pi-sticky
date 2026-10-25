@@ -104,8 +104,9 @@ export interface Harness {
   summarizeWith(text: string): void;
   /**
    * `session.prompt(prompt)` awaited until the run has settled, then rejected when the run
-   * failed: an errored assistant turn (an empty faux queue among them) or one or more
-   * extension errors raised while it was in flight.
+   * failed: an errored assistant turn (an empty faux queue among them), a tool result pi
+   * flagged `isError` — what a throwing `execute()` becomes — or one or more extension errors
+   * raised while it was in flight.
    */
   run(prompt: string): Promise<void>;
   /** Entries on the current branch, oldest first. */

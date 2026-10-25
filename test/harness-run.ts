@@ -2,10 +2,12 @@
  * Run results and error bookkeeping for the harness, kept apart from `harness.ts` so that
  * file stays about building a session.
  *
- * Two kinds of failure reach a test here. A faux provider that has nothing left to hand out
- * does **not** reject: pi ends the turn with an assistant message whose `stopReason` is
- * `"error"` (`errorMessage` `"No more faux responses queued"`) and `prompt()` resolves, so
- * `assertTurnSucceeded()` turns that silent outcome into a rejection. An extension that throws
+ * Three kinds of failure reach a test here, because pi reports failures through three
+ * channels and `prompt()` resolves in all three. A faux provider with nothing left to hand
+ * out ends the turn with an assistant message whose `stopReason` is `"error"`
+ * (`errorMessage` `"No more faux responses queued"`). A tool whose `execute()` throws becomes
+ * a `toolResult` message with `isError: true` — pi's agent loop catches it and hands the text
+ * to the model, and `onError` never sees it. An extension that throws from an event handler
  * reaches the harness through `bindExtensions({ onError })` as an `ExtensionError`, and
  * `ErrorCollector` decides which of those a given `run()` is responsible for: the errors that
  * arrive while a run is in flight fail it, while errors raised between runs (a `session_start`,
@@ -17,27 +19,64 @@ import type { ExtensionError } from "@earendil-works/pi-coding-agent";
 /** An assistant message's terminal state, narrowed from pi's wide `Message`. */
 type AssistantTurn = { role: string; stopReason?: string; errorMessage?: string };
 
+/** A tool result, narrowed from pi's wide `Message` — only the failure evidence matters. */
+type ToolResult = { role: string; toolName?: string; isError?: boolean; content?: unknown };
+
 /**
- * Reject when the turns this run appended ended in error. `messages` is the whole transcript
- * and `since` the message count before the run, so only the newer entries belong to it. The
- * fallback to the newest assistant message in the whole transcript covers a run whose error
- * turn arrived without being counted in the slice — an aborted or queued turn, for instance —
- * and is only consulted when the slice holds no assistant message at all.
+ * Reject when the turns this run appended ended in error: an assistant turn whose
+ * `stopReason` is `"error"` (an exhausted faux queue among them), or a tool result flagged
+ * `isError` — what pi's agent loop records when a tool's `execute()` throws. `messages` is
+ * the whole transcript and `since` the message count before the run, so only the newer
+ * entries belong to it.
+ *
+ * The fallback to the newest assistant message in the whole transcript covers a run whose
+ * error turn arrived without being counted in the slice — an aborted or queued turn, for
+ * instance — and is only consulted when the run appended nothing at all, so neither an error
+ * turn nor an errored tool result from an earlier run can fail a run that did nothing wrong.
  */
 export function assertTurnSucceeded(messages: readonly unknown[], since: number): void {
-  const turns = messages.slice(since).filter(isAssistantTurn);
-  const failed =
-    turns.find((turn) => turn.stopReason === "error") ??
-    (turns.length === 0 ? lastAssistantTurn(messages) : undefined);
-  if (failed?.stopReason === "error") {
+  const appended = messages.slice(since);
+  const turns = appended.filter(isAssistantTurn);
+  if (turns.length === 0 && appended.length === 0) {
+    const stale = lastAssistantTurn(messages);
+    if (stale?.stopReason === "error") {
+      throw new Error(
+        `run ended with an errored assistant turn: ${stale.errorMessage ?? "no error message"}`,
+      );
+    }
+  }
+  const failed = turns.find((turn) => turn.stopReason === "error");
+  if (failed) {
     throw new Error(
       `run ended with an errored assistant turn: ${failed.errorMessage ?? "no error message"}`,
+    );
+  }
+  const erroredTool = appended.find(isErroredToolResult);
+  if (erroredTool) {
+    throw new Error(
+      `run ended with an errored tool result from ${erroredTool.toolName ?? "an unnamed tool"}: ${toolResultText(erroredTool)}`,
     );
   }
 }
 
 function isAssistantTurn(message: unknown): message is AssistantTurn {
   return (message as { role?: unknown }).role === "assistant";
+}
+
+function isErroredToolResult(message: unknown): message is ToolResult {
+  const candidate = message as ToolResult;
+  return candidate.role === "toolResult" && candidate.isError === true;
+}
+
+/** The text blocks of an errored tool result, for the rejection message. */
+function toolResultText(result: ToolResult): string {
+  const blocks = Array.isArray(result.content) ? result.content : [];
+  const text = blocks
+    .filter((block) => (block as { type?: unknown }).type === "text")
+    .map((block) => (block as { text?: unknown }).text)
+    .filter((value): value is string => typeof value === "string")
+    .join("\n");
+  return text === "" ? "no error text" : text;
 }
 
 function lastAssistantTurn(messages: readonly unknown[]): AssistantTurn | undefined {
