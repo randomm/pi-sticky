@@ -55,9 +55,10 @@ test("a failing session_shutdown handler is collected rather than lost", async (
   await h.run("go");
   expect(h.errors).toEqual([]);
   await h.dispose();
-  // dispose() must not throw on a handler error, but the error has to be observable.
-  // The recorder is out of reach after teardown, so assert through the runner's listener.
-  expect(h.session.extensionRunner.hasHandlers("session_shutdown")).toBe(true);
+  // dispose() must not throw on a handler error, and the error has to stay observable: pi
+  // routes a throwing event handler to the bound onError, which the collector records under
+  // its event, so the test can name it afterwards.
+  expect(h.errors.map((error) => error.error)).toEqual(["SHUTDOWN-BOOM"]);
 });
 
 test("widget dispose() runs on clear, on replacement and on harness dispose", async () => {

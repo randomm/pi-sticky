@@ -1,13 +1,12 @@
 /**
  * Tests for how the harness surfaces failures: an exhausted faux queue, extension errors
  * raised during a run and between runs, and a tool whose `execute()` fails. The harness must
- * never let a turn that pi records as an error pass as a green run; teardown behaviour lives
- * in `harness-teardown.test.ts`.
+ * never let a turn that pi records as an error pass as a green run; aborted turns and the
+ * stopReason matrix live in `harness-abort.test.ts`, teardown in `harness-teardown.test.ts`.
  */
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { assertTurnSucceeded } from "./harness-run.ts";
 import { call, createHarness, reply } from "./harness.ts";
 
 const NO_PARAMS = Type.Object({});

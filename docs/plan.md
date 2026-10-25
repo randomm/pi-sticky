@@ -328,14 +328,24 @@ pi-sticky/
 │   ├── reminder.ts      compaction flag and before_agent_start message
 │   └── mirror.ts        phase 2 file mirror
 └── test/
-    ├── harness.ts       SDK session with faux provider and a recording UI
+    ├── harness.ts       public surface: createHarness, script/run/branch/dispose, re-exports
+    ├── harness-build.ts  pi construction, private temp dir, idempotent disposeHarness
+    ├── harness-run.ts   run-failure detection (stopReason, tool errors) and error collection
+    ├── harness-session.ts  BuiltHarness shape handed between build and dispose
+    ├── harness-settle.ts  quiet-window wait for pi's fire-and-forget writes before rmSync
+    ├── harness-text.ts  messageText + the summarization-request marker
     ├── recording-ui.ts  RecordingUi: setWidget/setStatus/notify/editor/custom recorder + renderWidget
+    ├── recorded-ui-types.ts  the recorder's own types, shared with tests without the recorder
     ├── ui-context-for-pi.ts  own-property uiContext wrapper (pi spreads the bound context)
     ├── ui-stubs.ts      stub TUI, theme and overlay handle for renderWidget and panel tests
+    ├── component-dispose.ts  dispose a recorded widget entry once, surviving a throwing factory
+    ├── file-size.test.ts  300-line cap on every TS file in src/ and test/
     ├── spike.test.ts    smoke test and A1–A5 (A6 verified in source, see research-summary)
     ├── harness.test.ts  harness and RecordingUi behaviour
     ├── harness-errors.test.ts  faux-queue, extension-error and failing-tool-result runs
+    ├── harness-abort.test.ts  aborted mid-stream turn and the full stopReason matrix
     ├── harness-teardown.test.ts  session_shutdown, widget/custom disposal, temp-dir removal
+    ├── harness-dispose.test.ts  private temp dir mode and dispose() idempotency
     ├── harness-extra.test.ts  command-context actions, appendScript, messageText, stubs
     └── <module>.test.ts one test file per src module
 ```

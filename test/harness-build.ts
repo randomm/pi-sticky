@@ -1,19 +1,21 @@
 /**
  * Building and tearing down the harness session, apart from `harness.ts`'s public surface.
  *
- * `buildSession()` is the whole pi construction — temp dir, faux provider, resource loader,
- * settings overrides, `createAgentSession()`, `bindExtensions()` — and owns the temp
- * directory: if any step after `mkdtempSync()` throws, the half-built session is disposed and
- * the directory removed before the error is rethrown, so a failed `createHarness()` leaves
- * nothing behind in the OS temp dir. `disposeHarness()` mirrors pi's own
+ * `buildSession()` is the whole pi construction — temp dir (created private, `0700`), faux
+ * provider, resource loader, settings overrides, `createAgentSession()`, `bindExtensions()` —
+ * and owns the temp directory: if any step after `mkdtempSync()` throws, the half-built session
+ * is disposed with the same teardown and the directory removed before the error is rethrown, so
+ * a failed `createHarness()` leaves nothing behind in the OS temp dir. `disposeHarness()`
+ * mirrors pi's own
  * `AgentSessionRuntime.dispose()`: `session.abort()` settles an in-flight prompt first, then
  * `session_shutdown` (`reason: "quit"`) is emitted through the session's extension runner so
- * extensions and the recorded components get their teardown, then `session.dispose()` runs.
+ * extensions and the recorded components get their teardown, then `session.dispose()` runs. It
+ * is idempotent, so a test that disposes twice gets one shutdown, not two.
  * The one step pi's own teardown does not need is the settle before removal, which waits out
  * writes pi leaves in flight behind a `void`ed provider refresh — see `settlePendingWrites()`.
  * Cleanup is a `try`/`finally`, so the directory is removed even when a handler throws.
  */
-import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -36,6 +38,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ErrorCollector } from "./harness-run.ts";
 import type { BuiltHarness } from "./harness-session.ts";
+import { settlePendingWrites } from "./harness-settle.ts";
 import { isSummarizationRequest } from "./harness-text.ts";
 import type { HarnessOptions } from "./harness.ts";
 import { RecordingUi } from "./recording-ui.ts";
@@ -43,22 +46,58 @@ import { uiContextForPi } from "./ui-context-for-pi.ts";
 
 const SUMMARY_TEXT = "HARNESS-SUMMARY";
 
+/**
+ * The outcome of a build attempt: the harness once everything came up, or the reason it failed
+ * plus the pieces that did get built. Reporting the partial state — rather than casting a
+ * failure at the teardown call — is what lets `buildSession()` settle and remove after a
+ * half-built session without inventing fields it does not have.
+ */
+type BuildAttempt =
+  | { built: BuiltHarness }
+  | { error: unknown; built?: undefined; partial: Partial<BuiltHarness> };
+
 /** Build the session, its recorder and its faux provider; throws before returning on failure. */
 export async function buildSession(options: HarnessOptions): Promise<BuiltHarness> {
   const dir = mkdtempSync(join(tmpdir(), "pi-sticky-harness-"));
+  // The mode is asserted by a test; pins and transcripts land in this directory, so it is
+  // private before anything has been written into it.
+  chmodSync(dir, 0o700);
+  const attempt = await buildInto(dir, options);
+  if (attempt.built) return attempt.built;
+  // The same teardown a successful build gets from disposeHarness(): settle whatever the
+  // half-built session left running, then remove the directory, so a failed createHarness()
+  // leaves nothing behind in the OS temp dir. Nothing to settle until a session exists, and
+  // every field disposeHarness() reads is populated before a session can be created at all.
+  if (attempt.partial.session) {
+    await disposeHarness(attempt.partial as BuiltHarness).catch(() => undefined);
+  }
+  rmSync(dir, { recursive: true, force: true });
+  throw attempt.error;
+}
+
+async function buildInto(dir: string, options: HarnessOptions): Promise<BuildAttempt> {
+  // The pieces that exist at any point during the build, so a throw part-way through can be
+  // torn down with what it actually made.
+  const partial: Partial<BuiltHarness> = { dir };
   try {
-    return await buildInto(dir, options);
+    return { built: await buildSteps(dir, options, partial) };
   } catch (error) {
-    rmSync(dir, { recursive: true, force: true });
-    throw error;
+    return { error, partial };
   }
 }
 
-async function buildInto(dir: string, options: HarnessOptions): Promise<BuiltHarness> {
+async function buildSteps(
+  dir: string,
+  options: HarnessOptions,
+  partial: Partial<BuiltHarness>,
+): Promise<BuiltHarness> {
   const ui = new RecordingUi();
+  partial.ui = ui;
   const faux = fauxProvider();
+  partial.faux = faux;
   const requests: TranscriptContext[] = [];
   const errors = new ErrorCollector();
+  partial.errors = errors;
   recordRequests(faux, requests);
 
   const inline: InlineExtension[] = [
@@ -105,6 +144,12 @@ async function buildInto(dir: string, options: HarnessOptions): Promise<BuiltHar
     // Modifier-only list: adds codemode to the default selection instead of restricting it.
     tools: options.codemode ? ["+codemode"] : undefined,
   });
+  // Recorded as soon as it exists: everything after this point can still throw, and a
+  // half-bound session is exactly what the teardown needs to reach.
+  partial.session = session;
+  partial.requests = requests;
+  partial.model = session.model ?? faux.getModel();
+  partial.messages = () => session.messages as readonly Message[];
 
   const mode = options.mode ?? "tui";
   // Only TUI and RPC have a UI. print and json bind no uiContext at all, which is what
@@ -146,13 +191,19 @@ async function buildInto(dir: string, options: HarnessOptions): Promise<BuiltHar
  * `sessions/` or `auth.json` after the removal, and the recorder teardown, `session.dispose()`
  * and the removal all sit in `finally`, so a throwing widget factory or shutdown handler cannot
  * leave them undone.
+ *
+ * Idempotent: `harness.ts` calls this from `dispose()` and a test may well call `dispose()`
+ * twice (a `finally` block plus an explicit cleanup), so the second call does nothing at all —
+ * in particular no second `session_shutdown`, which would make a shutdown-counting assertion
+ * depend on how often the harness happened to be disposed.
  */
-export async function disposeHarness(built: BuiltHarness, dir: string): Promise<void> {
+export async function disposeHarness(built: BuiltHarness): Promise<void> {
+  if (disposed.has(built)) return;
+  disposed.add(built);
+  const { dir } = built;
   try {
-    // `dispose()` is only safe once nothing is in flight: pi's own teardown awaits `abort()`
-    // too. Awaiting it a second time after `dispose()` closes the window in which a turn that
-    // was still streaming could re-create `sessions/` or `auth.json` after the removal below
-    // and leave the directory behind.
+    // `dispose()` is only safe once nothing is in flight, so pi's own teardown awaits `abort()`
+    // too; doing the same here settles a prompt that is still running before we remove under it.
     await built.session.abort();
     // pi's AgentSessionRuntime.dispose() emits session_shutdown ("quit") through the runner
     // before invalidating it; doing the same here is what gives an extension's shutdown
@@ -184,90 +235,11 @@ export async function disposeHarness(built: BuiltHarness, dir: string): Promise<
   }
 }
 
-/** How long `settlePendingWrites()` waits in total before it gives up and lets removal run. */
-const SETTLE_TIMEOUT_MS = 500;
-/** Floor for the quiet window `settlePendingWrites()` requires before it stops waiting. */
-const SETTLE_QUIET_MS = 10;
-/** Ceiling for that window, so a writer that never stops cannot hold teardown hostage. */
-const SETTLE_QUIET_MAX_MS = 100;
-/** Poll interval for the same wait; one timer per round when the directory is already quiet. */
-const SETTLE_POLL_MS = 10;
-
 /**
- * Wait until nothing is still writing inside `dir`, so that `rmSync()` is the last word.
- *
- * `pi.registerProvider()` ends up in `ModelRuntime.registerNativeProvider()`, whose last
- * statement is `void this.refresh({ allowNetwork: false })` — fire-and-forget, with no handle
- * on the promise afterwards. That refresh reaches `FileAuthStorageBackend.withLockAsync()` for
- * both `auth.json` and `models-store.json` (both under `agentDir`, i.e. inside this harness's
- * temp dir), and that method calls `ensureParentDir()`/`ensureFileExists()` before it does
- * anything else — so a *read* of either file re-creates it. `AgentSession.dispose()` cancels
- * neither: it aborts the agent and invalidates the runner, and the refresh is neither.
- *
- * Removal therefore cannot simply follow `abort()`. A single `setTimeout(0)` does not cover an
- * I/O-backed refresh, and a harness disposed while another is being built leaves `auth.json`
- * and `models-store.json` behind in roughly one disposal in five (measured; sequential runs
- * never leak, which is why the suite passes). So poll the directory and require a *quiet
- * window* — no entry newer than the previous sample for `quietMs` — before returning. The
- * window starts at `SETTLE_QUIET_MS` and doubles each time activity is seen, up to
- * `SETTLE_QUIET_MAX_MS`: a turn aborted mid-stream keeps writing on `setTimeout` delays (faux
- * schedules a chunk every few milliseconds) and must not be mistaken for quiet on a single idle
- * poll. Then hand the macrotask back once more, so a write already scheduled at that point lands
- * before the caller removes the tree. The whole wait is bounded by `SETTLE_TIMEOUT_MS`:
- * teardown must never hang a test because a writer never settles.
+ * Harnesses already torn down. A `WeakSet` so the bookkeeping cannot keep a built harness —
+ * and with it a live session — reachable after the test let go of it.
  */
-async function settlePendingWrites(dir: string): Promise<void> {
-  const deadline = Date.now() + SETTLE_TIMEOUT_MS;
-  let quietMs = SETTLE_QUIET_MS;
-  let previous = newestEntryTime(dir);
-  let quietSince = Date.now();
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
-    const current = newestEntryTime(dir);
-    if (current !== previous) {
-      previous = current;
-      quietSince = Date.now();
-      quietMs = Math.min(quietMs * 2, SETTLE_QUIET_MAX_MS);
-      continue;
-    }
-    if (Date.now() - quietSince >= quietMs) break;
-  }
-  await new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-/**
- * Newest mtime among the entries of `dir`, or 0 when it is gone or empty. One `readdirSync` and
- * one `statSync` per entry per round: the dirs hold a handful of files, and the caller polls at
- * `SETTLE_POLL_MS`, so this stays well below anything a test would notice.
- */
-function newestEntryTime(dir: string): number {
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch {
-    return 0;
-  }
-  let newest = 0;
-  for (const name of names) {
-    // An entry that cannot be stat'ed counts as just-written, so a file disappearing mid-sample
-    // keeps the loop polling another round rather than ending the wait early.
-    newest = Math.max(newest, entryTime(join(dir, name)));
-  }
-  return newest;
-}
-
-/**
- * mtime of `path`, or "now" when it cannot be read. Treating an unreadable entry as just
- * written keeps the quiet-window loop polling another round rather than ending the wait early,
- * which is what an entry deleted between the readdir and the stat would otherwise do.
- */
-function entryTime(path: string): number {
-  try {
-    return statSync(path).mtimeMs;
-  } catch {
-    return Date.now();
-  }
-}
+const disposed = new WeakSet<BuiltHarness>();
 
 /**
  * Wrap the faux provider's stream entry points so every context handed to the model is

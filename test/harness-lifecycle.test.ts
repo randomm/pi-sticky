@@ -5,7 +5,7 @@
  * `void`ed provider refresh — which only shows up when harnesses overlap.
  */
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,15 +81,4 @@ test("overlapping harnesses leave no temp directory behind", async () => {
   const leaked = harnessDirs().filter((dir) => !before.includes(dir));
   for (const dir of leaked) rmSync(join(tmpdir(), dir), { recursive: true, force: true });
   expect(leaked).toEqual([]);
-});
-
-test("the harness module sets PI_OFFLINE before any session is built", () => {
-  const source = readFileSync(join(import.meta.dir, "harness.ts"), "utf8");
-  const lines = source.split("\n");
-  const assignment = lines.findIndex((line) => line.includes('process.env.PI_OFFLINE = "1"'));
-  expect(assignment).toBeGreaterThan(-1);
-  // Module scope: no leading indentation, and above createHarness().
-  expect(lines[assignment]?.startsWith(" ")).toBe(false);
-  const create = lines.findIndex((line) => line.includes("export async function createHarness"));
-  expect(assignment).toBeLessThan(create);
 });

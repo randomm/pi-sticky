@@ -40,26 +40,14 @@ import type { RecordingUi } from "./recording-ui.ts";
 // a ModelRegistry or a settings manager of its own must already be offline.
 process.env.PI_OFFLINE = "1";
 
-export type {
-  CustomOptions,
-  RecordedCustomCall,
-  RecordedNotification,
-  RecordedWidget,
-  WidgetFactory,
-} from "./recorded-ui-types.ts";
-export { RecordingUi } from "./recording-ui.ts";
 export type { CustomComponent } from "./recording-ui.ts";
-export { FORWARDED_UI_MEMBERS, uiContextForPi } from "./ui-context-for-pi.ts";
 export {
   createOverlayHandle,
   createPlainTheme,
   createStubTui,
   linesComponent,
 } from "./ui-stubs.ts";
-export { assertTurnSucceeded, ErrorCollector, runFailure } from "./harness-run.ts";
-export { buildSession, disposeHarness } from "./harness-build.ts";
-export { isSummarizationRequest, messageText } from "./harness-text.ts";
-export type { BuiltHarness } from "./harness-session.ts";
+export { messageText } from "./harness-text.ts";
 
 /**
  * pi's `ExtensionMode`, redeclared because the package root does not re-export the type.
@@ -172,7 +160,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     branchSnapshots: () =>
       branchSnapshots(session.sessionManager.getBranch() as unknown as SessionEntryLike[]),
     dir: built.dir,
-    dispose: () => disposeHarness(built, built.dir),
+    dispose: () => disposeHarness(built),
   };
 }
 
