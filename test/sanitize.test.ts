@@ -188,6 +188,13 @@ describe("combining marks", () => {
     expect(kept.length).toBe(1 + MAX_MARKS_PER_GRAPHEME);
     expect(clean("ok")).toBe("ok");
   });
+
+  test("the cap counts every mark class, not only nonspacing marks", () => {
+    // U+20E3 (COMBINING ENCLOSING KEYCAP) is Me, not Mn: a cap that tests only /\p{Mn}/ lets an
+    // unbounded run of enclosing marks through, so the budget has to count /\p{M}/ marks.
+    const kept = clean(`x${cp(0x20e3, 0x20e3, 0x20e3, 0x20e3, 0x20e3, 0x20e3)}`);
+    expect(kept.length).toBe(1 + MAX_MARKS_PER_GRAPHEME);
+  });
 });
 
 describe("budget", () => {
@@ -239,6 +246,15 @@ describe("budget", () => {
       text: "",
       truncated: false,
     });
+  });
+
+  test("a cut never detaches a variation selector from its base", () => {
+    // Three VS16 hearts are three graphemes; a hand-rolled clusterer that counted VS16 on its own
+    // would report three and refuse to cut at a budget of two. The cut keeps one heart whole.
+    const heart = cp(0x2764, 0xfe0f);
+    const result = sanitizePinText(heart.repeat(3), 2);
+    expect(result.truncated).toBe(true);
+    expect(result.text).toBe(`${heart}${cp(0x2026)}`);
   });
 
   test("a budget smaller than the ellipsis yields only the ellipsis", () => {

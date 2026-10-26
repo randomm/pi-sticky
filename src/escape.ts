@@ -14,9 +14,6 @@
  */
 const ESC = 0x1b;
 const BEL = 0x07;
-const LF = 0x0a;
-const CR = 0x0d;
-const TAB = 0x09;
 const BACKSLASH = 0x5c;
 /** CSI and the five string introducers, in their 8-bit form. */
 const CSI8 = 0x9b;
@@ -64,31 +61,6 @@ function isCsiMiddle(code: number): boolean {
 /** Is code the byte that closes a CSI? */
 function isCsiFinal(code: number): boolean {
   return code >= 0x40 && code <= 0x7e;
-}
-
-/**
- * Does code survive the escape pass as text? Printable ASCII, the C1-and-above printable range
- * below the non-BMP planes, tabs and the newline shapes. U+0085, U+2028 and U+2029 stay so
- * stripControls can turn them into newlines rather than delete them; the rest of the C1 range falls
- * through and dies. The six 8-bit introducers are excluded by name: they are range members, and if
- * they were kept the scan would emit them as text instead of dispatching on them. Surrogate halves
- * are kept so they reach dropLoneSurrogates as a pair, the only pass that decides them.
- */
-function isKept(code: number): boolean {
-  if (is8BitIntroducer(code)) return false;
-  if (isSurrogate(code)) return true;
-  return (
-    code === TAB ||
-    code === LF ||
-    code === CR ||
-    code === 0x85 ||
-    code === 0x2028 ||
-    code === 0x2029 ||
-    (code >= 0x20 && code <= 0x7e) ||
-    (code >= 0xa0 && code <= 0xfffd && code !== ST8 && code !== CAN && code !== SUB) ||
-    code === 0x7f ||
-    (code >= 0x80 && code <= 0x9f)
-  );
 }
 
 /**

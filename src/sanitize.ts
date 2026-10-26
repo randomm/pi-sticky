@@ -39,7 +39,8 @@ const EDGE = `\\s${LF_CHAR}${CR}${NEL}${LINE_SEP}${PARA_SEP}`;
 const TRIM_EDGE = new RegExp(`^(?:[${EDGE}])+|(?:(?:[${EDGE}])+$)`, "g");
 /** Property tests, built at runtime for the same reason as the patterns above. */
 const CF_TEST = /\p{Cf}/u;
-const MARK_TEST = /\p{Mn}/u;
+/** Every combining mark, not just Mn: enclosing marks (U+20E3) and spacing marks count too. */
+const MARK_TEST = /\p{M}/u;
 /** Combining marks kept per grapheme before the rest are dropped. */
 export const MAX_MARKS_PER_GRAPHEME = 4;
 /** Horizontal ellipsis, U+2026. */
@@ -56,46 +57,18 @@ function at(text: string, i: number): string {
 }
 
 /**
- * Grapheme clusters, in order. A cluster runs on through every joiner attached to it, so a family
- * built with ZWJ is one unit rather than five: cutting the budget mid-joiner would leave a dangling
- * joiner, which is a character on its own and precisely what the plan forbids. Variation selectors
- * belong to the base they select a presentation for, so they join the current cluster the same way.
+ * Grapheme clusters, in order. Delegates to the module's Intl.Segmenter: after the escape and Cf
+ * passes there is nothing left for a hand-rolled clusterer to add, and a hand-rolled one gets the
+ * edge cases wrong. A run of base-less combining marks is folded into a single cluster by `\p{M}`
+ * continuator rules, so the budget would under-count it, and a cut can end on a bare combining mark
+ * or variation selector detached from its base (a keycap's U+20E3, a heart's VS16). The earlier
+ * passes leave each cluster self-contained: ZWJ and VS16 survive only inside an emoji cluster, so
+ * Segmenter keeps the family intact and the budget counts it as one, while the tag block is already
+ * gone and cannot split a flag.
  */
 function graphemes(text: string): string[] {
   const out: string[] = [];
-  let current = "";
-  // A joiner extends the cluster it is attached to, and it keeps extending it: a family is base,
-  // joiner, base, joiner, base and counts as one, so the run continues across a joiner rather than
-  // stopping at it. Walking by index because iterating a string under the test runner drops every
-  // low surrogate, which would split each astral base in half and count it as two characters.
-  let expectingBase = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const high = text.charCodeAt(i);
-    let unit = at(text, i);
-    let cp = high;
-    if (high >= 0xd800 && high <= 0xdbff && i + 1 < text.length) {
-      const low = text.charCodeAt(i + 1);
-      if (low >= 0xdc00 && low <= 0xdfff) {
-        unit += at(text, i + 1);
-        cp =
-          String.fromCodePoint(0x10000 + ((high - 0xd800) << 10) + (low - 0xdc00)).codePointAt(0) ??
-          high;
-        i += 1;
-      }
-    }
-    const joiner = cp === 0x200d || cp === 0xfe0f || MARK_TEST.test(unit);
-    if (current !== "" && (joiner || expectingBase)) {
-      current += unit;
-      // A joiner is only a joiner when something follows it; the base after it belongs to the
-      // same cluster, and the run then ends unless another joiner turns up.
-      expectingBase = joiner;
-      continue;
-    }
-    if (current !== "") out.push(current);
-    current = unit;
-    expectingBase = joiner;
-  }
-  if (current !== "") out.push(current);
+  for (const { segment } of segmenter.segment(text)) out.push(segment);
   return out;
 }
 
