@@ -34,4 +34,9 @@ test("stubApi records what the extension registers and answers for what it does 
   expect(stub.emit("session_start", {}, {})).toEqual(["fired"]);
   // An event nothing subscribed to is an empty answer, not an error and not undefined.
   expect(stub.emit("session_compact", {}, {})).toEqual([]);
+
+  // appendEntry is the recorder's other half: the branch-following state a test reads back is
+  // exactly what the extension appended, in the order it appended it.
+  stub.api.appendEntry("pi-sticky.user", { v: 1 });
+  expect(stub.entries).toEqual([{ customType: "pi-sticky.user", data: { v: 1 } }]);
 });

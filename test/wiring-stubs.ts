@@ -1,58 +1,17 @@
 /**
  * Commands and the reminder are driven here without a model: `stubApi` records what the extension
- * registers and what it appends, and `stubUi` records what it draws. Both are plain objects with
- * *own* properties, because pi spreads the bound `uiContext` — a class instance would lose its
- * prototype methods (see `ui-context-for-pi.ts`) and a test would read an empty recorder as a pass.
+ * registers and what it appends. It is a plain object with *own* properties, because pi spreads the
+ * bound `uiContext` — a class instance would lose its prototype methods (see
+ * `ui-context-for-pi.ts`) and a test would read an empty recorder as a pass. `uiForPi` applies that
+ * same own-property treatment to the harness's `RecordingUi`.
  *
  * The harness owns the model-backed assertions; this file is for the branches a faux script cannot
  * reach cheaply, and for the ones where the assertion is about *which pi member* was called.
  */
-import type { ExtensionAPI, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { RecordedNotification, RecordedWidget } from "./recorded-ui-types.ts";
-import type { WidgetFactory } from "./recorded-ui-types.ts";
-
-/** A recorder-shaped ui plus the members the rail and the commands call. */
-export interface StubUi {
-  widgets: Map<string, RecordedWidget>;
-  notifications: RecordedNotification[];
-  statuses: Map<string, string>;
-  theme: Theme;
-  setWidget(
-    key: string,
-    content: string[] | WidgetFactory | undefined,
-    options?: { placement?: "aboveEditor" | "belowEditor" },
-  ): void;
-  notify(message: string, type?: "info" | "warning" | "error"): void;
-  setStatus(key: string, text: string | undefined): void;
-}
-
-export function stubUi(theme: Theme): StubUi {
-  return {
-    widgets: new Map(),
-    notifications: [],
-    statuses: new Map(),
-    theme,
-    // Own properties, and `this` bound by construction, so the spread pi performs keeps them.
-    setWidget(key, content, options) {
-      if (content === undefined) this.widgets.delete(key);
-      else
-        this.widgets.set(key, {
-          content: content as RecordedWidget["content"],
-          placement: options?.placement ?? "aboveEditor",
-        });
-    },
-    notify(message, type) {
-      this.notifications.push({ message, type });
-    },
-    setStatus(key, text) {
-      if (text === undefined) this.statuses.delete(key);
-      else this.statuses.set(key, text);
-    },
-  };
-}
+import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 
 /** The uiContext shape `bindExtensions` wants: every member an own, bound property. */
-export function uiForPi(ui: StubUi): ExtensionUIContext {
+export function uiForPi(ui: object): ExtensionUIContext {
   const source = ui as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const [name, member] of Object.entries(source)) {
