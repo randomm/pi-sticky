@@ -39,6 +39,7 @@ import { FOCUS_KEY, TOGGLE_KEY } from "./panel-keys.ts";
 import { TerminalWidth } from "./panel-width.ts";
 import { PanelOwner } from "./panel.ts";
 import { registerReminder } from "./reminder.ts";
+import { registerReply } from "./reply.ts";
 import { reconstruct } from "./state.ts";
 import { EMPTY_STATE } from "./state.ts";
 import { createPinTool } from "./tool.ts";
@@ -231,6 +232,7 @@ export function createStickyExtension(
       panelCommands(() => panelRef.current),
     );
     registerReminder(pi, deps);
+    registerReply(pi, deps);
 
     pi.registerShortcut(TOGGLE_KEY, {
       description: "Show or hide the pins panel",

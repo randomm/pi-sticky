@@ -200,7 +200,7 @@ export function renderPinsText(view: PinView): string {
  * row is the rail's own promise, not something it should have to borrow from the pass order of
  * another module.
  */
-function toOneLine(text: string): string {
+export function toOneLine(text: string): string {
   // LF, CR, U+0085, U+2028, U+2029 — the six break shapes, spelled from code points.
   const breaks = `\n\r${String.fromCodePoint(0x85, 0x2028, 0x2029)}`;
   return text.replace(new RegExp(`[${breaks}]+`, "g"), " ");
@@ -209,8 +209,12 @@ function toOneLine(text: string): string {
 function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string): string {
   const marker = style.marker(pin.level, MARKER[pin.level]);
   const time = style.dim(formatTime(pin.createdAt));
-  const text = toOneLine(pin.repliedAt === undefined ? pin.text : `${pin.text} ↩`);
-  return ` ${marker} #${pin.id} ${time}  ${pin.repliedAt === undefined ? text : style.dim(text)}`;
+  // A replied pin's whole row is dimmed and its text carries a leading `↩ `: the mark is what the user
+  // scans for, so it goes at the start of the text column rather than at the end of a row that may be
+  // cut there. The dim wraps the text column only, not the id or the time, which stay legible.
+  const body = toOneLine(pin.text);
+  const text = pin.repliedAt === undefined ? body : style.dim(`↩ ${body}`);
+  return ` ${marker} #${pin.id} ${time}  ${text}`;
 }
 
 /**

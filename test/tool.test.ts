@@ -18,6 +18,18 @@ import { TOOL_NAME } from "../src/types.ts";
 import { LATER, pin } from "./fixtures.ts";
 import { harness, text } from "./tool-harness.ts";
 
+/** The deps of the tool whose declaration is read for its guidelines: a reply flow changes none of them. */
+const harnessDeps = () =>
+  ({
+    config: DEFAULT_CONFIG,
+    now: () => LATER,
+    getState: () => EMPTY_STATE,
+    getView: () => ({ pins: [], removed: [] }),
+    commit: () => {},
+    redraw: () => {},
+    appendUserAction: () => {},
+  }) as unknown as Parameters<typeof createPinTool>[0];
+
 test("pin returns the outcome line, the listing and the snapshot", async () => {
   const h = harness();
   const result = await h.call({ action: "pin", text: "Decide X", level: "action" });
@@ -127,4 +139,19 @@ test("an unknown id quotes the listing too", async () => {
 
   expect(result.isError).toBe(true);
   expect(text(result)).toBe("No pin #7.\nPinned for the user now (1 of 5):\n#1 [info] Real pin");
+});
+
+test("the guidelines teach the model what a reply is, and add exactly one bullet", () => {
+  // The reply flow tells the model nothing except through this list: a message the user sent as
+  // `Re #1: yes` arrives rewritten, and the one bullet is what connects that text to the pin it answers.
+  // Asserted as a count as well as a substring — a second bullet about replies would be a guideline the
+  // ticket does not authorise.
+  const guidelines = createPinTool(harnessDeps()).promptGuidelines ?? [];
+  expect(guidelines).toHaveLength(5);
+  expect(guidelines[4]).toBe(
+    'When the user replies to a pin (their message starts with "Replying to pin #N"), act on the reply, then update or unpin that pin.',
+  );
+  // The four that were there before are still there, in order.
+  expect(guidelines[0]).toStartWith("Use pin_for_user when the user must see something");
+  expect(guidelines[3]).toStartWith("The user may read a pin hours later");
 });
