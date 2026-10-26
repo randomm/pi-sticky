@@ -10,15 +10,11 @@
  * value `applyAction` copies into a state must be one the guard accepts, or the snapshot the tool
  * is about to publish as `details` is one the next rebuild skips and the pins silently vanish.
  */
-import { MAX_TEXT_UNITS, isPositiveSafeInteger } from "./bounds.ts";
+import { MAX_PINS, MAX_TEXT_UNITS, isPositiveSafeInteger } from "./bounds.ts";
+import { DEFAULT_CONFIG } from "./config.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isUid } from "./state-guards.ts";
 import type { PinLevel, PinSource } from "./types.ts";
-
-export type Action =
-  | { op: "pin"; text: string; level: PinLevel; source: PinSource; now: string }
-  | { op: "update"; id: number; text?: string; level?: PinLevel; source: PinSource; now: string }
-  | { op: "unpin"; ids: number[] | "all"; source: PinSource; now: string };
 
 export type ApplyResult =
   | {
@@ -33,6 +29,60 @@ export type ApplyResult =
 export interface ApplyLimits {
   maxPins: number;
   newUid?: () => string;
+}
+
+/**
+ * The narrowed shape of one op, as it looks *after* the checks in this file have run. `ActionInput`
+ * is what a caller hands `applyAction`; this is what the three ops in reducer-ops.ts are given, and
+ * the compiler only believes the fields are what they claim because the checks above said so.
+ */
+export type Action =
+  | { op: "pin"; text: string; level: PinLevel; source: PinSource; now: string }
+  | { op: "update"; id: number; text?: string; level?: PinLevel; source: PinSource; now: string }
+  | { op: "unpin"; ids: number[] | "all"; source: PinSource; now: string };
+
+/**
+ * What `applyAction` is actually handed: the body of the tool call as the wire delivered it, with
+ * every field left as it arrived. `Action` is the shape the reducer works with *after* the checks
+ * below have run; this is the shape before them, and it is the one a caller outside the tool (a
+ * session-entry replay, a test fixture, a future command) can reach the reducer with. The tool's
+ * schema is what stops the *model* sending a `level` of `42`, so this type says out loud what the
+ * reducer already assumes: every field is a claim, and the checks in this file are what turn one
+ * of these into an `Action`.
+ */
+export interface ActionInput {
+  // `op` is optional, not required: the reducer's own job is to refuse an action whose `op` is
+  // missing, a number or a string no case handles (`unknownOp`), so a type that *demanded* a
+  // readable `op` would make the very calls that check exists for fail to compile. Every field is
+  // `unknown` for the same reason the guard's fields are — a wire body is a claim, and the checks in
+  // this file are what turn one of these into an `Action`.
+  op?: unknown;
+  text?: unknown;
+  level?: unknown;
+  source?: unknown;
+  id?: unknown;
+  ids?: unknown;
+  now?: unknown;
+}
+
+/**
+ * The `maxPins` the reducer may honour. The tool reads it from config, so the tool always sends a
+ * good number — but nothing forces that, and `pinOp` compares against it while `isPinState` bounds
+ * a snapshot by `MAX_PINS`: an `Infinity` or a `25` would let a state through that the next rebuild
+ * skips, losing every pin rather than one. An unusable number is not refused — the caller's *action*
+ * is fine, only its limit is not — so it becomes the config's own default, and one above the
+ * snapshot bound is cut to it rather than replaced.
+ */
+export function clampMaxPins(maxPins: unknown): number {
+  // `isPositiveSafeInteger` is the guard's own number test (≥ 1, whole, exactly representable), so
+  // `0`, `-3`, `2.5`, `NaN`, `Infinity`, `"5"` and an absent field all answer "no limit was given".
+  if (!isPositiveSafeInteger(maxPins)) return DEFAULT_CONFIG.maxPins;
+  return maxPins > MAX_PINS ? MAX_PINS : maxPins;
+}
+
+/** The uid source the reducer may call: a function, or nothing, which means crypto. */
+export function uidSourceOrUndefined(newUid: unknown): (() => string) | undefined {
+  return typeof newUid === "function" ? (newUid as () => string) : undefined;
 }
 
 /** The exact 6.2 refusal for a missing id, phrased per operation. */
@@ -133,17 +183,28 @@ export function isSource(source: unknown): source is PinSource {
  * The ids of an `unpin` as the model actually sent them: "all", or a dense list of positive safe
  * integers. Anything else — a bare number, a string, an array holding a hole or a fraction — is not
  * a batch of ids, so the reducer refuses the action rather than comparing garbage against the pins.
- * Duplicates collapse, because asking twice for one pin is asking for it once.
+ * Duplicates collapse, because asking twice for one pin is asking for it once, and the first
+ * occurrence keeps its place: `missing` and the error both report the order the model asked in.
+ *
+ * Two bounds, both for the same reason. `MAX_PINS` pins exist, so a batch that cannot match more
+ * than `MAX_PINS` of them is not a batch a real call contains: past it the body is a generated
+ * payload, and the checks below run against every one of its elements. A Set carries the
+ * first-seen test because the array version compared each id against those already kept, which is
+ * quadratic in a batch nobody sent.
  */
 export function normaliseIds(ids: unknown): number[] | "all" | undefined {
   if (ids === "all") return "all";
   if (!Array.isArray(ids)) return undefined;
+  if (ids.length > MAX_PINS) return undefined;
+  const seen = new Set<number>();
   const out: number[] = [];
   for (let i = 0; i < ids.length; i++) {
     if (!(i in ids)) return undefined;
     const id = ids[i];
     if (!isPositiveSafeInteger(id)) return undefined;
-    if (!out.includes(id)) out.push(id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
   }
   return out;
 }

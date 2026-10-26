@@ -1,13 +1,14 @@
 /**
- * The state guard and the session rebuild: what a snapshot has to look like to be trusted, and
- * what a branch plus the session's user actions say the pins are. The reducer itself is in
- * state-reducer.test.ts, because that is a different question from what the entries say.
+ * The state guard: what a snapshot has to look like to be trusted. `isPinState` is a *shape* guard,
+ * not a sanitizer — the pass that decides what may be drawn is `cleanPinText` — so every case here
+ * asks whether a claim a session file could make is a state at all. The session rebuild that reads
+ * those snapshots is in state-reconstruct.test.ts, and the reducer that writes them is in
+ * state-reducer.test.ts.
  */
 import { describe, expect, test } from "bun:test";
 
-import { cleanPinText } from "../src/sanitize.ts";
 import { EMPTY_STATE, isPinState, isUserAction, reconstruct } from "../src/state.ts";
-import type { Pin, PinLevel, PinState, Removal } from "../src/types.ts";
+import type { Pin, PinLevel, Removal } from "../src/types.ts";
 import {
   LATER,
   NOW,
@@ -163,137 +164,5 @@ describe("isUserAction", () => {
       const entries = [userEntry(userAction(uid, "dismiss", LATER))];
       expect(reconstruct(branch, entries).state.pins.map((p) => p.id)).toEqual([1, 2]);
     }
-  });
-});
-
-describe("reconstruct", () => {
-  const snapshot = state([pin(1, "a"), pin(2, "b")], 3);
-
-  test("an empty branch and no entries give the empty state", () => {
-    expect(reconstruct([], [])).toEqual({ state: EMPTY_STATE, view: { pins: [], removed: [] } });
-  });
-
-  test("the last snapshot on the branch wins", () => {
-    const first = state([pin(1, "old")], 2);
-    const branch = [toolResultEntry(first), toolResultEntry(snapshot)];
-    expect(reconstruct(branch, []).state).toEqual(snapshot);
-  });
-
-  test("a tool result from another tool is ignored", () => {
-    const branch = [toolResultEntry(snapshot, "read")];
-    expect(reconstruct(branch, []).state).toEqual(EMPTY_STATE);
-  });
-
-  test("a malformed snapshot is ignored rather than trusted", () => {
-    const branch = [toolResultEntry({ v: 1, pins: "not an array" }), toolResultEntry(snapshot)];
-    expect(reconstruct(branch, []).state).toEqual(snapshot);
-  });
-
-  test("a sparse snapshot is skipped and never makes the rebuild throw", () => {
-    // The regression: holes passed `.every(isPin)` because every() skips them, the shape guard
-    // said yes and the coherence walk then threw on a hole it read as an object.
-    const sparse = state(sparsePins(3), 4);
-    const holes = { v: 1, pins: [], nextId: 1, removed: new Array(3) };
-    const branch = [toolResultEntry(sparse), toolResultEntry(holes)];
-    expect(() => reconstruct(branch, [])).not.toThrow();
-    expect(reconstruct(branch, []).state).toEqual(EMPTY_STATE);
-    // The previous valid snapshot is what stands, not the sparse one that followed it.
-    expect(reconstruct([toolResultEntry(snapshot), toolResultEntry(sparse)], []).state).toEqual(
-      snapshot,
-    );
-  });
-
-  test("an over-bound snapshot is skipped", () => {
-    const tooMany = state(
-      Array.from({ length: 21 }, (_, i) => pin(i + 1, `p${i}`)),
-      22,
-    );
-    expect(reconstruct([customEntry(tooMany)], []).state).toEqual(EMPTY_STATE);
-    const tooLong = state([pin(1, "x".repeat(8001))], 2);
-    expect(reconstruct([customEntry(tooLong)], []).state).toEqual(EMPTY_STATE);
-  });
-
-  test("a custom pi-sticky.state entry provides a snapshot", () => {
-    expect(reconstruct([customEntry(snapshot)], []).state).toEqual(snapshot);
-  });
-
-  test("a custom entry of another type provides nothing", () => {
-    expect(reconstruct([customEntry(snapshot, "pi-sticky.other")], []).state).toEqual(EMPTY_STATE);
-  });
-
-  test("a dismissal recorded outside the branch still hides its pin", () => {
-    const branch = [toolResultEntry(snapshot)];
-    const entries = [userEntry(userAction("uid-1", "dismiss", LATER))];
-    const result = reconstruct(branch, entries);
-    expect(result.state.pins.map((p) => p.id)).toEqual([2]);
-    expect(result.state.removed[0]?.id).toBe(1);
-    expect(result.state.removed[0]?.by).toBe("user");
-  });
-
-  test("a reply marks the pin as replied without removing it", () => {
-    const branch = [toolResultEntry(snapshot)];
-    const entries = [userEntry(userAction("uid-1", "reply", LATER))];
-    const result = reconstruct(branch, entries);
-    expect(result.state.pins).toHaveLength(2);
-    expect(result.view.pins[0]?.repliedAt).toBe(LATER);
-    expect(result.view.pins[1]?.repliedAt).toBeUndefined();
-  });
-
-  test("a reply to an unknown uid marks nothing", () => {
-    const branch = [toolResultEntry(snapshot)];
-    const entries = [userEntry(userAction("uid-99", "reply", LATER))];
-    const result = reconstruct(branch, entries);
-    expect(result.view.pins.every((p) => p.repliedAt === undefined)).toBe(true);
-  });
-
-  test("actions are applied in the order they appear", () => {
-    const branch = [toolResultEntry(snapshot)];
-    const entries = [
-      userEntry(userAction("uid-1", "reply", NOW)),
-      userEntry(userAction("uid-1", "dismiss", LATER)),
-    ];
-    const result = reconstruct(branch, entries);
-    expect(result.state.pins.map((p) => p.id)).toEqual([2]);
-    // The pin is gone, so its reply is no longer drawn.
-    expect(result.view.pins.every((p) => p.repliedAt === undefined)).toBe(true);
-  });
-
-  test("a malformed user action is skipped", () => {
-    const branch = [toolResultEntry(snapshot)];
-    const entries = [
-      userEntry({ v: 1, uid: "uid-1", action: "explode", at: NOW } as never),
-      userEntry(userAction("uid-2", "dismiss", NOW)),
-    ];
-    const result = reconstruct(branch, entries);
-    expect(result.state.pins.map((p) => p.id)).toEqual([1]);
-  });
-
-  test("reconstructing twice from the same entries gives the same result", () => {
-    const branch = [toolResultEntry(snapshot)];
-    const entries = [userEntry(userAction("uid-1", "dismiss", NOW))];
-    expect(reconstruct(branch, entries)).toEqual(reconstruct(branch, entries));
-  });
-
-  test("a snapshot cannot bind one uid to a pin and a removal so one dismiss retires both", () => {
-    // The regression: when only pin uids were checked this shape passed isPinState, and the
-    // dismiss of uid-1 moved the pin (id 1) and the unrelated removal (id 4) out together.
-    const shared: PinState = {
-      v: 1,
-      pins: [pin(1, "a")],
-      nextId: 5,
-      removed: [{ ...removal(4, "agent", NOW), uid: "uid-1" }],
-    };
-    expect(isPinState(shared)).toBe(false);
-    // Refused, so the rebuild starts empty rather than honouring the colliding snapshot.
-    const branch = [customEntry(shared)];
-    const entries = [userEntry(userAction("uid-1", "dismiss", LATER))];
-    expect(reconstruct(branch, entries).state.pins.map((p) => p.id)).toEqual([]);
-  });
-
-  test("a state with no pins still reports its removals in the view", () => {
-    const emptied: PinState = { v: 1, pins: [], nextId: 3, removed: [removal(2, "user", LATER)] };
-    const result = reconstruct([customEntry(emptied)], []);
-    expect(result.view.removed).toHaveLength(1);
-    expect(result.view.pins).toEqual([]);
   });
 });

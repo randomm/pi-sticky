@@ -14,7 +14,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { plainStyle, renderList, renderRailLines } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
-import { type ApplyLimits, EMPTY_STATE, applyAction } from "../src/state.ts";
+import { type ActionInput, type ApplyLimits, EMPTY_STATE, applyAction } from "../src/state.ts";
 import type { PinLevel } from "../src/types.ts";
 import { NOW, pin, state, uidSource } from "./fixtures.ts";
 
@@ -25,7 +25,7 @@ const BEL = cp(0x07);
 const limits = (maxPins = 5): ApplyLimits => ({ maxPins, newUid: uidSource() });
 
 const pinAction = (text: unknown, level: PinLevel = "info") =>
-  ({ op: "pin", text, level, source: "agent", now: NOW }) as never;
+  ({ op: "pin", text, level, source: "agent", now: NOW }) as ActionInput;
 
 /**
  * A Kitty graphics prefix (`ESC G` + payload + BEL) inside ordinary text: the shape plan/research
@@ -83,7 +83,7 @@ describe("applyAction cleans the text it stores", () => {
         level: "warning",
         source: "agent",
         now: NOW,
-      } as never,
+      },
       limits(),
     );
     expect(result.ok).toBe(true);
@@ -99,7 +99,7 @@ describe("applyAction cleans the text it stores", () => {
     const one = state([pin(1, "original", "info")], 2);
     const result = applyAction(
       one,
-      { op: "update", id: 1, text: `${ESC}[2J`, source: "agent", now: NOW } as never,
+      { op: "update", id: 1, text: `${ESC}[2J`, source: "agent", now: NOW },
       limits(),
     );
     expect(result.ok).toBe(false);

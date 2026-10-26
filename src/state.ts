@@ -14,8 +14,7 @@
  * out of the entry it came from. The reducer for agent actions is in reducer.ts; it shares
  * `removedByUser` with this module, because both answer "who took this pin away".
  */
-import { REMOVAL_HISTORY } from "./bounds.ts";
-import { removedByUser } from "./reducer-ops.ts";
+import { removedByUser, withRemovals } from "./reducer-ops.ts";
 import {
   emptyState,
   snapshotFromCustom,
@@ -43,7 +42,7 @@ export const EMPTY_STATE: PinState = Object.freeze({
 // the rules themselves live in state-guards.ts and reducer.ts.
 export { isPinState, isUserAction };
 export { applyAction } from "./reducer.ts";
-export type { Action, ApplyLimits, ApplyResult } from "./action.ts";
+export type { Action, ActionInput, ApplyLimits, ApplyResult } from "./action.ts";
 export { REMOVAL_HISTORY } from "./bounds.ts";
 
 /** A user action is addressed by uid: the only address that survives a branch edit. */
@@ -56,7 +55,10 @@ function applyUserAction(state: PinState, action: UserAction): PinState {
     v: 1,
     pins: state.pins.filter((candidate) => candidate.uid !== action.uid),
     nextId: state.nextId,
-    removed: [removal, ...state.removed].slice(0, REMOVAL_HISTORY),
+    // The reducer's own window, not a second copy of it: `isPinState` bounds `removed` by the same
+    // `REMOVAL_HISTORY` and `removedByUser` reads the front, so a state this builds is one the next
+    // rebuild reads back rather than one it skips.
+    removed: withRemovals(state, [removal]),
   };
 }
 

@@ -42,7 +42,7 @@ describe("applyAction refuses a now that is not a string", () => {
     // timestamp field held the value verbatim, and `isPinState` rejected that state.
     for (const shape of PER_OP) {
       for (const now of [undefined, 12345, null, true, {}, [], new Date(), ["2026-10-23"]]) {
-        const result = applyAction(one, { ...shape, now } as never, limits());
+        const result = applyAction(one, { ...shape, now }, limits());
         expect(result.ok).toBe(false);
         if (result.ok) return;
         expect(result.error).toBe('now must be a string for action "pin", "update" or "unpin"');
@@ -80,7 +80,7 @@ describe("applyAction refuses a now that is not a string", () => {
     const fullState = full.ok ? full.state : one;
     const duplicate = applyAction(
       fullState,
-      { op: "pin", text: "seed", level: "info", source: "agent", now: 7 } as never,
+      { op: "pin", text: "seed", level: "info", source: "agent", now: 7 },
       limits(2),
     );
     expect(duplicate.ok).toBe(false);
@@ -89,7 +89,7 @@ describe("applyAction refuses a now that is not a string", () => {
 
     const atLimit = applyAction(
       fullState,
-      { op: "pin", text: "third", level: "info", source: "agent", now: null } as never,
+      { op: "pin", text: "third", level: "info", source: "agent", now: null },
       limits(2),
     );
     expect(atLimit.ok).toBe(false);
@@ -102,7 +102,7 @@ describe("applyAction refuses a now that is not a string", () => {
     // answers `--:--` (render.test.ts): an empty timestamp is a bad clock, not a hostile value. The
     // promise here is only that it cannot produce a snapshot the guard rejects.
     for (const shape of PER_OP) {
-      const result = applyAction(one, { ...shape, now: "" } as never, limits());
+      const result = applyAction(one, { ...shape, now: "" }, limits());
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(isPinState(result.state)).toBe(true);
@@ -114,7 +114,7 @@ describe("applyAction refuses a now that is not a string", () => {
     // second-guess the caller's clock, only to refuse a value that is not a string at all.
     const result = applyAction(
       one,
-      { op: "pin", text: "odd clock", level: "info", source: "agent", now: "not a date" } as never,
+      { op: "pin", text: "odd clock", level: "info", source: "agent", now: "not a date" },
       limits(),
     );
     expect(result.ok).toBe(true);

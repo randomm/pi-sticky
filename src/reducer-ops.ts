@@ -25,8 +25,14 @@ function newRemoval(pin: Pin, by: PinSource, at: string): Removal {
   return { id: pin.id, uid: pin.uid, by, at };
 }
 
-/** Newest first, cut to the window: `removedByUser` reads the front of this list. */
-function withRemovals(state: PinState, additions: Removal[]): Removal[] {
+/**
+ * Newest first, cut to the window: `removedByUser` reads the front of this list.
+ *
+ * Exported because the user path in `state.ts` prepends a dismissal the same way, and the two
+ * copies of that slice are the same rule stated twice — the window `isPinState` reads. A second
+ * literal 20, or a different sort, gives a snapshot the guard rejects and the next rebuild skips.
+ */
+export function withRemovals(state: PinState, additions: Removal[]): Removal[] {
   return [...additions, ...state.removed].slice(0, REMOVAL_HISTORY);
 }
 

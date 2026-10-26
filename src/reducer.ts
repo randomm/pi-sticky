@@ -20,13 +20,14 @@
  * first, and cleaning twice is idempotent — the passes here only bound shape, never width.
  */
 import {
-  type Action,
+  type ActionInput,
   type ApplyLimits,
   type ApplyResult,
   badLevel,
   badNow,
   badSource,
   badUid,
+  clampMaxPins,
   cleanTextOrUndefined,
   idOrUndefined,
   isLevel,
@@ -36,15 +37,26 @@ import {
   normaliseIds,
   nowOrUndefined,
   uidOrUndefined,
+  uidSourceOrUndefined,
   unknownOp,
 } from "./action.ts";
 import { pinOp, unpinOp, updateOp } from "./reducer-ops.ts";
 import type { PinState } from "./types.ts";
 
-export type { Action, ApplyLimits, ApplyResult } from "./action.ts";
+export type { Action, ActionInput, ApplyLimits, ApplyResult } from "./action.ts";
 
-export function applyAction(state: PinState, action: Action, limits: ApplyLimits): ApplyResult {
-  const uid = limits.newUid ?? (() => crypto.randomUUID());
+export function applyAction(
+  state: PinState,
+  action: ActionInput,
+  limits: ApplyLimits,
+): ApplyResult {
+  // Both limits are the caller's claims, not the reducer's facts: `newUid` reaches the reducer from
+  // a session-entry replay or a fixture as easily as from config, and `maxPins` is compared against
+  // a list `isPinState` bounds by `MAX_PINS`. Neither is refused — a bad limit is the caller's
+  // arithmetic, not the model's action — so each falls back to the number and the source the
+  // production path would have used. `?? crypto` also covers a `newUid` spelled as `undefined`.
+  const uid = uidSourceOrUndefined(limits.newUid) ?? (() => crypto.randomUUID());
+  const maxPins = clampMaxPins(limits.maxPins);
   // `now` is checked once, before any op runs, because all three copy it verbatim into state
   // (`createdAt`, `updatedAt`, `removal.at`) and none of them is allowed to mint a timestamp of its
   // own. A non-string here would be an ok result whose snapshot `isPinState` rejects — the one way
@@ -71,12 +83,9 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       if (minted === undefined) return badUid();
       if (state.pins.some((pin) => pin.uid === minted)) return badUid();
       if (state.removed.some((removal) => removal.uid === minted)) return badUid();
-      return pinOp(
-        state,
-        { text, level: action.level, source: action.source, now },
-        minted,
-        limits,
-      );
+      return pinOp(state, { text, level: action.level, source: action.source, now }, minted, {
+        maxPins,
+      });
     }
     case "update": {
       // The id is checked before the lookup: a `1.5` or a `null` is not a pin number, and reporting

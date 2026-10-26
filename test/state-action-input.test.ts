@@ -5,8 +5,10 @@
  * checking it is a value `isPinState` may then reject, and pins that vanish on reload instead of
  * a refusal the model can read.
  *
- * The happy paths and the state arithmetic (ids, duplicates, the limit, the removal window) are in
- * state-reducer.test.ts; this file is only about what a hostile JSON body may claim.
+ * The happy paths and the state arithmetic (duplicates, the limit, the removal window) are in
+ * state-reducer.test.ts, the `ids` of an `unpin` in state-action-ids.test.ts, and the *limits* the
+ * caller hands the reducer in state-action-limits.test.ts; this file is only about the `op`, `text`,
+ * `level`, `source` and `id` a hostile JSON body may claim.
  */
 import { describe, expect, test } from "bun:test";
 
@@ -18,80 +20,11 @@ const limits = (maxPins = 5): ApplyLimits => ({ maxPins, newUid: uidSource() });
 const two = state([pin(1, "a"), pin(2, "b")], 3);
 const one = state([pin(1, "original", "info")], 2);
 
-const unpin = (ids: unknown) =>
-  applyAction(two, { op: "unpin", ids, source: "agent", now: NOW } as never, limits());
-
-const INVALID_IDS: readonly unknown[] = [
-  null,
-  undefined,
-  "1",
-  1,
-  {},
-  ["1"],
-  [1.5],
-  [0],
-  [-1],
-  [null],
-  [Number.NaN],
-];
-
-describe("applyAction refuses an ids that is not a batch of ids", () => {
-  test.each(INVALID_IDS.map((ids) => [ids]))("an ids of %p is refused", (ids) => {
-    const result = unpin(ids);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toBe('id is required for action "unpin"');
-  });
-
-  test("a duplicate id counts once: affected and missing have no repeats", () => {
-    const result = unpin([1, 1]);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.affected).toEqual([1]);
-    expect(result.missing).toEqual([]);
-    expect(result.state.pins.map((p) => p.id)).toEqual([2]);
-    expect(result.state.removed).toHaveLength(1);
-  });
-
-  test("a duplicate unknown id appears in missing once", () => {
-    const result = unpin([9, 9, 1]);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.affected).toEqual([1]);
-    expect(result.missing).toEqual([9]);
-  });
-
-  test("a repeated id that matches nothing reports the one id, not the batch", () => {
-    const result = unpin([9, 9]);
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toBe("No pin #9.");
-  });
-
-  test("a source outside its union is refused before the batch is cut", () => {
-    // `by` of a removal is drawn by the user-removal error and `isPinState` checks it, so a
-    // `by: ""` written here is a state the guard rejects with the pins already gone.
-    for (const source of ["", "evil", 5, null]) {
-      const result = applyAction(
-        two,
-        { op: "unpin", ids: "all", source, now: NOW } as never,
-        limits(),
-      );
-      expect(result.ok).toBe(false);
-      if (result.ok) return;
-      expect(result.error).toBe('source must be "agent" or "user"');
-      // Nothing was removed on the way to saying no.
-      expect(two.pins.map((p) => p.id)).toEqual([1, 2]);
-      expect(two.removed).toEqual([]);
-    }
-  });
-});
-
 describe("applyAction refuses a pin with nothing to pin", () => {
   const pinWith = (text: unknown) =>
     applyAction(
       EMPTY_STATE,
-      { op: "pin", text, level: "info", source: "agent", now: NOW } as never,
+      { op: "pin", text, level: "info", source: "agent", now: NOW },
       limits(),
     );
 
@@ -114,7 +47,7 @@ describe("applyAction refuses a pin with nothing to pin", () => {
     const start = state([pin(1, "")], 2);
     const result = applyAction(
       start,
-      { op: "pin", text: 99, level: "info", source: "agent", now: NOW } as never,
+      { op: "pin", text: 99, level: "info", source: "agent", now: NOW },
       limits(3),
     );
     expect(result.ok).toBe(false);
@@ -131,7 +64,7 @@ describe("applyAction refuses a pin with nothing to pin", () => {
     const atLimit = state([pin(1, "a"), pin(2, "b"), pin(3, "")], 4);
     const result = applyAction(
       atLimit,
-      { op: "pin", text: 7, level: "info", source: "agent", now: NOW } as never,
+      { op: "pin", text: 7, level: "info", source: "agent", now: NOW },
       limits(3),
     );
     expect(result.ok).toBe(false);
@@ -144,7 +77,7 @@ describe("applyAction refuses a pin with nothing to pin", () => {
     for (const text of [42, "", null]) {
       const result = applyAction(
         full,
-        { op: "pin", text, level: "info", source: "agent", now: NOW } as never,
+        { op: "pin", text, level: "info", source: "agent", now: NOW },
         limits(2),
       );
       expect(result.ok).toBe(false);
@@ -161,7 +94,7 @@ describe("applyAction refuses a pin with nothing to pin", () => {
     for (const level of ["", "urgent", 5, {}, [], null, undefined]) {
       const result = applyAction(
         EMPTY_STATE,
-        { op: "pin", text: "hello", level, source: "agent", now: NOW } as never,
+        { op: "pin", text: "hello", level, source: "agent", now: NOW },
         limits(),
       );
       expect(result.ok).toBe(false);
@@ -171,7 +104,7 @@ describe("applyAction refuses a pin with nothing to pin", () => {
     for (const source of ["", "evil", 5, null]) {
       const result = applyAction(
         EMPTY_STATE,
-        { op: "pin", text: "hello", level: "info", source, now: NOW } as never,
+        { op: "pin", text: "hello", level: "info", source, now: NOW },
         limits(),
       );
       expect(result.ok).toBe(false);
@@ -188,7 +121,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
     for (const id of [1.5, 0, -3, null, "1", {}, undefined, Number.NaN]) {
       const result = applyAction(
         one,
-        { op: "update", id, text: "x", source: "agent", now: LATER } as never,
+        { op: "update", id, text: "x", source: "agent", now: LATER },
         limits(),
       );
       expect(result.ok).toBe(false);
@@ -204,7 +137,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
     for (const level of ["", "urgent", 5, {}, [], null]) {
       const result = applyAction(
         one,
-        { op: "update", id: 1, text: "x", level, source: "agent", now: LATER } as never,
+        { op: "update", id: 1, text: "x", level, source: "agent", now: LATER },
         limits(),
       );
       expect(result.ok).toBe(false);
@@ -214,7 +147,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
     for (const source of ["", "evil", 5, null]) {
       const result = applyAction(
         one,
-        { op: "update", id: 1, text: "x", source, now: LATER } as never,
+        { op: "update", id: 1, text: "x", source, now: LATER },
         limits(),
       );
       expect(result.ok).toBe(false);
@@ -228,7 +161,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
     // carries no text is still an update as long as it changes the level.
     const textless = applyAction(
       one,
-      { op: "update", id: 1, text: {}, source: "agent", now: LATER } as never,
+      { op: "update", id: 1, text: {}, source: "agent", now: LATER },
       limits(),
     );
     expect(textless.ok).toBe(false);
@@ -237,7 +170,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
 
     const levelled = applyAction(
       one,
-      { op: "update", id: 1, text: [], level: "warning", source: "agent", now: LATER } as never,
+      { op: "update", id: 1, text: [], level: "warning", source: "agent", now: LATER },
       limits(),
     );
     expect(levelled.ok).toBe(true);
@@ -279,7 +212,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
       // produced (isPinState rejects it), so the reducer starts from one that is: nextId above the
       // pin ids AND above the removal ids, uids unique across both lists.
       const start = state([pin(1, "a"), pin(2, "b")], 11, [removal(10)]);
-      const result = applyAction(start, action as never, { maxPins: 5, newUid });
+      const result = applyAction(start, action, { maxPins: 5, newUid });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(isPinState(result.state)).toBe(true);

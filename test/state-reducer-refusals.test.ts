@@ -51,11 +51,7 @@ const MAX_TEXT_UNITS = 8000;
 describe("applyAction refuses an op it has no case for", () => {
   test("an unknown op is refused with the op named, not returned as undefined", () => {
     for (const op of ["remove", "", "PIN", 42, null, undefined, "unpin-all"]) {
-      const result = applyAction(
-        EMPTY_STATE,
-        { op, text: "t", now: NOW } as never,
-        limits(uidSource()),
-      );
+      const result = applyAction(EMPTY_STATE, { op, text: "t", now: NOW }, limits(uidSource()));
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toBe(`unknown action "${String(op)}"`);
@@ -69,7 +65,7 @@ describe("applyAction refuses an op it has no case for", () => {
     // a body that would fail every one of them is still answered by its `op`.
     const result = applyAction(
       one,
-      { op: "explode", id: 1, text: "", level: "urgent", source: "evil", now: "clock" } as never,
+      { op: "explode", id: 1, text: "", level: "urgent", source: "evil", now: "clock" },
       limits(uidSource()),
     );
     expect(result.ok).toBe(false);
@@ -83,7 +79,7 @@ describe("applyAction refuses an op it has no case for", () => {
     for (const shape of PER_OP) {
       const result = applyAction(
         state([pin(1, "seed", "info")], 11, [removal(10)]),
-        { ...shape, now: NOW } as never,
+        { ...shape, now: NOW },
         limits(mint()),
       );
       expect(result.ok).toBe(true);
@@ -99,7 +95,7 @@ describe("applyAction refuses a now longer than a snapshot may carry", () => {
     // whose snapshot the next rebuild skips: the pins are gone and nothing ever said so.
     const long = "x".repeat(MAX_TEXT_UNITS + 1);
     for (const shape of PER_OP) {
-      const result = applyAction(one, { ...shape, now: long } as never, limits(uidSource()));
+      const result = applyAction(one, { ...shape, now: long }, limits(uidSource()));
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toBe('now must be a string for action "pin", "update" or "unpin"');
@@ -115,7 +111,7 @@ describe("applyAction refuses a now longer than a snapshot may carry", () => {
     for (const shape of PER_OP) {
       const result = applyAction(
         one,
-        { ...shape, now: "y".repeat(MAX_TEXT_UNITS) } as never,
+        { ...shape, now: "y".repeat(MAX_TEXT_UNITS) },
         limits(() => crypto.randomUUID()),
       );
       expect(result.ok).toBe(true);
@@ -126,7 +122,7 @@ describe("applyAction refuses a now longer than a snapshot may carry", () => {
 
   test("a non-string now is still refused, whatever its length", () => {
     for (const now of [12345, null, {}, [], new Date()]) {
-      const result = applyAction(one, { ...PIN, now } as never, limits(uidSource()));
+      const result = applyAction(one, { ...PIN, now }, limits(uidSource()));
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error).toBe('now must be a string for action "pin", "update" or "unpin"');
@@ -139,7 +135,7 @@ describe("applyAction refuses a now longer than a snapshot may carry", () => {
     const withRemoval = state([pin(1, "a")], 2, []);
     const result = applyAction(
       withRemoval,
-      { ...UNPIN, now: "z".repeat(MAX_TEXT_UNITS + 1) } as never,
+      { ...UNPIN, now: "z".repeat(MAX_TEXT_UNITS + 1) },
       limits(uidSource()),
     );
     expect(result.ok).toBe(false);
@@ -158,7 +154,7 @@ describe("applyAction refuses a uid the guard would reject", () => {
     for (const uid of BAD_UIDS) {
       const result = applyAction(
         EMPTY_STATE,
-        { ...PIN, now: NOW } as never,
+        { ...PIN, now: NOW },
         limits(() => uid),
       );
       expect(result.ok).toBe(false);
@@ -175,7 +171,7 @@ describe("applyAction refuses a uid the guard would reject", () => {
     for (const uid of badSources) {
       const result = applyAction(
         EMPTY_STATE,
-        { ...PIN, now: NOW } as never,
+        { ...PIN, now: NOW },
         limits(() => uid as string),
       );
       expect(result.ok).toBe(false);
@@ -188,7 +184,7 @@ describe("applyAction refuses a uid the guard would reject", () => {
     const before = state([pin(1, "a")], 2);
     const result = applyAction(
       before,
-      { ...PIN, now: NOW } as never,
+      { ...PIN, now: NOW },
       limits(() => ""),
     );
     expect(result.ok).toBe(false);
@@ -199,13 +195,13 @@ describe("applyAction refuses a uid the guard would reject", () => {
   test("a uuid-shaped or counter-shaped uid still mints a guard-valid pin", () => {
     const uuid = applyAction(
       EMPTY_STATE,
-      { ...PIN, now: NOW } as never,
+      { ...PIN, now: NOW },
       limits(() => "0f8f1f3a-2c6b-4a1e-9d5c-7b0e8a6f1c2d"),
     );
     expect(uuid.ok).toBe(true);
     if (!uuid.ok) return;
     expect(isPinState(uuid.state)).toBe(true);
-    const counter = applyAction(EMPTY_STATE, { ...PIN, now: LATER } as never, limits(uidSource()));
+    const counter = applyAction(EMPTY_STATE, { ...PIN, now: LATER }, limits(uidSource()));
     // The fixtures' own source mints `mint-<n>` (`uidSource`), not `uid-<id>`: an address that a
     // fixture pin already holds would be refused as a collision before it ever reached the snapshot.
     expect(counter.ok && counter.state.pins[0]?.uid).toBe("mint-1");
@@ -217,7 +213,7 @@ describe("applyAction refuses a uid the guard would reject", () => {
     // injects a source, which left that fallback unreached: a typo in it (a constant, a truncated
     // uuid) would have been green. The assertion is on the shape `isUid` accepts, not on a value no
     // one can predict.
-    const result = applyAction(EMPTY_STATE, { ...PIN, now: NOW } as never, { maxPins: 5 });
+    const result = applyAction(EMPTY_STATE, { ...PIN, now: NOW }, { maxPins: 5 });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const minted = result.state.pins[0]?.uid ?? "";
@@ -235,7 +231,7 @@ describe("applyAction refuses a uid the guard would reject", () => {
     const full = state([pin(1, "t", "info")], 2);
     const duplicate = applyAction(
       full,
-      { ...PIN, now: NOW } as never,
+      { ...PIN, now: NOW },
       limits(() => "not-an-address!"),
     );
     expect(duplicate.ok).toBe(false);
@@ -244,7 +240,7 @@ describe("applyAction refuses a uid the guard would reject", () => {
 
     const atLimit = applyAction(
       full,
-      { op: "pin", text: "other", level: "info", source: "agent", now: NOW } as never,
+      { op: "pin", text: "other", level: "info", source: "agent", now: NOW },
       { maxPins: 1, newUid: () => "" },
     );
     expect(atLimit.ok).toBe(false);
