@@ -18,9 +18,11 @@ import type { PanelComponent } from "../src/panel-component.ts";
 import { TOOL_NAME, UI_TYPE } from "../src/types.ts";
 
 import { LATER } from "./fixtures.ts";
-import type { RecordedCustomCall } from "./recorded-ui-types.ts";
+import { piContext } from "./pi-context.ts";
+import type { CustomOptions, RecordedCustomCall } from "./recorded-ui-types.ts";
 import { RecordingUi } from "./recording-ui.ts";
-import { stubApi, uiForPi } from "./wiring-stubs.ts";
+import { createStubTui } from "./ui-stubs.ts";
+import { stubApi } from "./wiring-stubs.ts";
 import type { StubApi } from "./wiring-stubs.ts";
 
 /** A branch entry holding a `pin_for_user` snapshot with these pins. */
@@ -76,32 +78,14 @@ export type PanelContext = ExtensionContext & {
 /**
  * A context whose session manager returns these entries and whose ui is the harness recorder.
  *
- * There is no terminal on it, deliberately: pi's `ExtensionUIContext` declares no TUI member and the
- * extension never asks one. What decides the rail/panel boundary is the width pi-tui *states* when it
- * asks the overlay's `visible()` or renders the rail, and a hand-built context cannot state it — so
- * `frameWidth()` below does, which is also what lets a test move the 99/100 boundary.
+ * Delegates to `piContext` (see `pi-context.ts`) — the one spelling of the shape the panel depends on
+ * — and adds nothing but its type. There is no terminal on it, deliberately: what decides the
+ * rail/panel boundary is the width pi-tui *states* when it asks the open overlay's `visible()`, and a
+ * hand-built context cannot state it — so `frameWidth()` below does, which is also what lets a test
+ * move the 99/100 boundary.
  */
 export function contextWith(entries: readonly unknown[]): PanelContext {
-  const ui = new RecordingUi();
-  // pi's own context passes the *same* array to both readers, and these tests drive the branch by
-  // replacing that array, so the two getters must share it rather than each close over their own.
-  const store: { branch: SessionEntry[] } = { branch: entries as SessionEntry[] };
-  const wrapper = uiForPi(ui);
-  const ctx = {
-    hasUI: true,
-    mode: "tui",
-    // `uiForPi` is pi's own shape: every member an own, *bound* property. Binding matters — the
-    // recorder keeps its stores as class fields, so an unbound copy would record into nowhere.
-    ui: wrapper,
-    sessionManager: {
-      getBranch: () => store.branch,
-      getEntries: () => store.branch,
-    },
-  };
-  // The recorder rides alongside as `recorder`; `ctx.ui` stays the spread wrapper the extension
-  // draws through, which is what pi's own context is. Reads of drawn content go through the
-  // recorder's own arrays, so the two shapes cannot drift apart.
-  return Object.assign(ctx, { recorder: ui }) as unknown as PanelContext;
+  return piContext(entries, new RecordingUi()) as unknown as PanelContext;
 }
 
 /**
@@ -132,6 +116,9 @@ export function panelComponent(
  */
 export const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** The host's close hook, as the recorder's options spell it: the hook receives the close callback. */
+type HostClose = (close: (result: unknown) => void) => void;
+
 /**
  * A `custom()` that builds its component on a TUI the test chose, recording as the recorder does.
  *
@@ -139,7 +126,11 @@ export const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0)
  * component's own `requestRender()` — the one path that goes through the TUI rather than the context —
  * supplies the stub this way. Mirrors `RecordingUi.custom()`'s record-then-await-then-resolve order.
  */
-export function handCustom(recorder: RecordingUi, tui: TUI): RecordingUi["custom"] {
+export function handCustom(
+  recorder: RecordingUi,
+  tui: TUI,
+  hooks: { onClose?: HostClose } = {},
+): RecordingUi["custom"] {
   return async <T>(
     factory: (
       t: TUI,
@@ -147,7 +138,11 @@ export function handCustom(recorder: RecordingUi, tui: TUI): RecordingUi["custom
       keybindings: Parameters<Parameters<RecordingUi["custom"]>[0]>[2],
       done: (r: unknown) => void,
     ) => Component,
-    options?: Parameters<RecordingUi["custom"]>[1],
+    // Typed as the recorded shape, not as `Parameters<RecordingUi["custom"]>[1]`: the recorder's
+    // `custom` is generic over the result, and projecting its options through `Parameters<…>` ties
+    // every callback parameter back to the free `T`, which is what made the close hook's own callback
+    // argument unassignable.
+    options?: CustomOptions,
   ): Promise<T> => {
     const call: RecordedCustomCall = { result: undefined, options };
     recorder.customCalls.push(call);
@@ -160,6 +155,16 @@ export function handCustom(recorder: RecordingUi, tui: TUI): RecordingUi["custom
       if (call.result !== undefined) return;
       call.result = result;
     });
+    // The hook goes on the record rather than being invoked here: a test that wants to watch the close
+    // hands a throwing one and asserts on what survives it, which is only observable if the extension
+    // is the thing that calls it. `options` is not widened, because `RecordingUi["custom"]`'s own
+    // options type declares no such member — pi's does not either, which is the whole point of it.
+    const close = options?.onClose;
+    // Recorded, not invoked: this fixture is the wedged-host seam. A test that wants `close()` to fail
+    // hands a hook that throws when it is called with the close callback, which is what makes the
+    // handle the owner fires next throw.
+    if (call && close) call.onClose = close;
+    if (close) hooks.onClose?.(close as (result: unknown) => void);
     call.component = component as RecordedCustomCall["component"];
     return undefined as T;
   };
@@ -172,10 +177,23 @@ export interface Booted {
 }
 
 /** Boot the extension and start a session over these entries, with the panel's factory settled. */
-export async function boot(entries: readonly unknown[] = [], columns?: number): Promise<Booted> {
+export async function boot(
+  entries: readonly unknown[] = [],
+  columns?: number,
+  hooks: { onClose?: (close: (result: unknown) => void) => void } = {},
+): Promise<Booted> {
   const stub = stubApi();
   createStickyExtension(DEFAULT_CONFIG, () => LATER)(stub.api);
   const ctx = contextWith(entries);
+  // A test that wants to watch the close — a host handle that throws, say — hands the hook the
+  // extension's `onClose` option is called with, and this is the only place it reaches the host.
+  if (hooks.onClose) {
+    (ctx.ui as unknown as { custom: RecordingUi["custom"] }).custom = handCustom(
+      ctx.recorder,
+      createStubTui(),
+      hooks,
+    );
+  }
   stub.emit("session_start", { reason: "startup" }, ctx);
   await flush();
   // The width is stated *after* the panel is open, which is the order pi-tui asks it in: the overlay

@@ -9,7 +9,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-geometry.ts";
+import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-refusals.ts";
 import { KEY, UI_TYPE } from "../src/types.ts";
 import { PINNED, TWO_PINNED, boot, panelComponent, uiEntry } from "./panel-lifecycle-fixture.ts";
 

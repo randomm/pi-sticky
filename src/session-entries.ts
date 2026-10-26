@@ -96,11 +96,11 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
  * The data of a `pi-sticky.ui` custom entry, if it holds the user's panel-visibility choice.
  *
  * `reconstruct` never calls this: an entry that says the panel was open is not a pin, and a rebuild
- * that read it would move view state into pin state. The panel's own reader asks for the *last* one
- * of these in `getEntries()` — session-wide, the same scope a dismissal is read at — and a shape it
- * does not recognise is skipped so a malformed entry cannot pin the panel shut.
+ * that read it would move view state into pin state. Only `latestUIShown` below asks for it, so it
+ * stays module-private, and the rule that a shape this guard does not recognise is *skipped* rather
+ * than honoured — so a malformed entry cannot pin the panel shut — is asserted on that reader.
  */
-export function uiShownFrom(entry: unknown): UIShown | undefined {
+function uiShownFrom(entry: unknown): UIShown | undefined {
   if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== UI_TYPE) {
     return undefined;
   }

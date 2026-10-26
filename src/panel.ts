@@ -14,16 +14,21 @@
  *
  * Geometry, refusal strings and the boundary they share live in `panel-geometry.ts`.
  */
-import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { TUI } from "@earendil-works/pi-tui";
 
+import type { HostContext } from "./context.ts";
 import type { PanelRecord } from "./panel-call.ts";
+import { PANEL_CLOSED, newPanelRecord } from "./panel-call.ts";
 import type { PanelComponent } from "./panel-component.ts";
-import type { PanelCommands, PanelDeps, PanelWiring } from "./panel-deps.ts";
-import { newRecord, panelCallOptions, panelFactory } from "./panel-overlay.ts";
+import type { PanelDeps, PanelWiring } from "./panel-deps.ts";
+import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
+import type { TerminalWidth } from "./panel-width.ts";
 
-import { PANEL_CLOSED, panelIsVisible, refusalToShow } from "./panel-geometry.ts";
+import { judgeColumns, panelIsVisible } from "./panel-geometry.ts";
+import { RailGuard } from "./panel-rail.ts";
+import { refusalToShow } from "./panel-refusals.ts";
 
 /**
  * The panel owner: one record, one open call, and the toggles the commands and the shortcuts share.
@@ -33,10 +38,16 @@ export class PanelOwner {
   #wiring: PanelWiring;
   #record: PanelRecord | undefined;
   #tui: TUI | undefined;
-  /** The colours the open panel's host gives its component, derived once from pi's theme. */
-  #style: ReturnType<PanelWiring["themeStyle"]> | undefined;
-  /** The last `(columns, shown, pins)` the rail was installed for, so a frame changes nothing. */
-  #lastRail: string | undefined;
+  /** The rail's install guard: the one cache between a frame that changed nothing and a redraw. */
+  readonly #rail = new RailGuard();
+  /**
+   * Why the last close could not release its overlay, or `undefined` when it closed cleanly.
+   *
+   * Captured rather than dropped: `close()` has no context to notify through, and the owner has just
+   * forgotten the record the failure belongs to. The next `open()` — the first moment there is a ui to
+   * tell — reports it once and clears it.
+   */
+  #closeFailure: string | undefined;
 
   constructor(wiring: PanelWiring) {
     this.#wiring = wiring;
@@ -65,19 +76,26 @@ export class PanelOwner {
     if (!ctx.hasUI || ctx.mode !== "tui") return;
 
     const ui = ctx.ui;
+    // A close that could not release its overlay leaves pi's stack holding an entry nothing owns, and
+    // every later `isVisible()` answers for an overlay that is not on screen. The user hears it once,
+    // here, because this is the first point with a ui to report to and the owner has no other.
+    if (this.#closeFailure !== undefined) {
+      ui.notify(`pins panel: an earlier overlay did not close (${this.#closeFailure}).`, "warning");
+      this.#closeFailure = undefined;
+    }
     // A uiContext without `custom` is not a bug to report: pi's own UI context always has it, and a
     // context built by hand for a lifecycle test need not. The rail draws either way, which is the
     // fallback the panel is designed to have — and no record is published, so `close()` on a session
     // that never opened a panel does not look like a close.
     if (typeof ui.custom !== "function") return;
 
-    const record: PanelRecord = newRecord();
+    const record: PanelRecord = newPanelRecord();
     // Published *now*, before the host has built anything: `custom()` is a promise, so the component
     // arrives on a later microtask, and a rail that waited for it would draw nothing in the turn that
     // asked for it. `isVisible()` answers from this record and the live view, which is what makes the
     // handoff decidable in the same turn as `open()`.
     this.#record = record;
-    this.#lastRail = undefined;
+    this.#rail.reset();
     const visible = (columns: number, rows: number): boolean => this.#visible(columns, rows);
 
     // The member is read at *call* time, in the same expression that calls it, rather than captured
@@ -89,9 +107,6 @@ export class PanelOwner {
         panelFactory(record, this.#wiring, {
           onTui: (tui) => {
             this.#tui = tui;
-          },
-          onStyle: (style) => {
-            this.#style = style;
           },
           tui: () => this.#tui,
           onUnfocus: () => this.refresh(),
@@ -141,13 +156,17 @@ export class PanelOwner {
    * throws or whose close hook rejects would leave the extension holding the dead session's pins, flag
    * and width. pi turns such a throw into an `extension_error` line and carries on — with the wrong
    * session's state.
+   *
+   * The reset therefore happens first and unconditionally, and the failure is *reported* rather than
+   * swallowed: a host that never released its overlay is the one case in which the extension's own view
+   * of the screen stops matching the user's, and with no line about it the next panel would look like an
+   * overlay the extension opened over one it did not close.
    */
   close(): void {
     const record = this.#record;
     this.#record = undefined;
     this.#tui = undefined;
-    this.#style = undefined;
-    this.#lastRail = undefined;
+    this.#rail.reset();
     // The width is *not* dropped here, and `PanelWidth` is not cleared on a rebuild either. pi-tui
     // states a width when the terminal changes and the only thing that listens is the overlay's
     // `visible()`, so closing the panel does not make the terminal a different width — and a session
@@ -162,9 +181,10 @@ export class PanelOwner {
     try {
       record.done?.(PANEL_CLOSED);
       if (close) close(() => record.done?.(PANEL_CLOSED));
-    } catch {
+    } catch (err: unknown) {
       // A host that cannot close its own overlay is the host's problem to report; it is not this
-      // caller's reason to skip the reset it came here to do.
+      // caller's reason to skip the reset it came here to do — which has already happened, above.
+      this.#closeFailure = reasonOf(err);
     }
   }
 
@@ -179,6 +199,9 @@ export class PanelOwner {
    * to publish one in a mode with no overlay (`rpc`, `print`, `json`) or on a host with no `custom()`:
    * an overlay that was never opened cannot own the pins, and a predicate that answered from the flag
    * alone would tell the rail to stand down for it.
+   *
+   * The one answer `#refreshRail` caches against: whatever this returns is what the rail was last asked
+   * to yield to — the same question, spelled in the key as the width, the flag and the view it reads.
    */
   isVisible(): boolean {
     const deps = this.#wiring.deps;
@@ -191,10 +214,10 @@ export class PanelOwner {
    *
    * Asked of the wiring rather than read from a module global: two sessions in one process have two
    * terminals, and a width carried over from the first is how the second hides its pins on neither
-   * surface. See `panel-width.ts`.
+   * surface. See `panel-width.ts` for the two silences, and `judgeColumns` for what each is measured as.
    */
   #columns(): number {
-    return this.#wiring.terminal.columns();
+    return judgeColumns(this.#wiring.terminal.status());
   }
 
   /**
@@ -214,20 +237,11 @@ export class PanelOwner {
   }
 
   /**
-   * Install or clear the rail, unless the answer it would install is the one already installed.
-   *
-   * pi's `setExtensionWidget` disposes the old component, builds a new one and re-renders every widget
-   * — so doing it on every overlay frame re-wraps every pin to draw the strip that is already there.
-   * The three things that can change the answer are the width, the user's flag and whether there are
-   * pins, and all three are in this key; a pin whose *text* changed still redraws, because the rail's
-   * own component is rebuilt from the live view each time the key differs.
+   * Ask whether the rail needs reinstalling, and draw it when it does. The answer and its
+   * cache are the guard's — see `panel-rail.ts` for why the key is what it is.
    */
   #refreshRail(): void {
-    const deps = this.#wiring.deps;
-    const key = `${this.#columns()}|${deps.isPanelShown()}|${deps.getView().pins.length}`;
-    if (key === this.#lastRail) return;
-    this.#lastRail = key;
-    this.#wiring.redrawRail();
+    this.#rail.consider(this.#wiring.deps, this.#columns(), () => this.#wiring.redrawRail());
   }
 
   /** Give the panel the keyboard. Works whether or not it is drawn at the moment. */
@@ -243,8 +257,11 @@ export class PanelOwner {
    * cannot draw it. `focusFromShortcut` is the sibling that answers the same refusal the other way, by
    * design: focusing is not a statement about whether the panel should *stay* open, so a refusal there
    * changes nothing at all.
+   *
+   * Takes the context projection rather than pi's whole command context: all a refusal needs is the `ui`
+   * to notify, and the caller that holds a command context satisfies the projection anyway.
    */
-  show(ctx: ExtensionCommandContext | ExtensionContext | undefined): void {
+  show(ctx: HostContext | undefined): void {
     const refusal = refusalToShow(this.#columns(), this.#wiring.deps.getView());
     if (refusal !== undefined) ctx?.ui.notify(refusal, "warning");
     this.#wiring.deps.recordPanelShown(true);
@@ -257,7 +274,7 @@ export class PanelOwner {
   }
 
   /** `ctrl+alt+t`: whichever way it lands, it was the user's choice, so it is recorded. */
-  toggle(ctx: ExtensionContext | undefined): void {
+  toggle(ctx: HostContext | undefined): void {
     if (this.#wiring.deps.isPanelShown()) this.hide();
     else this.show(ctx);
   }
@@ -266,7 +283,7 @@ export class PanelOwner {
    * `ctrl+alt+p`: focus the panel, showing it first if it was hidden. Records nothing — showing a
    * panel to read it is not a preference about whether it should stay open (persistence decision).
    */
-  focusFromShortcut(ctx: ExtensionContext | undefined): void {
+  focusFromShortcut(ctx: HostContext | undefined): void {
     const refusal = refusalToShow(this.#columns(), this.#wiring.deps.getView());
     if (refusal !== undefined) {
       ctx?.ui.notify(refusal, "warning");
@@ -280,18 +297,4 @@ export class PanelOwner {
 /** What a rejected `custom()` says about itself, for the one line the user is told. */
 function reasonOf(err: unknown): string {
   return err instanceof Error && err.message !== "" ? err.message : String(err);
-}
-
-/**
- * The commands' view of the owner: the two verbs of `/pins`, both recording the user's choice.
- *
- * Both take the command context pi hands the handler, which is what makes the pair checkable at the
- * registration site: `ExtensionCommandContext` is what a command handler is given, and a signature that
- * accepted "or nothing" would let a command run without the context it needs to notify.
- */
-export function panelCommands(panel: PanelOwner): PanelCommands {
-  return {
-    show: (ctx: ExtensionCommandContext) => panel.show(ctx),
-    hide: () => panel.hide(),
-  };
 }

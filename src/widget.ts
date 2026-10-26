@@ -33,13 +33,16 @@ const RPC_MAX_LINES = 10;
  * The rail's decision, asked of the panel rather than guessed from a flag.
  *
  * `isVisible` is the predicate pi-tui itself asks before it draws the overlay, measured against the
- * width pi-tui last stated to it. When it is true the panel owns the pins and the rail must not be
- * installed; when it is false the rail is the only thing that can show them, and it is installed even
- * if the flag says otherwise — a panel that is "shown" but cannot be drawn (no room, nothing pinned,
- * no overlay opened) is not a surface, and a rail that yields to one leaves the pins on neither.
+ * width pi-tui last stated to it — and it already folds in the user's flag and the pins, so it is the
+ * one question the handoff turns on and there is no second flag for a caller to keep in step with it.
+ * When it is true the panel owns the pins and the rail must not be installed; when it is false the rail
+ * is the only thing that can show them, and it is installed even if the flag says otherwise — a panel
+ * that is "shown" but cannot be drawn (no room, nothing pinned, no overlay opened) is not a surface,
+ * and a rail that yields to one leaves the pins on neither. No panel at all is the same answer: there
+ * is nothing to yield to.
  */
-function panelOwnsPins(panelShown: boolean, panel: { isVisible(): boolean } | undefined): boolean {
-  return panelShown && panel !== undefined && panel.isVisible();
+function panelOwnsPins(panel: { isVisible(): boolean } | undefined): boolean {
+  return panel?.isVisible() ?? false;
 }
 
 /** The component the TUI rail draws from; caches its lines until `invalidate()`. */
@@ -78,13 +81,9 @@ export function drawPins(
   view: PinView,
   config: StickyConfig,
   /**
-   * The user's panel choice. `false` means no panel is in play, which is what rpc, print and json pass;
-   * on its own it is not the handoff — see `panelOwnsPins`.
-   */
-  panelShown = false,
-  /**
    * The live panel owner, whose `isVisible` is the predicate pi-tui itself asks before drawing the
-   * overlay. Omitted means there is no panel to yield to, so the rail draws.
+   * overlay — the whole handoff, in one argument. Omitted means there is no panel to yield to (rpc,
+   * print and json pass nothing), so the rail draws.
    */
   panel?: { isVisible(): boolean },
 ): void {
@@ -94,7 +93,7 @@ export function drawPins(
     return;
   }
   if (ctx.mode === "tui") {
-    if (panelOwnsPins(panelShown, panel)) {
+    if (panelOwnsPins(panel)) {
       ctx.ui.setWidget(KEY, undefined);
       return;
     }

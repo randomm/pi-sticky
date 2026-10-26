@@ -10,7 +10,8 @@
  * for `Parameters<ReturnType<…>>`, which collapses `done`'s parameter to `never`.
  *
  * The one member that is *not* pi's is `onClose`, which lives in `PanelTestHooks` and is documented as
- * the test seam it is.
+ * the test seam it is — and which the test recorder really does call, so the branch is live in tests
+ * (`test/recording-ui.ts`) and dead only against a real host.
  *
  * `PanelRecord` is the close path. `done` is recorded as soon as pi-tui hands it to the factory, *before*
  * the factory returns a component, so a panel whose component never arrived is still releasable — an
@@ -22,6 +23,7 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
 import type { PanelComponent } from "./panel-component.ts";
+import type { PanelStyle } from "./render.ts";
 
 /**
  * The shape of pi's `custom()`, taken from the interface itself.
@@ -60,10 +62,11 @@ export type PanelCustomFactory = (
  * The close hook a *test* host hands back, so a lifecycle test can observe the close.
  *
  * Not a pi option: `ExtensionUIContext["custom"]` declares no `onClose` and pi's `showExtensionCustom`
- * never reads one — only `onHandle` is called. It is read only by the test recorder
- * (`test/recording-ui.ts`), and in production it stays `undefined` while `close()` falls back to the
- * factory's `done`, which is the handle that actually works. It is kept here, and typed as what it is,
- * so nobody reads it as a host contract. It receives the callback the host resolves its promise with.
+ * never reads one — only `onHandle` is called. `RecordingUi.custom()` *does* call it, with the callback
+ * it resolves the `custom()` promise with, which is what makes the second close handle in
+ * `PanelOwner.close()` reachable in tests; against the real host it stays `undefined` and the close runs
+ * through the factory's `done`, the handle that actually works. It is kept here, and typed as what it
+ * is, so nobody reads it as a host contract.
  */
 export interface PanelTestHooks {
   onClose?: (close: PanelDone) => void;
@@ -79,6 +82,15 @@ export type PanelCallOptions = NonNullable<PiOptionsParam> & PanelTestHooks;
 
 /** What the panel resolves its host's `custom()` promise with when it closes the overlay. */
 export type PanelResult = string;
+
+/**
+ * The value the close path resolves the host's `done` with.
+ *
+ * The value itself is never rendered — pi shows a returned component's own result — but it must not be
+ * `undefined`, because "this panel was closed" has to be distinguishable from "this panel was never
+ * opened" in what the host recorded. It lives here, beside the `done` type it is passed to.
+ */
+export const PANEL_CLOSED = "pi-sticky:panel-closed";
 
 /**
  * The handle a host hands back through `PanelTestHooks.onClose` — pi's `done`, from the other side.
@@ -105,6 +117,14 @@ type PanelFactoryLead = Parameters<PiFactoryParam> extends [infer T, infer U, in
 export interface PanelRecord {
   component: PanelComponent | undefined;
   /**
+   * The colours the factory derived from the theme pi handed it.
+   *
+   * Recorded rather than handed to the owner: the factory's own closure is what colours the component it
+   * returns, and the owner has no surface of its own to paint — a field the owner held and nobody read
+   * was how this seam once over-declared its contract.
+   */
+  style: PanelStyle | undefined;
+  /**
    * The release handle pi's factory was given, with the result type pi resolves its promise with. The
    * close path passes `PANEL_CLOSED`, and `panel-lifecycle.test.ts` asserts on the recorded value, so
    * the tie between what is handed to `done` and what the host sees is the point of typing it.
@@ -117,9 +137,9 @@ export interface PanelRecord {
 /**
  * A fresh record: nothing built, nothing called, nothing to close.
  *
- * A function rather than an object literal at the call site so the three handles cannot drift from the
+ * A function rather than an object literal at the call site so the handles cannot drift from the
  * interface — a missing `onClose` is a panel that closes silently and fails its test loudly.
  */
 export function newPanelRecord(): PanelRecord {
-  return { component: undefined, done: undefined, onClose: undefined };
+  return { component: undefined, done: undefined, onClose: undefined, style: undefined };
 }

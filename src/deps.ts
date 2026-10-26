@@ -14,14 +14,13 @@
  * The panel's visibility flag is deliberately absent from this object: its *storage* is a `PanelDeps`
  * concern, and the three modules this object is handed to read none of it (see `panel-deps.ts`).
  *
- * `redraw` takes `Notifier`, and `rebuild` takes `RebuildContext` — projections of pi's context, in both
- * cases the members the callee actually uses — because the callers hold three different shapes (a tool
- * context, a command context, the live context) and none of them needs to name the whole interface to
- * ask for a frame or a re-read.
+ * `redraw` is the one member that takes a context, and it takes pi's whole `ExtensionContext`: drawing
+ * goes through `ui.setWidget` and is asked by callers that hold a real context (a tool's, a command's,
+ * the live one), so the one place that would accept a narrower projection is the one place that has to
+ * widen it again. `HostContext` is the projection for the members that genuinely do not need more.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import type { Notifier, RebuildContext } from "./commands.ts";
 import type { PinState, PinView, StickyConfig, UserAction } from "./types.ts";
 
 export interface StickyDeps {
@@ -35,19 +34,11 @@ export interface StickyDeps {
   getView(): PinView;
   /**
    * Redraw every surface from the live state. `ctx` is the context the change came from — the tool
-   * call's or the command's — and the one the rail is drawn through; without it the live context of the
-   * last `session_start` is used, and without that either the rebuild still happens and nothing draws.
+   * call's or the command's, both of which are full pi contexts — and the one the rail is drawn through;
+   * without it the live context of the last `session_start` is used, and without that either the rebuild
+   * still happens and nothing draws.
    */
-  redraw(ctx?: Notifier): void;
-  /**
-   * The visibility the session file asks for: the last `pi-sticky.ui` entry, else shown.
-   *
-   * A dep rather than a direct call of `initialShown(ctx)` from `rebuild`, because the context a rebuild
-   * is handed is the projection above and `initialShown` asks it through the same two members — so the
-   * one place that reads the session for the user's choice stays in `panel-deps.ts` and this object says
-   * what a rebuild is allowed to ask.
-   */
-  shownFrom(ctx: RebuildContext): boolean;
+  redraw(ctx?: ExtensionContext): void;
   /**
    * Adopt a snapshot the caller has just committed. Called by the tool with the state
    * `applyAction` produced *before* it asks for the redraw: the caller commits the snapshot (pi

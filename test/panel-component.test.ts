@@ -53,6 +53,7 @@ function host(pins: ViewPin[] = []) {
     // handle itself, which is what the handle-tracking test at the bottom of this file asserts.
     unfocus: () => {},
     startReply: (id) => void state.replies.push(id),
+    notify: () => {},
   };
   return { stub, state, tui };
 }

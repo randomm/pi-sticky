@@ -9,9 +9,9 @@
  * must not fight a panel the user just closed.
  *
  * One counter, one question about it: `sinceRebuild > 0` means "the session cannot yet be read for
- * what the user is being shown", and that is the only claim any reader of the counter needs. It used to
- * be spelled twice, as `flagIsStale` and as the first half of `autoShowOnRedraw`, which read as two
- * rules and were one.
+ * what the user is being shown", and that is the only claim any reader of the counter needs. The other
+ * half of the rule — whether a commit is one the user has not seen — is the one comparison in
+ * `extension.ts`'s `commit`, written where the two states it compares are in the reader's hands.
  *
  * The append-timing window, stated once here because both readers depend on it: U8's auto-show moves the
  * live flag without appending anything — the user did not ask for the panel to *stay* open. But
@@ -21,11 +21,6 @@
  * that arrived since the last rebuild is that branch: not yet written, and therefore not yet a fact the
  * session can be read for.
  */
-
-/** Did this commit add pins, which is what makes it a change the user has not seen? */
-export function pinsArrived(pinCountBefore: number, pinCountAfter: number): boolean {
-  return pinCountAfter > pinCountBefore;
-}
 
 /**
  * Does the session still not know what the user is being shown — because a commit arrived since the

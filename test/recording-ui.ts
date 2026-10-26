@@ -191,6 +191,11 @@ export class RecordingUi implements ExtensionUIContext {
     const handle = createOverlayHandle();
     call.handle = handle;
     options?.onHandle?.(handle);
+    // The test-host's close hook, if the extension declared one: it is handed the same `done`, so a
+    // host that observes the close and a host that resolves the promise are the same callback. pi calls
+    // neither (see `PanelTestHooks`), which is why the recorder is the only environment where that
+    // half of the close path runs at all.
+    options?.onClose?.(done as (result: unknown) => void);
     const component = await factory(tui, theme, keybindings, done);
     call.component = component;
     // A factory that never calls done() still must not hang the harness: resolve undefined.

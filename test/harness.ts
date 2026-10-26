@@ -109,6 +109,14 @@ export interface Harness {
   branchSnapshots(): unknown[];
   /** Temp directory used as both `cwd` and `agentDir`. */
   dir: string;
+  /**
+   * The terminal width this session was last told, or `undefined` when nothing has said — pi-tui states
+   * a width only by asking the open overlay's `visible()`, so "what terminal does this session think it
+   * has" is state the session owns, not the test file. Written only by the pins integration helpers
+   * (`setTerminalWidth`/`panelVisible`) when they replay that ask; read by `railOnScreen` so a rail
+   * drawn in a wide session is read back at the width the user is looking at.
+   */
+  lastStatedWidth?: number;
   /** Settles an in-flight prompt, emits `session_shutdown`, disposes the session, removes `dir`. */
   dispose(): Promise<void>;
 }

@@ -11,19 +11,18 @@
 import { expect, test } from "bun:test";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_CONFIG } from "../src/config.ts";
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelHost } from "../src/panel-component.ts";
-import type { PanelDeps, PanelWiring } from "../src/panel-deps.ts";
-import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
-import { plainStyle } from "../src/render.ts";
-import type { PanelStyle } from "../src/render.ts";
-import { EMPTY_STATE } from "../src/state.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 import { createPlainTheme, createStubTui } from "./harness.ts";
 import { contextWith, flush } from "./panel-lifecycle-fixture.ts";
+import { ONE } from "./panel-owner-wiring.ts";
+import { wiring } from "./panel-owner-wiring.ts";
+
+/** Nothing pinned: the view a test hands the owner when the answer must be "not on screen". */
+const EMPTY: PinView = { pins: [], removed: [] };
 
 /** A host with nothing to give but the pins: the shape a caller outside `PanelOwner` builds. */
 function handHostStub(): PanelHost {
@@ -34,54 +33,8 @@ function handHostStub(): PanelHost {
     dismiss: () => {},
     unfocus: () => {},
     startReply: () => {},
+    notify: () => {},
   };
-}
-
-/** The identity style, plus the bar the panel needs and `plainStyle` has no opinion about. */
-const panelStyle: PanelStyle = { ...plainStyle, selected: (text) => text };
-
-const EMPTY: PinView = { pins: [], removed: [] };
-const ONE: PinView = { pins: [pin(1, "Decide X")], removed: [] };
-
-/** The wiring, with the two decisions the test wants to watch: what the rail was told, and the view. */
-function wiring(
-  ctx: Parameters<PanelOwner["open"]>[0],
-  opts: { view?: PinView; shown?: boolean; custom?: unknown } = {},
-) {
-  const railDraws: number[] = [];
-  const state = { view: opts.view ?? ONE, shown: opts.shown ?? true };
-  // `PanelDeps` *is* `StickyDeps` plus the panel's own members, so a wiring stub has to answer the
-  // pins-facing half too — none of which this file exercises, because it drives the owner and not the
-  // tool. They are inert here precisely because the owner reads none of them.
-  const deps: PanelDeps = {
-    config: DEFAULT_CONFIG,
-    now: () => NOW,
-    getState: () => EMPTY_STATE,
-    redraw: () => {},
-    shownFrom: () => true,
-    commit: () => {},
-    appendUserAction: () => {},
-    getView: () => state.view,
-    isPanelShown: () => state.shown,
-    setPanelShown: (shown) => {
-      state.shown = shown;
-    },
-    recordPanelShown: () => {},
-    dismiss: () => {},
-    startReply: () => {},
-  };
-  const terminal = new TerminalWidth();
-  const panel = new PanelOwner({
-    deps,
-    terminal,
-    themeStyle: () => panelStyle,
-    redrawRail: () => railDraws.push(1),
-  });
-  // A context built for a test has a recorder's `custom`; the override is what makes it fail.
-  if (opts.custom !== undefined) {
-    (ctx as unknown as { ui: Record<string, unknown> }).ui.custom = opts.custom;
-  }
-  return { panel, terminal, railDraws, state, ctx };
 }
 
 test("a host whose custom() rejects leaves no panel claimed, so the rail keeps drawing", async () => {
@@ -144,47 +97,89 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
   expect(h.panel.component()).toBeUndefined();
 });
 
-test("a frame that changed nothing does not reinstall the rail, and a change to any part of the answer does", async () => {
-  // pi-tui asks the overlay's `visible()` on every render cycle, and each of those asks the owner to
-  // reconsider the rail. Installing a widget costs a dispose, a fresh component and a full wrap of every
-  // pin, so the per-frame path has to be a comparison — and it must still fire for a resize, a toggle and
-  // the arrival of a pin, the three things that really do change the answer.
+test("a close whose host handle throws still resets the owner, and reports the reason once", async () => {
+  // The two halves of the fix this pins: `close()` must not let a host's throw skip the reset (the
+  // dead panel would keep owning the pins from `isVisible()`), and it must not drop the reason either
+  // — an overlay pi never popped is the one case the owner's answer stops matching the screen.
   const ctx = contextWith([]);
   const h = wiring(ctx);
+  h.terminal.note(120); // a wide terminal, so the open panel really does own the pins
   h.panel.open(ctx);
   await flush();
+  expect(h.panel.isVisible()).toBe(true);
 
-  // The first redraw is the one that establishes the answer; the ones after it are frames.
+  // The host's close handle is what `close()` fires second; making it throw is the host refusing to
+  // release the entry, and the factory's own `done` has already resolved the call by then.
+  const call = ctx.recorder.customCalls.at(-1);
+  const hostClose = (call?.options as { onClose?: (c: (r: unknown) => void) => void } | undefined)
+    ?.onClose;
+  expect(hostClose).toBeFunction();
+  // `onClose` is the handle that *rewrites* `record.done`, so a hook that throws before handing back a
+  // working close is the wedged host: `close()` fires the recorded handle, which is the one the hook
+  // installed, and that one throws.
+  hostClose?.(() => {
+    throwWith("overlay stack wedged");
+  });
+  expect(() => h.panel.close()).not.toThrow();
+  // Reset, not half-closed: the record is gone, so there is no panel for the rail to stand down for.
+  expect(h.panel.component()).toBeUndefined();
+  expect(h.panel.isVisible()).toBe(false);
+
+  // …and the next open says so, once, in the only place with a ui to say it to.
+  h.panel.open(ctx);
+  await flush();
+  expect(ctx.recorder.notifications.filter((n) => n.message.includes("did not close")).length).toBe(
+    1,
+  );
+  // Told once, not on every frame or every open afterwards.
+  h.panel.open(ctx);
+  await flush();
+  expect(ctx.recorder.notifications.filter((n) => n.message.includes("did not close")).length).toBe(
+    1,
+  );
+});
+
+test("a same-count change of *which* pins the view holds still reinstalls the rail", async () => {
+  // `RailComponent` snapshots the view it was built with, so a key that counted pins alone would keep
+  // drawing the previous view after a `/unpin 1` immediately followed by a pin of the same level: same
+  // count, different pins, and a rail nobody asked to redraw.
+  const ctx = contextWith([]);
+  const h = wiring(ctx);
+  h.terminal.note(120);
+  h.panel.open(ctx);
+  await flush();
+  // The first redraw establishes the answer; everything after it is compared against that.
   h.panel.refresh();
   const installed = h.railDraws.length;
+  expect(installed).toBeGreaterThan(0);
+
+  h.state.view = { pins: [pin(1, "Decide X")], removed: [] };
   h.panel.refresh();
-  h.panel.refresh();
+  // A *fresh* array of identical pins still counts as the same view: what the key must catch is a view
+  // that draws differently, not one that was merely re-published — and `commit`/`reconstruct` publish a
+  // fresh array on every change, which is exactly the case that must stay free.
   expect(h.railDraws.length).toBe(installed);
 
-  h.terminal.note(120);
+  // …and the reply suffix the rail dims a pin with is a drawn change, so a same-id/same-stamp view
+  // whose pin now reads as replied is not the frame the installed component drew.
+  h.state.view = {
+    pins: [{ ...pin(1, "Decide X"), repliedAt: NOW }],
+    removed: [],
+  };
   h.panel.refresh();
-  expect(h.railDraws.length).toBeGreaterThan(installed);
+  expect(h.railDraws.length).toBe(installed + 1);
 
-  const afterResize = h.railDraws.length;
+  // Same width, same flag, same count — different pins, which is the case the count cannot see.
+  h.state.view = { pins: [pin(7, "Something else")], removed: [] };
   h.panel.refresh();
-  expect(h.railDraws.length).toBe(afterResize);
-
-  h.state.shown = false;
+  expect(h.railDraws.length).toBe(installed + 2);
+  // …and a frame that changed nothing after it costs nothing again.
   h.panel.refresh();
-  expect(h.railDraws.length).toBe(afterResize + 1);
-
-  // A pin appearing changes the *count*, which is in the key; a pin merely *edited* would not be, and
-  // the rail's own component is rebuilt from the live view whenever the key differs, so the count is the
-  // cheap test and not the whole claim.
-  const afterToggle = h.railDraws.length;
-  h.state.view = { pins: [pin(2, "Another"), pin(3, "Yet more")], removed: [] };
-  h.panel.refresh();
-  expect(h.railDraws.length).toBe(afterToggle + 1);
-
-  const afterPins = h.railDraws.length;
-  h.panel.refresh();
-  expect(h.railDraws.length).toBe(afterPins);
+  expect(h.railDraws.length).toBe(installed + 2);
 });
+function throwWith(message: string): never {
+  throw new Error(message);
+}
 
 test("focus reaches the open component, and a panel with no component is a no-op", async () => {
   const ctx = contextWith([]);

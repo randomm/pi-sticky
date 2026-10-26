@@ -22,6 +22,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeyId, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
+import { panelRows } from "./panel-height.ts";
 import { isDismissKey, isSubmitKey } from "./panel-keys.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
@@ -36,7 +37,8 @@ const DOWN_KEYS: readonly KeyId[] = ["down", "j"];
 /**
  * Colours for a component whose host has none to give and whose factory got no theme: the rail's
  * identity style has no `selected`, and a selected row drawn with no bar at all would look like a panel
- * whose keys do nothing. Exported because `PanelOwner` holds the same fallback for the same reason.
+ * whose keys do nothing. The component's own last resort — the host's style and the component's theme
+ * are consulted before it.
  */
 export const NO_PANEL_COLOUR: PanelStyle = {
   header: (s) => s,
@@ -45,14 +47,14 @@ export const NO_PANEL_COLOUR: PanelStyle = {
   selected: (s) => s,
 };
 
-/** Rows to fall back to when neither the overlay bounds nor the terminal can be asked. */
-const FALLBACK_ROWS = 24;
-
-/**
- * The tallest panel ever drawn. A tall terminal is not a reason to lay out a thousand rows the
- * overlay clips away, and pi-tui's own `maxHeight` of `"100%"` keeps this above what it will draw.
- */
-const MAX_PANEL_ROWS = 100;
+/** What one cached frame is: the lines, the width they were measured for, and what drew them. */
+interface PanelFrame {
+  lines: string[];
+  width: number;
+  pins: readonly ViewPin[];
+  selection: number;
+  focused: boolean;
+}
 
 /** One of `keys` pressed, whatever shape the terminal sent it in. */
 function presses(data: string, keys: readonly KeyId[]): boolean {
@@ -85,6 +87,8 @@ export interface PanelHost {
   dismiss(id: number): void;
   /** Tell the owner the interaction ended, so it can settle which surface owns the pins. */
   unfocus(): void;
+  /** Tell the user one line, on the surface the extension still has. */
+  notify(message: string, type?: "info" | "warning" | "error"): void;
   /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. */
   startReply(id: number): void;
 }
@@ -108,12 +112,15 @@ export class PanelComponent implements Component {
   #handle: OverlayHandle | undefined;
   #focused = false;
   #selection = 0;
-  #cachedWidth?: number;
-  #cachedLines?: string[];
-  /** What the cached frame was drawn from, so a redraw that changed nothing costs nothing. */
-  #drawnPins: readonly ViewPin[] | undefined;
-  #drawnSelection = 0;
-  #drawnFocused = false;
+  /**
+   * The frame currently cached, and everything it was drawn from — one object, so `invalidate()` cannot
+   * leave a "same frame" verdict behind against a cache it has just dropped.
+   *
+   * `update()` compares the live view, bar and focus against it to decide whether a redraw costs a
+   * layout pass. The pins array is the change test because both `commit` and `reconstruct` publish a
+   * *fresh* array, so an identical reference is a view that really was not replaced.
+   */
+  #frame: PanelFrame | undefined;
 
   constructor(host: PanelHost, tui?: TUI, theme?: Theme) {
     this.#host = host;
@@ -154,9 +161,7 @@ export class PanelComponent implements Component {
    *
    * Cheap when nothing changed: `refresh()` calls this on every redraw, including the ones a read-only
    * `/pins` or a per-frame rail handoff triggers, and an invalidate that repaints a byte-identical view
-   * costs a full layout pass over every pin for no visible reason. The pins array is the change test
-   * because both `commit` and `reconstruct` publish a *fresh* array, so an identical reference is a
-   * view that really was not replaced.
+   * costs a full layout pass over every pin for no visible reason.
    */
   update(): void {
     const pins = this.#host.getView().pins;
@@ -168,11 +173,12 @@ export class PanelComponent implements Component {
 
   /** Whether the frame cached right now is the frame the view, bar and focus would draw. */
   #sameFrame(pins: readonly ViewPin[]): boolean {
+    const frame = this.#frame;
     return (
-      this.#cachedLines !== undefined &&
-      this.#drawnPins === pins &&
-      this.#drawnSelection === this.#selection &&
-      this.#drawnFocused === this.#focused
+      frame !== undefined &&
+      frame.pins === pins &&
+      frame.selection === this.#selection &&
+      frame.focused === this.#focused
     );
   }
 
@@ -222,7 +228,8 @@ export class PanelComponent implements Component {
   }
 
   render(width: number): string[] {
-    if (this.#cachedLines !== undefined && this.#cachedWidth === width) return this.#cachedLines;
+    const frame = this.#frame;
+    if (frame !== undefined && frame.width === width) return frame.lines;
     const pins = this.#host.getView().pins;
     const content: PanelContent = {
       pins,
@@ -230,20 +237,32 @@ export class PanelComponent implements Component {
       focused: this.#focused,
     };
     const lines = buildPanelLines(content, width, this.#height(), this.#styleOf());
-    this.#cachedWidth = width;
-    this.#cachedLines = lines;
-    this.#drawnPins = pins;
-    this.#drawnSelection = this.#selection;
-    this.#drawnFocused = this.#focused;
+    this.#frame = { lines, width, pins, selection: this.#selection, focused: this.#focused };
     return lines;
   }
 
   invalidate(): void {
-    this.#cachedWidth = undefined;
-    this.#cachedLines = undefined;
+    this.#frame = undefined;
   }
 
+  /**
+   * The one key dispatch, contained.
+   *
+   * pi-tui calls this from its input handler with no try/catch of its own, so anything that escaped — a
+   * host whose overlay handle throws on `unfocus()`, a deps callback that reads a context whose session
+   * is gone — would surface as an `extension_error` out of the terminal's key path. One try around the
+   * whole dispatch means no future key handler can escape it; a key that fails does nothing, which is the
+   * safe answer for a panel whose destructive keys are gated on a bare press anyway.
+   */
   handleInput(data: string): void {
+    try {
+      this.#handleInput(data);
+    } catch {
+      this.#host.notify("A panel key could not be handled.", "warning");
+    }
+  }
+
+  #handleInput(data: string): void {
     if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
     const pins = this.#host.getView().pins;
     if (matchesKey(data, "escape")) {
@@ -272,16 +291,8 @@ export class PanelComponent implements Component {
     this.#host.requestRender();
   }
 
-  /**
-   * Rows to draw: the terminal's own height, capped by the overlay's `maxHeight`. Deliberately *not*
-   * `handle.getBounds()`: pi-tui computes the layout from `component.render(width)`, so reading the
-   * bounds from the previous frame would make the panel's height depend on what it drew last frame
-   * and a dismissed pin could leave a hole. `maxHeight` is `"100%"`, which pi-tui clamps to the
-   * available rows, so filling the terminal is both the intent and the ceiling.
-   */
+  /** Rows to draw, from the terminal this component was built with — see `panel-height.ts`. */
   #height(): number {
-    const rows = this.#tui?.terminal?.rows;
-    const available = typeof rows === "number" && rows > 0 ? rows : FALLBACK_ROWS;
-    return Math.min(available, MAX_PANEL_ROWS);
+    return panelRows(this.#tui?.terminal?.rows);
   }
 }

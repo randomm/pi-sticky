@@ -1,11 +1,7 @@
 /**
  * The pins commands. `/pins` reads every pin in full and opens or hides the panel; `/unpin` takes
- * pins away.
- *
- * `/pins` with no argument lists every pin through `renderPinsText` and `ctx.ui.notify` — that is the
- * surface for a mode with no overlay, and the answer `/pins show` falls back to when the terminal has no
- * room. `show` and `hide` are the two verbs of the panel: each hands off to the owner and records the
- * choice as the user's (`pi-sticky.ui`), and only `show` has a dead end to warn about.
+ * pins away. The grammar each handler answers is what its own `description:` says to the user, and what
+ * `PanelCommands` (`panel-deps.ts`) declares on the other side of the seam.
  *
  * A dismissal — `/unpin`, or `d` on the panel — never mutates live state. It hands the whole batch to
  * `applyAction` once with `source: "user"`, so the reducer, and not a second copy of its rules, decides
@@ -20,16 +16,23 @@
  * string: two dismissal paths would be two chances for a `d` to forget the entry that makes a dismissal
  * stick session-wide.
  */
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+
+import type { HostContext } from "./context.ts";
 import type { StickyDeps } from "./deps.ts";
 import type { PanelCommands } from "./panel-deps.ts";
-import { PANEL_VERBS, panelVerb } from "./panel-geometry.ts";
+import type { PanelOwner } from "./panel.ts";
 import { renderPinsText } from "./render.ts";
 import { applyAction } from "./state.ts";
 
 /** `/unpin all`, compared before the tokens are read as numbers. */
 const ALL = "all";
+
+/** The two verbs of `/pins`, compared against the argument the handler was handed. */
+const SHOW = "show";
+const HIDE = "hide";
 
 /** The ids in an argument string, or `undefined` when a token is not a pin number. */
 function parseIds(args: string): number[] | undefined {
@@ -42,35 +45,10 @@ function parseIds(args: string): number[] | undefined {
 }
 
 /**
- * What `dismiss` needs from the caller's context: the ui it answers a refusal with, and the redraw the
- * batch ends in. Declared as a projection of pi's context rather than as `ExtensionCommandContext`
- * because the path that dismisses one pin from the panel is handed a plain `ExtensionContext`, and a
- * command context there would be a cast rather than a fact.
- */
-export type Notifier = Pick<ExtensionContext, "ui" | "hasUI" | "mode">;
-
-/**
- * What `dismiss` also needs to redraw with, after the batch lands.
- *
- * The `/unpin` handler holds pi's full command context and the panel's `d` holds only its own live
- * context, so the pair is spelled once as a projection of `ExtensionContext` rather than cast: pi's
- * command context is a subtype of it, and the shortcut's is exactly it.
- */
-export type DismissContext = Notifier & Pick<ExtensionContext, "sessionManager">;
-
-/**
- * What a reconstruction needs from a context: the two session-manager readers it is made of.
- *
- * Same reasoning as `Notifier` — the event handlers, the tool context and a lifecycle test's hand-built
- * context each hold a different amount of pi's interface, and rebuilding needs only these two.
- */
-export type RebuildContext = Pick<ExtensionContext, "sessionManager" | "ui" | "mode" | "hasUI">;
-
-/**
  * Remove a batch as the user. The uids are read from the state *before* the entries land, because
  * the rebuild that follows moves the dismissed pins out of `pins` and into `removed`.
  */
-export function dismiss(deps: StickyDeps, ctx: DismissContext, ids: number[] | "all"): void {
+export function dismiss(deps: StickyDeps, ctx: HostContext, ids: number[] | "all"): void {
   const before = deps.getState();
   const result = applyAction(
     before,
@@ -88,7 +66,28 @@ export function dismiss(deps: StickyDeps, ctx: DismissContext, ids: number[] | "
     if (pin) deps.appendUserAction({ v: 1, uid: pin.uid, action: "dismiss", at: deps.now() });
   }
   for (const id of result.missing ?? []) ctx.ui.notify(`No pin #${id}`, "warning");
-  deps.redraw(ctx);
+  // The redraw draws through the live context, not this projection: a caller that came here from a
+  // command or from the panel's `d` key holds the whole interface and passed it, and one that did not
+  // has no context to draw with. Either way the dismissal itself only ever needs `ui.notify`.
+  deps.redraw(undefined);
+}
+
+/**
+ * The commands' view of the owner: the two verbs of `/pins`, both recording the user's choice.
+ *
+ * Built here rather than in `panel.ts` because it is the *command* half of the pair — the adapter that
+ * turns a `/pins` argument into a call on the owner, and the thing `registerCommands` above is handed.
+ * Both verbs take the command context pi gives the handler, which is what makes the pair checkable at
+ * the registration site: a signature that accepted "or nothing" would let a command run without the
+ * context it needs to notify. The owner is read through an accessor rather than captured, so the
+ * commands ask for it the same way the shortcuts do and a registration that ran before the owner was
+ * built cannot bind a stale copy.
+ */
+export function panelCommands(getPanel: () => PanelOwner | undefined): PanelCommands {
+  return {
+    show: (ctx: ExtensionCommandContext) => getPanel()?.show(ctx),
+    hide: () => getPanel()?.hide(),
+  };
 }
 
 export function registerCommands(pi: ExtensionAPI, deps: StickyDeps, panel: PanelCommands): void {
@@ -97,15 +96,13 @@ export function registerCommands(pi: ExtensionAPI, deps: StickyDeps, panel: Pane
     handler: async (args, ctx) => {
       if (!ctx.hasUI) return;
       const verb = args.trim().toLowerCase();
-      // One table for the grammar, so what `/pins show` means is decided in the same module that spells
-      // the rest of the panel's vocabulary (`panel-geometry.ts`) rather than by a chain of comparisons
-      // here. A token that is not a verb falls through to the listing, which is also what makes
-      // `/pins 3 4` a listing rather than an error.
-      if (panelVerb(verb) === PANEL_VERBS.show) {
+      // The verbs are compared once, against the argument as typed. A token that is neither is a
+      // listing, which is also what makes `/pins 3 4` a listing rather than an error.
+      if (verb === SHOW) {
         panel.show(ctx);
         return;
       }
-      if (panelVerb(verb) === PANEL_VERBS.hide) {
+      if (verb === HIDE) {
         panel.hide();
         return;
       }

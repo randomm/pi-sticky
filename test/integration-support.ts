@@ -10,9 +10,9 @@ import { createStickyExtension } from "../src/extension.ts";
 import { KEY, TOOL_NAME } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
 import { type Harness, call, reply } from "./harness.ts";
+import { piContext } from "./pi-context.ts";
 import type { RecordedCustomCall } from "./recorded-ui-types.ts";
 import { createStubTui } from "./ui-stubs.ts";
-import { uiForPi } from "./wiring-stubs.ts";
 
 /** The extension under test, with the clock pinned so times are assertable. */
 export const extension = createStickyExtension(DEFAULT_CONFIG, () => LATER);
@@ -64,7 +64,7 @@ export const railOnScreen = (h: Harness, columns?: number): string[] => {
   if (!widget) return [];
   return Array.isArray(widget.content)
     ? widget.content
-    : widget.content(createStubTui(), h.ui.theme).render(columns ?? lastStatedWidth ?? 80);
+    : widget.content(createStubTui(), h.ui.theme).render(columns ?? h.lastStatedWidth ?? 80);
 };
 
 /** The harness's message subset plus the two tool-result fields the assertions reach for. */
@@ -151,15 +151,18 @@ export function panelOptions(h: Harness): OverlayOptions | undefined {
  * `panelVisibleNow` instead of changing the terminal on the way to reading it.
  */
 export function panelVisible(h: Harness, columns: number): boolean {
-  lastStatedWidth = columns;
+  h.lastStatedWidth = columns;
   return askVisible(h, columns);
 }
 
 /** What the panel says about the width it was last stated, without stating a new one. */
 export function panelVisibleNow(h: Harness): boolean {
-  if (lastStatedWidth === undefined)
+  // The width is a fact about the *session*, not about this file: it is what the overlay was last
+  // told, so it lives on the harness whose session it describes. Two harnesses alive in one file then
+  // cannot read each other's terminal.
+  if (h.lastStatedWidth === undefined)
     throw new Error("no width has been stated to this session (call setTerminalWidth first)");
-  return askVisible(h, lastStatedWidth);
+  return askVisible(h, h.lastStatedWidth);
 }
 
 function askVisible(h: Harness, columns: number): boolean {
@@ -177,25 +180,12 @@ export function uiEntries(h: Harness): unknown[] {
 
 /**
  * A context shaped like the one pi hands a command or a shortcut handler, reading the branch from the
- * harness and drawing on the same recorder. pi builds these itself per dispatch, and its own is not
- * reachable from the harness, so a test that wants to fire a handler builds one from these parts.
+ * harness and drawing on the same recorder — the one builder the extension-driven tests share (see
+ * `pi-context.ts`).
  */
 export function contextFor(h: Harness): unknown {
-  return {
-    hasUI: true,
-    mode: "tui",
-    // pi's runner hands extensions a plain object of own, bound members, which is what `uiForPi`
-    // reproduces: a spread of a class instance leaves the prototype methods off (see that file).
-    ui: uiForPi(h.ui),
-    sessionManager: {
-      getBranch: () => h.branch(),
-      getEntries: () => h.branch(),
-    },
-  };
+  return piContext(h.branch(), h.ui);
 }
-
-/** The width the session was last stated, or `undefined` when nothing has said. */
-let lastStatedWidth: number | undefined;
 
 /**
  * State the terminal's width to the extension and let a frame run at it — the only way a test can
@@ -212,7 +202,7 @@ let lastStatedWidth: number | undefined;
  * state change in one step.
  */
 export function setTerminalWidth(h: Harness, columns: number): boolean {
-  lastStatedWidth = columns;
+  h.lastStatedWidth = columns;
   // Newest first: the predicate belongs to the overlay that is open, and a session that has reopened
   // its panel (a reload, a branch change, a second instance) has earlier records nothing draws.
   for (const call of h.ui.customCalls.slice().reverse()) {

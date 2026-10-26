@@ -1,48 +1,26 @@
 /**
- * The panel's own geometry, its two refusal strings, and the check that decides whether a show can
- * happen at all.
+ * The panel's geometry: the boundary numbers, the overlay configuration, and the checks that decide
+ * whether a show can happen at all.
  *
  * Split out of `panel.ts` because the same numbers are quoted from three directions — the overlay
  * options, the rail's handoff, and the commands/shortcuts that refuse — and a boundary that lives in
  * one of those three is a boundary the other two can drift from. `PANEL_MIN_COLUMNS` in particular is
  * both the overlay's floor and the rail's stand-down point; they are one number precisely so the two
  * surfaces cannot disagree about who owns the pins.
+ *
+ * Only numbers and predicates live here. The refusal copy these predicates answer with is in
+ * `panel-refusals.ts`, the keyboard in `panel-keys.ts` and the `/pins` grammar in `commands.ts`, so a
+ * copy edit or a rebind never touches the file whose whole point is a shared numeric boundary. The two
+ * questions a *width* or a *view* has to answer for both surfaces — what an unstated terminal counts as,
+ * and what the installed rail draws — are here for the same reason: they are the boundary, asked twice.
  */
 import type { OverlayOptions } from "@earendil-works/pi-tui";
 
-import type { PinView } from "./types.ts";
+import type { TerminalStatus } from "./panel-width.ts";
+import type { ViewPin } from "./types.ts";
 
 /** Below this many columns the panel has no room and the above-editor rail draws instead. */
 export const PANEL_MIN_COLUMNS = 100;
-
-/**
- * The two key ids the panel registers, spelled once here with the rest of the panel's vocabulary: the
- * registration sites, the tests that fire them and the prose that names them all quote these, so a
- * rebind is one edit rather than a hunt through four files.
- */
-export const TOGGLE_KEY = "ctrl+alt+t";
-export const FOCUS_KEY = "ctrl+alt+p";
-
-/**
- * The verbs `/pins` answers besides listing, and the panel method each one means — one table, so the
- * grammar of the sub-command is stated in the same place as the rest of the panel's vocabulary and a
- * third verb has somewhere to be added. The mapping is by *name*, not by function value: the handler
- * that dispatches off it owns what calling the panel looks like, and a verb table that reached back into
- * `PanelOwner` would make this module depend on the thing it exists to describe.
- */
-export const PANEL_VERBS = { show: "show", hide: "hide" } as const;
-
-/** The name of the panel method a `/pins` argument names, or `undefined` when it is a listing. */
-export function panelVerb(token: string): keyof typeof PANEL_VERBS | undefined {
-  return token === PANEL_VERBS.show || token === PANEL_VERBS.hide ? token : undefined;
-}
-
-/**
- * What closing a panel resolves the host's `done` with. The value itself is never rendered — pi shows
- * a returned component's own result — but it must not be `undefined`, because "this panel was closed"
- * has to be distinguishable from "this panel was never opened" in what the host recorded.
- */
-export const PANEL_CLOSED = "pi-sticky:panel-closed";
 
 /** The panel's own overlay configuration, fixed by the ticket rather than configurable. */
 export const PANEL_OVERLAY_OPTIONS: OverlayOptions = {
@@ -54,29 +32,30 @@ export const PANEL_OVERLAY_OPTIONS: OverlayOptions = {
 };
 
 /**
- * The two strings the user hears when the panel cannot be shown. `/pins show`, `ctrl+alt+t` and
- * `ctrl+alt+p` all say them, on the same two conditions (operator resolution round 2).
+ * Whether a size is one the panel can promise about at all: a whole number of columns and rows.
+ *
+ * The panel's contract is that every line it returns measures *exactly* `width` visible columns, and
+ * padding to a fraction is not that. pi-tui only ever hands out integers, so this states the
+ * precondition rather than catching a live defect: a host that states 30.5 has stated a size the panel
+ * cannot honour, and the honest answer is the rail's. The integer rule is written once, here: both
+ * questions pi-tui asks — "does the overlay draw?" and "can this frame be laid out?" — are answered in
+ * terms of it, so they cannot disagree about what a fractional width means.
  */
-export const TOO_NARROW = "The pins panel needs at least 100 columns; use /pins.";
-export const NOTHING_PINNED = "Nothing is pinned.";
-
-/** The reason a show attempt failed, or `undefined` when the panel can be shown. */
-export function refusalToShow(columns: number, view: PinView): string | undefined {
-  if (!panelHasRoom(columns)) return TOO_NARROW;
-  if (view.pins.length === 0) return NOTHING_PINNED;
-  return undefined;
+export function isPanelSize(width: number, height: number): boolean {
+  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0;
 }
 
 /**
- * Whether the panel can be shown at all: a whole-numbered width at or past the boundary.
+ * Whether the panel can be shown at all: a width that is a size the panel can honour, at or past the
+ * boundary.
  *
  * A fractional width is refused with the too-narrow string rather than honoured: `TerminalWidth` is a
  * record of what the host *said*, so it keeps what it was told, and the two questions about a width —
  * "what did the host state?" and "can the panel be measured against it?" — are answered here, in one
  * place, by the readers that act on the answer.
  */
-function panelHasRoom(columns: number): boolean {
-  return Number.isInteger(columns) && columns >= PANEL_MIN_COLUMNS;
+export function panelHasRoom(columns: number): boolean {
+  return isPanelSize(columns, columns) && columns >= PANEL_MIN_COLUMNS;
 }
 
 /**
@@ -93,13 +72,34 @@ export function panelIsVisible(columns: number, shown: boolean, pinCount: number
 }
 
 /**
- * A size the panel can promise about: a whole number of columns and rows.
+ * What an unstated terminal is judged as, by the one predicate that has to answer for it.
  *
- * The panel's contract is that every line it returns measures *exactly* `width` visible columns, and
- * padding to a fraction is not that. pi-tui only ever hands out integers, so this states the
- * precondition rather than catching a live defect: a host that states 30.5 has stated a size the panel
- * cannot honour, and the honest answer is the rail's.
+ * `TerminalWidth` says *which* silence is holding; the guess itself lives here, next to the boundary it
+ * is measured against, so the two halves of the rule cannot be joined by the numeric coincidence that a
+ * placeholder happens to clear `PANEL_MIN_COLUMNS`. A host that has never asked has no frame to wait for
+ * and is guessed wide (see `panel-width.ts`); a session whose first frame has not arrived is not measured
+ * at all, and the rail keeps the pins.
  */
-export function isPanelSize(width: number, height: number): boolean {
-  return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0;
+export function judgeColumns(status: TerminalStatus): number {
+  if ("measured" in status) return status.measured;
+  return status.unstated === "never_asks" ? PANEL_MIN_COLUMNS : 0;
+}
+
+/**
+ * What the installed rail draws, in one string: which pins, at what level, when they last changed, and
+ * whether the user has replied to them.
+ *
+ * The rail's install guard needs a discriminator the visibility predicate does not: `RailComponent`
+ * snapshots the view it was built with, so any of those four has to reach the key or the rail keeps
+ * drawing the previous view — a same-count swap, a pin whose text changed (which stamps `updatedAt`),
+ * or one the user replied to (the dimming the rail renders). None is the text itself, and this runs on
+ * every overlay frame, so it stays a handful of appends per pin. An empty view stamps the empty string,
+ * which is why the count is not needed separately.
+ */
+export function railStamp(pins: readonly ViewPin[]): string {
+  let stamp = "";
+  for (const pin of pins) {
+    stamp += `${pin.id}:${pin.level}:${pin.updatedAt}:${pin.repliedAt ?? ""},`;
+  }
+  return stamp;
 }
