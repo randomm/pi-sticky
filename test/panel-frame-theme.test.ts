@@ -34,8 +34,9 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
  * and the builder is handed both — no caller can size one frame and draw another.
  */
 /**
- * A terminal tall enough for the frame a test wants: `panelLayout` sizes the box at the terminal's half,
- * so a test that asks for `height` rows needs a terminal of at least `2 × height` rows.
+ * A terminal tall enough for the frame a test wants: the frame is as tall as its pins until `panelLayout`
+ * cuts it at the terminal's half, so a test that asks for `height` rows needs a terminal of at least
+ * `2 × height` rows. The pins of these tests are one row each, so two rows of frame is three.
  */
 function built(
   c: ReturnType<typeof content>,
@@ -129,7 +130,7 @@ test("a theme whose corner is not one column draws no frame, and the rail keeps 
       expect(built(content(pins, 0, token === "borderFocused"), 40, 4, styleOf)).toEqual([]);
       // And the same style with the wrapping glyph left alone is a frame: the refusal is the glyph's,
       // not a size or an empty view answering for it.
-      expect(built(content(pins, 0, false), 40, 4, wrappingStyle(token, ""))).toHaveLength(4);
+      expect(built(content(pins, 0, false), 40, 3, wrappingStyle(token, ""))).toHaveLength(3);
     }
   }
 });
@@ -158,6 +159,6 @@ test("a theme that only colours the frame still draws it, because colour costs n
     border: (s) => `\u{1b}[2m${s}`,
     borderFocused: (s) => `\u{1b}[1m${s}`,
   };
-  expect(built(content(pins, 0, false), 40, 4, coloured)).toHaveLength(4);
-  expect(built(content(pins, 0, true), 40, 4, coloured)).toHaveLength(4);
+  expect(built(content(pins, 0, false), 40, 3, coloured)).toHaveLength(3);
+  expect(built(content(pins, 0, true), 40, 3, coloured)).toHaveLength(3);
 });

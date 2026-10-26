@@ -14,6 +14,8 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
+import type { PanelLayout } from "../src/panel-lines.ts";
 import { buildPanelLines, panelLayout } from "../src/panel-lines.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -45,8 +47,12 @@ function expectUniformWidth(lines: string[], width: number): void {
 }
 
 /** The frame the component would draw for these pins at this width and terminal height. */
+function pinsOf(count: number): ViewPin[] {
+  return Array.from({ length: count }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
+}
+
 function drawn(count: number, width: number, terminalRows: number | undefined): string[] {
-  const pins = Array.from({ length: count }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
+  const pins = pinsOf(count);
   const layout = panelLayout(pins, width, terminalRows, 0, style);
   const lines = buildPanelLines({ pins, selection: 0, focused: true }, width, style, layout);
   return [String(layout.height), ...lines];
@@ -67,23 +73,67 @@ test("the builder draws exactly the height the layout counted, at every terminal
       if (typeof terminalRows === "number") {
         expect(lines.length).toBeLessThanOrEqual(terminalRows);
       }
-      // The ceiling is the terminal's half (or the fallback's, for a terminal that cannot be asked),
-      // floored at the two border rows a closed frame is made of.
+      // The frame is as tall as its content and never past the terminal's half: the rows the pins own,
+      // over the two borders, cut to the ceiling (or the fallback's, for a terminal that cannot be asked).
       const rows = typeof terminalRows === "number" ? terminalRows : 24;
-      expect(counted).toBe(Math.max(2, Math.min(Math.floor(rows / 2), 200)));
+      expect(counted).toBe(
+        Math.max(BORDER_ROWS, Math.min(count + BORDER_ROWS, Math.floor(rows / 2))),
+      );
     }
   }
 });
 
-test("one pin and three hundred pins draw the same number of lines at the same terminal", () => {
-  // The regression the removed parameter allowed: a frame counted from 300 wrapped rows and drawn with
-  // one, or the other way round. At one terminal height the frame's height is the terminal's, whatever
-  // the list does, so the two frames are the same size and the window is what scrolls.
+test("one pin is three rows where three hundred are the ceiling", () => {
+  // The regression the removed parameter allowed, in both directions: a frame counted from 300 wrapped
+  // rows and drawn with one, or the other way round. Now the frame follows the content until the ceiling
+  // catches it — so one pin is a border, a pin and a border, and a long list is exactly half the terminal
+  // with the window scrolling the rest.
+  expect(drawn(1, 40, 40).length - 1).toBe(3);
   for (const terminalRows of [12, 24, 40]) {
-    const few = drawn(1, 40, terminalRows);
     const many = drawn(300, 40, terminalRows);
-    expect(few[0]).toBe(many[0]);
-    expect(few.length).toBe(many.length);
-    expect(few.length - 1).toBe(terminalRows / 2);
+    expect(many.length - 1).toBe(terminalRows / 2);
+    // Every one of them drawn, whatever the count: the promise the sweep above makes per case, stated for
+    // the two frames the old `height` parameter could disagree about.
+    expect(many.length - 1).toBe(Number(many[0]));
+    expect(drawn(2, 40, terminalRows).length - 1).toBe(4);
   }
+});
+
+/** The layout a test draws directly, when it wants to name a height the layout would have counted. */
+function layoutOf(count: number, selection: number, terminalRows: number): PanelLayout {
+  const pins = Array.from({ length: count }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
+  return panelLayout(pins, 40, terminalRows, selection, style);
+}
+
+test("a panel is only as tall as its pins and never past half the terminal", () => {
+  // The operator requirement: a one-line pin in a 40-row terminal is exactly three rows (border, pin,
+  // border) — no blank rows of padding — and 50 of them are cut to the ceiling, which is what the window
+  // scrolls. Five pins are their own five rows over the two borders.
+  expect(drawn(1, 40, 40).length - 1).toBe(3);
+  expect(drawn(5, 40, 40).length - 1).toBe(7);
+  expect(drawn(50, 40, 40).length - 1).toBe(20);
+  // The window keeps the *selected* pin on screen at the ceiling rather than dropping rows off the bottom.
+  const scrolled = buildPanelLines(
+    { pins: pinsOf(50), selection: 49, focused: true },
+    40,
+    style,
+    layoutOf(50, 49, 40),
+  );
+  expect(scrolled).toHaveLength(20);
+  expect(scrolled[0]).toContain("📌 Pinned for you (50)");
+  expect(scrolled.at(-1)).toContain("Enter reply");
+  expect(scrolled.some((line) => line.includes("Pin 50 "))).toBe(true);
+  expect(scrolled.some((line) => line.includes("Pin 1 "))).toBe(false);
+  // A terminal whose half cannot hold both borders is no frame at all: `panelMaxRows` says two rows, the
+  // frame's floor says three, and the builder answers an open box with nothing.
+  expect(panelMaxRows(5)).toBe(2);
+  expect(drawn(1, 40, 5)).toEqual([String(BORDER_ROWS)]);
+  expect(
+    buildPanelLines(
+      { pins: [one(1, "x")], selection: 0, focused: false },
+      40,
+      style,
+      layoutOf(1, 0, 5),
+    ),
+  ).toEqual([]);
 });

@@ -64,9 +64,6 @@ const RULE = "─";
 /** The two columns the corners own. */
 const CORNER_WIDTH = 2;
 
-/** The rows a frame gets in `TERMINAL_ROWS`: half the terminal, which is the panel's own ceiling. */
-const FRAME_ROWS = TERMINAL_ROWS / 2;
-
 /** Every line the same visible width, or the panel would composite over the chat behind it. */
 function expectUniformWidth(lines: string[], width: number): void {
   for (const line of lines) expect(visibleWidth(line)).toBe(width);
@@ -83,6 +80,8 @@ function frameOf(width: number, focused = false): string[] {
  * or draw a number of rows that disagrees with the table it was handed beside them.
  */
 function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
+  // The frame is as tall as the rows it draws — two borders over one row of pins — and a test that wants
+  // more rows than that asks for a taller terminal, which is the only other thing that sizes a frame.
   return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
 }
 
@@ -116,7 +115,7 @@ test("a focused panel puts the hint in the bottom border and costs the pins no r
   // focused one, and the only extra line is the bottom border carrying the hint.
   expect(focused.length).toBe(unfocused.length);
   expect(drawn(focused)).toEqual(drawn(unfocused).concat(focused.at(-1) as string));
-  expect(focused).toHaveLength(FRAME_ROWS);
+  expect(focused).toHaveLength(3);
   expect(focused.at(-1)).toContain(HINT);
   expect(focused.at(-1)?.startsWith("╰")).toBe(true);
   expect(focused.at(-1)?.endsWith("╯")).toBe(true);
@@ -163,10 +162,9 @@ test("a pin row is one space inside each gutter, at the inner width", () => {
   // the top and bottom borders. Unfocused, so nothing is highlighted.
   expect(lines[1]).toBe(`│ ${` • Decide X #1 ${localTime(NOW)}`.padEnd(width - FRAME_COLUMNS)} │`);
   expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
-  // The frame pads out to its budget, so the row after the pin is a blank row of the panel — the gutters
-  // drawn across it, not a short line the chat could show through.
-  expect(lines[2]).toBe(`│${" ".repeat(width - CORNER_WIDTH)}│`);
-  expect(lines.at(-1)).toBe(`╰${RULE.repeat(width - CORNER_WIDTH)}╯`);
+  // The frame is as tall as its content, so the row after the pin is the bottom border: a panel with one
+  // pin pads itself to nothing, which is what keeps the prompt visible beside it.
+  expect(lines[2]).toBe(`╰${RULE.repeat(width - CORNER_WIDTH)}╯`);
 });
 
 test("the header names the count and the pin row names the id and the local time", () => {
@@ -241,13 +239,13 @@ test("a non-positive width draws nothing", () => {
   expect(built(content([one(1, "x")]), 0, style)).toEqual([]);
 });
 
-test("a height below the frame's floor draws nothing, because one border would have nowhere to be", () => {
-  // The height now comes out of the layout, which counts it against the *terminal*, so a frame below
-  // `PANEL_MIN_FRAME_ROWS` can only be the terminal's doing: a two-row terminal halves to one row and
-  // the builder refuses to draw the open box that comes out of it, whatever row table it was handed
-  // beside the height.
+test("a terminal with no room for both borders draws nothing, because one border would have nowhere to be", () => {
+  // The height comes out of the layout, which counts the rows it has against the ceiling the terminal's
+  // half gives it, so a frame below `PANEL_MIN_FRAME_ROWS` can only be the terminal's doing: a five-row
+  // terminal halves to two rows and the builder refuses to draw the open box that comes out of it,
+  // whatever row table it was handed beside the height.
   const pins = [one(1, "x")];
-  for (const terminalRows of [1, 2]) {
+  for (const terminalRows of [1, 2, 4, 5]) {
     expect(
       buildPanelLines(
         content(pins, 0, false),
@@ -271,6 +269,6 @@ test("the frame's floor is the overlay's own minWidth, and three rows", () => {
   // what a closable frame is, and a frame the builder would refuse is one the overlay never reports.
   expect(PANEL_MIN_FRAME_COLUMNS).toBe(30);
   expect(PANEL_MIN_FRAME_ROWS).toBe(3);
-  expect(frameOf(PANEL_MIN_FRAME_COLUMNS)).toHaveLength(FRAME_ROWS);
+  expect(frameOf(PANEL_MIN_FRAME_COLUMNS)).toHaveLength(3);
   expect(frameOf(PANEL_MIN_FRAME_COLUMNS - 1)).toEqual([]);
 });

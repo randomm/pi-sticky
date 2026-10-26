@@ -79,11 +79,3 @@ export function glyph(frame: (text: string) => string, glyphText: string): strin
 export function gutter(inner: string, gutterAt: (text: string) => string): string {
   return `${gutterAt(GUTTER)} ${inner} ${gutterAt(GUTTER)}`;
 }
-
-/**
- * A content row between the gutters whose text column is empty: the inner columns are blank, so the row
- * is the two glyphs and the padding between them, assembled from parts that each measure what they claim.
- */
-export function blankRow(inner: number, gutterAt: (text: string) => string): string {
-  return `${gutterAt(GUTTER)} ${" ".repeat(inner)} ${gutterAt(GUTTER)}`;
-}

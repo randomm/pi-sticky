@@ -148,7 +148,8 @@ describe("a replied panel row", () => {
         plainPanel,
         panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
       );
-      expect(lines).toHaveLength(TERMINAL_ROWS / 2);
+      // The one-pin panel is three rows — border, pin, border — at every width the frame closes at.
+      expect(lines).toHaveLength(3);
       expectUniformWidth(lines, width);
       for (const line of lines) {
         expect(offenders(line)).toEqual([]);

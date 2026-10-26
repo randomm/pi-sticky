@@ -43,8 +43,9 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
 type PanelContent = ReturnType<typeof content>;
 
 /**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
- * is `TERMINAL_ROWS` tall, and the builder is handed both — no caller can size one frame and draw another.
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
+ * which is the rows the pins own over the two borders (cut to `TERMINAL_ROWS`' half), and the builder is
+ * handed both — no caller can size one frame and draw another.
  */
 function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
   return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
@@ -116,8 +117,8 @@ test("a theme that emits a hyperlink paints no escape bytes onto the panel, at a
   for (const focused of [false, true]) {
     for (const width of [40, 60]) {
       const lines = built(content([one(1, "Decide X")], 0, focused), width, hostileStyle);
-      // The frame pads out to the terminal's half, so the sweep has rows to check beyond the one pin.
-      expect(lines.length).toBe(TERMINAL_ROWS / 2);
+      // One pin is a three-row frame — border, pin, border — and every row of it is swept.
+      expect(lines.length).toBe(3);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }
@@ -135,7 +136,8 @@ test("hostile text drawn at a width that forces a cut carries no escape, control
         width,
         plain,
       );
-      expect(lines.length).toBe(TERMINAL_ROWS / 2);
+      // Three rows: the two borders and the cut row between them.
+      expect(lines.length).toBe(3);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }
@@ -152,7 +154,7 @@ test("every drawn line measures exactly the width from the frame's floor to 120 
         width,
         plain,
       );
-      expect(lines.length).toBe(TERMINAL_ROWS / 2);
+      expect(lines.length).toBeGreaterThan(2);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }

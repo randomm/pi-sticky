@@ -35,7 +35,6 @@ import {
   FRAME_TOP_RIGHT,
   INJECTED_RESET,
   RULE,
-  blankRow,
   frameGlyphs,
   glyph,
   gutter,
@@ -238,6 +237,9 @@ export function buildPanelLines(
   const inner = width - GUTTER_COLUMNS;
   const budget = panelContentRows(layout.height);
   const owned = layout.owned;
+  // The window is cut from the table the height was counted from, so `min(budget, owned.length - start)`
+  // rows are always reachable: the offset stops at the last window that fits inside the table, and the
+  // loop below stops at a row that does not exist rather than padding one in.
   const offset = panelWindowOffset(
     budget,
     content.selection,
@@ -249,14 +251,17 @@ export function buildPanelLines(
   const lines: string[] = [
     borderLine(header, style.header, FRAME_TOP_LEFT, FRAME_TOP_RIGHT, width, frame),
   ];
+  // The window's rows, taken from the table the height was counted from: `layout.height` is
+  // `owned.length` plus the borders until the ceiling cuts it, so a frame whose content fits draws every
+  // row of that content and no blank row of padding — the only rows it cannot reach are the ones the
+  // ceiling cut off, which is what the offset scrolls through.
   for (let i = 0; i < budget; i++) {
     const row = owned[offset + i]?.row;
-    // A row past the end of the table is a *blank row of the panel*, not an empty string: the bar is
-    // drawn as a bar across the row, and a short line would let the chat show through it. The bar is on
-    // the row the keys moved to *and only while the panel holds focus* — an unfocused panel highlighting
-    // its top row would claim the bar sits where the user is not.
+    if (row === undefined) break;
+    // The bar is on the row the keys moved to *and only while the panel holds focus* — an unfocused
+    // panel highlighting its top row would claim the bar sits where the user is not.
     const selected = content.focused && i === content.selection - offset;
-    lines.push(row ? pinRow(row, inner, style, selected, gutterAt) : blankRow(inner, gutterAt));
+    lines.push(pinRow(row, inner, style, selected, gutterAt));
   }
   // The hint is drawn only while focused: an unfocused panel advertising keys it cannot receive would
   // be a lie, and it has nowhere else to be written — the bottom border is the frame's own.
