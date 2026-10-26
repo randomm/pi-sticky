@@ -22,7 +22,9 @@ import {
 describe("isPinState", () => {
   test("accepts the empty state and a populated one", () => {
     expect(isPinState(EMPTY_STATE)).toBe(true);
-    expect(isPinState(state([pin(1, "a")], 2, [removal(1)]))).toBe(true);
+    // The removal's uid must not collide with a live pin's: a retired pin and a shown one are
+    // different identities, so the removal uses its own id/uid (2), not the pin's (1).
+    expect(isPinState(state([pin(1, "a")], 3, [removal(2)]))).toBe(true);
   });
 
   test("rejects a wrong version, a non-object and a null", () => {
@@ -44,6 +46,16 @@ describe("isPinState", () => {
     expect(isPinState(state([{ ...pin(1, "a"), level: "urgent" as PinLevel }]))).toBe(false);
     expect(isPinState(state([{ ...pin(1, "a"), source: "robot" as "agent" }]))).toBe(false);
     expect(isPinState(state([{ ...pin(1, "a"), id: 1.5 }]))).toBe(false);
+  });
+
+  test("rejects a pin that shares a uid with a removal", () => {
+    // One uid addresses one identity. If a pin may carry the uid of a removal, a single user
+    // dismiss addressed to that uid moves both identities out of `pins` at once.
+    expect(isPinState(state([pin(1, "a")], 5, [{ ...removal(4), uid: "uid-1" }]))).toBe(false);
+  });
+
+  test("rejects duplicate removal uids", () => {
+    expect(isPinState(state([], 5, [removal(3), { ...removal(4), uid: "uid-3" }]))).toBe(false);
   });
 
   test("rejects a class instance that otherwise looks like a state", () => {
@@ -139,6 +151,22 @@ describe("reconstruct", () => {
     const branch = [toolResultEntry(snapshot)];
     const entries = [userEntry(userAction("uid-1", "dismiss", NOW))];
     expect(reconstruct(branch, entries)).toEqual(reconstruct(branch, entries));
+  });
+
+  test("a snapshot cannot bind one uid to a pin and a removal so one dismiss retires both", () => {
+    // The regression: when only pin uids were checked this shape passed isPinState, and the
+    // dismiss of uid-1 moved the pin (id 1) and the unrelated removal (id 4) out together.
+    const shared: PinState = {
+      v: 1,
+      pins: [pin(1, "a")],
+      nextId: 5,
+      removed: [{ ...removal(4, "agent", NOW), uid: "uid-1" }],
+    };
+    expect(isPinState(shared)).toBe(false);
+    // Refused, so the rebuild starts empty rather than honouring the colliding snapshot.
+    const branch = [customEntry(shared)];
+    const entries = [userEntry(userAction("uid-1", "dismiss", LATER))];
+    expect(reconstruct(branch, entries).state.pins.map((p) => p.id)).toEqual([]);
   });
 
   test("a state with no pins still reports its removals in the view", () => {

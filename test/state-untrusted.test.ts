@@ -52,17 +52,15 @@ const hostile = state([pin(1, HOSTILE, "warning")], 10, [removal(9, "agent", NOW
 
 /**
  * Every string the surface can draw for a state, at a width that forces a cut so pi-tui's own
- * ellipsis appears in the output. The header is left out of the check on purpose: its leading 📌
- * is 2 columns wide, so a cut that lands one column into it is pi-tui's `truncateToWidth` behaviour
- * for a wide grapheme at the boundary — pre-existing, unrelated to what a snapshot says, and
- * asserted on in render.test.ts.
+ * ellipsis appears in the output. The header is included: `truncateToWidth` cuts on grapheme
+ * boundaries, so the leading 📌 is never split and a lone surrogate half has to be reported.
  */
 function drawn(state: PinState): string[] {
   const result = reconstruct([customEntry(state)], []);
   return [
     renderList(result.view, 5),
     renderMarkdown(result.view),
-    ...renderRailLines(result.view, 20, { maxLines: 8, style: plainStyle }).slice(1),
+    ...renderRailLines(result.view, 20, { maxLines: 8, style: plainStyle }),
   ];
 }
 
@@ -71,14 +69,19 @@ function offenders(text: string): string[] {
   const bad: string[] = [];
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
-    const low = code >= 0xd800 && code <= 0xdbff;
-    const high = code >= 0xdc00 && code <= 0xdfff;
-    const next = text.charCodeAt(i + 1);
     // U+2026 is 0x2026, whose low byte is 0x26: a masked half-surrogate test would report pi-tui's
     // own cut ellipsis as a lone surrogate, so the test compares whole code units.
-    const paired = low && next >= 0xdc00 && next <= 0xdfff;
-    if ((low && !paired) || high) bad.push(`lone surrogate 0x${code.toString(16)}`);
-    else if (code === 0x1b) bad.push("ESC 0x1b");
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        // A valid pair: step over the low half, which is not a lone surrogate on its own.
+        i += 1;
+        continue;
+      }
+      bad.push(`lone surrogate 0x${code.toString(16)}`);
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      bad.push(`lone surrogate 0x${code.toString(16)}`);
+    } else if (code === 0x1b) bad.push("ESC 0x1b");
     else if (code >= 0x80 && code <= 0x9f) bad.push(`C1 0x${code.toString(16)}`);
     else if (code === 0x202e) bad.push("U+202E");
   }

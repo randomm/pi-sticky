@@ -63,15 +63,20 @@ function isCoherent(state: { pins: Pin[]; removed: Removal[]; nextId: unknown })
   if (!isPositiveSafeInteger(state.nextId)) return false;
   const ids = new Set<number>();
   const uids = new Set<string>();
+  // Removals seed the uid set before the pins are read: an id is retired with its uid, so a pin
+  // may not hold the uid of a removal — one user dismiss addressed to that uid would move both
+  // identities out of `pins`, silently retiring a pin the user never named.
   let highest = 0;
+  for (const removal of state.removed) {
+    if (uids.has(removal.uid)) return false;
+    uids.add(removal.uid);
+    if (removal.id > highest) highest = removal.id;
+  }
   for (const pin of state.pins) {
     if (ids.has(pin.id) || uids.has(pin.uid)) return false;
     ids.add(pin.id);
     uids.add(pin.uid);
     if (pin.id > highest) highest = pin.id;
-  }
-  for (const removal of state.removed) {
-    if (removal.id > highest) highest = removal.id;
   }
   return state.nextId > highest;
 }
