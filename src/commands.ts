@@ -11,12 +11,12 @@
  * not a second copy of its rules — decides which ids matched. Unknown ids are reported one line
  * each and do not stop the rest; a refusal (a batch that is nothing at all) is notified verbatim
  * and records nothing. `/pins` uses `ctx.ui.notify` rather than an overlay: the overlay panel is
- * the later ticket, and `renderMarkdown` already answers "Nothing is pinned." for an empty view.
+ * the later ticket, and `renderPinsText` already answers "Nothing is pinned." for an empty view.
  */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import type { StickyDeps } from "./deps.ts";
-import { renderMarkdown } from "./render.ts";
+import { renderPinsText } from "./render.ts";
 import { applyAction } from "./state.ts";
 
 /** `/unpin all`, compared before the tokens are read as numbers. */
@@ -62,7 +62,7 @@ export function registerCommands(pi: ExtensionAPI, deps: StickyDeps): void {
     description: "Show every pinned message in full",
     handler: async (_args, ctx) => {
       if (!ctx.hasUI) return;
-      ctx.ui.notify(renderMarkdown(deps.getView()), "info");
+      ctx.ui.notify(renderPinsText(deps.getView()), "info");
     },
   });
 

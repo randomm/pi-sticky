@@ -6,7 +6,7 @@ import {
   orderPins,
   plainStyle,
   renderList,
-  renderMarkdown,
+  renderPinsText,
   renderRailLines,
 } from "../src/render.ts";
 import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
@@ -98,34 +98,6 @@ describe("renderList", () => {
     const many = Array.from({ length: 9 }, (_, i) => pin(i + 1, `p${i}`));
     const lines = renderList(view(many), 5).split("\n");
     expect(lines).toHaveLength(10);
-  });
-});
-
-describe("renderMarkdown", () => {
-  test("says so when nothing is pinned", () => {
-    expect(renderMarkdown(view())).toBe("Nothing is pinned.");
-  });
-
-  test("opens with a title and a blank line", () => {
-    const lines = renderMarkdown(view([pin(1, "a")])).split("\n");
-    expect(lines[0]).toBe("# Pinned for you");
-    expect(lines[1]).toBe("");
-  });
-
-  test("each pin carries level, id, time and text", () => {
-    const lines = renderMarkdown(view([pin(1, "check", "warning")])).split("\n");
-    expect(lines[2]).toBe(`- **warning** #1 (${NOW_TIME}): check`);
-  });
-
-  test("a replied pin records the reply", () => {
-    const lines = renderMarkdown(view([{ ...pin(1, "a"), repliedAt: LATER }])).split("\n");
-    expect(lines[2]).toContain(`(replied by the user at ${LATER_TIME})`);
-  });
-
-  test("nothing is cut, whatever the width of the terminal", () => {
-    const long = "x".repeat(500);
-    const lines = renderMarkdown(view([pin(1, long)])).split("\n");
-    expect(lines[2]).toContain(long);
   });
 });
 
@@ -280,10 +252,11 @@ describe("renderRailLines", () => {
     }
   });
 
-  test("the listing and the Markdown view keep their newlines", () => {
+  test("the listing and the plain /pins view keep their newlines", () => {
     const pinned = view([pin(1, "a\n\n# fake header\nb")]);
     expect(renderList(pinned, 5)).toInclude("a\n\n# fake header\nb");
-    expect(renderMarkdown(pinned)).toInclude("a\n\n# fake header\nb");
+    // The /pins view indents its continuation lines, so it keeps the breaks rather than the raw text.
+    expect(renderPinsText(pinned)).toInclude("a\n   \n   # fake header\n   b");
   });
 
   test("ordering in the rail matches orderPins", () => {

@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { plainStyle, renderList, renderMarkdown, renderRailLines } from "../src/render.ts";
+import { plainStyle, renderList, renderPinsText, renderRailLines } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { EMPTY_STATE, applyAction, isPinState, reconstruct } from "../src/state.ts";
 import type { Pin, PinState, Removal } from "../src/types.ts";
@@ -59,7 +59,7 @@ function drawn(state: PinState): string[] {
   const result = reconstruct([customEntry(state)], []);
   return [
     renderList(result.view, 5),
-    renderMarkdown(result.view),
+    renderPinsText(result.view),
     ...renderRailLines(result.view, 20, { maxLines: 8, style: plainStyle }),
   ];
 }
@@ -135,7 +135,7 @@ describe("reconstruct sanitizes untrusted entry text", () => {
   });
 
   test("a reply marks the pin as replied with a cleaned timestamp", () => {
-    // repliedAt is drawn by renderList and renderMarkdown, so the entry's own string is not what
+    // repliedAt is drawn by renderList and renderPinsText, so the entry's own string is not what
     // gets drawn: the escape a hostile user action carries is gone before a renderer sees it.
     const entry = customEntry(
       { v: 1, uid: "uid-1", action: "reply", at: `${ESC}[2J${LATER}` },

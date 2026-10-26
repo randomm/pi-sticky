@@ -76,7 +76,7 @@ Each requirement has an ID that Part 2 refers to.
 | Mode | Widget | Footer status | Toast on new pin | `/pins` full view |
 |---|---|---|---|---|
 | `tui` | component factory, themed, width-aware | only while hidden | yes | `ctx.ui.custom` overlay |
-| `rpc` | `string[]` rendered at 100 columns, no colour (RPC ignores component factories, `docs/rpc-extension-ui.md`) | only while hidden | yes | `ctx.ui.notify` with the Markdown listing |
+| `rpc` | `string[]` rendered at 100 columns, no colour (RPC ignores component factories, `docs/rpc-extension-ui.md`) | only while hidden | yes | `ctx.ui.notify` with the plain-text listing (`renderPinsText`) |
 | `json`, `print` | none | none | none | not applicable |
 
 Widget key and status key: `pi-sticky`. Placement: `belowEditor` by default (see decision D2).
@@ -127,7 +127,7 @@ Widget key and status key: `pi-sticky`. Placement: `belowEditor` by default (see
 
 | Command | Effect |
 |---|---|
-| `/pins` | TUI: overlay with every pin in full (wrapped, not cut), closed with Escape. RPC: `ctx.ui.notify` with the Markdown listing. With no pins: notify `Nothing is pinned.` |
+| `/pins` | TUI: overlay with every pin in full (wrapped, not cut), closed with Escape. RPC: `ctx.ui.notify` with the plain-text listing (`renderPinsText`). With no pins: notify `Nothing is pinned.` |
 | `/pins hide` | Remove the widget; set the footer status to `📌 <n> pinned · /pins show`. Persisted. |
 | `/pins show` | Draw the widget again; clear the footer status. Persisted. |
 | `/unpin <id> [<id> ...]` | Remove those pins (source `user`). Unknown ids: notify `No pin #<id>` (warning) and remove the rest. |
@@ -320,7 +320,7 @@ pi-sticky/
 │   ├── config.ts        readConfig(env)
 │   ├── sanitize.ts      sanitizePinText(raw, maxChars)
 │   ├── state.ts         applyAction(...), reconstruct(...), EMPTY_STATE
-│   ├── render.ts        orderPins, renderPinLines, renderList, renderMarkdown
+│   ├── render.ts        orderPins, renderPinLines, renderList, renderPinsText
 │   ├── widget.ts        drawPins(ctx, state, cfg, hidden): picks component, string[] or nothing per mode
 │   ├── tool.ts          createPinTool(deps): ToolDefinition for pin_for_user
 │   ├── commands.ts      registerCommands(pi, deps): /pins, /unpin
@@ -557,7 +557,7 @@ interface StickyDeps {
   function orderPins(pins: readonly Pin[]): Pin[];                                         // R4
   function renderPinLines(state: PinState, width: number, opts: { maxLines: number; style: Style; formatTime?: (iso: string) => string }): string[];
   function renderList(state: PinState, maxPins: number): string;                          // model-facing list, 6.2 format, with the "(n of max)" header
-  function renderMarkdown(state: PinState, meta: { sessionId: string; cwd: string; updated: string }): string; // 6.11 and /pins in RPC
+  function renderPinsText(view: PinView): string;                                       // /pins: every pin in full, plain text, nothing cut
   ```
 
   The exact layout is section 6.6. Use `visibleWidth`, `truncateToWidth` and `wrapTextWithAnsi` from `@earendil-works/pi-tui`.
@@ -575,7 +575,7 @@ interface StickyDeps {
     for (const w of [20, 40, 80]) for (const l of renderPinLines(wideState, w, o)) expect(visibleWidth(l)).toBeLessThanOrEqual(w);
   }); // wideState mixes emoji, CJK and combining marks
   test("renderList matches the tool-result format", ...)
-  test("renderMarkdown lists every pin in full, not cut", ...)
+  test("renderPinsText lists every pin in full, not cut, with no Markdown markup", ...)
   ```
 
 - [ ] **Step 2: Run** `bun test test/render.test.ts`. Expected: FAIL.
@@ -641,7 +641,7 @@ interface StickyDeps {
 - Test: `test/commands.test.ts`
 
 **Interfaces:**
-- Consumes: `StickyDeps`, `applyAction`, `renderMarkdown`, `drawPins`.
+- Consumes: `StickyDeps`, `applyAction`, `renderPinsText`, `drawPins`.
 - Produces: `function registerCommands(pi: ExtensionAPI, deps: StickyDeps): void`. Behaviour is the table in section 6.3. User changes commit with `via: "entry"` and source `user`. The TUI full view is a `ctx.ui.custom` component modelled on `TodoListComponent` in `examples/extensions/todo.ts`: full text wrapped with `wrapTextWithAnsi`, Escape or Ctrl+C closes.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -654,7 +654,7 @@ interface StickyDeps {
   test("/pins show restores the widget, and the choice survives reload", ...)
   test("a new agent pin while hidden updates the count, keeps the widget hidden, still toasts", ...)
   test("/pins in TUI opens the overlay", ...)          // ui.customCalls === 1
-  test("/pins in RPC notifies the Markdown listing", ...)
+  test("/pins in RPC notifies the plain-text listing", ...)
   test("/pins with nothing pinned notifies 'Nothing is pinned.'", ...)
   test("agent update after a user removal gets the user-removal error", ...) // Review Focus 4
   ```

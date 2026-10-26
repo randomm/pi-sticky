@@ -57,7 +57,7 @@ describe("isPinState is a shape guard, not a content sanitizer", () => {
   test("nothing the rail draws carries the escape or any break shape", () => {
     // The rail is the one surface with a line budget, so its one-line/no-escape promise is its own,
     // not borrowed from the sanitizer: it is asserted on a view built directly from the guard's own
-    // accepted shape. `renderList` and `renderMarkdown` keep newlines by contract (render.test.ts
+    // accepted shape. `renderList` and `renderPinsText` keep newlines by contract (render.test.ts
     // pins that for pin text), so the escape check is what applies to them.
     const snapshot = state([{ ...pin(1, HOSTILE), createdAt: HOSTILE, updatedAt: HOSTILE }], 2);
     const view = { pins: snapshot.pins.map((p) => ({ ...p })), removed: [] };
