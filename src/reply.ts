@@ -105,7 +105,6 @@ function matched(event: InputEvent, pins: readonly ViewPin[]): Matched | undefin
     : { kind: "unknown", digits };
 }
 
-/** What pi does with a submission, plus the warning a caller with a UI should show for it. */
 /**
  * `Re #12: ` at the front of a draft, replacing a marker that is already there. Anchored at offset 0
  * of the *raw* buffer: a leading space the user typed is part of the draft, not a marker to replace.
@@ -117,6 +116,7 @@ export function replyMarker(text: string, id: number): string {
   return `Re #${id}: ${text.replace(/^Re #\d+: /, "")}`;
 }
 
+/** What pi does with a submission, plus the warning a caller with a UI should show for it. */
 export type ReplyDecision = InputEventResult & {
   /** Not part of pi's result contract: the text `registerReply` notifies with, and nothing else reads. */
   notice?: string;
