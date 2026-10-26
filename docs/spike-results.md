@@ -107,7 +107,11 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   `run() called after dispose(): the session and its temp dir are gone` once `dispose()` has run, so a run
   cannot resolve green against a torn-down session and cannot re-create the directory. A run that was already
   in flight when `dispose()` started resolves rather than rejecting — teardown aborts its prompt, which would
-  otherwise surface as an unhandled rejection in the test that disposed. `script()`, `appendScript()` and
+  otherwise surface as an unhandled rejection in the test that disposed. **The verdict of such a run is not
+  evidence about the prompt**: the guard skips the run's own slice, so an in-flight run resolves green even
+  though pi recorded an assistant turn whose `stopReason` is `"aborted"` (measured with a provider that holds
+  the stream open until the signal aborts). Assert on a run only when nothing raced `dispose()`; the same
+  read-the-record-not-the-verdict rule as the `custom()` macrotask caveat above. `script()`, `appendScript()` and
   `summarizeWith()` stay callable: they touch only the faux queue.
 - **Command-context actions are partly stubbed.** `navigateTree` goes to the real session, `options` and all
   (so `{ summarize: true }` really summarizes); `newSession`, `fork`

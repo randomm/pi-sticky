@@ -56,10 +56,14 @@ const COMPLETED_STOP_REASONS = [
  * *previous* run — which is exactly the case the fallback used to misread as this run's failure.
  * `since` may also exceed `messages.length` when the branch shrank under the run
  * (`navigateTree`, or a `reload` that rebuilds the transcript); that is treated as an empty
- * slice, i.e. a green run, for the same reason: nothing in it belongs to the run.
+ * slice, i.e. a green run, for the same reason: nothing in it belongs to the run. A negative
+ * `since` is treated the same way — `Array#slice` would read it from the *end* of the
+ * transcript and hand back the newest turns, i.e. exactly the foreign turns this rule exists
+ * to keep out. `run()` can only pass a count, so both bounds are a contract guard for the
+ * exported function rather than a live path.
  */
 export function assertTurnSucceeded(messages: readonly unknown[], since: number): void {
-  const appended = since > messages.length ? [] : messages.slice(since);
+  const appended = since > messages.length || since < 0 ? [] : messages.slice(since);
   const turns = appended.filter(isAssistantTurn);
   const failed = turns.find((turn) => !incompleteTurn(turn));
   if (failed) {

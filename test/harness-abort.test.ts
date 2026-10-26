@@ -69,6 +69,11 @@ test("assertTurnSucceeded does not fall back to the transcript before `since`", 
   expect(() => assertTurnSucceeded([turn("error")], 1)).not.toThrow();
   // A branch that shrank under the run (navigateTree) is treated as an empty slice.
   expect(() => assertTurnSucceeded([turn("error")], 7)).not.toThrow();
+  // The same rule on the other side of zero: `Array#slice` reads a negative `since` from the
+  // end, which would hand the run the newest turns of an *earlier* one. A negative `since` is
+  // an empty slice too, so neither an abort nor a completion outside the slice can decide it.
+  expect(() => assertTurnSucceeded([turn("stop"), turn("aborted")], -1)).not.toThrow();
+  expect(() => assertTurnSucceeded([turn("aborted"), turn("stop")], -1)).not.toThrow();
 });
 
 test("a command-only run is green after an earlier run ended in an error turn", async () => {

@@ -5,8 +5,7 @@
  * `void`ed provider refresh — which only shows up when harnesses overlap.
  */
 import { expect, test } from "bun:test";
-import { existsSync, readdirSync } from "node:fs";
-import { rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";

@@ -59,6 +59,12 @@ export async function settlePendingWrites(dir: string): Promise<void> {
     }
     if (Date.now() - quietSince >= quietMs) break;
   }
+  // Falling out of the loop on the deadline rather than on `break` means a writer was still
+  // active when the wait ran out: the caller's `rmSync()` runs anyway and that writer can
+  // re-create the tree behind it. Deliberate — teardown must not hang a test — so the failure
+  // mode is a leftover temp directory, which `harness-lifecycle.test.ts` asserts against for
+  // the writer shapes the harness actually produces. No flag is reported here because no
+  // caller could act on one: teardown removes the directory either way.
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 

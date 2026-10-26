@@ -96,7 +96,8 @@ export interface Harness {
    * flagged `isError` — what a throwing `execute()` becomes — or one or more extension errors
    * raised while it was in flight. Rejects immediately once `dispose()` has run; a run that
    * was already in flight when `dispose()` started resolves, because teardown — not the run —
-   * owns that outcome.
+   * owns that outcome, and its verdict then says nothing about the prompt (teardown aborted the
+   * turn, and the run's own slice is not judged).
    */
   run(prompt: string): Promise<void>;
   /** Entries on the current branch, oldest first. Rejects once `dispose()` has run. */
@@ -174,6 +175,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
       // post-settle guard below still refuses to report a torn-down session as a green run.
       if (tornDown) throw new Error(TORN_DOWN);
       // The count before the run bounds which assistant messages and which errors are its own.
+      // Always a non-negative count, which is the contract `assertTurnSucceeded` relies on.
       const since = session.messages.length;
       errors.beginRun();
       await session.prompt(prompt);
