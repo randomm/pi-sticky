@@ -3,7 +3,10 @@
  * `op` no case handles, a `now` too long for a snapshot, and a uid source that mints something the
  * guard's pattern refuses. All three arrive as hand-built actions — the tool's schema (Task 5) is
  * what stops the *model* sending them, and the reducer cannot count on having been called by the
- * tool: `reconstruct` and any future caller hand it an object directly.
+ * tool: `reconstruct` and any future caller hand it an object directly. This file also holds the
+ * one case that reaches the reducer's *default* uid source, because `bun test` enforces
+ * `coverageThreshold` per file and `src/reducer.ts` was the last file below it (see the test
+ * `with no newUid in limits …`).
  *
  * The text-cleaning half of the same invariant is in state-reducer-clean.test.ts.
  */
@@ -206,6 +209,20 @@ describe("applyAction refuses a uid the guard would reject", () => {
     // The fixtures' own source mints `mint-<n>` (`uidSource`), not `uid-<id>`: an address that a
     // fixture pin already holds would be refused as a collision before it ever reached the snapshot.
     expect(counter.ok && counter.state.pins[0]?.uid).toBe("mint-1");
+  });
+
+  test("with no newUid in limits the reducer mints from crypto, and the pin keeps it", () => {
+    // `limits.newUid` is optional, so the production path — the tool (Task 5) passes no uid source —
+    // runs the `?? (() => crypto.randomUUID())` fallback in reducer.ts. Every other test here
+    // injects a source, which left that fallback unreached: a typo in it (a constant, a truncated
+    // uuid) would have been green. The assertion is on the shape `isUid` accepts, not on a value no
+    // one can predict.
+    const result = applyAction(EMPTY_STATE, { ...PIN, now: NOW } as never, { maxPins: 5 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const minted = result.state.pins[0]?.uid ?? "";
+    expect(minted).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(isPinState(result.state)).toBe(true);
   });
 
   test("a bad uid is refused before the duplicate lookup and before the limit", () => {
