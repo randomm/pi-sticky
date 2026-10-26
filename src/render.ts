@@ -59,26 +59,38 @@ const INJECTED_RESET = new RegExp(
 );
 
 /**
- * Cut a drawn line to the width, then remove the reset-plus-ellipsis pi-tui injects into it. Those
- * sequences have zero width, so removing them cannot push the line over, and the caller's own
- * styling is left alone because it was in the string before the cut ran.
+ * Cut a drawn line to the width, and make sure what comes back is a line the rail may draw. Both
+ * branches end on the width check, because `truncateToWidth` does not keep its own promise once the
+ * text is hostile: it recognises a CSI only with a final byte of `m/G/K/H/J` and an OSC or APC only
+ * with a BEL or ST, so an unterminated one is measured as ordinary printable columns. A `ESC G` Kitty
+ * prefix whose payload was cut away, or an OSC with no terminator, leaves a line that measures to the
+ * width and *prints its payload* — which is why neither branch trusts the measurement on its own.
  *
- * A line the caller did not style is stripped whole rather than only un-decorated: pin text is
- * untrusted, and while every entry into state runs it through the sanitizer first, a rail drawn
- * with `plainStyle` is a transcript line or an RPC string in which nothing consumes escape bytes.
- * Stripping is the last gate, so it does not rely on what ran upstream of it.
+ * The plain branch strips whatever survived: pin text is untrusted, and a rail drawn with
+ * `plainStyle` is a transcript line or an RPC string in which nothing consumes escape bytes. The
+ * styled branch may not strip — the theme's own bytes were asked for — so an over-wide styled line
+ * is redrawn from the escape-stripped text, which keeps the shape of the row and drops the styling
+ * of a line that was never safe to draw in the first place.
  */
 function cut(line: string, width: number, styled: boolean): string {
   const cutLine = truncateToWidth(line, width, "…");
   if (styled) {
     if (cutLine === line) return line;
-    return cutLine.replace(INJECTED_RESET, String.fromCodePoint(0x2026));
+    const cleaned = cutLine.replace(INJECTED_RESET, String.fromCodePoint(0x2026));
+    if (visibleWidth(cleaned) <= width) return cleaned;
+    // pi-tui measured something as printable that a terminal will consume as a sequence: fall back
+    // to the plain text, which is the only string here whose width both sides agree on.
+    return cut(stripSequences(line), width, false);
   }
   // Nothing was styled, so any escape sequence in the result came from the text or from the cut
   // itself — either way it has no business reaching a terminal the rail does not own. Stripped
   // whether or not the cut fired: `truncateToWidth` is width-only, so a line that fits comes back
   // byte for byte and its escape bytes would otherwise sail through untouched.
-  return stripSequences(cutLine);
+  const plain = stripSequences(cutLine);
+  if (visibleWidth(plain) <= width) return plain;
+  // The cut measured a payload as printable that this scanner recognises as a sequence, so the cut
+  // itself cannot be trusted for this line: cut the text first, where both sides agree on the width.
+  return stripSequences(truncateToWidth(stripSequences(line), width, "…"));
 }
 
 /** Warning, then action, then info; within a level unreplied first, then newest first. */

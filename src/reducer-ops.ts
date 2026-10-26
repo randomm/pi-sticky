@@ -50,11 +50,15 @@ function findDuplicate(state: PinState, text: string, level: PinLevel): Pin | un
   return state.pins.find((pin) => pin.text === text && pin.level === level);
 }
 
-/** A pin the model already pinned, or a new one at `nextId`, or the limit named. */
+/**
+ * A pin the model already pinned, or a new one at `nextId`, or the limit named. `uid` is the address
+ * `applyAction` already checked against the guard's pattern: minting inside the op would put a value
+ * no one vouched for straight into the snapshot.
+ */
 export function pinOp(
   state: PinState,
   action: { text: string; level: PinLevel; source: PinSource; now: string },
-  uid: () => string,
+  uid: string,
   limits: PinLimits,
 ) {
   const duplicate = findDuplicate(state, action.text, action.level);
@@ -69,7 +73,7 @@ export function pinOp(
   }
   const pin: Pin = {
     id: state.nextId,
-    uid: uid(),
+    uid,
     text: action.text,
     level: action.level,
     source: action.source,

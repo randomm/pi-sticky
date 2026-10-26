@@ -25,8 +25,9 @@ describe("renderRailLines width", () => {
     const long = "x".repeat(200);
     const lines = rail(view([pin(1, long)]), 20, 8);
     for (const line of lines) {
-      // No line may overrun the width; the ellipsis marks the ones that were cut.
-      expect(line.length).toBeLessThanOrEqual(40);
+      // No line may overrun the width; the ellipsis marks the ones that were cut. Measured, not
+      // counted: `line.length` is UTF-16 units, and the header's 📌 is two columns in one unit.
+      expect(visibleWidth(line)).toBeLessThanOrEqual(20);
     }
     expect(lines.some((l) => l.includes("…"))).toBe(true);
   });

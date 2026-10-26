@@ -10,7 +10,9 @@
  * value `applyAction` copies into a state must be one the guard accepts, or the snapshot the tool
  * is about to publish as `details` is one the next rebuild skips and the pins silently vanish.
  */
-import { isPositiveSafeInteger } from "./bounds.ts";
+import { MAX_TEXT_UNITS, isPositiveSafeInteger } from "./bounds.ts";
+import { cleanPinText } from "./sanitize.ts";
+import { isUid } from "./state-guards.ts";
 import type { PinLevel, PinSource } from "./types.ts";
 
 export type Action =
@@ -59,20 +61,52 @@ export function badNow(): ApplyResult {
   return { ok: false, error: 'now must be a string for action "pin", "update" or "unpin"' };
 }
 
-/** A text the model sent, or absent when JSON put something that is not a string in its place. */
-export function textOrUndefined(text: unknown): string | undefined {
-  return typeof text === "string" ? text : undefined;
+/**
+ * The refusal for an `op` the reducer has no case for. A hand-built action (a session entry replayed
+ * by a future caller, a test fixture) reaches `applyAction` past the tool's schema, and an unhandled
+ * `op` must be a refusal that names it rather than `undefined`.
+ */
+export function unknownOp(op: unknown): ApplyResult {
+  return { ok: false, error: `unknown action "${String(op)}"` };
 }
 
 /**
- * The instant the action claims it happened, or absent when JSON put something that is not a
- * string in its place. `now` is the one action field the reducer copies *verbatim* into state —
- * `createdAt`, `updatedAt` and `removal.at` all take it — so an unguarded `now: 12345` yields an ok
- * result whose snapshot `isPinState` then rejects: the pins would vanish on the next reload instead
- * of the model reading a refusal.
+ * The refusal for a uid source that mints something the guard's UID pattern refuses. `pinOp` would
+ * otherwise return an ok result whose snapshot `isPinState` rejects, which is a set of pins that
+ * silently vanishes on the next rebuild rather than a refusal the model can read.
+ */
+export function badUid(): ApplyResult {
+  return { ok: false, error: "uid is not a valid pin address" };
+}
+
+/**
+ * The text as it may be stored: cleaned, or absent when the model sent a non-string, or sent one
+ * that cleans to nothing. The reducer cleans rather than trusting its caller, because a state is
+ * published as `details` and read back by `reconstruct`, and `isPinState` is a shape guard that
+ * accepts a `\u001b[2J` — the pass that decides what may be drawn is this one.
+ */
+export function cleanTextOrUndefined(text: unknown): string | undefined {
+  if (typeof text !== "string") return undefined;
+  const clean = cleanPinText(text);
+  return clean === "" ? undefined : clean;
+}
+
+/** A uid the state guard will accept, or absent when the injected source minted something else. */
+export function uidOrUndefined(uid: unknown): string | undefined {
+  return isUid(uid) ? uid : undefined;
+}
+
+/**
+ * The instant the action claims it happened, or absent when JSON put something that is not a string
+ * in its place, or one longer than a snapshot may carry. `now` is the one action field the reducer
+ * copies *verbatim* into state — `createdAt`, `updatedAt` and `removal.at` all take it — so an
+ * unguarded `now: 12345` yields an ok result whose snapshot `isPinState` then rejects: the pins would
+ * vanish on the next reload instead of the model reading a refusal. The length bound is the same
+ * `MAX_TEXT_UNITS` the guard reads, so a bump moves both sides together.
  */
 export function nowOrUndefined(now: unknown): string | undefined {
-  return typeof now === "string" ? now : undefined;
+  if (typeof now !== "string") return undefined;
+  return now.length <= MAX_TEXT_UNITS ? now : undefined;
 }
 
 /** What the action claims its id is: a pin number, or absent when the model wrote something else. */

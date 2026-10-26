@@ -12,7 +12,12 @@
  * and the checks they run are in action.ts. The invariant all three keep is the one `isPinState`
  * reads back: nothing enters a state that the guard would then reject. Every field the reducer
  * copies verbatim is checked here first, `now` included — the guard's string test bounds length, so
- * a non-string timestamp is caught on the way in rather than rejected on the way out.
+ * a non-string or an over-long timestamp is caught on the way in rather than rejected on the way out.
+ *
+ * `text` is the one field the reducer does not merely check but *rewrites*: it is handed to the ops
+ * already run through `cleanPinText`, so a state this function returns never carries an escape byte
+ * whatever its caller did. The tool (Task 5) still applies the grapheme budget with `sanitizePinText`
+ * first, and cleaning twice is idempotent — the passes here only bound shape, never width.
  */
 import {
   type Action,
@@ -21,6 +26,8 @@ import {
   badLevel,
   badNow,
   badSource,
+  badUid,
+  cleanTextOrUndefined,
   idOrUndefined,
   isLevel,
   isSource,
@@ -28,7 +35,8 @@ import {
   missingText,
   normaliseIds,
   nowOrUndefined,
-  textOrUndefined,
+  uidOrUndefined,
+  unknownOp,
 } from "./action.ts";
 import { pinOp, unpinOp, updateOp } from "./reducer-ops.ts";
 import type { PinState } from "./types.ts";
@@ -46,21 +54,31 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
   if (now === undefined) return badNow();
   switch (action.op) {
     case "pin": {
-      // Refused before the duplicate lookup: an absent text coerced to "" would become a real,
-      // matchable pin text, so one such pin would absorb every later textless pin as its duplicate
-      // and slip past the limit through that branch.
-      const text = textOrUndefined(action.text);
-      if (text === undefined || text === "") return missingText();
+      // Refused before the duplicate lookup: text that cleans to "" would become a real, matchable
+      // pin text, so one such pin would absorb every later blank pin as its duplicate and slip past
+      // the limit through that branch.
+      const text = cleanTextOrUndefined(action.text);
+      if (text === undefined) return missingText();
       if (!isLevel(action.level)) return badLevel();
       if (!isSource(action.source)) return badSource();
-      return pinOp(state, { text, level: action.level, source: action.source, now }, uid, limits);
+      // The uid is minted here rather than in `pinOp` so a source that hands back something the
+      // guard's UID pattern refuses (a fixture, a future caller's own generator) is a refusal instead
+      // of an ok result carrying a snapshot no rebuild will read back.
+      const minted = uidOrUndefined(uid());
+      if (minted === undefined) return badUid();
+      return pinOp(
+        state,
+        { text, level: action.level, source: action.source, now },
+        minted,
+        limits,
+      );
     }
     case "update": {
       // The id is checked before the lookup: a `1.5` or a `null` is not a pin number, and reporting
       // `No pin #1.5.` would tell the model a fact about pins that is really a fact about its call.
       const id = idOrUndefined(action.id);
       if (id === undefined) return missingId("update");
-      const text = textOrUndefined(action.text);
+      const text = cleanTextOrUndefined(action.text);
       if (text === undefined && action.level === undefined) {
         return { ok: false, error: "update needs text or level" };
       }
@@ -82,5 +100,9 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       if (!isSource(action.source)) return badSource();
       return unpinOp(state, ids, { source: action.source, now });
     }
+    default:
+      // An op the tool's schema never sends and no case handles: refuse it by name rather than
+      // returning undefined from a switch the compiler can no longer see as exhaustive.
+      return unknownOp((action as { op?: unknown }).op);
   }
 }

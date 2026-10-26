@@ -6,7 +6,7 @@
  * already in use, or already shown to the user and dismissed, is a pin whose number would be
  * reused, and the model would then be told to update one pin while acting on another.
  */
-import { MAX_PINS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
+import { MAX_PINS, MAX_TEXT_UNITS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
 import type { Pin, PinState, Removal, UserAction } from "./types.ts";
 
 /** A `{...}` object: enough to read an entry's own fields, never to trust its contents. */
@@ -17,16 +17,14 @@ export function isPlainObject(x: unknown): x is Record<string, unknown> {
 /**
  * What a uid has to look like: an opaque address handed to the model and compared with `===`, so
  * nothing that could be drawn as markup or a control reaches it. `crypto.randomUUID()` — what
- * `applyAction` mints — matches, and so do the fixtures.
+ * `applyAction` mints — matches, and so do the fixtures. Exported for the reducer, which refuses a
+ * minted uid the guard would then reject rather than publish a snapshot no rebuild reads back.
  */
 const UID = /^[A-Za-z0-9_-]{1,64}$/;
 
-function isUid(x: unknown): x is string {
+export function isUid(x: unknown): x is string {
   return typeof x === "string" && UID.test(x);
 }
-
-/** The longest pin text or timestamp a snapshot may carry, in UTF-16 units. */
-const MAX_TEXT_UNITS = 8000;
 
 /**
  * A length bound and nothing else — read `isPinState` as a *shape* guard, never as a content
