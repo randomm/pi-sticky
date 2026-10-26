@@ -7,16 +7,22 @@
  * opens is one the extension opened and every `custom()` promise is one its recorder settles. Here the
  * host can fail.
  */
+import { NO_PANEL_COLOUR } from "../src/panel-component.ts";
 import type { PanelDeps } from "../src/panel-deps.ts";
 import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
-import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { PinView } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
 
-/** The identity style, plus the bar the panel needs and `plainStyle` has no opinion about. */
-const panelStyle: PanelStyle = { ...plainStyle, selected: (text) => text };
+/**
+ * The style the wiring hands the owner. `PanelOwner` never draws, so it never calls `themeStyle`: every
+ * style it receives is built by the one caller that draws a panel (`panel-overlay.ts`), and the identity
+ * colours are pinned there and on the component (`NO_PANEL_COLOUR`, `panel-owner.test.ts`). A closure
+ * built here for a member nobody calls would only be counted, never exercised — so this answers the
+ * owner's type with the identity `NO_PANEL_COLOUR` rather than inventing stubs.
+ */
+const panelStyle: PanelStyle = NO_PANEL_COLOUR;
 
 /** The one-pinned view every hand-built wiring starts from. */
 export const ONE: PinView = { pins: [pin(1, "Decide X")], removed: [] };
@@ -39,7 +45,9 @@ export function wiring(
    * `setPanelShown` and `recordPanelShown`, plus the `notify` the open path uses for a rejected
    * `custom()` or a close whose handle threw. `panelFactory`'s host closure mentions `dismiss`,
    * `startReply` and the component's notify too, and those are exercised where the component is driven
-   * (`panel-component.test.ts`, `panel-lifecycle-toggles.test.ts`), not on an inert stub here. The rest
+   * (`panel-component.test.ts`, `panel-lifecycle-toggles.test.ts`), not on an inert stub here. Neither is
+   * `themeStyle`: the owner has no draw path, so a style built here would be a closure no test ever
+   * calls. The rest
    * of `StickyDeps` (`config`, `now`, `getState`, `redraw`, `commit`, `appendUserAction`) belongs to the
    * tool, the commands and the reminder, which these files do not drive. Declaring no-ops for members
    * nobody calls would only inflate this file's function coverage with dead code, so the object is built

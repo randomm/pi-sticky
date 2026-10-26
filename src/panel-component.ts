@@ -9,31 +9,25 @@
  * cannot leave the bar past the end.
  *
  * Keys reach this component only while the overlay holds focus (pi-tui routes input to the focused
- * component alone), which is why the hint line is drawn only while focused: an unfocused panel
- * advertising keys it cannot receive would be a lie. Kitty release and repeat events are swallowed,
+ * component alone), which is why the keys hint is drawn only while focused — in the bottom border, and
+ * only there. Kitty release and repeat events are swallowed,
  * so a held `j` moves once and a held `d` dismisses once.
  *
  * `Enter` submits nothing: it puts `Re #<id>: ` at offset 0 of the raw editor buffer and hands focus
  * back to the main editor. The marker replaces one that is already there and the rest of the draft
  * is kept verbatim; submitting it is the reply ticket's job.
  */
-import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
-
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, KeyId, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
-import { panelRows } from "./panel-height.ts";
 import type { PanelHost } from "./panel-host.ts";
-import { isDismissKey, isSubmitKey, presses } from "./panel-keys.ts";
+import { dispatchPanelKey } from "./panel-input.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
+import { panelLayout } from "./panel-rows.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
-
-/** The keys that move the bar; `matchesKey` also takes the Kitty forms of each. */
-const UP_KEYS: readonly KeyId[] = ["up", "k"];
-const DOWN_KEYS: readonly KeyId[] = ["down", "j"];
 
 /**
  * Colours for a component whose host has none to give and whose factory got no theme: the rail's
@@ -46,6 +40,8 @@ export const NO_PANEL_COLOUR: PanelStyle = {
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => s,
+  border: (s) => s,
+  borderFocused: (s) => s,
 };
 
 /** What one cached frame is: the lines, the width they were measured for, and what drew them. */
@@ -55,14 +51,6 @@ interface PanelFrame {
   pins: readonly ViewPin[];
   selection: number;
   focused: boolean;
-}
-
-/**
- * `Re #12: ` at the front of a draft, replacing a marker that is already there. Anchored at offset 0
- * of the *raw* buffer: a leading space the user typed is part of the draft, not a marker to replace.
- */
-export function replyMarker(text: string, id: number): string {
-  return `Re #${id}: ${text.replace(/^Re #\d+: /, "")}`;
 }
 
 /**
@@ -201,6 +189,11 @@ export class PanelComponent implements Component {
     return this.#selection;
   }
 
+  /** The pins the panel is drawing — the view read at the moment the key arrives, never a cached copy. */
+  get pins(): readonly ViewPin[] {
+    return this.#host.getView().pins;
+  }
+
   render(width: number): string[] {
     // The live view is read first and is part of the cache key, not just of the frame: width alone
     // cannot tell a view that has been swapped from one that has not, and `update()` — the member that
@@ -216,7 +209,18 @@ export class PanelComponent implements Component {
       selection: this.#selection,
       focused: this.#focused,
     };
-    const lines = buildPanelLines(content, width, this.#height(), this.#styleOf());
+    // One layout pass at the width pi-tui just handed over: the row table it builds is what both the
+    // frame's height and the drawn window come from, so a pin is wrapped once per frame and a resize
+    // sizes the box at the width it is drawn at rather than the last cached one. `panelLayout` owns the
+    // height; the builder draws the lines it counted.
+    const layout = panelLayout(
+      pins,
+      width,
+      this.#tui?.terminal?.rows,
+      this.#selection,
+      this.#styleOf(),
+    );
+    const lines = buildPanelLines(content, width, this.#styleOf(), layout);
     this.#frame = { lines, width, pins, selection: this.#selection, focused: this.#focused };
     return lines;
   }
@@ -243,46 +247,7 @@ export class PanelComponent implements Component {
   }
 
   #handleInput(data: string): void {
-    if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
-    // The panel owns the keyboard only while it is on screen. pi-tui routes input to the focused
-    // component alone, but it asks *the overlay* whether to draw it, and the two answers can disagree —
-    // a pin removed from under an open overlay, a hide, a terminal that narrowed past the panel's
-    // boundary. A key into a panel nobody can see has no visible answer, so it is handed back instead of
-    // acted on: `unfocus()` puts the focus where the user is typing and tells the owner to settle the rail.
-    if (!this.#host.isVisible()) {
-      this.unfocus();
-      return;
-    }
-    const pins = this.#host.getView().pins;
-    if (matchesKey(data, "escape")) {
-      this.unfocus();
-      return;
-    }
-    if (isSubmitKey(data)) {
-      const pin = pins[this.#selection];
-      if (pin) this.#host.startReply(pin.id);
-      this.unfocus();
-      return;
-    }
-    if (isDismissKey(data)) {
-      const pin = pins[this.#selection];
-      // The host's dismissal redraws and `update()` re-clamps, so dismissing the last pin lands the
-      // bar on the new last one rather than on a row that no longer exists.
-      if (pin) this.#host.dismiss(pin.id);
-      return;
-    }
-    const moved = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
-    if (moved === 0) return;
-    const next = this.#selection + moved;
-    if (next < 0 || next >= pins.length) return;
-    this.#selection = next;
-    this.invalidate();
-    this.#host.requestRender();
-  }
-
-  /** Rows to draw, from the terminal this component was built with — see `panel-height.ts`. */
-  #height(): number {
-    return panelRows(this.#tui?.terminal?.rows);
+    dispatchPanelKey(data, this, this.#host);
   }
 }
 

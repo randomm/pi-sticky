@@ -14,12 +14,13 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import { buildPanelLines, panelPinRows } from "../src/panel-lines.ts";
+import { buildPanelLines, panelLayout, panelPinRows } from "../src/panel-lines.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
+import { TERMINAL_ROWS } from "./panel-hostile.ts";
 import { boot, panelComponent, pinEntry } from "./panel-lifecycle-fixture.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
@@ -29,6 +30,8 @@ const style: PanelStyle = {
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => `[${s}]`,
+  border: (s) => s,
+  borderFocused: (s) => s,
 };
 
 /** The same colours for a component built on the hand-built host, where the style is a host member. */
@@ -47,15 +50,22 @@ const frame = (
   selection: number,
   focused: boolean,
   width = 40,
-): string[] => buildPanelLines({ pins, selection, focused }, width, 6, style);
+): string[] =>
+  buildPanelLines(
+    { pins, selection, focused },
+    width,
+    style,
+    panelLayout(pins, width, TERMINAL_ROWS, selection, style),
+  );
 
 describe("the replied row of the panel", () => {
   test("opens the text column with the mark and carries no trailing one", () => {
     const lines = frame([repliedPin(1, "Decide X")], 0, false);
     // Exact string: the mark moved from the end of the row to the front of the text column, and an
     // assertion that accepted either form would pass against the drawing this ticket replaced. The panel
-    // draws the text column and pads it, then the dim `#id HH:MM` tail follows it.
-    expect(lines[1]).toBe(` • ↩ Decide X #1 ${localTime(NOW)}`.padEnd(40));
+    // draws the text column and pads it, then the dim `#id HH:MM` tail follows it — all of it between the
+    // frame's gutters, one space inside each.
+    expect(lines[1]).toBe(`${`│  • ↩ Decide X #1 ${localTime(NOW)}`.padEnd(39)}│`);
     expect(lines[1] ?? "").not.toMatch(/↩\s*$/);
   });
 
@@ -63,18 +73,25 @@ describe("the replied row of the panel", () => {
     // The pair the two assertions above turn on: the mark is the only difference, so the row's shape —
     // marker, id, time, two spaces, text — is not something the replied case invented.
     const unreplied = frame([pin(1, "Decide X", "info", { createdAt: NOW })], 0, false);
-    expect(unreplied[1]).toBe(` • Decide X #1 ${localTime(NOW)}`.padEnd(40));
+    expect(unreplied[1]).toBe(`${`│  • Decide X #1 ${localTime(NOW)}`.padEnd(39)}│`);
   });
 
   test("the dim is asked for over the whole text column, mark included", () => {
     const dimmed: string[] = [];
-    buildPanelLines({ pins: [repliedPin(1, "Decide X")], selection: 0, focused: false }, 40, 6, {
+    const dimStyle: PanelStyle = {
       ...style,
       dim: (s) => {
         dimmed.push(s);
         return s;
       },
-    });
+    };
+    const pins = [repliedPin(1, "Decide X")];
+    buildPanelLines(
+      { pins, selection: 0, focused: false },
+      40,
+      dimStyle,
+      panelLayout(pins, 40, TERMINAL_ROWS, 0, dimStyle),
+    );
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
 

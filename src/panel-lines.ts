@@ -1,47 +1,99 @@
 /**
  * The lines of the right-hand pins panel, as a pure function. Nothing here knows about a session,
- * a theme instance or an overlay: it is handed the ordered pins, the width and height pi-tui gave
- * the overlay, which pin is selected and whether the panel holds focus, and it returns at most
- * `height` lines, each of exactly `width` visible columns (operator decision *Margin*: the panel is
- * flush right, so a short line has to be padded or the content behind it shows through).
+ * a theme instance or an overlay: it is handed the ordered pins, the width the component resolved for
+ * the overlay, the row table `panelLayout` built for that width, which pin is selected and whether the
+ * panel holds focus, and it returns exactly `layout.height` lines, each of exactly `width` visible
+ * columns (operator decision *Margin*: the panel is flush right, so a short line has to be padded or the
+ * content behind it shows through).
  *
- * Three shapes come out of it, in this order: the header `📌 Pinned for you (n)`, the window of
- * pin rows, and — only while the panel holds focus — the hint line. The content budget is
- * `height - 1 - (focused ? 1 : 0)`; the scroll offset only ever moves that window, so neither the
- * header nor the hint can be scrolled away (panel ticket, Height).
+ * The height is *not* a parameter. `panelLayout` counts the frame's rows and the builder draws them, so
+ * the box is as tall as the rows it draws and no caller can size one frame and draw another; the content
+ * budget is `layout.height - BORDER_ROWS` whatever the focus — the hint owns a border row, never a
+ * content row — and the scroll offset only ever moves that window, so neither the header nor the hint can
+ * be scrolled away (operator decision *Height*).
  *
- * Each pin's text is wrapped with pi-tui's `wrapTextWithAnsi` and every produced line goes through
- * the pad-and-cut below, because `wrapTextWithAnsi` breaks on words and a single word wider than
- * the panel comes back whole.
+ * Below `PANEL_MIN_FRAME_COLUMNS` columns or `PANEL_MIN_FRAME_ROWS` rows the panel draws nothing: an
+ * inner width of less than one column, or a height with no room for both borders, cannot be a *closed*
+ * box, and an open one is worse than none.
+ *
+ * The rows themselves — how many a pin contributes and where the window starts — are `panel-rows.ts`;
+ * this module draws them, and owns the frame, the borders and the one escape policy every drawn line
+ * goes through. Each pin's text is wrapped at the inner width (`width - 4`) and every produced line is
+ * padded or cut here, because `wrapTextWithAnsi` breaks on words and a single word wider than the panel
+ * comes back whole. The border glyphs and the theme's colours are trusted; a pin's text is not, and it
+ * never reaches a border.
  */
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "./escape.ts";
+import {
+  CORNER_COLUMNS,
+  ELLIPSIS,
+  FRAME_BOTTOM_LEFT,
+  FRAME_BOTTOM_RIGHT,
+  FRAME_TOP_LEFT,
+  FRAME_TOP_RIGHT,
+  INJECTED_RESET,
+  RULE,
+  frameGlyphs,
+  glyph,
+  gutter,
+  padPlain,
+} from "./panel-frame.ts";
 import { isPanelSize } from "./panel-geometry.ts";
-import { formatLocalTime } from "./time.ts";
+import {
+  GUTTER_COLUMNS,
+  META_RESERVE,
+  PANEL_MIN_FRAME_COLUMNS,
+  PANEL_MIN_FRAME_ROWS,
+  panelAllRows,
+  panelContentRows,
+  panelLayout,
+  panelPinRows,
+  panelWindowOffset,
+} from "./panel-rows.ts";
+import type { PanelLayout, PanelRow } from "./panel-rows.ts";
 
 import type { PanelStyle } from "./render.ts";
-import type { PinLevel, ViewPin } from "./types.ts";
+import type { ViewPin } from "./types.ts";
 
-/** The character drawn in front of a pin; the rail quotes the same three. */
-const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
+export {
+  BORDER_ROWS,
+  GUTTER_COLUMNS,
+  META_RESERVE,
+  panelAllRows,
+  panelContentRows,
+  panelLayout,
+  panelPinRows,
+  type PanelLayout,
+  type PanelRow,
+} from "./panel-rows.ts";
 
-/** Line 1 of the panel. The rail's header carries ` · /pins`; here `/pins` is on the keyboard. */
+export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
+
+/** Line 1 of the panel, written into the top border. The rail's header carries ` · /pins`; here `/pins` is on the keyboard. */
 const HEADER = "📌 Pinned for you";
 
-/** The keys the panel answers, spelled for the focused hint line. */
+/** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
 
-/** How wide the ` #id HH:MM` tail is allowed to be before the text loses room to a whole column. */
-const META_RESERVE = 10;
+/** Whether a size is one a closed frame fits in: the builder draws nothing below either bound. */
+function isPanelFrameSize(width: number, height: number): boolean {
+  return (
+    isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
+  );
+}
 
-/** pi-tui's cut ellipsis, spelled from its own code point. */
-const ELLIPSIS = String.fromCodePoint(0x2026);
-
-/** One drawn row of the panel: the pin's text column and its id/time tail. */
-export interface PanelRow {
-  text: string;
-  meta: string;
+/**
+ * Whether every glyph of one frame measures a single column through the theme.
+ *
+ * Six glyphs make the box — four corners, the gutter on each side and the rule — and each of them is
+ * drawn at a column the panel promised to fill, so a theme that wraps one in *visible* bytes is asking
+ * for a frame wider than the overlay was given, whichever of the six it wrapped. Measuring only some of
+ * them would leave the rest to be padded out over the chat behind a flush-right panel.
+ */
+function frameIsOneColumn(frame: (text: string) => string): boolean {
+  return frameGlyphs().every((glyphText) => visibleWidth(frame(glyphText)) === 1);
 }
 
 /** What the builder draws. `pins` is already in ranked order — the panel never re-sorts. */
@@ -50,123 +102,6 @@ export interface PanelContent {
   /** Selected *pin* index, not row index: a pin that wraps owns several rows. */
   selection: number;
   focused: boolean;
-}
-
-/** Rows the pin window gets at this size: the height less the header, less the hint when focused. */
-export function panelContentRows(height: number, focused: boolean): number {
-  return Math.max(0, height - 1 - (focused ? 1 : 0));
-}
-
-/**
- * Offset of the row the selected pin starts on: the smallest offset that puts it on screen,
- * clamped so the window never scrolls past the last pin. Taking the *pin* index rather than a row
- * index is what makes the scroll follow the bar the keys move.
- *
- * The wrapper over `panelWindowOffset` that a caller outside the builder uses: it derives the row table
- * itself, which costs a full wrap of every pin's text. `buildPanelLines` does not go through here — it
- * already has the table and passes it in, because wrapping the same pins three times per frame to draw a
- * window of them is the cost this avoids.
- */
-export function panelScrollOffset(
-  contentRows: number,
-  selection: number,
-  pins: readonly ViewPin[],
-  textWidth: number,
-  style: PanelStyle,
-): number {
-  return panelWindowOffset(
-    contentRows,
-    selection,
-    panelAllRows(pins, textWidth, style),
-    panelRowStartOf(pins, textWidth, style, selection),
-  );
-}
-
-/**
- * The same offset, from the rows the caller has already built and the start of the selected pin: the
- * window's start for a selection, given every row of every pin in order.
- *
- * `buildPanelLines` goes through this rather than through `panelScrollOffset` because it has the table
- * already: the wrapper above re-derives it, and doing that twice more per frame — once here, once inside
- * the row-start lookup — is what used to wrap the full text of every pin three times to draw a window of
- * them.
- */
-function panelWindowOffset(
-  contentRows: number,
-  selection: number,
-  all: readonly PanelRow[],
-  start: number,
-): number {
-  const total = all.length;
-  if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
-  if (start < 0) return total - contentRows;
-  return Math.min(start, total - contentRows);
-}
-
-/**
- * A pin's own rows: the first carries the id and the local time, the rest are continuation lines
- * under the text column. A pin whose text is empty still owns one row, so selection always has
- * something to address, and rows are never empty strings: a selected row is highlighted as a bar
- * across the panel, and an empty line would colour nothing.
- *
- * The level marker is the one thing here the caller may colour, so it is drawn through `marker`
- * rather than embedded in the text column — which is what lets a selected warning still read as a
- * warning under the bar.
- */
-export function panelPinRows(pin: ViewPin, textWidth: number, style: PanelStyle): PanelRow[] {
-  const meta = `#${pin.id} ${formatLocalTime(pin.createdAt)}`;
-  const marker = style.marker(pin.level, MARKER[pin.level]);
-  if (textWidth <= 0) return [{ text: ` ${marker} `, meta }];
-  // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
-  // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks
-  // like. The wrap happens *after* the mark is added, so a row cut to the width cannot lose it.
-  const body = pin.repliedAt === undefined ? pin.text : style.dim(`↩ ${pin.text}`);
-  const wrapped = wrapTextWithAnsi(body, textWidth);
-  const rows = wrapped.map((line, index) => ({
-    text: index === 0 ? ` ${marker} ${line}` : `   ${line}`,
-    meta: index === 0 ? meta : "",
-  }));
-  return rows.length > 0 ? rows : [{ text: ` ${marker} `, meta }];
-}
-
-/**
- * Rows of every pin, in order, flattened: the window the scroll offset moves.
- *
- * Rows are grouped by pin, not identified by it, so a row of its own is not enough to say which pin it
- * belongs to — two pins can produce byte-identical rows, and a pin that wraps produces several that
- * differ only in their empty `meta`. The count each pin owns is therefore taken from the pin itself
- * rather than inferred by scanning the table, which is what lets `panelRowStartOf` walk the groups.
- */
-export function panelAllRows(
-  pins: readonly ViewPin[],
-  textWidth: number,
-  style: PanelStyle,
-): PanelRow[] {
-  const rows: PanelRow[] = [];
-  for (const pin of pins) rows.push(...panelPinRows(pin, textWidth, style));
-  return rows;
-}
-
-/**
- * First row of the pin at `index`, or -1 when there is no such pin.
- *
- * Derived from the same per-pin row builder the table is made of, so the two cannot disagree about how
- * many rows a pin owns — the question the scroll window turns on.
- */
-function panelRowStartOf(
-  pins: readonly ViewPin[],
-  textWidth: number,
-  style: PanelStyle,
-  index: number,
-): number {
-  if (index < 0 || index >= pins.length) return -1;
-  let start = 0;
-  for (let i = 0; i < index; i++) {
-    const pin = pins[i];
-    if (!pin) return -1;
-    start += panelPinRows(pin, textWidth, style).length;
-  }
-  return start;
 }
 
 /**
@@ -197,61 +132,148 @@ function fitLine(line: string, width: number): string {
   return padPlain(plain, width);
 }
 
-/** Pad an already-safe line out to the width. */
-function padPlain(line: string, width: number): string {
-  return line + " ".repeat(Math.max(0, width - visibleWidth(line)));
-}
-
-/** The text column and its dim `#id HH:MM` tail; the bar goes over the whole row. */
-function pinRow(row: PanelRow, width: number, style: PanelStyle, selected: boolean): string {
+/** A pin's text column and its dim `#id HH:MM` tail, fitted to the inner width between the gutters. */
+function pinRow(
+  row: PanelRow,
+  inner: number,
+  style: PanelStyle,
+  selected: boolean,
+  gutterAt: (text: string) => string,
+): string {
   const tail = row.meta === "" ? "" : ` ${row.meta}`;
   const body = tail === "" ? row.text : `${row.text}${style.dim(tail)}`;
-  return fitLine(selected ? style.selected(body) : body, width);
+  return gutter(fitLine(selected ? style.selected(body) : body, inner), gutterAt);
 }
 
 /**
- * The panel's lines at a size: the header, the scrolled window of pin rows, and the hint while
- * focused. A negative selection draws no highlight. An empty view draws no rows at all — the overlay is
- * opened for the pins, and with none the frame has nothing to clear.
+ * One border row: the corner, the label it carries (the header at the top, the hint at the bottom), the
+ * rule filling what is left, and the other corner. The label is padded to the room it was given — the
+ * border's own right margin, the one space that keeps the rule off the label's last character — and the
+ * rule, not blanks, is what then fills the rest of the border: the panel is flush right, so a run of
+ * blanks at its right edge would read as a border that was never drawn. A label too long for the room is
+ * cut with `…` instead, so a header or hint loses a character rather than pushing a corner past the width.
+ * The corners are measured glyphs and the rule is counted columns, so no theme colouring can move the rule
+ * out from under a corner: the box closes at every size the builder draws at.
+ */
+function borderLine(
+  label: string,
+  labelStyle: (text: string) => string,
+  left: string,
+  right: string,
+  width: number,
+  frame: (text: string) => string,
+): string {
+  const text = label === "" ? "" : ` ${fitLabel(labelStyle(label), width - CORNER_COLUMNS - 2)} `;
+  // The rule reaches the right corner of the border whatever the label does with the room it was given:
+  // a cut ends at the last column it was allowed, a label shorter than its room leaves the rest to the
+  // rule. No border ever ends in a blank — the panel is flush right, and blanks at its edge would read
+  // as a frame that was never drawn.
+  const rule = Math.max(0, width - CORNER_COLUMNS - visibleWidth(text));
+  return `${glyph(frame, left)}${text}${RULE.repeat(rule)}${glyph(frame, right)}`;
+}
+/**
+ * A border label at the room the border gives it, under the same escape policy as every other drawn line:
+ * the theme's bytes are refused before the label is measured, so nothing a theme wraps the label in can
+ * reach a border column (the frame is drawn from the *stripped* label, never the styled one).
+ *
+ * A label that fits is cut by nothing and padded by nothing — the rule is the padding, and a pad here
+ * would put a blank between the label and the corner. A label too long is cut with `…`, minus the reset
+ * bytes pi-tui wraps its own ellipsis in: those are the cut's bytes, and a border row is drawn at one
+ * column per character, so the ellipsis is put back and the line carries no escape the builder introduced.
+ */
+function fitLabel(label: string, room: number): string {
+  const plain = stripSequences(label);
+  if (visibleWidth(plain) <= room) return plain;
+  const cut = stripSequences(truncateToWidth(plain, room, ELLIPSIS)).replace(
+    INJECTED_RESET,
+    ELLIPSIS,
+  );
+  return padPlain(cut, room);
+}
+
+/**
+ * The panel's frame at a size: the top border carrying the header, the scrolled window of pin rows
+ * between the gutters, and the bottom border carrying the hint while focused. A negative selection
+ * draws no highlight. An empty view draws no rows at all — the overlay is opened for the pins, and with
+ * none the frame has nothing to clear.
+ *
+ * `layout` is the row table `panelLayout` built for the width `width` — the same table the frame's
+ * height was counted from, so the box is as tall as the rows it draws and no pin is wrapped twice. The
+ * builder draws exactly `layout.height` lines and builds no table of its own: it owns the drawing, never
+ * the sizing, so a caller cannot ask for one frame and draw another.
  */
 export function buildPanelLines(
   content: PanelContent,
   width: number,
-  height: number,
   style: PanelStyle,
+  layout: PanelLayout,
 ): string[] {
-  // A fractional size is one the panel cannot honour: the whole point of this function is that every
-  // line measures exactly `width` columns, and padding to 30.5 leaves the chat showing through.
-  if (!isPanelSize(width, height)) return [];
+  // A size the panel cannot promise about draws nothing at all: the whole point of this function is
+  // that every line measures exactly `width` columns, and padding to 30.5 — or drawing a box whose two
+  // border rows have eaten the height — leaves the chat showing through an open frame.
+  if (!isPanelFrameSize(width, layout.height)) return [];
   // Nothing pinned is no rows at all, not a titled box asserting it is empty: the overlay is opened
   // for the pins, and a frame in which the last one was dismissed should show the prompt around it
   // rather than a header that repeats the absence. The check lives here, with the pins in front of it,
   // rather than in the component: this is the function that knows what an empty *view* is.
   if (content.pins.length === 0) return [];
-  const lines: string[] = [fitLine(style.header(`${HEADER} (${content.pins.length})`), width)];
-  const budget = panelContentRows(height, content.focused);
-  if (budget === 0) {
-    if (content.focused && lines.length < height) lines.push(fitLine(style.dim(HINT), width));
-    while (lines.length < height) lines.push(fitLine("", width));
-    return lines.slice(0, height);
-  }
 
-  const textWidth = Math.max(1, width - META_RESERVE);
-  // The layout of every pin is wrapped *once* here and handed to the offset along with the selected
-  // pin's own start, so a frame pays for one pass over the pins rather than three.
-  const all = panelAllRows(content.pins, textWidth, style);
-  const start = panelRowStartOf(content.pins, textWidth, style, content.selection);
-  const offset = panelWindowOffset(budget, content.selection, all, start);
-  for (let i = 0; i < budget && lines.length < height; i++) {
-    const row = all[offset + i];
-    if (!row) {
-      lines.push(fitLine("", width));
-      continue;
-    }
-    lines.push(pinRow(row, width, style, content.focused && i === content.selection - offset));
-  }
+  const frame = content.focused ? style.borderFocused : style.border;
+  // A border the theme colours with *visible* bytes — a wrapper rather than a colour — asks for a frame
+  // wider than the overlay was given, and that is true of any of the six glyphs the frame draws: four
+  // corners, the gutter on each side and the rule between them. A corner owns the column the chat behind
+  // the panel ends at, so a wrapper around one is the same over-wide frame as a wrapper around a gutter.
+  // That is not a frame the panel can promise, so the answer is the same one a fractional size gets:
+  // nothing, and the rail keeps the pins. A real theme's `fg` adds only SGR bytes, which `visibleWidth`
+  // does not count, so this never fires on pi's own colours.
+  if (!frameIsOneColumn(frame)) return [];
+  // The frame's own glyphs go through the same line policy as every other drawn string: the gutters and
+  // corners must measure one column whatever the theme, or a colouring that pi-tui counts as zero-width
+  // would leave a row short and the chat showing through it.
+  const gutterAt = (text: string) => glyph(frame, text);
+  // The gutters own four columns, so every pin is laid out at the inner width — and laid out *once*
+  // for the whole frame: the offset and the selected pin's own start row both come out of the one table
+  // the caller sized the frame with.
+  const inner = width - GUTTER_COLUMNS;
+  const budget = panelContentRows(layout.height);
+  const owned = layout.owned;
+  // The window is cut from the table the height was counted from, so `min(budget, owned.length - start)`
+  // rows are always reachable: the offset stops at the last window that fits inside the table, and the
+  // loop below stops at a row that does not exist rather than padding one in.
+  const offset = panelWindowOffset(
+    budget,
+    content.selection,
+    owned.map((entry) => entry.row),
+    layout.start,
+  );
 
-  if (content.focused && lines.length < height) lines.push(fitLine(style.dim(HINT), width));
-  while (lines.length < height) lines.push(fitLine("", width));
-  return lines.slice(0, height);
+  const header = `${HEADER} (${content.pins.length})`;
+  const lines: string[] = [
+    borderLine(header, style.header, FRAME_TOP_LEFT, FRAME_TOP_RIGHT, width, frame),
+  ];
+  // The window's rows, taken from the table the height was counted from: `layout.height` is
+  // `owned.length` plus the borders until the ceiling cuts it, so a frame whose content fits draws every
+  // row of that content and no blank row of padding — the only rows it cannot reach are the ones the
+  // ceiling cut off, which is what the offset scrolls through.
+  for (let i = 0; i < budget; i++) {
+    const row = owned[offset + i]?.row;
+    if (row === undefined) break;
+    // The bar is on the row the keys moved to *and only while the panel holds focus* — an unfocused
+    // panel highlighting its top row would claim the bar sits where the user is not.
+    const selected = content.focused && i === content.selection - offset;
+    lines.push(pinRow(row, inner, style, selected, gutterAt));
+  }
+  // The hint is drawn only while focused: an unfocused panel advertising keys it cannot receive would
+  // be a lie, and it has nowhere else to be written — the bottom border is the frame's own.
+  lines.push(
+    borderLine(
+      content.focused ? HINT : "",
+      style.dim,
+      FRAME_BOTTOM_LEFT,
+      FRAME_BOTTOM_RIGHT,
+      width,
+      frame,
+    ),
+  );
+  return lines;
 }

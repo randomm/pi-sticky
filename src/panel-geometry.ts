@@ -22,12 +22,36 @@ import type { ViewPin } from "./types.ts";
 /** Below this many columns the panel has no room and the above-editor rail draws instead. */
 export const PANEL_MIN_COLUMNS = 100;
 
-/** The panel's own overlay configuration, fixed by the ticket rather than configurable. */
+/**
+ * The smallest frame the builder will close, and so the smallest overlay pi may hand it: two border rows
+ * over one row of pins, and a gutter and its space on each side of at least one column of text. Below
+ * either bound the builder draws nothing rather than an open box, which is why these two numbers are
+ * stated here with the overlay's own `minWidth` — `minWidth` *is* the columns bound, and pi-tui's
+ * `OverlayOptions` has no `minHeight` to state the rows bound in, so the component is what keeps a frame
+ * from being asked for a height it would refuse to close. Neither is `PANEL_MIN_COLUMNS`, which is the
+ * wider terminal a panel takes the pins off the rail at: a narrower overlay simply never gets a frame,
+ * and the rail keeps them.
+ */
+export const PANEL_MIN_FRAME_COLUMNS = 30;
+export const PANEL_MIN_FRAME_ROWS = 3;
+
+/**
+ * The panel's own overlay configuration, fixed by the ticket rather than configurable.
+ *
+ * Anchored at the *top* right and capped at half the terminal: the panel is a column of notes beside
+ * the conversation, not a second transcript, and an overlay that filled the rows hid the chat it is
+ * meant to annotate. The cap is a ceiling rather than a height — the component draws only as many rows
+ * as its pins need (`panel-height.ts`) — and `minWidth` is the narrowest frame the builder will close
+ * (`PANEL_MIN_FRAME_COLUMNS`, exported from this file just above), which is why the two numbers are the same 30. The
+ * rows a frame needs are the builder's floor too (`PANEL_MIN_FRAME_ROWS`), but pi-tui's
+ * `OverlayOptions` has no `minHeight` to state it in, so the component is what keeps a frame from being
+ * asked for a height it would refuse to close.
+ */
 export const PANEL_OVERLAY_OPTIONS: OverlayOptions = {
-  anchor: "right-center",
+  anchor: "top-right",
   width: "33%",
-  minWidth: 30,
-  maxHeight: "100%",
+  minWidth: PANEL_MIN_FRAME_COLUMNS,
+  maxHeight: "50%",
   nonCapturing: true,
 };
 
@@ -39,7 +63,10 @@ export const PANEL_OVERLAY_OPTIONS: OverlayOptions = {
  * precondition rather than catching a live defect: a host that states 30.5 has stated a size the panel
  * cannot honour, and the honest answer is the rail's. The integer rule is written once, here: both
  * questions pi-tui asks — "does the overlay draw?" and "can this frame be laid out?" — are answered in
- * terms of it, so they cannot disagree about what a fractional width means.
+ * terms of it, so they cannot disagree about what a fractional width means. How *small* a promiseable
+ * size is is the frame builder's floor (`PANEL_MIN_FRAME_COLUMNS`, exported from this file just above),
+ * not this
+ * predicate's: the overlay and the rail agree on this one.
  */
 export function isPanelSize(width: number, height: number): boolean {
   return Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0;

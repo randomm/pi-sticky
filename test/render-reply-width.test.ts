@@ -7,21 +7,27 @@
  * matters most — narrow enough that everything is cut — because the mark is one grapheme of content a
  * cut can reach before the pin's text does.
  *
- * Two invariants, asserted for every width from 1 to 40: a row drawn with `plainStyle` carries no
- * escape byte and no break, and every row measures within the width the caller gave it. The panel's
- * version is stronger — each line has to measure *exactly* the width, because the overlay is flush
- * right and a short row lets the chat behind it show through.
+ * Two invariants, asserted for every width from 1 to 40 on the rail and from the frame's floor up on
+ * the panel: a row drawn with `plainStyle` carries no escape byte and no break, and every row measures
+ * within the width the caller gave it. The panel's version is stronger — each line has to measure
+ * *exactly* the width, because the overlay is flush right and a short row lets the chat behind it show
+ * through — and it draws nothing at all below the width a frame cannot close at.
  */
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { buildPanelLines, panelPinRows } from "../src/panel-lines.ts";
+import {
+  PANEL_MIN_FRAME_COLUMNS,
+  buildPanelLines,
+  panelLayout,
+  panelPinRows,
+} from "../src/panel-lines.ts";
 import { plainStyle, renderRailLines } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, NOW_TIME, pin } from "./fixtures.ts";
-import { HOSTILE, offenders } from "./panel-hostile.ts";
+import { HOSTILE, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
 
 const replied = (id: number, text: string): ViewPin => ({
   ...pin(id, text, "info", { createdAt: NOW }),
@@ -42,6 +48,8 @@ const plainPanel: PanelStyle = {
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => `[${s}]`,
+  border: (s) => s,
+  borderFocused: (s) => s,
 };
 
 /** Every line exactly `width` columns, or the panel would composite over the chat behind it. */
@@ -129,15 +137,19 @@ describe("a replied rail row", () => {
 });
 
 describe("a replied panel row", () => {
-  test("fills the width exactly and carries no escapes at every width from 1 to 40", () => {
-    for (let width = 1; width <= 40; width++) {
+  test("fills the width exactly and carries no escapes at every width the frame closes at", () => {
+    // The builder draws nothing below the frame's own floor — an open box is the failure it exists to
+    // make impossible — so the sweep starts where a frame closes rather than at one column.
+    for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
+      const pins = [replied(1, "Decide X")];
       const lines = buildPanelLines(
-        { pins: [replied(1, "Decide X")], selection: 0, focused: false },
+        { pins, selection: 0, focused: false },
         width,
-        5,
         plainPanel,
+        panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
       );
-      expect(lines).toHaveLength(5);
+      // The one-pin panel is three rows — border, pin, border — at every width the frame closes at.
+      expect(lines).toHaveLength(3);
       expectUniformWidth(lines, width);
       for (const line of lines) {
         expect(offenders(line)).toEqual([]);
@@ -146,12 +158,13 @@ describe("a replied panel row", () => {
   });
 
   test("a selected replied row keeps the bar, the mark and the width", () => {
-    for (let width = 12; width <= 40; width++) {
+    for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
+      const pins = [replied(1, "Decide X")];
       const lines = buildPanelLines(
-        { pins: [replied(1, "Decide X")], selection: 0, focused: true },
+        { pins, selection: 0, focused: true },
         width,
-        5,
         plainPanel,
+        panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
       );
       expectUniformWidth(lines, width);
       const row = lines[1] ?? "";
@@ -164,15 +177,12 @@ describe("a replied panel row", () => {
   test("hostile text in a replied pin is drawn as text at the widths that force a cut", () => {
     for (const focused of [false, true]) {
       for (const width of [12, 20, 33]) {
+        const pins: ViewPin[] = [{ ...replied(1, cleanPinText(HOSTILE)), level: "warning" }];
         const lines = buildPanelLines(
-          {
-            pins: [{ ...replied(1, cleanPinText(HOSTILE)), level: "warning" }],
-            selection: 0,
-            focused,
-          },
+          { pins, selection: 0, focused },
           width,
-          6,
           plainPanel,
+          panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
         );
         expectUniformWidth(lines, width);
         for (const line of lines) expect(offenders(line)).toEqual([]);

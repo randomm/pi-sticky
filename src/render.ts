@@ -41,13 +41,20 @@ export interface Style {
 }
 
 /**
- * What the panel draws with: the rail's three colours, plus the bar drawn behind the selected pin.
- * Extends `Style` rather than repeating it, so one theme mapping colours both surfaces and a level
- * token cannot be changed on one side only. `plainStyle` is not a `PanelStyle` — it has no bar — so
- * the panel asks the theme for one.
+ * What the panel draws with: the rail's three colours, plus the bar drawn behind the selected pin and
+ * the glyphs of the frame around it. Extends `Style` rather than repeating it, so one theme mapping
+ * colours both surfaces and a level token cannot be changed on one side only. `plainStyle` is not a
+ * `PanelStyle` — it has neither bar nor border — so the panel asks the theme for one.
+ *
+ * The two border members are one per focus state rather than one member and a flag, so a style with no
+ * frame of its own says so once (`NO_PANEL_COLOUR`) instead of taking an argument it would ignore.
  */
 export interface PanelStyle extends Style {
   selected(s: string): string;
+  /** The box-drawing glyphs of a panel the user is not in. */
+  border(s: string): string;
+  /** The same glyphs while the panel holds focus: the frame is what says the keys are live. */
+  borderFocused(s: string): string;
 }
 
 /**
@@ -66,16 +73,20 @@ export function themeStyle(theme: Theme): Style {
 
 /**
  * The panel's colours: the rail's three (see `themeStyle`, which the rail builds from the same
- * theme), plus the bar behind the selected pin. `selectedBg` is the
+ * theme), plus the bar behind the selected pin and the frame's glyphs. `selectedBg` is the
  * token pi's own selection lists use, so the panel's bar is the same colour as the bar in `/tree`;
  * `inverse` is the fallback for a theme that gives the token no colour at all, where a background
- * would be indistinguishable from the panel's own.
+ * would be indistinguishable from the panel's own. The frame asks pi's `border` and `borderAccent`
+ * tokens — the two pi already uses for a rule that is merely present and a rule that holds the focus —
+ * so the panel's box is drawn in the same colours as the editor's own rule and not a third shade.
  */
 export function panelThemeStyle(theme: Theme): PanelStyle {
   return {
     ...themeStyle(theme),
     selected: (text) =>
       theme.getBgAnsi("selectedBg") === "" ? theme.inverse(text) : theme.bg("selectedBg", text),
+    border: (text) => theme.fg("border", text),
+    borderFocused: (text) => theme.fg("borderAccent", text),
   };
 }
 

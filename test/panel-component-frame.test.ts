@@ -26,7 +26,13 @@ const BAR_STYLE: PanelStyle = {
   marker: (_level, text) => text,
   dim: (text) => text,
   selected: (text) => `[${text}]`,
+  border: (text) => text,
+  borderFocused: (text) => text,
 };
+
+// The frame is four columns wide — a gutter and its space on each side — so a component test that
+// asserts on a drawn row asks for four columns more than the builder spec does, and the bar still reads
+// against the inner columns rather than the frame.
 
 /** A component over a recorded host whose frame cache may hold a view nobody asked for. */
 function staleFrameComponent(pins: ViewPin[]) {
@@ -46,19 +52,20 @@ test("a view swap without an update() rebuilds the frame at the same width", () 
   // the plain style colours nothing, so an unfocused panel hands back identical lines whatever the bar.
   c.focus();
   c.select(2);
-  expect(c.render(40).join("\n")).toContain("[ • Dismissed");
+  // The bar sits inside the gutters, so the drawn row opens with the gutter, its space, and then the bar.
+  expect(c.render(44).join("\n")).toContain("│ [ • Dismissed");
   // The view swapped under a panel nobody sent `update()` for — a rebuild that published a fresh array
   // while the overlay was not redrawn. Asked again at the *same* width, a frame cache keyed on the width
   // alone hands the old view's lines back, dismissed pin and all, with the bar on a row of a list that no
   // longer has it.
   (view as unknown as { pins: ViewPin[] }).pins = pins("One", "Two");
-  const text = c.render(40).join("\n");
+  const text = c.render(44).join("\n");
   expect(text).not.toContain("Dismissed");
   // ...and the bar the component was holding past the end of the new view does not survive the redraw:
   // it lands on the last row that does exist.
-  expect(text).toContain("[ • Two");
+  expect(text).toContain("│ [ • Two");
   expect(c.selection).toBe(1);
   // A frame request that changed nothing still costs nothing: the cache keeps its fast path.
-  const cached = c.render(40);
-  expect(c.render(40)).toBe(cached);
+  const cached = c.render(44);
+  expect(c.render(44)).toBe(cached);
 });

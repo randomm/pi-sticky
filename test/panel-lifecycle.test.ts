@@ -33,10 +33,11 @@ test("session_start opens one overlay with the panel's own options, and never a 
   const call = ctx.recorder.customCalls[0];
   expect(call?.options?.overlay).toBe(true);
   const options = call?.options?.overlayOptions as Record<string, unknown>;
-  expect(options.anchor).toBe("right-center");
+  expect(options.anchor).toBe("top-right");
   expect(options.width).toBe("33%");
   expect(options.minWidth).toBe(30);
-  expect(options.maxHeight).toBe("100%");
+  // Half the terminal, so the frame reads as a panel beside the prompt rather than a column over it.
+  expect(options.maxHeight).toBe("50%");
   expect(options.nonCapturing).toBe(true);
   expect(typeof options.visible).toBe("function");
 
