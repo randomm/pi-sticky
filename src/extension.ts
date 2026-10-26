@@ -8,6 +8,16 @@
  * `session_tree`, and after any change: an agent change publishes its snapshot as the tool
  * result's `details`, a user change appends a `pi-sticky.user` entry, and both go through here.
  *
+ * Because the tool commits its snapshot before pi appends the tool result, memory can run ahead of
+ * the session: an aborted turn leaves a pin live that the branch never held, and `/unpin` would then
+ * record a dismissal against a pin that was never persisted. `turn_end` closes that window — it is
+ * the first boundary after every tool result of the turn has been appended (pi persists each message
+ * at its `message_end`, and dispatches this boundary from `finishTurn`, which the loop runs once the
+ * assistant message and all its results are in) — and it does the same rebuild-and-redraw as
+ * `session_start`. Rebuilding there, and only there, is what keeps the commit-before-redraw order in
+ * `tool.ts` intact: two pins in one assistant message both survive because nothing rebuilds between
+ * the two `execute` calls.
+ *
  * The latest `ExtensionContext` is kept for the redraws the tool triggers and dropped on
  * `session_shutdown`. A context is a snapshot of a session: using one after its session is gone
  * throws, so a redraw without a live context rebuilds and simply does not draw, and the next
@@ -89,6 +99,14 @@ export function createStickyExtension(
     });
 
     pi.on("session_tree", (_event, ctx) => {
+      live = ctx;
+      rebuild(ctx);
+      drawPins(ctx, view, config);
+    });
+
+    pi.on("turn_end", (_event, ctx) => {
+      // Reconcile with the session now that every append of the turn has landed; a commit pi never
+      // got to write is dropped here rather than living on into the next turn.
       live = ctx;
       rebuild(ctx);
       drawPins(ctx, view, config);

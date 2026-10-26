@@ -90,8 +90,73 @@ test("an enabled config registers the tool, both commands and the lifecycle hand
       "session_shutdown",
       "session_start",
       "session_tree",
+      "turn_end",
     ].sort(),
   );
+});
+
+/**
+ * The commit-before-append window: `execute` adopts the new state, pi appends the tool result only
+ * afterwards, and if that append never lands (an aborted turn) memory runs ahead of the session.
+ * `turn_end` is the first point after every append of the turn, so it is where the two are reconciled.
+ */
+test("a state committed without a matching tool result on the branch is reconciled away at turn_end", async () => {
+  const stub = stubApi();
+  createStickyExtension(DEFAULT_CONFIG, () => LATER)(stub.api);
+  // The branch holds nothing: pi never appended the result that carried this snapshot.
+  const ctx = contextWith([]);
+  stub.emit("session_start", { reason: "startup" }, ctx);
+
+  const tool = stub.tools[0] as {
+    execute: (
+      id: string,
+      args: unknown,
+      signal: undefined,
+      onUpdate: undefined,
+      ctx: unknown,
+    ) => Promise<{ content: { text: string }[] }>;
+  };
+  await tool.execute("c1", { action: "pin", text: "Decide X" }, undefined, undefined, ctx);
+  // Committed, so the rail shows it — until the turn ends and the session gets a vote.
+  expect(ctx.ui.widgets.has(KEY)).toBe(true);
+
+  stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, ctx);
+
+  expect(ctx.ui.widgets.has(KEY)).toBe(false);
+  // The tool reads its own state back through deps, so the pin is gone from that too: an `unpin`
+  // after this point cannot record a dismissal against a pin the session never held.
+  const list = await tool.execute("c2", { action: "list" }, undefined, undefined, ctx);
+  expect(list.content[0]?.text).toContain("Pinned for the user now (0 of");
+});
+
+test("turn_end keeps a pin whose tool result is on the branch, and clears only the gone ones", async () => {
+  const stub = stubApi();
+  createStickyExtension(DEFAULT_CONFIG, () => LATER)(stub.api);
+  const ctx = contextWith([]);
+  stub.emit("session_start", { reason: "startup" }, ctx);
+
+  const tool = stub.tools[0] as {
+    execute: (
+      id: string,
+      args: unknown,
+      signal: undefined,
+      onUpdate: undefined,
+      ctx: unknown,
+    ) => Promise<{ content: { text: string }[] }>;
+  };
+  await tool.execute("c1", { action: "pin", text: "Kept" }, undefined, undefined, ctx);
+  // The append landed: the branch now carries the snapshot the tool published.
+  const appended = [
+    pinEntry([{ id: 1, uid: "aaaa1111", text: "Kept", level: "info", createdAt: LATER }], 2),
+  ] as unknown as SessionEntry[];
+  ctx.sessionManager.getBranch = () => appended;
+  ctx.sessionManager.getEntries = () => appended;
+
+  stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, ctx);
+
+  const lines = ctx.ui.renderWidget(KEY, 80);
+  expect(lines[0]).toContain("📌 Pinned for you (1)");
+  expect(lines[1]).toContain("Kept");
 });
 
 test("session_start rebuilds the rail from the branch snapshot", () => {
