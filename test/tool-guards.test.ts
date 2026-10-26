@@ -90,9 +90,12 @@ test("the listing a refusal quotes is the view the rail draws, replied pin inclu
 
 test("the extension's own tool is the one registered, with the same name", () => {
   const registered: { name: string }[] = [];
+  // The members the factory calls while registering, and nothing else: the point is which tool
+  // reached `registerTool`, so an api that grows a member must not turn this into a crash test.
   const pi = {
     registerTool: (tool: { name: string }) => registered.push(tool),
     registerCommand: () => {},
+    registerShortcut: () => {},
     on: () => {},
   };
   createStickyExtension(DEFAULT_CONFIG)(pi as never);

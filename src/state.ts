@@ -21,7 +21,7 @@ import {
   snapshotFromEntry,
   userActionFrom,
 } from "./session-entries.ts";
-import { isPinState, isUserAction } from "./state-guards.ts";
+import { isPinState, isUIShown, isUserAction } from "./state-guards.ts";
 
 import type { PinState, PinView, Removal, UserAction, ViewPin } from "./types.ts";
 
@@ -40,7 +40,7 @@ export const EMPTY_STATE: PinState = Object.freeze({
 
 // Re-exported so the module the plan names as the state surface keeps its guards and its reducer;
 // the rules themselves live in state-guards.ts and reducer.ts.
-export { isPinState, isUserAction };
+export { isPinState, isUIShown, isUserAction };
 export { applyAction } from "./reducer.ts";
 export type { Action, ActionInput, ApplyLimits, ApplyResult } from "./action.ts";
 export { REMOVAL_HISTORY } from "./bounds.ts";

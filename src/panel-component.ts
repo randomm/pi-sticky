@@ -1,0 +1,289 @@
+/**
+ * The component pi-tui draws inside the pins overlay, and the keys it answers.
+ *
+ * The selection and the focus flag live in this closure, not in the deps object: they are view
+ * state of one overlay instance, and a redraw that read them back from a fresh component would lose
+ * the user's place. `update()` is what `redraw()` calls on the *open* panel — the view is replaced
+ * in place and the TUI is asked for a frame, because pi never rebuilds an overlay it already has. A
+ * view that no longer holds the selected pin re-clamps the selection, so a dismissal from `/unpin`
+ * cannot leave the bar past the end.
+ *
+ * Keys reach this component only while the overlay holds focus (pi-tui routes input to the focused
+ * component alone), which is why the hint line is drawn only while focused: an unfocused panel
+ * advertising keys it cannot receive would be a lie. Kitty release and repeat events are swallowed,
+ * so a held `j` moves once and a held `d` dismisses once.
+ *
+ * `Enter` submits nothing: it puts `Re #<id>: ` at offset 0 of the raw editor buffer and hands focus
+ * back to the main editor. The marker replaces one that is already there and the rest of the draft
+ * is kept verbatim; submitting it is the reply ticket's job.
+ */
+import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
+
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { Component, KeyId, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+
+import { panelRows } from "./panel-height.ts";
+import type { PanelHost } from "./panel-host.ts";
+import { isDismissKey, isSubmitKey, presses } from "./panel-keys.ts";
+import { buildPanelLines } from "./panel-lines.ts";
+import type { PanelContent } from "./panel-lines.ts";
+import { panelThemeStyle } from "./render.ts";
+import type { PanelStyle } from "./render.ts";
+import type { ViewPin } from "./types.ts";
+
+/** The keys that move the bar; `matchesKey` also takes the Kitty forms of each. */
+const UP_KEYS: readonly KeyId[] = ["up", "k"];
+const DOWN_KEYS: readonly KeyId[] = ["down", "j"];
+
+/**
+ * Colours for a component whose host has none to give and whose factory got no theme: the rail's
+ * identity style has no `selected`, and a selected row drawn with no bar at all would look like a panel
+ * whose keys do nothing. The component's own last resort — the host's style and the component's theme
+ * are consulted before it.
+ */
+export const NO_PANEL_COLOUR: PanelStyle = {
+  header: (s) => s,
+  marker: (_level, s) => s,
+  dim: (s) => s,
+  selected: (s) => s,
+};
+
+/** What one cached frame is: the lines, the width they were measured for, and what drew them. */
+interface PanelFrame {
+  lines: string[];
+  width: number;
+  pins: readonly ViewPin[];
+  selection: number;
+  focused: boolean;
+}
+
+/**
+ * `Re #12: ` at the front of a draft, replacing a marker that is already there. Anchored at offset 0
+ * of the *raw* buffer: a leading space the user typed is part of the draft, not a marker to replace.
+ */
+export function replyMarker(text: string, id: number): string {
+  return `Re #${id}: ${text.replace(/^Re #\d+: /, "")}`;
+}
+
+/**
+ * The overlay's component. pi-tui calls `render` with the overlay's resolved width, so the lines are
+ * built for exactly that width and this class never guesses at padding.
+ */
+export class PanelComponent implements Component {
+  #host: PanelHost;
+  #tui: TUI | undefined;
+  #theme: Theme | undefined;
+  /**
+   * The colours this component draws with, resolved once: the host's if it has any, else the mapping its
+   * own theme implies, else the identity style. Like `RailComponent`, which builds `themeStyle(theme)` in
+   * its constructor — the two surfaces are meant to be coloured alike, and they are not if one resolves
+   * per frame and the other per construction. Built lazily because a test hands the theme to some
+   * components and not to others.
+   */
+  #style: PanelStyle | undefined;
+  #handle: OverlayHandle | undefined;
+  #focused = false;
+  #selection = 0;
+  /**
+   * The frame currently cached, and everything it was drawn from — one object, so `invalidate()` cannot
+   * leave a "same frame" verdict behind against a cache it has just dropped.
+   *
+   * `update()` compares the live view, bar and focus against it to decide whether a redraw costs a
+   * layout pass, and `render()` compares the *pins* against it for the same reason in the other
+   * direction: `render()` is what pi-tui calls on its own schedule, and an overlay that was not sent an
+   * `update()` can be asked for a frame after the view was swapped under it. A stale frame drawn at the
+   * width the cache was keyed on is the old view's pins still on the user's screen.
+   */
+  #frame: PanelFrame | undefined;
+
+  constructor(host: PanelHost, tui?: TUI, theme?: Theme) {
+    this.#host = host;
+    this.#tui = tui;
+    this.#theme = theme;
+  }
+
+  /** Called by the open/close logic as soon as pi hands the handle over. */
+  setHandle(handle: OverlayHandle): void {
+    this.#handle = handle;
+  }
+
+  /**
+   * The style to draw with, resolved once on first use.
+   *
+   * The host's is the answer in normal operation — `PanelOwner` builds it from the theme pi handed
+   * the factory. The component's own theme is consulted as well, because the colours are what a
+   * caller who built the component directly (a test of the drawing, or a host that hands the theme to
+   * the component but keeps the style to itself) has actually supplied — and it goes through
+   * `panelThemeStyle`, the very mapping the rail's sibling surface uses, so one mapping colours both
+   * and cannot invent a second shade for the selection bar. When neither has anything to give,
+   * identity colours keep the frame plain rather than throwing on a missing `selected`.
+   */
+  #styleOf(): PanelStyle {
+    if (this.#style === undefined) {
+      this.#style = this.#host.style() ?? (this.#theme && panelThemeStyle(this.#theme));
+    }
+    return this.#style ?? NO_PANEL_COLOUR;
+  }
+
+  /** The theme the factory was built with, for a host that colours itself. */
+  theme(): Theme | undefined {
+    return this.#theme;
+  }
+
+  /**
+   * Replace the view the panel draws; the selected pin is re-clamped to what is left.
+   *
+   * Cheap when nothing changed: `refresh()` calls this on every redraw, including the ones a read-only
+   * `/pins` or a per-frame rail handoff triggers, and an invalidate that repaints a byte-identical view
+   * costs a full layout pass over every pin for no visible reason.
+   */
+  update(): void {
+    const pins = this.#host.getView().pins;
+    if (this.#selection >= pins.length) this.#selection = Math.max(0, pins.length - 1);
+    if (this.#sameFrame(pins)) return;
+    this.invalidate();
+    this.#host.requestRender();
+  }
+
+  /** Whether the frame cached right now is the frame the view, bar and focus would draw. */
+  #sameFrame(pins: readonly ViewPin[]): boolean {
+    const frame = this.#frame;
+    return (
+      frame !== undefined &&
+      frame.pins === pins &&
+      frame.selection === this.#selection &&
+      frame.focused === this.#focused
+    );
+  }
+
+  /** Focus model: the panel is interactive only while the handle's focus is held. */
+  focus(): void {
+    this.#focused = true;
+    this.invalidate();
+    this.#handle?.focus();
+    this.#host.requestRender();
+  }
+
+  /**
+   * `Escape` and `Enter` both end the interaction; neither evicts the overlay.
+   *
+   * The handle moves here and the host is told, in that order: the owner decides what an unfocused panel
+   * means for the rail, and it can only do that if the interaction ending reaches it.
+   */
+  unfocus(): void {
+    this.#focused = false;
+    this.invalidate();
+    this.#handle?.unfocus();
+    this.#host.unfocus();
+    this.#host.requestRender();
+  }
+
+  isFocused(): boolean {
+    return this.#focused;
+  }
+
+  /**
+   * Move the bar without a key, clamped to the pins that exist.
+   *
+   * The clamp is only meaningful for a whole row number: `Math.min`/`Math.max` both propagate `NaN`, so
+   * a non-integer in would leave a selection that matches no row and silently draws no bar at all. A
+   * value that is not an integer is answered with the top row, which is the one row that always exists.
+   */
+  select(index: number): void {
+    const last = this.#host.getView().pins.length - 1;
+    const row = Number.isInteger(index) ? index : 0;
+    this.#selection = Math.max(0, Math.min(row, last));
+    this.invalidate();
+    this.#host.requestRender();
+  }
+
+  get selection(): number {
+    return this.#selection;
+  }
+
+  render(width: number): string[] {
+    // The live view is read first and is part of the cache key, not just of the frame: width alone
+    // cannot tell a view that has been swapped from one that has not, and `update()` — the member that
+    // used to be the only change test — is not called on pi-tui's own frame requests.
+    const pins = this.#host.getView().pins;
+    const frame = this.#frame;
+    if (frame !== undefined && frame.width === width && frame.pins === pins) return frame.lines;
+    // A view that no longer holds the selected pin re-clamps the bar *before* the frame is laid out, so
+    // a redraw that found the swap cannot draw a bar past the end of the list it just rebuilt.
+    if (this.#selection >= pins.length) this.#selection = Math.max(0, pins.length - 1);
+    const content: PanelContent = {
+      pins,
+      selection: this.#selection,
+      focused: this.#focused,
+    };
+    const lines = buildPanelLines(content, width, this.#height(), this.#styleOf());
+    this.#frame = { lines, width, pins, selection: this.#selection, focused: this.#focused };
+    return lines;
+  }
+
+  invalidate(): void {
+    this.#frame = undefined;
+  }
+
+  /**
+   * The one key dispatch, contained.
+   *
+   * pi-tui calls this from its input handler with no try/catch of its own, so anything that escaped — a
+   * host whose overlay handle throws on `unfocus()`, a deps callback that reads a context whose session
+   * is gone — would surface as an `extension_error` out of the terminal's key path. One try around the
+   * whole dispatch means no future key handler can escape it; a key that fails does nothing, which is the
+   * safe answer for a panel whose destructive keys are gated on a bare press anyway.
+   */
+  handleInput(data: string): void {
+    try {
+      this.#handleInput(data);
+    } catch {
+      this.#host.notify("A panel key could not be handled.", "warning");
+    }
+  }
+
+  #handleInput(data: string): void {
+    if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
+    // The panel owns the keyboard only while it is on screen. pi-tui routes input to the focused
+    // component alone, but it asks *the overlay* whether to draw it, and the two answers can disagree —
+    // a pin removed from under an open overlay, a hide, a terminal that narrowed past the panel's
+    // boundary. A key into a panel nobody can see has no visible answer, so it is handed back instead of
+    // acted on: `unfocus()` puts the focus where the user is typing and tells the owner to settle the rail.
+    if (!this.#host.isVisible()) {
+      this.unfocus();
+      return;
+    }
+    const pins = this.#host.getView().pins;
+    if (matchesKey(data, "escape")) {
+      this.unfocus();
+      return;
+    }
+    if (isSubmitKey(data)) {
+      const pin = pins[this.#selection];
+      if (pin) this.#host.startReply(pin.id);
+      this.unfocus();
+      return;
+    }
+    if (isDismissKey(data)) {
+      const pin = pins[this.#selection];
+      // The host's dismissal redraws and `update()` re-clamps, so dismissing the last pin lands the
+      // bar on the new last one rather than on a row that no longer exists.
+      if (pin) this.#host.dismiss(pin.id);
+      return;
+    }
+    const moved = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
+    if (moved === 0) return;
+    const next = this.#selection + moved;
+    if (next < 0 || next >= pins.length) return;
+    this.#selection = next;
+    this.invalidate();
+    this.#host.requestRender();
+  }
+
+  /** Rows to draw, from the terminal this component was built with — see `panel-height.ts`. */
+  #height(): number {
+    return panelRows(this.#tui?.terminal?.rows);
+  }
+}
+
+export type { PanelHost } from "./panel-host.ts";

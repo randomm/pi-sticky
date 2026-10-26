@@ -7,7 +7,21 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { EMPTY_STATE, isPinState, isUserAction, reconstruct } from "../src/state.ts";
+import { DEFAULT_CONFIG } from "../src/config.ts";
+import type { HostContext } from "../src/context.ts";
+import { initialShown } from "../src/panel-deps.ts";
+import { latestUIShown } from "../src/session-entries.ts";
+import { EMPTY_STATE, isPinState, isUIShown, isUserAction, reconstruct } from "../src/state.ts";
+
+/** The members `initialShown` asks of a context, spelled for a guard test with no ui to give. */
+function context(entries: readonly unknown[]): HostContext {
+  return {
+    sessionManager: { getEntries: () => [...entries] },
+    ui: { notify: () => {} },
+    mode: "tui",
+    hasUI: true,
+  } as unknown as HostContext;
+}
 import type { Pin, PinLevel, Removal } from "../src/types.ts";
 import {
   LATER,
@@ -164,5 +178,48 @@ describe("isUserAction", () => {
       const entries = [userEntry(userAction(uid, "dismiss", LATER))];
       expect(reconstruct(branch, entries).state.pins.map((p) => p.id)).toEqual([1, 2]);
     }
+  });
+});
+
+describe("isUIShown", () => {
+  // The read half of the `pi-sticky.ui` persistence contract, asserted at its own boundary rather than
+  // through a lifecycle toggle two steps away: the rule that decides whether a malformed entry means
+  // "hidden" or "no opinion" is safety-critical (the guard's own doc calls it out), and the only
+  // consumer is `latestUIShown`, which reads the *last* well-formed entry of the session.
+  const entry = (data: unknown): unknown => ({
+    type: "custom",
+    customType: "pi-sticky.ui",
+    data,
+  });
+
+  test("accepts a boolean choice and refuses anything else", () => {
+    expect(isUIShown({ v: 1, shown: true })).toBe(true);
+    expect(isUIShown({ v: 1, shown: false })).toBe(true);
+    expect(isUIShown({ v: 2, shown: true })).toBe(false);
+    expect(isUIShown({ v: 1, shown: "yes" })).toBe(false);
+    expect(isUIShown({ v: 1, shown: 1 })).toBe(false);
+    expect(isUIShown({ v: 1 })).toBe(false);
+    expect(isUIShown(null)).toBe(false);
+    expect(isUIShown("shown")).toBe(false);
+  });
+
+  test("a malformed entry is no opinion at all, so the last good one still wins", () => {
+    // The direction the guard exists for: an entry saying `"yes"` must not be read as *hidden* — a
+    // panel the user never turned off would go out of sight, silently, for the rest of the session.
+    const entries = [entry({ v: 1, shown: true }), entry({ v: 1, shown: "yes" })];
+    expect(latestUIShown(entries)).toBe(true);
+    expect(initialShown(context(entries))).toBe(true);
+  });
+
+  test("the last entry of the session wins, and no entry means shown", () => {
+    const hidden = [entry({ v: 1, shown: false })];
+    expect(latestUIShown(hidden)).toBe(false);
+    expect(initialShown(context(hidden))).toBe(false);
+    expect(latestUIShown([])).toBeUndefined();
+    // Only this entry type is read: a pins or user-action entry is not an opinion about visibility.
+    expect(
+      latestUIShown([{ type: "custom", customType: "pi-sticky.user", data: {} }]),
+    ).toBeUndefined();
+    expect(initialShown(undefined)).toBe(true);
   });
 });

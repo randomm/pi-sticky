@@ -7,7 +7,7 @@
  * reused, and the model would then be told to update one pin while acting on another.
  */
 import { MAX_PINS, MAX_TEXT_UNITS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
-import type { Pin, PinState, Removal, UserAction } from "./types.ts";
+import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
 
 /** A `{...}` object: enough to read an entry's own fields, never to trust its contents. */
 export function isPlainObject(x: unknown): x is Record<string, unknown> {
@@ -137,4 +137,14 @@ export function isUserAction(x: unknown): x is UserAction {
   if (!isPlainObject(x) || x.v !== 1) return false;
   if (!isUid(x.uid) || !isBoundedString(x.at)) return false;
   return x.action === "dismiss" || x.action === "reply";
+}
+
+/**
+ * A `pi-sticky.ui` payload: the user's own panel-visibility choice, and nothing else. `shown` is
+ * read as a boolean or refused — an entry that says `"yes"` is not a choice the extension can
+ * honour either way, and defaulting it to hidden would silently hide a panel the user never turned
+ * off, so a malformed payload is treated as no payload at all and the default applies.
+ */
+export function isUIShown(x: unknown): x is UIShown {
+  return isPlainObject(x) && x.v === 1 && typeof x.shown === "boolean";
 }

@@ -10,6 +10,14 @@
  * `pi-sticky.state` writer in this ticket: an agent change publishes its snapshot as the tool
  * result's `details` and a user change appends a `pi-sticky.user` entry, and both paths rebuild
  * with `reconstruct` rather than trusting a handed-in state.
+ *
+ * The panel's visibility flag is deliberately absent from this object: its *storage* is a `PanelDeps`
+ * concern, and the three modules this object is handed to read none of it (see `panel-deps.ts`).
+ *
+ * `redraw` is the one member that takes a context, and it takes pi's whole `ExtensionContext`: drawing
+ * goes through `ui.setWidget` and is asked by callers that hold a real context (a tool's, a command's,
+ * the live one), so the one place that would accept a narrower projection is the one place that has to
+ * widen it again. `HostContext` is the projection for the members that genuinely do not need more.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -24,7 +32,12 @@ export interface StickyDeps {
   getState(): PinState;
   /** The view every surface draws: the tool's listing, the rail, `/pins` and the reminder. */
   getView(): PinView;
-  /** Rebuild state from the session and redraw. Without a live context it still rebuilds. */
+  /**
+   * Redraw every surface from the live state. `ctx` is the context the change came from — the tool
+   * call's or the command's, both of which are full pi contexts — and the one the rail is drawn through;
+   * without it the live context of the last `session_start` is used, and without that either the rebuild
+   * still happens and nothing draws.
+   */
   redraw(ctx?: ExtensionContext): void;
   /**
    * Adopt a snapshot the caller has just committed. Called by the tool with the state

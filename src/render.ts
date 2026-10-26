@@ -16,7 +16,9 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { stripSequences } from "./escape.ts";
+
 import { formatLocalTime } from "./time.ts";
 
 // Re-exported so the public surface the plan names for render.ts keeps `formatLocalTime`; the
@@ -36,6 +38,45 @@ export interface Style {
   header(s: string): string;
   marker(level: PinLevel, s: string): string;
   dim(s: string): string;
+}
+
+/**
+ * What the panel draws with: the rail's three colours, plus the bar drawn behind the selected pin.
+ * Extends `Style` rather than repeating it, so one theme mapping colours both surfaces and a level
+ * token cannot be changed on one side only. `plainStyle` is not a `PanelStyle` — it has no bar — so
+ * the panel asks the theme for one.
+ */
+export interface PanelStyle extends Style {
+  selected(s: string): string;
+}
+
+/**
+ * The rail's colours: accent header, one token per level, dim timestamps. Beside `panelThemeStyle`
+ * because the panel draws the same three colours for the same three shapes — two surfaces inventing
+ * their own shade for `warning` is how a rail and a panel disagree about what one pin means.
+ */
+export function themeStyle(theme: Theme): Style {
+  return {
+    header: (text) => theme.bold(theme.fg("accent", text)),
+    marker: (level, text) =>
+      theme.fg(level === "warning" ? "warning" : level === "action" ? "accent" : "muted", text),
+    dim: (text) => theme.fg("dim", text),
+  };
+}
+
+/**
+ * The panel's colours: the rail's three (see `themeStyle`, which the rail builds from the same
+ * theme), plus the bar behind the selected pin. `selectedBg` is the
+ * token pi's own selection lists use, so the panel's bar is the same colour as the bar in `/tree`;
+ * `inverse` is the fallback for a theme that gives the token no colour at all, where a background
+ * would be indistinguishable from the panel's own.
+ */
+export function panelThemeStyle(theme: Theme): PanelStyle {
+  return {
+    ...themeStyle(theme),
+    selected: (text) =>
+      theme.getBgAnsi("selectedBg") === "" ? theme.inverse(text) : theme.bg("selectedBg", text),
+  };
 }
 
 export const plainStyle: Style = {

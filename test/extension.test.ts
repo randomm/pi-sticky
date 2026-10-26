@@ -11,8 +11,9 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { KEY, TOOL_NAME, USER_TYPE } from "../src/types.ts";
 import { LATER, NOW } from "./fixtures.ts";
+import { piContext } from "./pi-context.ts";
 import { RecordingUi } from "./recording-ui.ts";
-import { stubApi, uiForPi } from "./wiring-stubs.ts";
+import { stubApi } from "./wiring-stubs.ts";
 
 /** A branch entry holding a `pin_for_user` snapshot, in the shape pi stores it. */
 function pinEntry(
@@ -44,23 +45,13 @@ function userEntry(uid: string, at: string): unknown {
 
 /**
  * A context whose session manager returns these entries and whose ui is the harness recorder, so
- * a test can read the drawn rows with `renderWidget` exactly as an integration test does. The
- * recorder is a class, so it is handed over through `uiForPi`'s own-property wrapper — the same
- * shape pi's spread produces.
+ * a test can read the drawn rows with `renderWidget` exactly as an integration test does — the one
+ * builder the extension-driven tests share (see `pi-context.ts`), read here with the recorder exposed
+ * as the recorder itself rather than as `uiForPi`'s wrapper.
  */
 function contextWith(entries: unknown[]): ExtensionContext & { ui: RecordingUi } {
   const ui = new RecordingUi();
-  // Cast at the seam: the extension only reads entries through `getBranch`/`getEntries`, whose
-  // return type pi spells `SessionEntry[]`; the entries built above are those shapes, and the
-  // harness's own `SessionEntryLike` is the same structural subset spelled for tests.
-  const branch = entries as SessionEntry[];
-  const ctx = {
-    hasUI: true,
-    mode: "tui",
-    ui: uiForPi(ui),
-    sessionManager: { getBranch: () => branch, getEntries: () => branch },
-  };
-  return { ...ctx, ui } as unknown as ExtensionContext & { ui: RecordingUi };
+  return piContext(entries, ui) as unknown as ExtensionContext & { ui: RecordingUi };
 }
 
 function boot(entries: unknown[] = []) {
