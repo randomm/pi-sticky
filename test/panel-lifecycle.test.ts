@@ -92,30 +92,28 @@ test("session_shutdown closes the open panel", async () => {
   expect(open?.result).not.toBeUndefined();
 });
 
-test("a session_shutdown still resets the session when the host's close handle throws", async () => {
-  // The ordering this pins: the state goes *before* `close()`, and nothing `close()` does can skip it.
-  // A host whose `done` throws is the case in which a dead session's pins, flag and terminal width
-  // would otherwise survive into the next one — the pins on the rail of a session that never had them.
+test("a session_shutdown still resets the session when the host's teardown throws", async () => {
+  // The ordering this pins: the state goes *before* `close()`, and nothing `close()` does can skip it. A
+  // host whose teardown throws is the case in which a dead session's pins, flag and terminal width would
+  // otherwise survive into the next one — the pins on the rail of a session that never had them.
+  //
+  // `done` is the *only* handle the close path has, and pi's own `close()` swallows a throwing `dispose`
+  // after it has hidden the overlay and resolved the promise — so the host here throws from that
+  // teardown, the one place a real pi host throws at all, and the close still has to complete its reset.
   const { stub, ctx } = await boot(PINNED, undefined, {
-    onClose: () => {
+    onDone: () => {
       throw new Error("host overlay stack is wedged");
     },
   });
-  // No width is stated, so the panel has no measurement to answer `visible()` with and the rail keeps
-  // the pins — and the panel has been told it owns them, which is the state a dead session must not
-  // leave behind for the next one.
+  // The rail keeps the pins (no width was ever stated, so the panel cannot claim the terminal) while the
+  // panel believes it owns them — the state a dead session must not leave behind for the next one.
   expect(ctx.recorder.widgets.has(KEY)).toBe(true);
 
   stub.emit("session_shutdown", { reason: "quit" }, ctx);
   await flush();
-  // A throwing `onClose` poisons the open itself — the recorder awaits the factory *after* it calls
-  // `onClose`, so the hook escapes into `custom()`'s promise and the panel never claims a record. That
-  // is the hostile host this pins, and the `open()` rejection path is the one that reports it. The
-  // shutdown draws nothing on purpose: pi's own `resetExtensionUI` clears every extension widget at
+  // The shutdown draws nothing on purpose: pi's own `resetExtensionUI` clears every extension widget at
   // teardown, so the rail the user saw is gone either way. What the reset has to clear is the *state*.
-  expect(ctx.recorder.notifications).toEqual([
-    { message: "pins panel unavailable: host overlay stack is wedged", type: "warning" },
-  ]);
+  expect(ctx.recorder.notifications).toEqual([]);
 
   const next = contextWith(PINNED);
   stub.emit("session_start", { reason: "new" }, next);

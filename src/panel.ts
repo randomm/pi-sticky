@@ -22,7 +22,8 @@ import type { TUI } from "@earendil-works/pi-tui";
 
 import type { HostContext } from "./context.ts";
 import type { PanelRecord } from "./panel-call.ts";
-import { PANEL_CLOSED, newPanelRecord } from "./panel-call.ts";
+import { newPanelRecord } from "./panel-call.ts";
+import { releasePanel } from "./panel-close.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelDeps, PanelWiring } from "./panel-deps.ts";
 import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
@@ -98,9 +99,8 @@ export class PanelOwner {
     this.#railConsider(false);
     const visible = (columns: number, rows: number): boolean => this.#visible(columns, rows);
 
-    // `custom` is read at *call* time, not captured above: a host that installs it per call — a test
-    // recorder watching the component's `requestRender` by handing it a TUI of its own — has to be
-    // consulted now, or the panel opens on the `custom` from a moment ago and the watch is bypassed.
+    // `custom` is read at *call* time, not captured above, so a host that installs its own per call has
+    // to be consulted now, or the panel opens on the `custom` from a moment ago and the swap is bypassed.
     void ui
       .custom(
         panelFactory(record, this.#wiring, {
@@ -110,14 +110,18 @@ export class PanelOwner {
           tui: () => this.#tui,
           onUnfocus: () => this.refresh(),
         }),
-        panelCallOptions(record, visible, (handle) => {
+        panelCallOptions(visible, (handle) => {
           this.#record?.component?.setHandle(handle);
         }),
       )
       .catch((err: unknown) => {
         // With no panel the rail keeps drawing, which is the fallback by design — but a poisoned overlay
         // stack rejects *every* open from then on, and a rail that answers forever looks the same as a
-        // working one. The user hears why once per failed open.
+        // working one. The user hears why once per failed open. This is a *separate* report from
+        // `#closeFailure`: this line says the panel never came up, that one says a panel that did come up
+        // could not be put down, and the user needs both. A failed open leaves no overlay of its own, so
+        // it must not clear a close failure the owner is still owed — clearing it here lost the warning
+        // for an entry still sitting in pi's stack whenever a wedge made the next open reject as well.
         if (this.#record === record) this.#record = undefined;
         ctx.ui.notify(`pins panel unavailable: ${reasonOf(err)}`, "warning");
       });
@@ -146,20 +150,9 @@ export class PanelOwner {
   /**
    * Close the open panel, once — safe when none is open or the host already popped it.
    *
-   * Both handles fire, in this order: the factory's `done()` (which resolves `custom()` and, in pi,
-   * removes the overlay) then the host's `onClose()`. Both are idempotent against an overlay
-   * `resetExtensionUI` already removed, which is why one `done()` per panel suffices.
-   *
-   * Neither call may abort this one: `close()` runs synchronously from `session_start`, `session_tree`
-   * and `session_shutdown`, each of which resets its own state *after* it, so a host whose `dispose`
-   * throws or whose close hook rejects would leave the extension holding the dead session's pins, flag
-   * and width. pi turns such a throw into an `extension_error` line and carries on — with the wrong
-   * session's state.
-   *
-   * The reset therefore happens first and unconditionally, and the failure is *reported* rather than
-   * swallowed: a host that never released its overlay is the one case in which the extension's own view
-   * of the screen stops matching the user's, and with no line about it the next panel would look like an
-   * overlay the extension opened over one it did not close.
+   * The record is dropped first and unconditionally, so nothing `releasePanel()` does — nor a host whose
+   * teardown throws — can leave the extension still answering `isVisible()` for a panel the user closed.
+   * The release itself, and what it means for the user, are `panel-close.ts`'s.
    */
   close(): void {
     const record = this.#record;
@@ -173,18 +166,14 @@ export class PanelOwner {
     // wait for. Dropping it here left an open overlay answering `visible()` with 0 forever, which is
     // the pins on neither surface: the rail had already stood down for a panel that now claimed there
     // was no room for it.
-    if (!record) return;
-    // Both handles, in this order: the factory's own `done` first (pi's `close()` is guarded by its
-    // `closed` flag, so the second call is a no-op), then the callback the host resolves with.
-    const close = record.onClose;
-    try {
-      record.done?.(PANEL_CLOSED);
-      if (close) close(() => record.done?.(PANEL_CLOSED));
-    } catch (err: unknown) {
-      // A host that cannot close its own overlay is the host's problem to report; it is not this
-      // caller's reason to skip the reset it came here to do — which has already happened, above.
-      this.#closeFailure = reasonOf(err);
-    }
+    // A close of a panel that was never opened has nothing to say, and must not overwrite a verdict the
+    // owner still owes the user: an empty `close()` (a `session_shutdown` after the panel was already
+    // dropped) used to clear a real wedge recorded a moment earlier, and the warning for an entry still
+    // sitting in pi's stack was lost. A close that *did* reach a record answers for itself, either way —
+    // and that includes `close()`'s own caller at the top of `open()`, which is why the report below
+    // clears the verdict before it: a wedged panel stays wedged, and re-reporting it on every open would
+    // put the same line in the transcript each time the user changed branch.
+    if (record) this.#closeFailure = releasePanel(record) ?? this.#closeFailure;
   }
 
   /**

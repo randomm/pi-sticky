@@ -11,13 +11,15 @@
 import { expect, test } from "bun:test";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { PANEL_CLOSED } from "../src/panel-call.ts";
+import { PANEL_NOT_RELEASED, releasePanel } from "../src/panel-close.ts";
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelHost } from "../src/panel-component.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 import { createPlainTheme, createStubTui } from "./harness.ts";
-import { contextWith, flush } from "./panel-lifecycle-fixture.ts";
+import { contextWith, flush, handCustom } from "./panel-lifecycle-fixture.ts";
 import { ONE } from "./panel-owner-wiring.ts";
 import { wiring } from "./panel-owner-wiring.ts";
 
@@ -97,46 +99,51 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
   expect(h.panel.component()).toBeUndefined();
 });
 
-test("a close whose host handle throws still resets the owner, and reports the reason once", async () => {
-  // The two halves of the fix this pins: `close()` must not let a host's throw skip the reset (the
-  // dead panel would keep owning the pins from `isVisible()`), and it must not drop the reason either
-  // — an overlay pi never popped is the one case the owner's answer stops matching the screen.
+test("show, hide and toggle settle the flag through the deps, and record only the user's choice", async () => {
+  // `setPanelShown` settles the live flag and records nothing; `recordPanelShown` also appends the entry
+  // that makes the choice survive a reload. The distinction is the persistence contract: `show`/`hide` are
+  // the user speaking, `focusFromShortcut` is not, and a wiring that could not tell the two apart would
+  // record a preference every time the user pressed a key to read a pin.
   const ctx = contextWith([]);
-  const h = wiring(ctx);
-  h.terminal.note(120); // a wide terminal, so the open panel really does own the pins
+  const h = wiring(ctx, { shown: false });
+  h.terminal.note(120);
   h.panel.open(ctx);
   await flush();
-  expect(h.panel.isVisible()).toBe(true);
 
-  // The host's close handle is what `close()` fires second; making it throw is the host refusing to
-  // release the entry, and the factory's own `done` has already resolved the call by then.
-  const call = ctx.recorder.customCalls.at(-1);
-  const hostClose = (call?.options as { onClose?: (c: (r: unknown) => void) => void } | undefined)
-    ?.onClose;
-  expect(hostClose).toBeFunction();
-  // `onClose` is the handle that *rewrites* `record.done`, so a hook that throws before handing back a
-  // working close is the wedged host: `close()` fires the recorded handle, which is the one the hook
-  // installed, and that one throws.
-  hostClose?.(() => {
-    throwWith("overlay stack wedged");
-  });
-  expect(() => h.panel.close()).not.toThrow();
-  // Reset, not half-closed: the record is gone, so there is no panel for the rail to stand down for.
-  expect(h.panel.component()).toBeUndefined();
-  expect(h.panel.isVisible()).toBe(false);
+  // `show` is the user's choice: the flag moves and the recording setter is the one that runs.
+  h.panel.show(ctx);
+  expect(h.state.shown).toBe(true);
+  expect(h.records).toEqual([true]);
 
-  // …and the next open says so, once, in the only place with a ui to say it to.
-  h.panel.open(ctx);
-  await flush();
-  expect(ctx.recorder.notifications.filter((n) => n.message.includes("did not close")).length).toBe(
-    1,
-  );
-  // Told once, not on every frame or every open afterwards.
-  h.panel.open(ctx);
-  await flush();
-  expect(ctx.recorder.notifications.filter((n) => n.message.includes("did not close")).length).toBe(
-    1,
-  );
+  // `hide` releases the pins to the rail and records that too.
+  h.panel.hide();
+  expect(h.state.shown).toBe(false);
+  expect(h.records).toEqual([true, false]);
+
+  // `toggle` from a hidden state shows, and from a shown state hides — both are the user's choice.
+  h.panel.toggle(ctx);
+  h.panel.toggle(ctx);
+  expect(h.records).toEqual([true, false, true, false]);
+
+  // The shortcut that only focuses records nothing: reading a pin is not a statement about whether the
+  // panel should stay open, so the user's recorded choice must survive it.
+  const before = h.records.length;
+  h.panel.focusFromShortcut(ctx);
+  expect(h.records).toHaveLength(before);
+  expect(h.state.shown).toBe(true);
+});
+
+test("a show that the terminal cannot fit says so once, and still records the choice", async () => {
+  // `/pins show` at a width with no room for the panel is a dead end the user has to hear about — but it
+  // is still an explicit request, so the flag moves and the next `session_start` honours it. The notify is
+  // the deps' own, which is what this exercises on the wiring.
+  const ctx = contextWith([]);
+  const h = wiring(ctx, { view: EMPTY });
+  h.terminal.note(120);
+  h.panel.show(ctx);
+  // Nothing pinned: the refusal is about the pins, and it reached the user through `deps.notify`.
+  expect(ctx.recorder.notifications.length).toBe(1);
+  expect(h.state.shown).toBe(true);
 });
 
 test("a same-count change of *which* pins the view holds still reinstalls the rail", async () => {
@@ -177,10 +184,6 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
   h.panel.refresh();
   expect(h.railDraws.length).toBe(installed + 2);
 });
-function throwWith(message: string): never {
-  throw new Error(message);
-}
-
 test("focus reaches the open component, and a panel with no component is a no-op", async () => {
   const ctx = contextWith([]);
   const h = wiring(ctx);

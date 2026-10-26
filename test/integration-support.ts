@@ -27,6 +27,21 @@ export async function pin(
   await h.run("go");
 }
 
+/**
+ * The terminal width each session was last told, or no entry when nothing has said.
+ *
+ * pi-tui states a width only by asking the open overlay's `visible()`, so "what terminal does this
+ * session think it has" is state the session owns — and the session is the harness's. It cannot live on
+ * the `Harness` type itself: `harness.ts` is a protected file. Keyed weakly, so a disposed harness's
+ * width goes with it instead of outliving the session it describes.
+ */
+const statedWidth = new WeakMap<Harness, number>();
+
+/** The width this session was last told, or `undefined` when nothing has said. */
+function widthOf(h: Harness): number | undefined {
+  return statedWidth.get(h);
+}
+
 /** The rail rows at a fixed width, so assertions read drawn lines and not the widget factory. */
 export const rows = (h: Harness): string[] => h.ui.renderWidget(KEY, 80);
 
@@ -64,7 +79,7 @@ export const railOnScreen = (h: Harness, columns?: number): string[] => {
   if (!widget) return [];
   return Array.isArray(widget.content)
     ? widget.content
-    : widget.content(createStubTui(), h.ui.theme).render(columns ?? h.lastStatedWidth ?? 80);
+    : widget.content(createStubTui(), h.ui.theme).render(columns ?? widthOf(h) ?? 80);
 };
 
 /** The harness's message subset plus the two tool-result fields the assertions reach for. */
@@ -151,18 +166,19 @@ export function panelOptions(h: Harness): OverlayOptions | undefined {
  * `panelVisibleNow` instead of changing the terminal on the way to reading it.
  */
 export function panelVisible(h: Harness, columns: number): boolean {
-  h.lastStatedWidth = columns;
+  statedWidth.set(h, columns);
   return askVisible(h, columns);
 }
 
 /** What the panel says about the width it was last stated, without stating a new one. */
 export function panelVisibleNow(h: Harness): boolean {
   // The width is a fact about the *session*, not about this file: it is what the overlay was last
-  // told, so it lives on the harness whose session it describes. Two harnesses alive in one file then
-  // cannot read each other's terminal.
-  if (h.lastStatedWidth === undefined)
+  // told, so it is keyed on the harness whose session it describes (see `statedWidth`). Two harnesses
+  // alive in one file then cannot read each other's terminal.
+  const last = widthOf(h);
+  if (last === undefined)
     throw new Error("no width has been stated to this session (call setTerminalWidth first)");
-  return askVisible(h, h.lastStatedWidth);
+  return askVisible(h, last);
 }
 
 function askVisible(h: Harness, columns: number): boolean {
@@ -202,7 +218,7 @@ export function contextFor(h: Harness): unknown {
  * state change in one step.
  */
 export function setTerminalWidth(h: Harness, columns: number): boolean {
-  h.lastStatedWidth = columns;
+  statedWidth.set(h, columns);
   // Newest first: the predicate belongs to the overlay that is open, and a session that has reopened
   // its panel (a reload, a branch change, a second instance) has earlier records nothing draws.
   for (const call of h.ui.customCalls.slice().reverse()) {

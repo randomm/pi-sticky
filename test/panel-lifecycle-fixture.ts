@@ -3,8 +3,8 @@
  *
  * The panel is driven through `stubApi` rather than a session (see `panel-lifecycle-*.test.ts`), so
  * these build what a session would otherwise hand the extension: a context whose session manager
- * returns a chosen branch, a `custom()` recorder whose `done()` and `onClose()` are observable, and the
- * two branch entry shapes the panel reads (`pin_for_user` snapshots and `pi-sticky.ui` toggles).
+ * returns a chosen branch, a `custom()` recorder whose `done()` is observable, and the two branch
+ * entry shapes the panel reads (`pin_for_user` snapshots and `pi-sticky.ui` toggles).
  */
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
@@ -19,7 +19,8 @@ import { TOOL_NAME, UI_TYPE } from "../src/types.ts";
 
 import { LATER } from "./fixtures.ts";
 import { piContext } from "./pi-context.ts";
-import type { CustomOptions, RecordedCustomCall } from "./recorded-ui-types.ts";
+import type { RecordedCustomCall } from "./recorded-ui-types.ts";
+import type { CustomComponent } from "./recording-ui.ts";
 import { RecordingUi } from "./recording-ui.ts";
 import { createStubTui } from "./ui-stubs.ts";
 import { stubApi } from "./wiring-stubs.ts";
@@ -116,33 +117,39 @@ export function panelComponent(
  */
 export const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-/** The host's close hook, as the recorder's options spell it: the hook receives the close callback. */
-type HostClose = (close: (result: unknown) => void) => void;
+/** The close callback a hand-built host hands its factory, as the host spells it. */
+type HostDone = (result: unknown) => void;
 
 /**
- * A `custom()` that builds its component on a TUI the test chose, recording as the recorder does.
+ * A `custom()` that builds its component on a TUI the test chose and models pi's own close, recording
+ * as the recorder does.
  *
  * The recorder creates a stub per call and keeps no reference to it, so a test that has to watch the
  * component's own `requestRender()` — the one path that goes through the TUI rather than the context —
- * supplies the stub this way. Mirrors `RecordingUi.custom()`'s record-then-await-then-resolve order.
+ * supplies the stub this way. It also builds the `done` it hands the factory, so a test that has to
+ * watch a close, or wedge one, replaces that callback.
+ *
+ * The close mirrors `showExtensionCustom`'s `close()` member for member: once it fires it marks the
+ * entry released and resolves the promise, and the component's `dispose()` runs *after* that inside a
+ * `try`/`catch` that swallows whatever it throws. Copying that order is the point — it is what makes a
+ * throwing `dispose` indistinguishable here from what the user's pi does with one, rather than a
+ * test-only failure mode the panel would then be written against.
  */
 export function handCustom(
   recorder: RecordingUi,
   tui: TUI,
-  hooks: { onClose?: HostClose } = {},
+  hooks: { onDone?: HostDone } = {},
 ): RecordingUi["custom"] {
   return async <T>(
     factory: (
       t: TUI,
       theme: Theme,
       keybindings: Parameters<Parameters<RecordingUi["custom"]>[0]>[2],
-      done: (r: unknown) => void,
+      done: HostDone,
     ) => Component,
-    // Typed as the recorded shape, not as `Parameters<RecordingUi["custom"]>[1]`: the recorder's
-    // `custom` is generic over the result, and projecting its options through `Parameters<…>` ties
-    // every callback parameter back to the free `T`, which is what made the close hook's own callback
-    // argument unassignable.
-    options?: CustomOptions,
+    // Typed as pi's own options rather than the fixture's own shape: this `custom()` is assigned over
+    // the recorder's, so anything wider than what the extension may pass would be a lie about the call.
+    options?: Parameters<RecordingUi["custom"]>[1],
   ): Promise<T> => {
     const call: RecordedCustomCall = { result: undefined, options };
     recorder.customCalls.push(call);
@@ -151,22 +158,44 @@ export function handCustom(
     const keybindings = new TuiKeybindingsManager({}) as unknown as Parameters<typeof factory>[2];
     call.handle = {} as OverlayHandle;
     options?.onHandle?.(call.handle);
-    const component = await factory(tui, recorder.theme, keybindings, (result: unknown) => {
-      if (call.result !== undefined) return;
-      call.result = result;
+    // The close callback the extension's `done` is called with: the release, and `hooks.onDone` is the
+    // seam a test observes it through. Guarded by the same settled flag pi's `closed` uses, so a host
+    // called twice closes once.
+    // The component the factory builds, read back off the record by the close callback below.
+    let built: CustomComponent | undefined;
+    let settled = false;
+    let resolve!: (result: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
     });
-    // The hook goes on the record rather than being invoked here: a test that wants to watch the close
-    // hands a throwing one and asserts on what survives it, which is only observable if the extension
-    // is the thing that calls it. `options` is not widened, because `RecordingUi["custom"]`'s own
-    // options type declares no such member — pi's does not either, which is the whole point of it.
-    const close = options?.onClose;
-    // Recorded, not invoked: this fixture is the wedged-host seam. A test that wants `close()` to fail
-    // hands a hook that throws when it is called with the close callback, which is what makes the
-    // handle the owner fires next throw.
-    if (call && close) call.onClose = close;
-    if (close) hooks.onClose?.(close as (result: unknown) => void);
+    const component = await factory(
+      tui,
+      recorder.theme,
+      keybindings,
+      // pi's `close()` is what the factory's `done` is wired to.
+      (result: unknown) => {
+        if (settled) return;
+        settled = true;
+        call.result = result;
+        hooks.onDone?.(result);
+        // Released and resolved *first* — pi's `hide()` and `resolve()` both run before anything that can
+        // throw — and only then the component's own teardown. pi reads it back off its own cell there, and
+        // a close that raced the factory has nothing to tear down yet, so reading `call` for it rather than
+        // a local is both pi's shape and the simpler one.
+        resolve(undefined as T);
+        try {
+          call.component?.dispose?.();
+        } catch {
+          /* pi ignores a throwing dispose; so does this host. */
+        }
+      },
+    );
     call.component = component as RecordedCustomCall["component"];
-    return undefined as T;
+    // A factory that never calls done() still must not hang the harness, as in the recorder.
+    return Promise.race([
+      promise,
+      new Promise<T>((res) => queueMicrotask(() => res(undefined as T))),
+    ]);
   };
 }
 
@@ -180,14 +209,14 @@ export interface Booted {
 export async function boot(
   entries: readonly unknown[] = [],
   columns?: number,
-  hooks: { onClose?: (close: (result: unknown) => void) => void } = {},
+  hooks: { onDone?: HostDone } = {},
 ): Promise<Booted> {
   const stub = stubApi();
   createStickyExtension(DEFAULT_CONFIG, () => LATER)(stub.api);
   const ctx = contextWith(entries);
-  // A test that wants to watch the close — a host handle that throws, say — hands the hook the
-  // extension's `onClose` option is called with, and this is the only place it reaches the host.
-  if (hooks.onClose) {
+  // A test that wants to watch the close — a host `done` that throws, say — replaces the callback this
+  // host hands the factory, and this is the only place it reaches the host.
+  if (hooks.onDone) {
     (ctx.ui as unknown as { custom: RecordingUi["custom"] }).custom = handCustom(
       ctx.recorder,
       createStubTui(),

@@ -9,9 +9,8 @@
  * `unknown` is what pi does for a caller that names no result type — the one thing not to do is reach
  * for `Parameters<ReturnType<…>>`, which collapses `done`'s parameter to `never`.
  *
- * The one member that is *not* pi's is `onClose`, which lives in `PanelTestHooks` and is documented as
- * the test seam it is — and which the test recorder really does call, so the branch is live in tests
- * (`test/recording-ui.ts`) and dead only against a real host.
+ * Every member here is pi's or is derived from pi's declaration: the panel has no test-only seam, and a
+ * test observes a close through the same `done` the host calls it with.
  *
  * `PanelRecord` is the close path. `done` is recorded as soon as pi-tui hands it to the factory, *before*
  * the factory returns a component, so a panel whose component never arrived is still releasable — an
@@ -58,26 +57,12 @@ export type PanelCustomFactory = (
 ) => PanelCustomComponent | Promise<PanelCustomComponent>;
 
 /**
- * The close hook a *test* host hands back, so a lifecycle test can observe the close.
- *
- * Not a pi option: `ExtensionUIContext["custom"]` declares no `onClose` and pi's `showExtensionCustom`
- * never reads one — only `onHandle` is called. `RecordingUi.custom()` *does* call it, with the callback
- * it resolves the `custom()` promise with, which is what makes the second close handle in
- * `PanelOwner.close()` reachable in tests; against the real host it stays `undefined` and the close runs
- * through the factory's `done`, the handle that actually works. It is kept here, and typed as what it
- * is, so nobody reads it as a host contract.
+ * The options the panel opens its overlay with: exactly pi's own. Annotating the overlay's options as
+ * this is what makes the declaration load-bearing — the object the overlay really receives is checked
+ * against it, so an option pi has never heard of is a compile error here rather than a field pi quietly
+ * ignores.
  */
-export interface PanelTestHooks {
-  onClose?: (close: PanelDone) => void;
-}
-
-/**
- * The options the panel opens its overlay with: pi's own, plus the one member pi's signature does not
- * declare. Annotating `#callOptions()`'s return as this is what makes the declaration load-bearing — the
- * object the overlay really receives is checked against it, so an option pi has never heard of is a
- * compile error here rather than a field pi quietly ignores.
- */
-export type PanelCallOptions = NonNullable<PiOptionsParam> & PanelTestHooks;
+export type PanelCallOptions = NonNullable<PiOptionsParam>;
 
 /** What the panel resolves its host's `custom()` promise with when it closes the overlay. */
 export type PanelResult = string;
@@ -91,14 +76,7 @@ export type PanelResult = string;
  */
 export const PANEL_CLOSED = "pi-sticky:panel-closed";
 
-/**
- * The handle a host hands back through `PanelTestHooks.onClose` — pi's `done`, from the other side.
- *
- * Spelled separately from `PanelRecord.done` because the two are the *same* shape in two positions: a
- * `done` the factory receives, and a `done` the host resolves with. Naming both once is what keeps
- * `onClose`'s parameter from being written as a bare callback, which is how a `PanelCloseHandle` ended up
- * typed as a function taking one.
- */
+/** The handle pi's factory hands the panel: the one way the overlay is ever released. */
 type PanelDone = (result: PanelResult) => void;
 
 /** pi's own first three factory parameters, read off its declaration in the order it declares them. */
@@ -121,16 +99,14 @@ export interface PanelRecord {
    * the tie between what is handed to `done` and what the host sees is the point of typing it.
    */
   done: PanelDone | undefined;
-  /** See `PanelTestHooks`: recorded from the call options, and `undefined` against a real pi host. */
-  onClose: ((close: PanelDone) => void) | undefined;
 }
 
 /**
  * A fresh record: nothing built, nothing called, nothing to close.
  *
  * A function rather than an object literal at the call site so the handles cannot drift from the
- * interface — a missing `onClose` is a panel that closes silently and fails its test loudly.
+ * interface — a missing `done` is a panel that closes silently and fails its test loudly.
  */
 export function newPanelRecord(): PanelRecord {
-  return { component: undefined, done: undefined, onClose: undefined };
+  return { component: undefined, done: undefined };
 }

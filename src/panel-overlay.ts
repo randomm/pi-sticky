@@ -9,12 +9,7 @@
  */
 import type { TUI } from "@earendil-works/pi-tui";
 
-import type {
-  PanelCallOptions,
-  PanelCustomFactory,
-  PanelRecord,
-  PanelResult,
-} from "./panel-call.ts";
+import type { PanelCallOptions, PanelCustomFactory, PanelRecord } from "./panel-call.ts";
 import type { PanelHost } from "./panel-component.ts";
 import { PanelComponent } from "./panel-component.ts";
 import type { PanelWiring } from "./panel-deps.ts";
@@ -81,7 +76,6 @@ export function panelFactory(
  * described by it: an `overlayOptions` field pi has never heard of is a compile error here.
  */
 export function panelCallOptions(
-  record: PanelRecord,
   visible: (columns: number, rows: number) => boolean,
   onHandle: (handle: Parameters<NonNullable<PanelCallOptions["onHandle"]>>[0]) => void,
 ): PanelCallOptions {
@@ -89,17 +83,5 @@ export function panelCallOptions(
     overlay: true,
     overlayOptions: { ...PANEL_OVERLAY_OPTIONS, visible },
     onHandle,
-    // A *test* host calls this with the callback it resolves the `custom()` promise with, so a panel is
-    // only closable once the call is really being made. pi declares no such option and never calls it —
-    // see `PanelTestHooks` — so against a real host this line never runs and the close releases the
-    // overlay through the factory's `done` alone.
-    onClose: (close) => {
-      // `done` is recorded *before* the factory returns a component, so it is the handle that must exist
-      // whatever the host does next; `onClose` is the one that reports the close back, and a recording
-      // host has nothing to assert without it.
-      record.done = (result: PanelResult) => {
-        close(result);
-      };
-    },
   };
 }
