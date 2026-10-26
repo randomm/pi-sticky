@@ -255,6 +255,27 @@ describe("renderRailLines", () => {
     expect(lines[1]).toInclude("a # fake header b");
   });
 
+  test("every break shape collapses to a space, not only the one the sanitizer leaves", () => {
+    // The rail's one-line guarantee is its own. The sanitizer maps all six break shapes to LF, but
+    // `renderRailLines` is also called with views built directly, so CR, U+0085, U+2028 and U+2029
+    // have to collapse here too rather than smuggle a second terminal line past the budget.
+    const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
+    const breaks = [cp(0x0a), cp(0x0d), cp(0x85), cp(0x2028), cp(0x2029)];
+    // `a<break>b` only: a run of breaks collapses to ONE space, so a two-break text draws `a  b`.
+    for (const brk of breaks) {
+      for (const text of [`a${brk}b`, `a${brk}c${brk}b`]) {
+        const lines = rail(view([pin(1, text)]), 60, 8);
+        expect(lines).toHaveLength(2);
+        for (const line of lines) {
+          for (const forbidden of breaks) expect(line).not.toInclude(forbidden);
+          expect(visibleWidth(line)).toBeLessThanOrEqual(60);
+        }
+        // One space per break, whatever the break was.
+        expect(lines[1]).toInclude(text.replace(new RegExp(`[${breaks.join("")}]`, "g"), " "));
+      }
+    }
+  });
+
   test("the listing and the Markdown view keep their newlines", () => {
     const pinned = view([pin(1, "a\n\n# fake header\nb")]);
     expect(renderList(pinned, 5)).toInclude("a\n\n# fake header\nb");

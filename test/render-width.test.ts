@@ -72,4 +72,46 @@ describe("renderRailLines width", () => {
       }
     }
   });
+
+  test("a plain rail draws no escape bytes whatever the pin text claims", () => {
+    // Defence in depth at the draw boundary. Every entry into state runs its text through the
+    // sanitizer, but a `plainStyle` rail line is a transcript line or an RPC string in which nothing
+    // consumes escape bytes, so the rail does not borrow that guarantee from its caller: a view
+    // built directly (an `update` that bypassed the tool, a test fixture) is stripped here.
+    const ESC = String.fromCharCode(0x1b);
+    const hostile = [
+      `${ESC}[2J`,
+      `${ESC}]52;c;AAAA\u{07}pwn`,
+      `a${ESC}]8;;https://evil${ESC}\\label`,
+      `x${ESC}`,
+      // pi-tui's own injected reset-plus-ellipsis, placed where a cut would find it.
+      `y${ESC}[0m\u{2026}${ESC}[0m`,
+    ];
+    for (const text of hostile) {
+      for (const w of [1, 5, 15, 16, 20, 40]) {
+        const lines = rail(view([pin(1, text)]), w, 8);
+        for (const line of lines) {
+          expect(line).not.toInclude(ESC);
+          expect(line).not.toInclude("\n");
+          expect(visibleWidth(line)).toBeLessThanOrEqual(w);
+        }
+      }
+    }
+  });
+
+  test("a styled rail keeps the theme's own bytes but still fits", () => {
+    // The counterpart: stripping is for what the caller did not style. A theme that colours a row
+    // asked for those bytes, and they stay — the width invariant is what governs a styled rail.
+    const ESC = String.fromCharCode(0x1b);
+    const ansi = {
+      header: (s: string) => `${ESC}[1m${s}${ESC}[0m`,
+      marker: (_level: PinLevel, s: string) => `${ESC}[31m${s}${ESC}[0m`,
+      dim: (s: string) => `${ESC}[2m${s}${ESC}[0m`,
+    };
+    const lines = renderRailLines(view([pin(1, `${ESC}[31mred`)]), 20, {
+      maxLines: 8,
+      style: ansi,
+    });
+    for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(20);
+  });
 });

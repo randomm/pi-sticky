@@ -83,6 +83,21 @@ describe("isPinState", () => {
     expect(isPinState(state([], 5, [removal(3), { ...removal(4), uid: "uid-3" }]))).toBe(false);
   });
 
+  test("rejects duplicate removal ids", () => {
+    // Two removals of one id make `removedByUser` report the first and hide the second: a dismissed
+    // pin would then carry a record of a dismissal nothing can ever read back, and the id is free
+    // to mean two different retirements in the same snapshot.
+    expect(isPinState(state([], 5, [removal(3), { ...removal(3), uid: "uid-3b" }]))).toBe(false);
+    expect(
+      isPinState(
+        state([pin(1, "a"), { ...pin(700, "live"), uid: "uc" }], 900, [
+          { ...removal(700), uid: "ua" },
+          { ...removal(700), uid: "ub" },
+        ]),
+      ),
+    ).toBe(false);
+  });
+
   test("rejects a class instance that otherwise looks like a state", () => {
     class Fake {
       v = 1;

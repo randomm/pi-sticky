@@ -6,6 +6,7 @@
  * already in use, or already shown to the user and dismissed, is a pin whose number would be
  * reused, and the model would then be told to update one pin while acting on another.
  */
+import { MAX_PINS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
 import type { Pin, PinState, Removal, UserAction } from "./types.ts";
 
 /** A `{...}` object: enough to read an entry's own fields, never to trust its contents. */
@@ -14,9 +15,6 @@ export function isPlainObject(x: unknown): x is Record<string, unknown> {
 }
 
 /** An id the reducer may count from: 1, a whole number, and representable exactly. */
-function isPositiveSafeInteger(x: unknown): x is number {
-  return typeof x === "number" && Number.isSafeInteger(x) && x >= 1;
-}
 
 /**
  * What a uid has to look like: an opaque address handed to the model and compared with `===`, so
@@ -86,13 +84,16 @@ function isCoherent(state: { pins: Pin[]; removed: Removal[]; nextId: unknown })
   if (!isPositiveSafeInteger(state.nextId)) return false;
   const ids = new Set<number>();
   const uids = new Set<string>();
-  // Removals seed the uid set before the pins are read: an id is retired with its uid, so a pin
-  // may not hold the uid of a removal — one user dismiss addressed to that uid would move both
-  // identities out of `pins`, silently retiring a pin the user never named.
+  // Removals seed the uid and id sets before the pins are read: an id is retired with its uid, so a
+  // pin may not hold the uid of a removal — one user dismiss addressed to that uid would move both
+  // identities out of `pins`, silently retiring a pin the user never named. Two removals of one id
+  // are refused for the same reason: `removedByUser` reports the first, so the second is a record
+  // of a dismissal nothing can ever read back.
   let highest = 0;
   for (const removal of state.removed) {
-    if (uids.has(removal.uid)) return false;
+    if (uids.has(removal.uid) || ids.has(removal.id)) return false;
     uids.add(removal.uid);
+    ids.add(removal.id);
     if (removal.id > highest) highest = removal.id;
   }
   for (const pin of state.pins) {
@@ -106,19 +107,19 @@ function isCoherent(state: { pins: Pin[]; removed: Removal[]; nextId: unknown })
 
 /**
  * The bounds a snapshot cannot talk its way past: neither list longer than the largest `maxPins`
- * the config allows (which is also the reducer's own removal-history cap).
+ * the config allows, nor a removal list longer than the window the reducer itself keeps. Both come
+ * from bounds.ts, the module the reducer quotes them from too, so a bump on that side moves this
+ * one with it rather than leaving the guard rejecting states the reducer legitimately produces.
  */
-const MAX_SNAPSHOT_ENTRIES = 20;
-
-function withinBounds(list: readonly unknown[]): boolean {
-  return list.length <= MAX_SNAPSHOT_ENTRIES;
+function withinBounds(list: readonly unknown[], cap: number): boolean {
+  return list.length <= cap;
 }
 
 /** Strict shape and consistency guard: plain objects only, `v === 1`, every field typed. */
 export function isPinState(x: unknown): x is PinState {
   if (!isPlainObject(x) || x.v !== 1) return false;
   if (!Array.isArray(x.pins) || !Array.isArray(x.removed)) return false;
-  if (!withinBounds(x.pins) || !withinBounds(x.removed)) return false;
+  if (!withinBounds(x.pins, MAX_PINS) || !withinBounds(x.removed, REMOVAL_HISTORY)) return false;
   if (!isDense(x.pins) || !isDense(x.removed)) return false;
   if (!x.pins.every(isPin) || !x.removed.every(isRemoval)) return false;
   return isCoherent(x as unknown as { pins: Pin[]; removed: Removal[]; nextId: unknown });

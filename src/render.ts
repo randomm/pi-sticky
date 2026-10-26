@@ -62,13 +62,23 @@ const INJECTED_RESET = new RegExp(
  * Cut a drawn line to the width, then remove the reset-plus-ellipsis pi-tui injects into it. Those
  * sequences have zero width, so removing them cannot push the line over, and the caller's own
  * styling is left alone because it was in the string before the cut ran.
+ *
+ * A line the caller did not style is stripped whole rather than only un-decorated: pin text is
+ * untrusted, and while every entry into state runs it through the sanitizer first, a rail drawn
+ * with `plainStyle` is a transcript line or an RPC string in which nothing consumes escape bytes.
+ * Stripping is the last gate, so it does not rely on what ran upstream of it.
  */
-function cut(line: string, width: number): string {
+function cut(line: string, width: number, styled: boolean): string {
   const cutLine = truncateToWidth(line, width, "…");
-  if (cutLine === line) return line;
-  // Nothing was styled by the caller, so any escape sequence in the result came from the cut itself.
-  if (!line.includes(String.fromCharCode(0x1b))) return stripSequences(cutLine);
-  return cutLine.replace(INJECTED_RESET, String.fromCodePoint(0x2026));
+  if (styled) {
+    if (cutLine === line) return line;
+    return cutLine.replace(INJECTED_RESET, String.fromCodePoint(0x2026));
+  }
+  // Nothing was styled, so any escape sequence in the result came from the text or from the cut
+  // itself — either way it has no business reaching a terminal the rail does not own. Stripped
+  // whether or not the cut fired: `truncateToWidth` is width-only, so a line that fits comes back
+  // byte for byte and its escape bytes would otherwise sail through untouched.
+  return stripSequences(cutLine);
 }
 
 /** Warning, then action, then info; within a level unreplied first, then newest first. */
@@ -116,9 +126,16 @@ export function renderMarkdown(view: PinView): string {
  * A pin's text as the rail can draw it: a rail row is exactly one terminal line, so every line
  * break the model put in the text becomes a single space (a run of them collapses to one). The
  * rail is the only surface with a line budget; `renderList` and `renderMarkdown` keep the newlines.
+ *
+ * The character class is wider than the `\n` the sanitizer leaves behind on purpose: the rail is
+ * also called with views built directly (tests, and any future caller), and one terminal line per
+ * row is the rail's own promise, not something it should have to borrow from the pass order of
+ * another module.
  */
 function toOneLine(text: string): string {
-  return text.replace(/\n+/g, " ");
+  // LF, CR, U+0085, U+2028, U+2029 — the six break shapes, spelled from code points.
+  const breaks = `\n\r${String.fromCodePoint(0x85, 0x2028, 0x2029)}`;
+  return text.replace(new RegExp(`[${breaks}]+`, "g"), " ");
 }
 
 function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string): string {
@@ -134,6 +151,10 @@ function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string
  * then one line per pin in ranked order, and a `+<n> more · /pins` row when the pins do
  * not all fit. `maxLines` is the whole budget, header included, so `maxLines: 1` draws
  * the header alone. An empty view or a non-positive width or budget draws nothing.
+ *
+ * What it guarantees about its own output: no returned line contains a line break, and no line
+ * drawn with `plainStyle` contains an escape sequence. A style that colours its own text is
+ * responsible for its own bytes — those are styling the rail was asked to add.
  */
 export function renderRailLines(
   view: PinView,
@@ -152,12 +173,15 @@ export function renderRailLines(
   const lines: string[] = [header];
 
   const shown = budget - 1;
-  if (shown <= 0) return lines.map((line) => cut(line, width));
+  // Whether anything here was styled at all: `plainStyle` is the identity, so with it a line carries
+  // no styling of its own and every escape byte in it is pi-tui's or the model's.
+  const styled = opts.style !== plainStyle;
+  if (shown <= 0) return lines.map((line) => cut(line, width, styled));
 
   const hidden = pins.length - shown;
   const formatTime = opts.formatTime ?? formatLocalTime;
   const rows = pins.slice(0, shown).map((pin) => pinLine(pin, opts.style, formatTime));
   if (hidden > 0) rows[shown - 1] = opts.style.dim(`   +${hidden} more · /pins`);
   lines.push(...rows);
-  return lines.map((line) => cut(line, width));
+  return lines.map((line) => cut(line, width, styled));
 }
