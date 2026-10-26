@@ -10,7 +10,13 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { HINT, buildPanelLines, panelAllRows, panelPinRows } from "../src/panel-lines.ts";
+import {
+  HINT,
+  buildPanelLines,
+  panelAllRows,
+  panelLayout,
+  panelPinRows,
+} from "../src/panel-lines.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
@@ -55,9 +61,20 @@ function inside(line: string): string {
   return line.replace(/[╭╮╰╯│]/g, "");
 }
 
+/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
+type PanelContent = ReturnType<typeof content>;
+
+/**
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
+ * and the builder is handed both — no caller can size one frame and draw another.
+ */
+function built(c: PanelContent, width: number, height: number, s: RenderPanelStyle): string[] {
+  return buildPanelLines(c, width, height, s, panelLayout(c.pins, width, height, c.selection, s));
+}
+
 test("the selected pin's row is drawn with the selected style, and only that row", () => {
   const pins = [one(1, "First"), one(2, "Second")];
-  const lines = buildPanelLines(content(pins, 1, true), 40, 4, style);
+  const lines = built(content(pins, 1, true), 40, 4, style);
   // The bar goes over the inner columns only: the gutters of the selected row are drawn by the frame,
   // not by the bar, so the row opens with the gutter and only then the highlight.
   expect(lines.some((line) => line.includes("[ • Second") && inside(line).startsWith(" ["))).toBe(
@@ -68,18 +85,18 @@ test("the selected pin's row is drawn with the selected style, and only that row
 
 test("an unfocused panel highlights nothing", () => {
   const pins = [one(1, "First"), one(2, "Second")];
-  const lines = buildPanelLines(content(pins, 1, false), 40, 4, style);
+  const lines = built(content(pins, 1, false), 40, 4, style);
   expect(lines.some((line) => line.includes("[") && line.includes("]"))).toBe(false);
 });
 
 test("a negative selection draws no bar", () => {
-  const lines = buildPanelLines(content([one(1, "First")], -1, true), 40, 4, style);
+  const lines = built(content([one(1, "First")], -1, true), 40, 4, style);
   expect(lines.some((line) => line.includes("[") && line.includes("]"))).toBe(false);
 });
 
 test("scrolling follows the selected pin and never moves the header or the hint", () => {
   const pins = Array.from({ length: 6 }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
-  const lines = buildPanelLines(content(pins, 5, true), HINT_WIDTH, 4, style);
+  const lines = built(content(pins, 5, true), HINT_WIDTH, 4, style);
   // The header is the top border and the hint the bottom one, so a scrolled window can move neither.
   expect(lines[0]).toContain("📌 Pinned for you (6)");
   expect(lines[3]).toContain(HINT);
@@ -98,7 +115,7 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
   const inner = width - FRAME_COLUMNS;
   const all = panelAllRows(pins, inner - META_RESERVE, plainStyle);
   const wrapped = panelPinRows(pins[1] as ViewPin, inner - META_RESERVE, plainStyle).length;
-  const lines = buildPanelLines(content(pins, 1, false), width, 4, style);
+  const lines = built(content(pins, 1, false), width, 4, style);
   // The second pin owns `wrapped` rows, so a two-row window cannot show the whole of it — and what it
   // does show is the *start* of that pin, not a continuation row dropped in mid-entry.
   expect(wrapped).toBeGreaterThan(2);
@@ -120,19 +137,19 @@ test("the window never scrolls past the last pin, and a bar past the end draws n
   // always on screen and the blank rows a shorter list would leave never appear past the end of a longer
   // one. A negative selection has no bar and starts at the top, which is the row that always exists.
   for (const selection of [3, 5, 99]) {
-    const lines = buildPanelLines(content(six, selection, true), width, 5, style);
+    const lines = built(content(six, selection, true), width, 5, style);
     expect(lines.some((line) => line.includes("Pin 6"))).toBe(true);
     expect(lines.some((line) => inside(line).trim() === "")).toBe(false);
     expectUniformWidth(lines, width);
   }
   // From the top the window shows the first three pins and, with a bar drawn, the last pin has scrolled
   // away — which is the window following the selection, not the frame dropping rows.
-  const first = buildPanelLines(content(six, 0, true), width, 5, style);
+  const first = built(content(six, 0, true), width, 5, style);
   expect(first.some((line) => line.includes("Pin 1"))).toBe(true);
   expect(first.some((line) => line.includes("Pin 6"))).toBe(false);
-  const top = buildPanelLines(content(six, -1, true), width, 5, style);
+  const top = built(content(six, -1, true), width, 5, style);
   expect(top.some((line) => line.includes("Pin 1"))).toBe(true);
   // A bar on a pin that is not there highlights nothing at all.
-  const past = buildPanelLines(content(six, 99, true), width, 5, style);
+  const past = built(content(six, 99, true), width, 5, style);
   expect(past.filter((line) => line.includes("]")).length).toBe(0);
 });

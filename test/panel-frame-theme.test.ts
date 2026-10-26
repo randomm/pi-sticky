@@ -8,7 +8,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
+import { buildPanelLines, panelLayout } from "../src/panel-lines.ts";
 import { panelThemeStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
@@ -23,6 +23,25 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   selection,
   focused,
 });
+
+/**
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
+ * and the builder is handed both — no caller can size one frame and draw another.
+ */
+function built(
+  c: ReturnType<typeof content>,
+  width: number,
+  height: number,
+  styleOf: ReturnType<typeof panelThemeStyle>,
+): string[] {
+  return buildPanelLines(
+    c,
+    width,
+    height,
+    styleOf,
+    panelLayout(c.pins, width, height, c.selection, styleOf),
+  );
+}
 
 /** A theme that records the tokens it was asked for and colours nothing, so a call is the evidence. */
 function recordingTheme(asked: string[]) {
@@ -42,12 +61,12 @@ test("the frame's colours come from the theme, and the focused frame asks for th
   const asked: string[] = [];
   const styleOf = panelThemeStyle(recordingTheme(asked));
   const pins = [one(1, "Decide X")];
-  buildPanelLines(content(pins, 0, false), 40, 3, styleOf);
+  built(content(pins, 0, false), 40, 3, styleOf);
   expect(asked).toContain("border");
   expect(asked).not.toContain("borderAccent");
 
   asked.length = 0;
-  buildPanelLines(content(pins, 0, true), 40, 3, styleOf);
+  built(content(pins, 0, true), 40, 3, styleOf);
   expect(asked).toContain("borderAccent");
   // The hint is dimmed, not accented, and the header keeps its own accent bold: `border` is never asked
   // for in a focused frame, and `borderAccent` is asked for only by the frame's own glyphs.

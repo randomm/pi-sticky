@@ -8,7 +8,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines, panelAllRows, panelPinRows } from "../src/panel-lines.ts";
+import { buildPanelLines, panelAllRows, panelLayout, panelPinRows } from "../src/panel-lines.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin, view } from "./fixtures.ts";
@@ -59,6 +59,7 @@ test("the view a test builds with fixtures.ts draws like any other", () => {
     40,
     3,
     plainStyle,
+    panelLayout(view([pin(1, "Decide X", "action")]).pins, 40, 3, 0, plainStyle),
   );
   expect(lines[0]).toContain("📌 Pinned for you (1)");
   expect(lines[1]).toContain("?");

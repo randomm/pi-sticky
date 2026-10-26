@@ -20,7 +20,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
-import { panelFrameRows } from "./panel-height.ts";
 import type { PanelHost } from "./panel-host.ts";
 import { dispatchPanelKey } from "./panel-input.ts";
 import { buildPanelLines } from "./panel-lines.ts";
@@ -212,7 +211,8 @@ export class PanelComponent implements Component {
     };
     // One layout pass at the width pi-tui just handed over: the row table it builds is what both the
     // frame's height and the drawn window come from, so a pin is wrapped once per frame and a resize
-    // sizes the box at the width it is drawn at rather than the last cached one.
+    // sizes the box at the width it is drawn at rather than the last cached one. `panelLayout` owns the
+    // height; the builder draws the lines it counted.
     const layout = panelLayout(
       pins,
       width,
@@ -220,8 +220,7 @@ export class PanelComponent implements Component {
       this.#selection,
       this.#styleOf(),
     );
-    const height = panelFrameRows(layout.owned.length, this.#tui?.terminal?.rows);
-    const lines = buildPanelLines(content, width, height, this.#styleOf(), layout);
+    const lines = buildPanelLines(content, width, layout.height, this.#styleOf(), layout);
     this.#frame = { lines, width, pins, selection: this.#selection, focused: this.#focused };
     return lines;
   }

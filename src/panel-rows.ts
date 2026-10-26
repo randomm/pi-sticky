@@ -16,11 +16,9 @@
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { panelFrameRows } from "./panel-height.ts";
+import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
 
-/** The frame's own two rows of border, which no pin count removes — `panel-height.ts` owns the number. */
-const BORDER_ROWS = panelFrameRows(0, Number.POSITIVE_INFINITY);
-
+export { BORDER_ROWS } from "./panel-height.ts";
 export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
 
 import { formatLocalTime } from "./time.ts";
@@ -44,12 +42,12 @@ export interface PanelRow {
 }
 
 /**
- * Rows the pin window gets inside a frame of `height`: the height less the two border rows. The hint
- * is not subtracted because it is not a content row — it is written into the bottom border — so a
- * focused panel and an unfocused one show the same number of pins.
+ * Rows the pin window gets inside a frame of `height`: the height less the frame's own border rows
+ * (`BORDER_ROWS`, `panel-height.ts`). The hint is not subtracted because it is not a content row — it is
+ * written into the bottom border — so a focused panel and an unfocused one show the same number of pins.
  */
 export function panelContentRows(height: number): number {
-  return Math.max(0, height - 2);
+  return Math.max(0, height - BORDER_ROWS);
 }
 
 /**
@@ -131,8 +129,8 @@ export function panelRowStartOf(all: readonly PanelOwned[], index: number): numb
  * The window's start for a selection, given every row of every pin in order and the start of the
  * selected pin: never past the end of the table, so the last pin is always on screen.
  *
- * `buildPanelLines` goes through this with the table and the start it built itself, so drawing a window
- * of the pins costs one wrap of each pin rather than three.
+ * `buildPanelLines` goes through this with the table and the start `panelLayout` built, so drawing a
+ * window of the pins costs one wrap of each pin rather than three.
  */
 export function panelWindowOffset(
   contentRows: number,
@@ -164,26 +162,23 @@ export interface PanelLayout {
  * counted from, which is what makes a frame as tall as its rows and keeps a resize from sizing the box
  * at a width it is not drawn at. The builder pads each row out to the inner width when it draws it.
  *
- * `rows` says which ceiling the height uses: a number of *content* rows when the caller already knows
- * the frame's height (`buildPanelLines` itself, handed `height - 2`), or the terminal when the caller is
- * *sizing* the frame (`PanelComponent.render`, which passes `tui.terminal.rows`). One wrap serves both,
- * where the component used to wrap the pins a second time at the width of the previous frame.
+ * This is the *only* owner of a frame's height: `height` is the row count the frame draws, counted from
+ * `owned` and the terminal the caller was given (`tui.terminal.rows`, or `undefined` when none can be
+ * asked, which `panelMaxRows` answers with its fallback). `buildPanelLines` draws the `height` it is
+ * handed and builds no table of its own, so a caller cannot ask for one frame and draw another.
  */
 export function panelLayout(
   pins: readonly ViewPin[],
   frameWidth: number,
-  rows: number | unknown,
+  terminalRows: number | undefined,
   selection: number,
   style: PanelStyle,
 ): PanelLayout {
   const textWidth = Math.max(1, frameWidth - GUTTER_COLUMNS - META_RESERVE);
   const owned = panelRowOwners(pins, textWidth, style);
-  // A content-row budget is a frame the caller already fixed, so the window cannot outgrow it; anything
-  // else is the terminal, capped by `panelMaxRows` (`panel-height.ts`).
-  const ceiling = typeof rows === "number" ? rows + BORDER_ROWS : rows;
   return {
     owned,
     start: panelRowStartOf(owned, selection),
-    height: panelFrameRows(owned.length, ceiling),
+    height: panelFrameRows(owned.length, terminalRows),
   };
 }

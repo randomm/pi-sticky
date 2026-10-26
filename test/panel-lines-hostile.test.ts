@@ -12,7 +12,7 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
+import { buildPanelLines, panelLayout } from "../src/panel-lines.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -39,6 +39,17 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
 });
 
+/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
+type PanelContent = ReturnType<typeof content>;
+
+/**
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
+ * and the builder is handed both — no caller can size one frame and draw another.
+ */
+function built(c: PanelContent, width: number, height: number, s: RenderPanelStyle): string[] {
+  return buildPanelLines(c, width, height, s, panelLayout(c.pins, width, height, c.selection, s));
+}
+
 /** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
 const MIN_FRAME_WIDTH = 30;
 
@@ -61,8 +72,8 @@ test("a themed panel draws through all six colours", () => {
     border: (s: string) => `\u{1b}[2m${s}`,
     borderFocused: (s: string) => `\u{1b}[1m${s}`,
   };
-  const focused = buildPanelLines(content([one(1, "Decide X")], 0, true), 40, 3, painted);
-  const resting = buildPanelLines(content([one(1, "Decide X")], 0, false), 40, 3, painted);
+  const focused = built(content([one(1, "Decide X")], 0, true), 40, 3, painted);
+  const resting = built(content([one(1, "Decide X")], 0, false), 40, 3, painted);
   expect(focused[0]).toContain("<h:t>");
   expect(focused[1]).toContain("<m:t>");
   expect(focused[1]).toContain("<s:t>");
@@ -83,7 +94,7 @@ test("a coloured header over a narrow frame is cut without losing the theme's ow
     ...plain,
     header: (s: string) => `<h:k>${s}`,
   };
-  const lines = buildPanelLines(content([one(1, "x")]), MIN_FRAME_WIDTH, 4, painted);
+  const lines = built(content([one(1, "x")]), MIN_FRAME_WIDTH, 4, painted);
   expectUniformWidth(lines, MIN_FRAME_WIDTH);
   expect(lines[0]?.includes("<h:k>")).toBe(true);
 });
@@ -101,12 +112,7 @@ test("a theme that emits a hyperlink paints no escape bytes onto the panel, at a
   };
   for (const focused of [false, true]) {
     for (const width of [40, 60]) {
-      const lines = buildPanelLines(
-        content([one(1, "Decide X")], 0, focused),
-        width,
-        6,
-        hostileStyle,
-      );
+      const lines = built(content([one(1, "Decide X")], 0, focused), width, 6, hostileStyle);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }
@@ -119,7 +125,7 @@ test("hostile text drawn at a width that forces a cut carries no escape, control
   // included, since a pin's bytes must never reach a border column.
   for (const focused of [false, true]) {
     for (const width of [MIN_FRAME_WIDTH, 33, 60, 120]) {
-      const lines = buildPanelLines(
+      const lines = built(
         content([one(1, cleanPinText(HOSTILE), { level: "warning" })], 0, focused),
         width,
         6,
@@ -137,7 +143,7 @@ test("every drawn line measures exactly the width from the frame's floor to 120 
   // closes, focused and unfocused, whatever the pin text.
   for (const focused of [false, true]) {
     for (let width = MIN_FRAME_WIDTH; width <= 120; width++) {
-      const lines = buildPanelLines(
+      const lines = built(
         content([one(1, cleanPinText(HOSTILE)), one(2, "日本語 🎯 tail")], 1, focused),
         width,
         7,

@@ -14,7 +14,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import { buildPanelLines, panelPinRows } from "../src/panel-lines.ts";
+import { buildPanelLines, panelLayout, panelPinRows } from "../src/panel-lines.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
@@ -49,7 +49,14 @@ const frame = (
   selection: number,
   focused: boolean,
   width = 40,
-): string[] => buildPanelLines({ pins, selection, focused }, width, 6, style);
+): string[] =>
+  buildPanelLines(
+    { pins, selection, focused },
+    width,
+    6,
+    style,
+    panelLayout(pins, width, 6, selection, style),
+  );
 
 describe("the replied row of the panel", () => {
   test("opens the text column with the mark and carries no trailing one", () => {
@@ -71,13 +78,21 @@ describe("the replied row of the panel", () => {
 
   test("the dim is asked for over the whole text column, mark included", () => {
     const dimmed: string[] = [];
-    buildPanelLines({ pins: [repliedPin(1, "Decide X")], selection: 0, focused: false }, 40, 6, {
+    const dimStyle: PanelStyle = {
       ...style,
       dim: (s) => {
         dimmed.push(s);
         return s;
       },
-    });
+    };
+    const pins = [repliedPin(1, "Decide X")];
+    buildPanelLines(
+      { pins, selection: 0, focused: false },
+      40,
+      6,
+      dimStyle,
+      panelLayout(pins, 40, 6, 0, dimStyle),
+    );
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
 

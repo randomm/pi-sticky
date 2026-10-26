@@ -7,11 +7,14 @@
  * builder's own making onto the screen. And below the size at which a box *can* close, the builder draws
  * nothing at all: an open frame is worse than no frame, because the panel is flush right and the chat
  * behind it would show through the gap.
+ *
+ * As the component draws it: `panelLayout` owns the row table *and* the frame height, and the builder is
+ * handed both (`built` below), so no test sizes one frame and draws another.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { HINT, buildPanelLines } from "../src/panel-lines.ts";
+import { HINT, buildPanelLines, panelLayout } from "../src/panel-lines.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
@@ -37,9 +40,20 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
 });
 
+/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
+type PanelContent = ReturnType<typeof content>;
+
+/**
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
+ * and the builder is handed both — no caller can size one frame and draw another.
+ */
+function built(c: PanelContent, width: number, height: number, s: RenderPanelStyle): string[] {
+  return buildPanelLines(c, width, height, s, panelLayout(c.pins, width, height, c.selection, s));
+}
+
 /** A frame the given size, with one pin, in whichever focus state the caller asked for. */
 function frameOf(width: number, height: number, focused = false): string[] {
-  return buildPanelLines(content([one(1, "Decide X")], 0, focused), width, height, style);
+  return built(content([one(1, "Decide X")], 0, focused), width, height, style);
 }
 
 /** Every line the same visible width, or the panel would composite over the chat behind it. */
@@ -68,7 +82,7 @@ test("a header or hint too long for the frame is cut with an ellipsis and the co
   expect(roomy[2]).toContain(HINT);
   expect(roomy[2]?.endsWith("╯")).toBe(true);
 
-  const many = buildPanelLines(
+  const many = built(
     content(Array.from({ length: 9 }, (_u, i) => one(i + 1, "x"))),
     MIN_FRAME_WIDTH,
     5,
@@ -84,9 +98,9 @@ test("a frame too narrow or too short to close draws nothing at all", () => {
   // Never an open box: below the overlay's own minWidth there is no inner width to lay out, and below
   // three rows one of the two borders has nowhere to be drawn.
   for (const width of [1, 12, 20, MIN_FRAME_WIDTH - 1]) {
-    expect(buildPanelLines(content([one(1, "x")]), width, 6, style)).toEqual([]);
+    expect(built(content([one(1, "x")]), width, 6, style)).toEqual([]);
   }
   for (const height of [1, 2, MIN_FRAME_HEIGHT - 1]) {
-    expect(buildPanelLines(content([one(1, "x")]), 40, height, style)).toEqual([]);
+    expect(built(content([one(1, "x")]), 40, height, style)).toEqual([]);
   }
 });

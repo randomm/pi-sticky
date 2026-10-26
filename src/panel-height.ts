@@ -15,8 +15,12 @@
 /** Rows to fall back to when neither the overlay bounds nor the terminal can be asked. */
 const FALLBACK_ROWS = 24;
 
-/** The frame's own two rows of border, which no pin count removes. */
-const BORDER_ROWS = 2;
+/**
+ * The frame's own two rows of border, which no pin count removes: the one place the number is stated.
+ * `panelFrameRows` puts them over the pin rows, `panelContentRows` (`panel-rows.ts`) takes them back off
+ * a frame the caller already sized, and the builder draws them as its top and bottom border.
+ */
+export const BORDER_ROWS = 2;
 
 /**
  * The tallest panel ever drawn, in rows: half the terminal, floored so an odd row count leaves the

@@ -59,6 +59,7 @@ import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
 export {
+  BORDER_ROWS,
   GUTTER_COLUMNS,
   META_RESERVE,
   panelAllRows,
@@ -84,8 +85,6 @@ function isPanelFrameSize(width: number, height: number): boolean {
   );
 }
 
-/**
- * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
 /** What the builder draws. `pins` is already in ranked order — the panel never re-sorts. */
 export interface PanelContent {
   pins: readonly ViewPin[];
@@ -188,17 +187,16 @@ function fitLabel(label: string, room: number): string {
  * none the frame has nothing to clear.
  *
  * `layout` is the row table `panelLayout` built for the width `width` — the same table the frame's
- * height was counted from, so the box is as tall as the rows it draws and no pin is wrapped twice. A
- * caller with no table to hand gets one built here: `panelLayout` wraps at the text column, which is the
- * width the rows are cut at, and its `rows` argument is this frame's content budget, so the window it
- * reports cannot outgrow the height the caller asked for.
+ * height was counted from, so the box is as tall as the rows it draws and no pin is wrapped twice. The
+ * builder does not build one of its own: it draws the rows and the height the caller sized together, and
+ * `panelLayout` is the one place a pin is wrapped for a frame.
  */
 export function buildPanelLines(
   content: PanelContent,
   width: number,
   height: number,
   style: PanelStyle,
-  layout: PanelLayout | undefined = undefined,
+  layout: PanelLayout,
 ): string[] {
   // A size the panel cannot promise about draws nothing at all: the whole point of this function is
   // that every line measures exactly `width` columns, and padding to 30.5 — or drawing a box whose two
@@ -221,17 +219,16 @@ export function buildPanelLines(
   // would leave a row short and the chat showing through it.
   const gutterAt = (text: string) => glyph(frame, text);
   // The gutters own four columns, so every pin is laid out at the inner width — and laid out *once*
-  // for the whole frame: the height, the offset and the selected pin's own start row all come out of
-  // the one table the caller sized the frame with, or out of this one when it handed us nothing.
+  // for the whole frame: the offset and the selected pin's own start row both come out of the one table
+  // the caller sized the frame with.
   const inner = width - GUTTER_COLUMNS;
   const budget = panelContentRows(height);
-  const built = layout ?? panelLayout(content.pins, width, budget, content.selection, style);
-  const owned = built.owned;
+  const owned = layout.owned;
   const offset = panelWindowOffset(
     budget,
     content.selection,
     owned.map((entry) => entry.row),
-    built.start,
+    layout.start,
   );
 
   const header = `${HEADER} (${content.pins.length})`;
