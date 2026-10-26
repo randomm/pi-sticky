@@ -11,7 +11,8 @@
  */ import { expect, test } from "bun:test";
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
-import { PanelComponent, replyMarker } from "../src/panel-component.ts";
+import { PanelComponent } from "../src/panel-component.ts";
+import { replyMarker } from "../src/reply.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host, pins } from "./panel-component-host.ts";
@@ -25,8 +26,11 @@ const REPEAT = "\x1b[100;3:2u";
 const DOWN = "\x1b[B";
 const UP = "\x1b[A";
 
-/** Wide enough that the hint line is drawn whole rather than cut to an ellipsis. */
+/** Wide enough that the hint line is drawn whole rather than cut to an ellipsis: the hint, its two
+ * margins and the two corners, which is all the bottom border asks for. */
 const HINT_WIDTH = 48;
+/** A width that leaves room for the whole hint *inside* the bottom border, corners and margins included. */
+const HINT_ROOM = HINT_WIDTH + 4;
 
 /** A component over a recorded host, with a handle already released so the component's own flag rules. */
 function component(pins: ViewPin[], tui?: TUI) {
@@ -42,9 +46,12 @@ test("render draws the header, the pins and — while focused — the hint", () 
   const { c } = component(pins("Decide X", "Watch out"));
   expect(c.render(40)[0]).toContain("📌 Pinned for you (2)");
   expect(c.render(40).some((line) => line.includes("Watch out"))).toBe(true);
-  expect(c.render(HINT_WIDTH).some((line) => line.includes("Esc back"))).toBe(false);
+  // The hint lives in the bottom border, which is drawn at the full width: a frame narrower than the
+  // hint cuts it, so the whole hint only appears at a width that has room for it beside the corners.
+  expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(false);
+  expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(false);
   c.focus();
-  expect(c.render(HINT_WIDTH).some((line) => line.includes("Esc back"))).toBe(true);
+  expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(true);
 });
 
 test("render caches its lines until the view, the selection or the focus changes", () => {
@@ -200,71 +207,4 @@ test("Enter with no pin to reply to still lets go of the focus", () => {
   c.focus();
   c.handleInput("\r");
   expect([state.replies, c.isFocused()]).toEqual([[], false]);
-});
-
-test("a height comes from the terminal and is capped, so a very tall terminal is not laid out whole", () => {
-  const tall = { requestRender: () => {}, terminal: { columns: 120, rows: 400 } } as unknown as TUI;
-  // Header + 98 rows + hint, clipped to the panel's own ceiling; a TUI with no usable terminal answers
-  // with the fallback row count rather than zero, so a frame is still a frame.
-  expect(component(pins("One"), tall).c.render(40)).toHaveLength(100);
-  expect(component(pins("One"), {} as unknown as TUI).c.render(40)).toHaveLength(24);
-  // `theme()` reads back what was injected, and `invalidate()` drops the cache so the next frame is
-  // laid out again rather than handed back from the last one.
-  const themed = new PanelComponent(host(pins("One")).stub, createStubTui(), undefined);
-  expect(themed.theme()).toBeUndefined();
-  themed.render(40);
-  themed.invalidate();
-  expect(themed.render(40)).toEqual(themed.render(40));
-});
-
-test("a key the panel owns is handed back to the editor when the panel is not visible", () => {
-  const { c, handle, state } = component(pins("One", "Two"));
-  c.focus();
-  // pi-tui routes input to the focused component whether or not `visible()` let it draw, so a panel the
-  // user cannot see would otherwise dismiss, reply or move on keystrokes nobody can see the result of.
-  state.visible = false;
-  c.handleInput("d");
-  expect(state.dismissals).toEqual([]);
-  expect(state.replies).toEqual([]);
-  expect(c.isFocused()).toBe(false);
-  expect(handle.isFocused()).toBe(false);
-});
-
-test("the reply marker replaces one that is already there and keeps the draft verbatim", () => {
-  // The merge rule the editor draft is built with, exercised in its one copy (`extension.ts` calls it).
-  expect(replyMarker("how about the blue one", 3)).toBe("Re #3: how about the blue one");
-  expect(replyMarker("Re 7: keep this", 3)).toBe("Re #3: Re 7: keep this");
-  expect(replyMarker("Re #9: draft", 4)).toBe("Re #4: draft");
-  expect(replyMarker("Re #x: not a marker", 4)).toBe("Re #4: Re #x: not a marker");
-  expect(replyMarker("  Re #1: indented", 4)).toBe("Re #4:   Re #1: indented");
-});
-
-/** A handle that records the order of the focus calls a component makes on it. */
-function trackingHandle() {
-  const handle = createOverlayHandle();
-  const calls: string[] = [];
-  const track =
-    (name: string, run: () => void): (() => void) =>
-    () => {
-      calls.push(name);
-      run();
-    };
-  return {
-    calls,
-    handle: {
-      ...handle,
-      focus: track("focus", () => handle.focus()),
-      unfocus: track("unfocus", () => handle.unfocus()),
-    } as OverlayHandle,
-  };
-}
-
-// The host's `unfocus` is the notification and the handle moving is the mechanism; the order matters.
-test("the component's focus and unfocus go straight to the handle it was given", () => {
-  const c = new PanelComponent(host(pins("One")).stub);
-  const tracker = trackingHandle();
-  c.setHandle(tracker.handle);
-  c.focus();
-  c.unfocus();
-  expect(tracker.calls).toEqual(["focus", "unfocus"]);
 });

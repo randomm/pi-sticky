@@ -1,32 +1,41 @@
 /**
- * How tall the panel draws, which is a question about the terminal rather than about the pins.
+ * How tall the panel draws, which is a question about the terminal *and* about the pins.
  *
  * `PanelComponent` asks this once per frame. It is deliberately *not* `handle.getBounds()`: pi-tui
  * computes the layout from `component.render(width)`, so reading the bounds from the previous frame
  * would make the panel's height depend on what it drew last frame and a dismissed pin could leave a
- * hole. `maxHeight` is `"100%"` in the overlay's own options, which pi-tui clamps to the available
- * rows, so filling the terminal is both the intent and the ceiling.
+ * hole.
+ *
+ * The panel is only as tall as its content: the frame is two rows of border over the wrapped pin rows,
+ * so those two numbers are the only thing that decides the height, and a panel with one pin does not
+ * pad itself out to the ceiling. The ceiling is what the overlay's own `maxHeight` of `"50%"` states —
+ * kept in the one place, so the overlay and the component cannot disagree about the tallest frame.
  */
 
 /** Rows to fall back to when neither the overlay bounds nor the terminal can be asked. */
 const FALLBACK_ROWS = 24;
 
-/**
- * The tallest panel ever drawn. A tall terminal is not a reason to lay out a thousand rows the
- * overlay clips away, and pi-tui's own `maxHeight` of `"100%"` keeps this above what it will draw.
- */
-const MAX_PANEL_ROWS = 100;
+/** The frame's own two rows of border, which no pin count removes. */
+const BORDER_ROWS = 2;
 
 /**
- * Rows to draw: the terminal's own height, capped.
- *
- * Typed `unknown` rather than `number | undefined` because the argument is the *host's* member, not
- * this module's: `PanelComponent` hands it `#tui?.terminal?.rows`, and a TUI that is absent, has no
- * `terminal` member, or states zero is a real state of the pi boundary rather than a type error. The
- * answer is always a usable row count, so a caller never has to re-narrow it: a terminal that cannot
- * be asked answers with the fallback, and a frame is still a frame.
+ * The tallest panel ever drawn, in rows: half the terminal, floored so an odd row count leaves the
+ * extra row to the transcript. A tall terminal is not a reason to lay out a thousand rows the overlay
+ * clips away, and pi-tui's own `maxHeight` of `"50%"` clamps to the same figure. A terminal that
+ * cannot be asked answers with the fallback rows rather than zero, so a frame is still a frame.
  */
-export function panelRows(rows: unknown): number {
+export function panelMaxRows(rows: unknown): number {
   const available = typeof rows === "number" && rows > 0 ? rows : FALLBACK_ROWS;
-  return Math.min(available, MAX_PANEL_ROWS);
+  return Math.max(3, Math.floor(available / 2));
+}
+
+/**
+ * Rows the panel draws for `contentRows` of pins: the frame over them, never past the ceiling.
+ *
+ * There is no padding to the ceiling: a two-pin panel is four rows tall and the prompt is visible
+ * beside it. `Math.max` keeps the degenerate case a *closed* frame rather than zero rows, since the
+ * builder itself refuses to draw an open one (`panel-lines.ts`).
+ */
+export function panelFrameRows(contentRows: number, rows: unknown): number {
+  return Math.max(BORDER_ROWS, Math.min(contentRows + BORDER_ROWS, panelMaxRows(rows)));
 }

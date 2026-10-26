@@ -16,7 +16,12 @@ import type { PinView } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
 
 /** The identity style, plus the bar the panel needs and `plainStyle` has no opinion about. */
-const panelStyle: PanelStyle = { ...plainStyle, selected: (text) => text };
+const panelStyle: PanelStyle = {
+  ...plainStyle,
+  selected: (text) => text,
+  border: (text) => text,
+  borderFocused: (text) => text,
+};
 
 /** The one-pinned view every hand-built wiring starts from. */
 export const ONE: PinView = { pins: [pin(1, "Decide X")], removed: [] };

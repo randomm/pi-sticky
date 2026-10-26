@@ -21,9 +21,9 @@ import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-a
 
 import type { HostContext } from "./context.ts";
 import type { StickyDeps } from "./deps.ts";
-import { replyMarker } from "./panel-component.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
+import { replyMarker } from "./reply.ts";
 import { latestUIShown } from "./session-entries.ts";
 
 /**

@@ -9,31 +9,29 @@
  * cannot leave the bar past the end.
  *
  * Keys reach this component only while the overlay holds focus (pi-tui routes input to the focused
- * component alone), which is why the hint line is drawn only while focused: an unfocused panel
- * advertising keys it cannot receive would be a lie. Kitty release and repeat events are swallowed,
+ * component alone), which is why the keys hint is drawn only while focused — in the bottom border, and
+ * only there. Kitty release and repeat events are swallowed,
  * so a held `j` moves once and a held `d` dismisses once.
  *
  * `Enter` submits nothing: it puts `Re #<id>: ` at offset 0 of the raw editor buffer and hands focus
  * back to the main editor. The marker replaces one that is already there and the rest of the draft
  * is kept verbatim; submitting it is the reply ticket's job.
  */
-import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
-
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, KeyId, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
-import { panelRows } from "./panel-height.ts";
+import { panelFrameRows } from "./panel-height.ts";
 import type { PanelHost } from "./panel-host.ts";
-import { isDismissKey, isSubmitKey, presses } from "./panel-keys.ts";
-import { buildPanelLines } from "./panel-lines.ts";
+import { dispatchPanelKey } from "./panel-input.ts";
+import { PANEL_MIN_FRAME_COLUMNS, buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
+import { META_RESERVE, panelAllRows } from "./panel-rows.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
-/** The keys that move the bar; `matchesKey` also takes the Kitty forms of each. */
-const UP_KEYS: readonly KeyId[] = ["up", "k"];
-const DOWN_KEYS: readonly KeyId[] = ["down", "j"];
+/** The frame's gutters, quoted so the row count is taken at the width the builder lays the rows out at. */
+const GUTTER_COLUMNS = 4;
 
 /**
  * Colours for a component whose host has none to give and whose factory got no theme: the rail's
@@ -46,6 +44,8 @@ export const NO_PANEL_COLOUR: PanelStyle = {
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => s,
+  border: (s) => s,
+  borderFocused: (s) => s,
 };
 
 /** What one cached frame is: the lines, the width they were measured for, and what drew them. */
@@ -58,11 +58,21 @@ interface PanelFrame {
 }
 
 /**
- * `Re #12: ` at the front of a draft, replacing a marker that is already there. Anchored at offset 0
- * of the *raw* buffer: a leading space the user typed is part of the draft, not a marker to replace.
+ * Rows the panel draws for `pins` at `frameWidth`: the frame over the wrapped rows, capped at half the
+ * terminal. Each pin is wrapped once here to size the frame and once again by the builder, which is what
+ * it costs to draw a panel as tall as its content instead of as tall as the overlay.
+ *
+ * The gutter and id/time columns are the frame's own rule, taken from `panel-rows.ts` rather than
+ * invented, so the width the rows are counted at is the width the builder will cut them at.
  */
-export function replyMarker(text: string, id: number): string {
-  return `Re #${id}: ${text.replace(/^Re #\d+: /, "")}`;
+function panelHeightFor(
+  pins: readonly ViewPin[],
+  frameWidth: number,
+  style: PanelStyle,
+  terminalRows: unknown,
+): number {
+  const inner = Math.max(1, frameWidth - GUTTER_COLUMNS - META_RESERVE);
+  return panelFrameRows(panelAllRows(pins, inner, style).length, terminalRows);
 }
 
 /**
@@ -201,6 +211,11 @@ export class PanelComponent implements Component {
     return this.#selection;
   }
 
+  /** The pins the panel is drawing — the view read at the moment the key arrives, never a cached copy. */
+  get pins(): readonly ViewPin[] {
+    return this.#host.getView().pins;
+  }
+
   render(width: number): string[] {
     // The live view is read first and is part of the cache key, not just of the frame: width alone
     // cannot tell a view that has been swapped from one that has not, and `update()` — the member that
@@ -243,46 +258,29 @@ export class PanelComponent implements Component {
   }
 
   #handleInput(data: string): void {
-    if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
-    // The panel owns the keyboard only while it is on screen. pi-tui routes input to the focused
-    // component alone, but it asks *the overlay* whether to draw it, and the two answers can disagree —
-    // a pin removed from under an open overlay, a hide, a terminal that narrowed past the panel's
-    // boundary. A key into a panel nobody can see has no visible answer, so it is handed back instead of
-    // acted on: `unfocus()` puts the focus where the user is typing and tells the owner to settle the rail.
-    if (!this.#host.isVisible()) {
-      this.unfocus();
-      return;
-    }
-    const pins = this.#host.getView().pins;
-    if (matchesKey(data, "escape")) {
-      this.unfocus();
-      return;
-    }
-    if (isSubmitKey(data)) {
-      const pin = pins[this.#selection];
-      if (pin) this.#host.startReply(pin.id);
-      this.unfocus();
-      return;
-    }
-    if (isDismissKey(data)) {
-      const pin = pins[this.#selection];
-      // The host's dismissal redraws and `update()` re-clamps, so dismissing the last pin lands the
-      // bar on the new last one rather than on a row that no longer exists.
-      if (pin) this.#host.dismiss(pin.id);
-      return;
-    }
-    const moved = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
-    if (moved === 0) return;
-    const next = this.#selection + moved;
-    if (next < 0 || next >= pins.length) return;
-    this.#selection = next;
-    this.invalidate();
-    this.#host.requestRender();
+    dispatchPanelKey(data, this, this.#host);
   }
 
-  /** Rows to draw, from the terminal this component was built with — see `panel-height.ts`. */
+  /**
+   * Rows to draw for the pins this component is about to lay out: `panel-height.ts` owns the rule, this
+   * only hands it the pins, the width the frame will be drawn at and the terminal it was built with.
+   */
   #height(): number {
-    return panelRows(this.#tui?.terminal?.rows);
+    return panelHeightFor(
+      this.#host.getView().pins,
+      this.#frameWidth(),
+      this.#styleOf(),
+      this.#tui?.terminal?.rows,
+    );
+  }
+
+  /**
+   * The width the frame being sized will be drawn at: the one just cached, because `render()` is what
+   * sizes a frame and pi-tui hands it the width. Only a session's very first frame has nothing cached,
+   * and there the overlay's own `minWidth` is the width pi lays it out at.
+   */
+  #frameWidth(): number {
+    return this.#frame?.width ?? PANEL_MIN_FRAME_COLUMNS;
   }
 }
 

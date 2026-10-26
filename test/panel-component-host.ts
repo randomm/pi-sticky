@@ -17,12 +17,14 @@ import type { PanelStyle } from "../src/render.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 
-/** Colours that do nothing but make a complete `PanelStyle`, including the selection bar. */
+/** Colours that do nothing but make a complete `PanelStyle`: the bar and the frame's glyphs. */
 export const style: PanelStyle = {
   header: (s) => s,
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => `[${s}]`,
+  border: (s) => s,
+  borderFocused: (s) => s,
 };
 
 /** A host that records every callback, over a view the test owns. */

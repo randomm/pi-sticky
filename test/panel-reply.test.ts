@@ -29,6 +29,8 @@ const style: PanelStyle = {
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => `[${s}]`,
+  border: (s) => s,
+  borderFocused: (s) => s,
 };
 
 /** The same colours for a component built on the hand-built host, where the style is a host member. */
@@ -54,8 +56,9 @@ describe("the replied row of the panel", () => {
     const lines = frame([repliedPin(1, "Decide X")], 0, false);
     // Exact string: the mark moved from the end of the row to the front of the text column, and an
     // assertion that accepted either form would pass against the drawing this ticket replaced. The panel
-    // draws the text column and pads it, then the dim `#id HH:MM` tail follows it.
-    expect(lines[1]).toBe(` • ↩ Decide X #1 ${localTime(NOW)}`.padEnd(40));
+    // draws the text column and pads it, then the dim `#id HH:MM` tail follows it — all of it between the
+    // frame's gutters, one space inside each.
+    expect(lines[1]).toBe(`${`│  • ↩ Decide X #1 ${localTime(NOW)}`.padEnd(39)}│`);
     expect(lines[1] ?? "").not.toMatch(/↩\s*$/);
   });
 
@@ -63,7 +66,7 @@ describe("the replied row of the panel", () => {
     // The pair the two assertions above turn on: the mark is the only difference, so the row's shape —
     // marker, id, time, two spaces, text — is not something the replied case invented.
     const unreplied = frame([pin(1, "Decide X", "info", { createdAt: NOW })], 0, false);
-    expect(unreplied[1]).toBe(` • Decide X #1 ${localTime(NOW)}`.padEnd(40));
+    expect(unreplied[1]).toBe(`${`│  • Decide X #1 ${localTime(NOW)}`.padEnd(39)}│`);
   });
 
   test("the dim is asked for over the whole text column, mark included", () => {
