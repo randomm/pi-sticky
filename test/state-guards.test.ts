@@ -36,6 +36,8 @@ describe("isPinState", () => {
     expect(isPinState({ v: 1, pins: [], removed: [], nextId: 0 })).toBe(false);
     expect(isPinState({ v: 1, pins: [], removed: [], nextId: 1.5 })).toBe(false);
     expect(isPinState({ v: 1, pins: null, removed: [], nextId: 1 })).toBe(false);
+    // nextId has to outrank every id the session has used, or the next pin reuses one.
+    expect(isPinState(state([pin(1, "a")], 1))).toBe(false);
   });
 
   test("rejects a pin with a bad level, source or non-integer id", () => {

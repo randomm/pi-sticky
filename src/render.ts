@@ -17,6 +17,11 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "./escape.ts";
+import { formatLocalTime } from "./time.ts";
+
+// Re-exported so the public surface the plan names for render.ts keeps `formatLocalTime`; the
+// implementation lives in time.ts, which the state reducer also imports.
+export { formatLocalTime };
 
 import type { PinLevel, PinView, ViewPin } from "./types.ts";
 
@@ -64,15 +69,6 @@ function cut(line: string, width: number): string {
   // Nothing was styled by the caller, so any escape sequence in the result came from the cut itself.
   if (!line.includes(String.fromCharCode(0x1b))) return stripSequences(cutLine);
   return cutLine.replace(INJECTED_RESET, String.fromCodePoint(0x2026));
-}
-
-/** Local time as `HH:MM`, ASCII digits and a colon in any locale; `--:--` if unusable. */
-export function formatLocalTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "--:--";
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
 }
 
 /** Warning, then action, then info; within a level unreplied first, then newest first. */

@@ -8,8 +8,25 @@
  * from *all* session entries, so they stick session-wide (research-summary U10):
  * `reconstruct` applies them on top of the branch snapshot, moving a dismissed pin out
  * of `state.pins` into `removed` so a later agent update names the user.
+ *
+ * Reading those entries is the untrusted part and lives in session-entries.ts: a snapshot is
+ * handed back only once `isPinState` vouches for its ids, uids and counters, sanitized, and copied
+ * out of the entry it came from.
  */
-import { formatLocalTime } from "./render.ts";
+import {
+  copyState,
+  isPinState,
+  isUserAction,
+  snapshotFromCustom,
+  snapshotFromEntry,
+  userActionFrom,
+} from "./session-entries.ts";
+import { formatLocalTime } from "./time.ts";
+
+// Re-exported so the module the plan names as the state surface keeps its guards; the rules
+// themselves live in state-guards.ts.
+export { isPinState, isUserAction };
+
 import type {
   Pin,
   PinLevel,
@@ -20,9 +37,17 @@ import type {
   UserAction,
   ViewPin,
 } from "./types.ts";
-import { STATE_TYPE, TOOL_NAME, USER_TYPE } from "./types.ts";
-
-export const EMPTY_STATE: PinState = { v: 1, pins: [], nextId: 1, removed: [] };
+/**
+ * The state a session with no pins has. Frozen (object and both arrays) so nothing can grow it in
+ * place: `reconstruct` starts every rebuild from this same value, and a pin pushed into it would
+ * be a pin in every later session too. A caller never gets this object itself, only a copy.
+ */
+export const EMPTY_STATE: PinState = Object.freeze({
+  v: 1 as const,
+  pins: Object.freeze([]) as readonly [],
+  nextId: 1,
+  removed: Object.freeze([]) as readonly [],
+}) as unknown as PinState;
 
 /** Removals kept for the user-removal error: the newest 20. */
 const REMOVAL_HISTORY = 20;
@@ -33,7 +58,13 @@ export type Action =
   | { op: "unpin"; ids: number[] | "all"; source: PinSource; now: string };
 
 export type ApplyResult =
-  | { ok: true; state: PinState; affected: number[]; duplicateOf?: number }
+  | {
+      ok: true;
+      state: PinState;
+      affected: number[];
+      duplicateOf?: number;
+      missing?: number[];
+    }
   | { ok: false; error: string };
 
 export interface ApplyLimits {
@@ -98,6 +129,7 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
           removed: state.removed,
         },
         affected: [pin.id],
+        missing: [],
       };
     }
     case "update": {
@@ -124,14 +156,19 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
           removed: state.removed,
         },
         affected: [pin.id],
+        missing: [],
       };
     }
     case "unpin": {
       const ids = action.ids === "all" ? state.pins.map((pin) => pin.id) : action.ids;
       const victims = state.pins.filter((pin) => ids.includes(pin.id));
+      // What the model asked for and nothing matched, in the order it asked: a reply that names
+      // only these numbers tells the model the rest were never pins, rather than silently claiming
+      // the ones it got.
+      const missing = ids.filter((id) => !victims.some((pin) => pin.id === id));
       if (victims.length === 0) {
         const first = ids[0];
-        if (first === undefined) return { ok: true, state, affected: [] };
+        if (first === undefined) return { ok: true, state, affected: [], missing: [] };
         const byUser = removedByUser(state, first);
         return byUser ? userRemoved(first, byUser.at) : notFound(first);
       }
@@ -147,80 +184,10 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
           ),
         },
         affected: victims.map((pin) => pin.id),
+        missing,
       };
     }
   }
-}
-
-/** Strict shape guard: plain objects only, `v === 1`, every field typed. */
-export function isPinState(x: unknown): x is PinState {
-  if (!isPlainObject(x) || x.v !== 1) return false;
-  if (!Array.isArray(x.pins) || !Array.isArray(x.removed)) return false;
-  if (typeof x.nextId !== "number" || !Number.isInteger(x.nextId) || x.nextId < 1) return false;
-  return x.pins.every(isPin) && x.removed.every(isRemoval);
-}
-
-function isPlainObject(x: unknown): x is Record<string, unknown> {
-  return typeof x === "object" && x !== null && Object.getPrototypeOf(x) === Object.prototype;
-}
-
-function isString(x: unknown): x is string {
-  return typeof x === "string";
-}
-
-function isPin(x: unknown): x is Pin {
-  if (!isPlainObject(x)) return false;
-  return (
-    typeof x.id === "number" &&
-    Number.isInteger(x.id) &&
-    isString(x.uid) &&
-    isString(x.text) &&
-    (x.level === "info" || x.level === "action" || x.level === "warning") &&
-    (x.source === "agent" || x.source === "user") &&
-    isString(x.createdAt) &&
-    isString(x.updatedAt)
-  );
-}
-
-function isRemoval(x: unknown): x is Removal {
-  if (!isPlainObject(x)) return false;
-  return (
-    typeof x.id === "number" &&
-    Number.isInteger(x.id) &&
-    isString(x.uid) &&
-    (x.by === "agent" || x.by === "user") &&
-    isString(x.at)
-  );
-}
-
-function isUserAction(x: unknown): x is UserAction {
-  if (!isPlainObject(x) || x.v !== 1) return false;
-  return isString(x.uid) && isString(x.at) && (x.action === "dismiss" || x.action === "reply");
-}
-
-/** The snapshot inside a `pin_for_user` tool result on the branch, if any. */
-function snapshotFromEntry(entry: unknown): PinState | undefined {
-  if (!isPlainObject(entry) || entry.type !== "message") return undefined;
-  const message = entry.message;
-  if (!isPlainObject(message) || message.role !== "toolResult" || message.toolName !== TOOL_NAME) {
-    return undefined;
-  }
-  return isPinState(message.details) ? message.details : undefined;
-}
-
-/** The data of a `pi-sticky.state` custom entry, if it holds a valid snapshot. */
-function snapshotFromCustom(entry: unknown): PinState | undefined {
-  if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== STATE_TYPE) {
-    return undefined;
-  }
-  return isPinState(entry.data) ? entry.data : undefined;
-}
-
-function userActionFrom(entry: unknown): UserAction | undefined {
-  if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== USER_TYPE) {
-    return undefined;
-  }
-  return isUserAction(entry.data) ? entry.data : undefined;
 }
 
 function applyUserAction(state: PinState, action: UserAction): PinState {
@@ -254,12 +221,15 @@ function viewFrom(state: PinState, actions: readonly UserAction[]): PinView {
  * is `getEntries()`. Snapshots come only from the branch (an agent pin follows the
  * branch); user actions come from all entries (they stick session-wide) and are applied
  * in array order, so a dismissal made outside the branch still hides its pin.
+ *
+ * What comes back is the caller's to keep: the snapshot is copied out of its entry (see
+ * `copyState`), so mutating the result reaches neither that entry nor the shared `EMPTY_STATE`.
  */
 export function reconstruct(
   branch: readonly unknown[],
   allEntries: readonly unknown[],
 ): { state: PinState; view: PinView } {
-  let state: PinState = EMPTY_STATE;
+  let state: PinState = copyState(EMPTY_STATE);
   for (const entry of branch) {
     const snapshot = snapshotFromEntry(entry) ?? snapshotFromCustom(entry);
     if (snapshot) state = snapshot;

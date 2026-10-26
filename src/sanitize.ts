@@ -232,18 +232,27 @@ function cutToBudget(text: string, maxChars: number): { text: string; truncated:
 }
 
 /**
- * The one entry point: every pass in the fixed order documented at the top of the file. maxChars is
- * a positive integer by contract (config.ts clamps it) and no pass throws.
+ * Every pass except the budget cut, in the fixed order documented at the top of the file. The
+ * budget is a per-session setting, so a caller that has no config — `reconstruct`, which rebuilds
+ * pins from a session file — still gets the whole defence against escapes, controls, surrogates,
+ * invisible characters and runaway combining marks. No pass throws.
  */
-export function sanitizePinText(
-  raw: string,
-  maxChars: number,
-): { text: string; truncated: boolean } {
+export function cleanPinText(raw: string): string {
   let text = stripSequences(raw);
   text = dropLoneSurrogates(text);
   text = stripControls(text);
   text = dropInvisible(text);
   text = capMarks(text);
-  text = tidyNewlines(text);
-  return cutToBudget(text, maxChars);
+  return tidyNewlines(text);
+}
+
+/**
+ * The one entry point for text about to be shown: `cleanPinText` and then the grapheme budget.
+ * maxChars is a positive integer by contract (config.ts clamps it).
+ */
+export function sanitizePinText(
+  raw: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
+  return cutToBudget(cleanPinText(raw), maxChars);
 }
