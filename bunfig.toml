@@ -8,6 +8,9 @@ minimumReleaseAgeExcludes = []
 # Coverage is a gate, not a report: `bun test` fails below 80% line or
 # function coverage.
 [test]
+# Scratch copies of the repo live under tmp/ during /work cycles; scanning only
+# test/ keeps stale scratch tests out of the suite.
+root = "test"
 coverage = true
 coverageSkipTestFiles = true
 coverageThreshold = 0.8

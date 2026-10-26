@@ -1,0 +1,133 @@
+/**
+ * The pin reducer: what one model-authored action does to a state. Pure — no pi import, no clock,
+ * no uid source of its own: `applyAction` takes `now` on the action and an optional `newUid` in
+ * `limits`, so tests stay deterministic without mocking globals. It never mutates its input; each
+ * ok result carries a whole new snapshot, which is what the tool publishes as `details`.
+ *
+ * Every refusal is a returned `ok: false`, never a throw: the tool (Task 5) turns it into a failed
+ * tool result, and the strings are the exact texts of plan 6.2. Listing text that some of those
+ * errors append belongs to the tool, not here.
+ *
+ * `applyAction` dispatches; the three cases are `pinOp`, `updateOp` and `unpinOp` in reducer-ops.ts
+ * and the checks they run are in action.ts. The invariant all three keep is the one `isPinState`
+ * reads back: nothing enters a state that the guard would then reject. Every field the reducer
+ * copies verbatim is checked here first, `now` included — the guard's string test bounds length, so
+ * a non-string or an over-long timestamp is caught on the way in rather than rejected on the way out.
+ *
+ * `text` is the one field the reducer does not merely check but *rewrites*: it is handed to the ops
+ * already run through `cleanPinText`, so a state this function returns never carries an escape byte
+ * whatever its caller did. The tool (Task 5) still applies the grapheme budget with `sanitizePinText`
+ * first, and cleaning twice is idempotent — the passes here only bound shape, never width.
+ */
+import {
+  type ActionInput,
+  type ApplyLimits,
+  type ApplyResult,
+  badLevel,
+  badNow,
+  badSource,
+  badUid,
+  clampMaxPins,
+  cleanTextOrUndefined,
+  idOrUndefined,
+  isLevel,
+  isSource,
+  missingId,
+  missingText,
+  normaliseIds,
+  nowOrUndefined,
+  tooManyIds,
+  uidOrUndefined,
+  uidSourceOrUndefined,
+  unknownOp,
+} from "./action.ts";
+import { pinOp, unpinOp, updateOp } from "./reducer-ops.ts";
+import type { PinState } from "./types.ts";
+
+export type { Action, ActionInput, ApplyLimits, ApplyResult } from "./action.ts";
+
+export function applyAction(
+  state: PinState,
+  action: ActionInput,
+  limits: ApplyLimits,
+): ApplyResult {
+  // Both limits are the caller's claims, not the reducer's facts: `newUid` reaches the reducer from
+  // a session-entry replay or a fixture as easily as from config, and `maxPins` is compared against
+  // a list `isPinState` bounds by `MAX_PINS`. Neither is refused — a bad limit is the caller's
+  // arithmetic, not the model's action — so each falls back to the number and the source the
+  // production path would have used. `?? crypto` also covers a `newUid` spelled as `undefined`.
+  const uid = uidSourceOrUndefined(limits.newUid) ?? (() => crypto.randomUUID());
+  const maxPins = clampMaxPins(limits.maxPins);
+  // `now` is checked once, before any op runs, because all three copy it verbatim into state
+  // (`createdAt`, `updatedAt`, `removal.at`) and none of them is allowed to mint a timestamp of its
+  // own. A non-string here would be an ok result whose snapshot `isPinState` rejects — the one way
+  // this reducer could break the invariant its header states, since unlike `text` and `level` the
+  // tool layer never rewrites `now` on the model's behalf.
+  const now = nowOrUndefined(action.now);
+  if (now === undefined) return badNow();
+  switch (action.op) {
+    case "pin": {
+      // Refused before the duplicate lookup: text that cleans to "" would become a real, matchable
+      // pin text, so one such pin would absorb every later blank pin as its duplicate and slip past
+      // the limit through that branch.
+      const text = cleanTextOrUndefined(action.text);
+      if (text === undefined) return missingText();
+      if (!isLevel(action.level)) return badLevel();
+      if (!isSource(action.source)) return badSource();
+      // The uid is minted here rather than in `pinOp` so a source that hands back something the
+      // guard's UID pattern refuses (a fixture, a future caller's own generator), or one a pin or a
+      // removal already holds, is a refusal instead of an ok result carrying a snapshot no rebuild
+      // will read back: `isCoherent` refuses one address bound to two identities, and a dismissal
+      // addressed to a shared uid retires a pin the user never named. Checked before `pinOp` runs so
+      // the duplicate branch — which mints nothing — never has to answer for it. The call is wrapped
+      // because the source is the caller's code, not the reducer's: a fixture's generator or a
+      // replayed entry's helper can throw, and a throw leaves the tool with no result at all where
+      // every other failure here is a refusal the model reads. Only this call: `update` and `unpin`
+      // mint nothing, so a broken source must not be what stops a dismissal.
+      let raw: unknown;
+      try {
+        raw = uid();
+      } catch {
+        return badUid();
+      }
+      const minted = uidOrUndefined(raw);
+      if (minted === undefined) return badUid();
+      if (state.pins.some((pin) => pin.uid === minted)) return badUid();
+      if (state.removed.some((removal) => removal.uid === minted)) return badUid();
+      return pinOp(state, { text, level: action.level, source: action.source, now }, minted, {
+        maxPins,
+      });
+    }
+    case "update": {
+      // The id is checked before the lookup: a `1.5` or a `null` is not a pin number, and reporting
+      // `No pin #1.5.` would tell the model a fact about pins that is really a fact about its call.
+      const id = idOrUndefined(action.id);
+      if (id === undefined) return missingId("update");
+      const text = cleanTextOrUndefined(action.text);
+      if (text === undefined && action.level === undefined) {
+        return { ok: false, error: "update needs text or level" };
+      }
+      if (action.level !== undefined && !isLevel(action.level)) return badLevel();
+      if (!isSource(action.source)) return badSource();
+      return updateOp(state, id, {
+        text,
+        level: action.level,
+        now,
+      });
+    }
+    case "unpin": {
+      const ids = normaliseIds(action.ids);
+      if (!ids.ok) return ids.oversized === true ? tooManyIds() : missingId("unpin");
+      // `by` of a removal is drawn by the user-removal error and `isPinState` checks it, so a
+      // `by: ""` written here is a state the guard rejects with the pins already gone — hence this
+      // sits before the batch is cut, not on the ok path. The tool layer (Task 5) reaches it with an
+      // unvalidated body whenever its schema accepts a plain string for `source`.
+      if (!isSource(action.source)) return badSource();
+      return unpinOp(state, ids.ids, { source: action.source, now });
+    }
+    default:
+      // An op the tool's schema never sends and no case handles: refuse it by name rather than
+      // returning undefined from a switch the compiler can no longer see as exhaustive.
+      return unknownOp((action as { op?: unknown }).op);
+  }
+}
