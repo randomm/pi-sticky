@@ -42,6 +42,14 @@ export type Action =
   | { op: "unpin"; ids: number[] | "all"; source: PinSource; now: string };
 
 /**
+ * What `normaliseIds` answers: a batch it accepts, or the reason it does not. `oversized` is present
+ * only on the one refusal that is about the *size* of the batch rather than its contents, so
+ * `applyAction` can name the batch for the payload no model typed and the field for everything a
+ * model did type wrongly.
+ */
+export type IdsResult = { ok: true; ids: number[] | "all" } | { ok: false; oversized?: true };
+
+/**
  * What `applyAction` is actually handed: the body of the tool call as the wire delivered it, with
  * every field left as it arrived. `Action` is the shape the reducer works with *after* the checks
  * below have run; this is the shape before them, and it is the one a caller outside the tool (a
@@ -100,6 +108,15 @@ export function badLevel(): ApplyResult {
 
 export function badSource(): ApplyResult {
   return { ok: false, error: 'source must be "agent" or "user"' };
+}
+
+/**
+ * The refusal for a `ids` batch with more elements than a snapshot may hold pins. Distinct from
+ * `missingId` because the two answer different mistakes: a model that sent a hundred thousand ids has
+ * to be told the batch is too big, not that the field it wrote correctly is missing.
+ */
+export function tooManyIds(): ApplyResult {
+  return { ok: false, error: `Too many ids: at most ${MAX_PINS} pins can be unpinned at once.` };
 }
 
 /**
@@ -180,31 +197,33 @@ export function isSource(source: unknown): source is PinSource {
 }
 
 /**
- * The ids of an `unpin` as the model actually sent them: "all", or a dense list of positive safe
- * integers. Anything else — a bare number, a string, an array holding a hole or a fraction — is not
- * a batch of ids, so the reducer refuses the action rather than comparing garbage against the pins.
- * Duplicates collapse, because asking twice for one pin is asking for it once, and the first
- * occurrence keeps its place: `missing` and the error both report the order the model asked in.
+ * The ids of an `unpin` as the model actually sent them: `"all"`, a dense list of positive safe
+ * integers, or — for a body that is not a batch at all — the refusal to answer with. Two refusals,
+ * because two mistakes are being reported: past `MAX_PINS` elements the body is a generated payload
+ * and the model has to be told the batch is too big, while anything else (a bare number, a string, an
+ * array holding a hole or a fraction) is the model having written the `ids` field wrong. This function
+ * only says which of the two it is; `applyAction` picks the wording.
  *
- * Two bounds, both for the same reason. `MAX_PINS` pins exist, so a batch that cannot match more
- * than `MAX_PINS` of them is not a batch a real call contains: past it the body is a generated
- * payload, and the checks below run against every one of its elements. A Set carries the
- * first-seen test because the array version compared each id against those already kept, which is
- * quadratic in a batch nobody sent.
+ * The length test runs *first*: a hundred thousand strings are an oversized batch, not a batch with
+ * one bad element in it, and testing the length before the walk is also what keeps a hostile body from
+ * being inspected at all. Duplicates collapse, because asking twice for one pin is asking for it once,
+ * and the first occurrence keeps its place: `missing` and the error both report the order the model
+ * asked in. A Set carries the first-seen test because the array version compared each id against those
+ * already kept, which is quadratic in a batch nobody sent.
  */
-export function normaliseIds(ids: unknown): number[] | "all" | undefined {
-  if (ids === "all") return "all";
-  if (!Array.isArray(ids)) return undefined;
-  if (ids.length > MAX_PINS) return undefined;
+export function normaliseIds(ids: unknown): IdsResult {
+  if (ids === "all") return { ok: true, ids: "all" };
+  if (!Array.isArray(ids)) return { ok: false };
+  if (ids.length > MAX_PINS) return { ok: false, oversized: true };
   const seen = new Set<number>();
   const out: number[] = [];
   for (let i = 0; i < ids.length; i++) {
-    if (!(i in ids)) return undefined;
+    if (!(i in ids)) return { ok: false };
     const id = ids[i];
-    if (!isPositiveSafeInteger(id)) return undefined;
+    if (!isPositiveSafeInteger(id)) return { ok: false };
     if (seen.has(id)) continue;
     seen.add(id);
     out.push(id);
   }
-  return out;
+  return { ok: true, ids: out };
 }

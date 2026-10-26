@@ -47,8 +47,8 @@ describe("applyAction refuses an ids that is not a batch of ids", () => {
     // `normaliseIds` used to compare every element against the ids already kept, so a hostile body
     // of 100k numbers cost a quadratic walk before the reducer answered. The cap is `MAX_PINS`:
     // that many pins exist, so a batch that cannot match more than that of them is not a batch a
-    // real call contains. The refusal is the one any other non-batch gets, and it arrives without
-    // the walk having run.
+    // real call contains. The refusal is the one naming the batch (state-action-oversize.test.ts
+    // checks its wording), and it arrives without the walk having run.
     const huge = Array.from({ length: 100_000 }, (_unused, i) => i + 1);
     expect(huge.length).toBeGreaterThan(MAX_PINS);
     const started = performance.now();
@@ -56,7 +56,7 @@ describe("applyAction refuses an ids that is not a batch of ids", () => {
     const elapsed = performance.now() - started;
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe('id is required for action "unpin"');
+    expect(result.error).toBe(`Too many ids: at most ${MAX_PINS} pins can be unpinned at once.`);
     expect(elapsed).toBeLessThan(100);
   });
 

@@ -36,6 +36,7 @@ import {
   missingText,
   normaliseIds,
   nowOrUndefined,
+  tooManyIds,
   uidOrUndefined,
   uidSourceOrUndefined,
   unknownOp,
@@ -78,8 +79,18 @@ export function applyAction(
       // removal already holds, is a refusal instead of an ok result carrying a snapshot no rebuild
       // will read back: `isCoherent` refuses one address bound to two identities, and a dismissal
       // addressed to a shared uid retires a pin the user never named. Checked before `pinOp` runs so
-      // the duplicate branch — which mints nothing — never has to answer for it.
-      const minted = uidOrUndefined(uid());
+      // the duplicate branch — which mints nothing — never has to answer for it. The call is wrapped
+      // because the source is the caller's code, not the reducer's: a fixture's generator or a
+      // replayed entry's helper can throw, and a throw leaves the tool with no result at all where
+      // every other failure here is a refusal the model reads. Only this call: `update` and `unpin`
+      // mint nothing, so a broken source must not be what stops a dismissal.
+      let raw: unknown;
+      try {
+        raw = uid();
+      } catch {
+        return badUid();
+      }
+      const minted = uidOrUndefined(raw);
       if (minted === undefined) return badUid();
       if (state.pins.some((pin) => pin.uid === minted)) return badUid();
       if (state.removed.some((removal) => removal.uid === minted)) return badUid();
@@ -106,13 +117,13 @@ export function applyAction(
     }
     case "unpin": {
       const ids = normaliseIds(action.ids);
-      if (ids === undefined) return missingId("unpin");
+      if (!ids.ok) return ids.oversized === true ? tooManyIds() : missingId("unpin");
       // `by` of a removal is drawn by the user-removal error and `isPinState` checks it, so a
       // `by: ""` written here is a state the guard rejects with the pins already gone — hence this
       // sits before the batch is cut, not on the ok path. The tool layer (Task 5) reaches it with an
       // unvalidated body whenever its schema accepts a plain string for `source`.
       if (!isSource(action.source)) return badSource();
-      return unpinOp(state, ids, { source: action.source, now });
+      return unpinOp(state, ids.ids, { source: action.source, now });
     }
     default:
       // An op the tool's schema never sends and no case handles: refuse it by name rather than
