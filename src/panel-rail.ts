@@ -26,6 +26,10 @@ export class RailGuard {
    * Draw the rail through `redraw` when the answer it would install is not the one already installed,
    * or forget the installed answer — whichever of the two `open` asks for.
    *
+   * `redraw` is **bound** by its caller: this method invokes it detached, so a bare method reference
+   * arrives with no receiver and a `this`-reading implementation throws — a failure the guard cannot
+   * report, because a throw here escapes the frame or the refresh that asked for the draw.
+   *
    * `columns` is the width `isVisible()` was measured at, passed in rather than re-read: the caller is
    * the frame that asked, and its measurement is the answer's subject. `open` is the caller's own
    * verdict on whether a panel is open at all: `false` on the two lifecycle edges that have just
@@ -40,14 +44,36 @@ export class RailGuard {
    * invite the caller to pick the wrong one, one verb with a flag cannot be picked wrongly.
    */
   consider(deps: PanelDeps, columns: number, redraw: () => void, open: boolean): void {
-    if (!open) {
-      this.#key = undefined;
-      return;
-    }
+    if (this.#settled(open)) return;
     const view = deps.getView();
     const key = `${columns}|${deps.isPanelShown()}|${railStamp(view.pins)}`;
-    if (key === this.#key) return;
+    if (this.#same(key)) return;
+    this.#install(key, redraw);
+  }
+
+  /**
+   * Record the answer and draw for it, in that order: the mark comes first so a callback that throws
+   * leaves a key the next frame compares against rather than an answer the guard forgot it ever made.
+   */
+  #install(key: string, redraw: () => void): void {
     this.#key = key;
     redraw();
+  }
+
+  /**
+   * The caller's verdict on whether a panel is still open, applied and answered as *done* or *not done*:
+   * `false` is one of the two lifecycle edges, and forgetting the installed answer is all it does — the
+   * caller that destroyed the record is not asking for a rail, so there is nothing left to consider.
+   * `true` means the answer may have moved and the caller's question still has to be answered.
+   */
+  #settled(open: boolean): boolean {
+    if (open) return false;
+    this.#key = undefined;
+    return true;
+  }
+
+  /** Whether the guard's installed answer is the one `key` spells — a fresh rail is compared against nothing. */
+  #same(key: string): boolean {
+    return this.#key !== undefined && this.#key === key;
   }
 }

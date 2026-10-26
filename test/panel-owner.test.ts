@@ -18,7 +18,7 @@ import type { PanelHost } from "../src/panel-component.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
-import { createPlainTheme, createStubTui } from "./harness.ts";
+import { createOverlayHandle, createPlainTheme, createStubTui } from "./harness.ts";
 import { contextWith, flush, handCustom } from "./panel-lifecycle-fixture.ts";
 import { ONE } from "./panel-owner-wiring.ts";
 import { wiring } from "./panel-owner-wiring.ts";
@@ -34,6 +34,9 @@ function handHostStub(): PanelHost {
     requestRender: () => {},
     dismiss: () => {},
     unfocus: () => {},
+    // Drawn by default: the key tests are about the keys, and `panel-lifecycle-toggles.test.ts` is where
+    // the invisible-panel case is driven through the real owner.
+    isVisible: () => true,
     startReply: () => {},
     notify: () => {},
   };

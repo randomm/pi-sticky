@@ -23,12 +23,13 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, KeyId, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
 import { panelRows } from "./panel-height.ts";
-import { isDismissKey, isSubmitKey } from "./panel-keys.ts";
+import type { PanelHost } from "./panel-host.ts";
+import { isDismissKey, isSubmitKey, presses } from "./panel-keys.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
-import type { PinView, ViewPin } from "./types.ts";
+import type { ViewPin } from "./types.ts";
 
 /** The keys that move the bar; `matchesKey` also takes the Kitty forms of each. */
 const UP_KEYS: readonly KeyId[] = ["up", "k"];
@@ -56,41 +57,12 @@ interface PanelFrame {
   focused: boolean;
 }
 
-/** One of `keys` pressed, whatever shape the terminal sent it in. */
-function presses(data: string, keys: readonly KeyId[]): boolean {
-  return keys.some((key) => matchesKey(data, key));
-}
-
 /**
  * `Re #12: ` at the front of a draft, replacing a marker that is already there. Anchored at offset 0
  * of the *raw* buffer: a leading space the user typed is part of the draft, not a marker to replace.
  */
 export function replyMarker(text: string, id: number): string {
   return `Re #${id}: ${text.replace(/^Re #\d+: /, "")}`;
-}
-
-/**
- * What the component reads from the extension, and what it calls back into.
- *
- * `unfocus` is the one member the component never calls *itself* — it releases its own overlay handle —
- * and the one the extension must still be told: a panel the user has left with `Escape` or `Enter`
- * keeps owning the pins until the owner is asked again, and the owner is the only thing that can put
- * them back on the rail. The round trip is the notification, not a way to move the handle.
- */
-export interface PanelHost {
-  getView(): PinView;
-  /** The panel's colours; a host with none to give falls back to the colourless style below. */
-  style(): PanelStyle | undefined;
-  /** Ask for a frame after the view or the selection moved. */
-  requestRender(): void;
-  /** Record a dismissal of `id` as the user and redraw — `/unpin`'s path, not a second one. */
-  dismiss(id: number): void;
-  /** Tell the owner the interaction ended, so it can settle which surface owns the pins. */
-  unfocus(): void;
-  /** Tell the user one line, on the surface the extension still has. */
-  notify(message: string, type?: "info" | "warning" | "error"): void;
-  /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. */
-  startReply(id: number): void;
 }
 
 /**
@@ -117,8 +89,10 @@ export class PanelComponent implements Component {
    * leave a "same frame" verdict behind against a cache it has just dropped.
    *
    * `update()` compares the live view, bar and focus against it to decide whether a redraw costs a
-   * layout pass. The pins array is the change test because both `commit` and `reconstruct` publish a
-   * *fresh* array, so an identical reference is a view that really was not replaced.
+   * layout pass, and `render()` compares the *pins* against it for the same reason in the other
+   * direction: `render()` is what pi-tui calls on its own schedule, and an overlay that was not sent an
+   * `update()` can be asked for a frame after the view was swapped under it. A stale frame drawn at the
+   * width the cache was keyed on is the old view's pins still on the user's screen.
    */
   #frame: PanelFrame | undefined;
 
@@ -228,9 +202,15 @@ export class PanelComponent implements Component {
   }
 
   render(width: number): string[] {
-    const frame = this.#frame;
-    if (frame !== undefined && frame.width === width) return frame.lines;
+    // The live view is read first and is part of the cache key, not just of the frame: width alone
+    // cannot tell a view that has been swapped from one that has not, and `update()` — the member that
+    // used to be the only change test — is not called on pi-tui's own frame requests.
     const pins = this.#host.getView().pins;
+    const frame = this.#frame;
+    if (frame !== undefined && frame.width === width && frame.pins === pins) return frame.lines;
+    // A view that no longer holds the selected pin re-clamps the bar *before* the frame is laid out, so
+    // a redraw that found the swap cannot draw a bar past the end of the list it just rebuilt.
+    if (this.#selection >= pins.length) this.#selection = Math.max(0, pins.length - 1);
     const content: PanelContent = {
       pins,
       selection: this.#selection,
@@ -264,6 +244,15 @@ export class PanelComponent implements Component {
 
   #handleInput(data: string): void {
     if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
+    // The panel owns the keyboard only while it is on screen. pi-tui routes input to the focused
+    // component alone, but it asks *the overlay* whether to draw it, and the two answers can disagree —
+    // a pin removed from under an open overlay, a hide, a terminal that narrowed past the panel's
+    // boundary. A key into a panel nobody can see has no visible answer, so it is handed back instead of
+    // acted on: `unfocus()` puts the focus where the user is typing and tells the owner to settle the rail.
+    if (!this.#host.isVisible()) {
+      this.unfocus();
+      return;
+    }
     const pins = this.#host.getView().pins;
     if (matchesKey(data, "escape")) {
       this.unfocus();
@@ -296,3 +285,5 @@ export class PanelComponent implements Component {
     return panelRows(this.#tui?.terminal?.rows);
   }
 }
+
+export type { PanelHost } from "./panel-host.ts";

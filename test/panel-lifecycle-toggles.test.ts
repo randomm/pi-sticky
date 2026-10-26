@@ -149,7 +149,7 @@ test("with no pi-sticky.ui entry the panel starts shown, so a toggle first recor
 });
 
 test("d on the panel dismisses through /unpin's path: one user entry, and the rail redraws", async () => {
-  const { stub, ctx } = await boot(TWO_PINNED);
+  const { stub, ctx } = await boot(TWO_PINNED, 120);
   const panel = ctx.recorder.customCalls[0];
   panel?.handle?.unfocus();
   const component = panelComponent(panel);
@@ -162,7 +162,7 @@ test("d on the panel dismisses through /unpin's path: one user entry, and the ra
 });
 
 test("Enter puts the reply marker on the draft and hands focus back to the editor", async () => {
-  const { ctx } = await boot(PINNED);
+  const { ctx } = await boot(PINNED, 120);
   const call = ctx.recorder.customCalls[0];
   ctx.recorder.setEditorText("how about the blue one");
   call?.handle?.unfocus();
@@ -174,7 +174,7 @@ test("Enter puts the reply marker on the draft and hands focus back to the edito
 });
 
 test("an existing marker in the draft is replaced, not stacked", async () => {
-  const { ctx } = await boot(PINNED);
+  const { ctx } = await boot(PINNED, 120);
   const call = ctx.recorder.customCalls[0];
   ctx.recorder.setEditorText("Re #9: keep this draft");
   call?.handle?.unfocus();

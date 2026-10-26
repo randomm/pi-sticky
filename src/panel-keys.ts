@@ -15,6 +15,7 @@
  * which cannot destroy anything, keep going through `matchesKey` alone so they still answer Kitty forms.
  */
 import { matchesKey } from "@earendil-works/pi-tui";
+import type { KeyId } from "@earendil-works/pi-tui";
 
 /** The two shortcuts the extension registers, spelled once. */
 export const TOGGLE_KEY = "ctrl+alt+t";
@@ -47,4 +48,9 @@ export function isDismissKey(data: string): boolean {
 export function isSubmitKey(data: string): boolean {
   if (data.length > 1) return false;
   return data === "\r" || data === "\n" || matchesKey(data, "enter");
+}
+
+/** One of `keys` pressed, whatever shape the terminal sent it in. */
+export function presses(data: string, keys: readonly KeyId[]): boolean {
+  return keys.some((key) => matchesKey(data, key));
 }

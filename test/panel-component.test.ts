@@ -12,20 +12,10 @@
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
 import { PanelComponent, replyMarker } from "../src/panel-component.ts";
-import type { PanelHost } from "../src/panel-component.ts";
-import type { PanelStyle } from "../src/render.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
-import { NOW, pin } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
+import { host, pins } from "./panel-component-host.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
-
-// Colours that do nothing but make a complete `PanelStyle`, including the selection bar.
-const style: PanelStyle = {
-  header: (s) => s,
-  marker: (_level, s) => s,
-  dim: (s) => s,
-  selected: (s) => `[${s}]`,
-};
 
 // The Kitty protocol's release and repeat forms of `d`, and the two arrows in the byte sequences a
 // terminal really sends: `matchesKey` recognises the arrows only in those forms, so a test that typed
@@ -35,34 +25,8 @@ const REPEAT = "\x1b[100;3:2u";
 const DOWN = "\x1b[B";
 const UP = "\x1b[A";
 
-/** A host that records every callback, over a view the test owns. */
-function host(pins: ViewPin[] = []) {
-  const state = {
-    view: { pins, removed: [] } as PinView,
-    renders: 0,
-    dismissals: [] as number[],
-    replies: [] as number[],
-  };
-  const tui = { requestRender: () => void state.renders++ } as unknown as TUI;
-  const stub: PanelHost = {
-    getView: () => state.view,
-    style: () => style,
-    requestRender: () => void state.renders++,
-    dismiss: (id) => void state.dismissals.push(id),
-    // The host's `unfocus` is only the notification that the interaction ended; the component moves the
-    // handle itself, which is what the handle-tracking test at the bottom of this file asserts.
-    unfocus: () => {},
-    startReply: (id) => void state.replies.push(id),
-    notify: () => {},
-  };
-  return { stub, state, tui };
-}
-
 /** Wide enough that the hint line is drawn whole rather than cut to an ellipsis. */
 const HINT_WIDTH = 48;
-
-const pins = (...texts: string[]): ViewPin[] =>
-  texts.map((text, i) => ({ ...pin(i + 1, text, "info", { createdAt: NOW }) }));
 
 /** A component over a recorded host, with a handle already released so the component's own flag rules. */
 function component(pins: ViewPin[], tui?: TUI) {
@@ -251,6 +215,19 @@ test("a height comes from the terminal and is capped, so a very tall terminal is
   themed.render(40);
   themed.invalidate();
   expect(themed.render(40)).toEqual(themed.render(40));
+});
+
+test("a key the panel owns is handed back to the editor when the panel is not visible", () => {
+  const { c, handle, state } = component(pins("One", "Two"));
+  c.focus();
+  // pi-tui routes input to the focused component whether or not `visible()` let it draw, so a panel the
+  // user cannot see would otherwise dismiss, reply or move on keystrokes nobody can see the result of.
+  state.visible = false;
+  c.handleInput("d");
+  expect(state.dismissals).toEqual([]);
+  expect(state.replies).toEqual([]);
+  expect(c.isFocused()).toBe(false);
+  expect(handle.isFocused()).toBe(false);
 });
 
 test("the reply marker replaces one that is already there and keeps the draft verbatim", () => {

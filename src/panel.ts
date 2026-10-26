@@ -109,6 +109,9 @@ export class PanelOwner {
           },
           tui: () => this.#tui,
           onUnfocus: () => this.refresh(),
+          // The owner's own visibility answer — the predicate pi-tui asked before it drew the overlay,
+          // so the component and the overlay cannot disagree about whether the user is looking at it.
+          panelVisible: () => this.isVisible(),
         }),
         panelCallOptions(visible, (handle) => {
           this.#record?.component?.setHandle(handle);
@@ -229,7 +232,9 @@ export class PanelOwner {
    * against nothing. The answer, its cache and both verdicts are the guard's: see `panel-rail.ts`.
    */
   #railConsider(open: boolean): void {
-    this.#rail.consider(this.#wiring.deps, this.#columns(), () => this.#wiring.redrawRail(), open);
+    // Bound, not wrapped: the guard calls the wiring's member itself, so the redraw has one name —
+    // `PanelWiring.redrawRail` — rather than a private arrow that only ever forwards to it.
+    this.#rail.consider(this.#wiring.deps, this.#columns(), this.#wiring.redrawRail, open);
   }
 
   /** Give the panel the keyboard. Works whether or not it is drawn at the moment. */

@@ -165,7 +165,10 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
     deps,
     terminal: parts.terminal,
     themeStyle: panelThemeStyle,
-    redrawRail: parts.redrawRail,
+    // Pre-bound rather than handed through: `PanelOwner` passes this member to the rail guard, which
+    // invokes it detached from the wiring object, and a bare method reference would arrive with no
+    // receiver for the extension's `drawRail(live)` closure to be read against.
+    redrawRail: () => parts.redrawRail(),
   };
 }
 

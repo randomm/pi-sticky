@@ -27,19 +27,25 @@ export function wiring(
   opts: { view?: PinView; shown?: boolean; custom?: unknown } = {},
 ) {
   const railDraws: number[] = [];
+  /** What each rail draw was asked to draw, so the callback's argument is observable. */
+  const railKeys: string[] = [];
   /** The `recordPanelShown` calls, so a test can see which half of the setter pair ran. */
   const records: boolean[] = [];
   const state = { view: opts.view ?? ONE, shown: opts.shown ?? true };
-  // Only the members this file's callers can actually reach are built. `PanelOwner` and `RailGuard` read
-  // `getView`, `isPanelShown`, `setPanelShown` and `recordPanelShown`; the `notify` is read by the open
-  // path itself (a rejected `custom()`, a close whose handle threw). `panelFactory`'s host closure
-  // mentions `dismiss`, `startReply` and the component's notify too, and those are exercised where the
-  // component is driven — `panel-hostile.ts`, `panel-lifecycle-toggles.test.ts` — not on an inert stub
-  // here. The rest of `StickyDeps` (`config`, `now`, `getState`, `redraw`, `commit`,
-  // `appendUserAction`) belongs to the tool, the commands and the reminder, which these files do not
-  // drive. Declaring no-ops for members nobody calls would only inflate this file's function coverage
-  // with dead code, so the object is built as the partial it is and cast once: it is a `PanelDeps` *for
-  // the owner*, and the owner reads only the members above.
+  /**
+   * The one place a `PanelDeps` is built for these files.
+   *
+   * Only the members the owner and the rail guard actually read are built: `getView`, `isPanelShown`,
+   * `setPanelShown` and `recordPanelShown`, plus the `notify` the open path uses for a rejected
+   * `custom()` or a close whose handle threw. `panelFactory`'s host closure mentions `dismiss`,
+   * `startReply` and the component's notify too, and those are exercised where the component is driven
+   * (`panel-component.test.ts`, `panel-lifecycle-toggles.test.ts`), not on an inert stub here. The rest
+   * of `StickyDeps` (`config`, `now`, `getState`, `redraw`, `commit`, `appendUserAction`) belongs to the
+   * tool, the commands and the reminder, which these files do not drive. Declaring no-ops for members
+   * nobody calls would only inflate this file's function coverage with dead code, so the object is built
+   * as the partial it is and cast once: it is a `PanelDeps` *for the owner*, and the owner reads only the
+   * members above.
+   */
   const deps = {
     getView: () => state.view,
     isPanelShown: () => state.shown,
@@ -52,18 +58,23 @@ export function wiring(
       state.shown = shown;
       records.push(shown);
     },
-    notify: () => {},
   } as unknown as PanelDeps;
   const terminal = new TerminalWidth();
   const panel = new PanelOwner({
     deps,
     terminal,
     themeStyle: () => panelStyle,
-    redrawRail: () => railDraws.push(1),
+    redrawRail: () => {
+      // Read at draw time: the record has to say what the rail was asked to install, not what the view
+      // happens to hold when the test finally looks at it. One push per call is also what proves the
+      // guard's decision happened once — a guard that drew twice would double this and the count.
+      railKeys.push(`${terminal.columns()}|${state.shown}|${state.view.pins.length}`);
+      railDraws.push(railKeys.length);
+    },
   });
   // A context built for a test has a recorder's `custom`; the override is what makes it fail.
   if (opts.custom !== undefined) {
     (ctx as unknown as { ui: Record<string, unknown> }).ui.custom = opts.custom;
   }
-  return { panel, terminal, railDraws, records, state, ctx };
+  return { panel, terminal, railDraws, railKeys, records, state, ctx };
 }

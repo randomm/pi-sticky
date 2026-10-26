@@ -36,6 +36,12 @@ export function panelFactory(
     tui(): TUI | undefined;
     /** The owner was told the interaction ended; it settles which surface owns the pins. */
     onUnfocus(): void;
+    /**
+     * Whether the panel is on screen at the width pi-tui last stated — the owner's `isVisible()`, and so
+     * the same predicate pi itself asked before drawing this overlay. The component asks it before it
+     * acts on a key: pi-tui routes input to the focused component whether or not `visible()` let it draw.
+     */
+    panelVisible(): boolean;
   },
 ): PanelCustomFactory {
   const deps = wiring.deps;
@@ -58,6 +64,10 @@ export function panelFactory(
       // the mechanism — so the owner only settles the rail. Calling back into `component.unfocus()` here
       // would be the infinite loop this seam once was.
       unfocus: () => hooks.onUnfocus(),
+      // The owner's own answer, which is the same predicate pi-tui asked before it drew this overlay —
+      // read at key time, so a hide, a resize or a last dismissal is visible here without anything
+      // having told the component.
+      isVisible: () => hooks.panelVisible(),
       // The panel's one notify line, through the extension: the component has no context of its own and
       // the live one belongs to the session that drew it.
       notify: (message, type) => deps.notify(message, type),
