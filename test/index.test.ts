@@ -6,7 +6,6 @@
  * pins messages nobody is watching (research-summary section 3, guard 2).
  */
 import { expect, test } from "bun:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import piSticky from "../src/index.ts";
 import { stubApi } from "./wiring-stubs.ts";
@@ -49,7 +48,14 @@ function load(env: Record<string, string | undefined>): ReturnType<typeof stubAp
 }
 
 test("entry point is a pi extension factory that loads without error", () => {
-  expect(() => piSticky({} as ExtensionAPI)).not.toThrow();
+  // Not a bare `piSticky({})`: a disabled configuration registers nothing, so that call would
+  // say nothing about loading, and an *enabled* one throws on an object with no members. The
+  // ambient `PI_ENSEMBLE_ROLE` decides which of the two you get, so this pins it through `load`
+  // and hands the factory an api that really has the members it registers against. It also
+  // loads under a disabled configuration, which is the other half of the guard.
+  expect(() => load({})).not.toThrow();
+  expect(() => load({ PI_STICKY_DISABLE: "1" })).not.toThrow();
+  expect(() => load({ PI_ENSEMBLE_ROLE: "developer" })).not.toThrow();
 });
 
 test("the default environment registers the tool, the commands and the handlers", () => {
