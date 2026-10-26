@@ -10,13 +10,16 @@
  *
  * `applyAction` dispatches; the three cases are `pinOp`, `updateOp` and `unpinOp` in reducer-ops.ts
  * and the checks they run are in action.ts. The invariant all three keep is the one `isPinState`
- * reads back: nothing enters a state that the guard would then reject.
+ * reads back: nothing enters a state that the guard would then reject. Every field the reducer
+ * copies verbatim is checked here first, `now` included — the guard's string test bounds length, so
+ * a non-string timestamp is caught on the way in rather than rejected on the way out.
  */
 import {
   type Action,
   type ApplyLimits,
   type ApplyResult,
   badLevel,
+  badNow,
   badSource,
   idOrUndefined,
   isLevel,
@@ -24,6 +27,7 @@ import {
   missingId,
   missingText,
   normaliseIds,
+  nowOrUndefined,
   textOrUndefined,
 } from "./action.ts";
 import { pinOp, unpinOp, updateOp } from "./reducer-ops.ts";
@@ -33,6 +37,13 @@ export type { Action, ApplyLimits, ApplyResult } from "./action.ts";
 
 export function applyAction(state: PinState, action: Action, limits: ApplyLimits): ApplyResult {
   const uid = limits.newUid ?? (() => crypto.randomUUID());
+  // `now` is checked once, before any op runs, because all three copy it verbatim into state
+  // (`createdAt`, `updatedAt`, `removal.at`) and none of them is allowed to mint a timestamp of its
+  // own. A non-string here would be an ok result whose snapshot `isPinState` rejects — the one way
+  // this reducer could break the invariant its header states, since unlike `text` and `level` the
+  // tool layer never rewrites `now` on the model's behalf.
+  const now = nowOrUndefined(action.now);
+  if (now === undefined) return badNow();
   switch (action.op) {
     case "pin": {
       // Refused before the duplicate lookup: an absent text coerced to "" would become a real,
@@ -42,12 +53,7 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       if (text === undefined || text === "") return missingText();
       if (!isLevel(action.level)) return badLevel();
       if (!isSource(action.source)) return badSource();
-      return pinOp(
-        state,
-        { text, level: action.level, source: action.source, now: action.now },
-        uid,
-        limits,
-      );
+      return pinOp(state, { text, level: action.level, source: action.source, now }, uid, limits);
     }
     case "update": {
       // The id is checked before the lookup: a `1.5` or a `null` is not a pin number, and reporting
@@ -63,7 +69,7 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       return updateOp(state, id, {
         text,
         level: action.level,
-        now: action.now,
+        now,
       });
     }
     case "unpin": {
@@ -74,7 +80,7 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       // sits before the batch is cut, not on the ok path. The tool layer (Task 5) reaches it with an
       // unvalidated body whenever its schema accepts a plain string for `source`.
       if (!isSource(action.source)) return badSource();
-      return unpinOp(state, ids, { source: action.source, now: action.now });
+      return unpinOp(state, ids, { source: action.source, now });
     }
   }
 }

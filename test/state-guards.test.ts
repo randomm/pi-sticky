@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
+import { cleanPinText } from "../src/sanitize.ts";
 import { EMPTY_STATE, isPinState, isUserAction, reconstruct } from "../src/state.ts";
 import type { Pin, PinLevel, PinState, Removal } from "../src/types.ts";
 import {

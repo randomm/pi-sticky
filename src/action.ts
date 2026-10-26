@@ -10,6 +10,7 @@
  * value `applyAction` copies into a state must be one the guard accepts, or the snapshot the tool
  * is about to publish as `details` is one the next rebuild skips and the pins silently vanish.
  */
+import { isPositiveSafeInteger } from "./bounds.ts";
 import type { PinLevel, PinSource } from "./types.ts";
 
 export type Action =
@@ -49,13 +50,29 @@ export function badSource(): ApplyResult {
   return { ok: false, error: 'source must be "agent" or "user"' };
 }
 
-function isPositiveSafeInteger(x: unknown): x is number {
-  return typeof x === "number" && Number.isSafeInteger(x) && x >= 1;
+/**
+ * The refusal for a `now` the reducer cannot put in a timestamp field. Wording matches the other
+ * named-field refusals above; the field is named because a model that sent `{}` for `now` has to be
+ * told which of its fields to fix.
+ */
+export function badNow(): ApplyResult {
+  return { ok: false, error: 'now must be a string for action "pin", "update" or "unpin"' };
 }
 
 /** A text the model sent, or absent when JSON put something that is not a string in its place. */
 export function textOrUndefined(text: unknown): string | undefined {
   return typeof text === "string" ? text : undefined;
+}
+
+/**
+ * The instant the action claims it happened, or absent when JSON put something that is not a
+ * string in its place. `now` is the one action field the reducer copies *verbatim* into state —
+ * `createdAt`, `updatedAt` and `removal.at` all take it — so an unguarded `now: 12345` yields an ok
+ * result whose snapshot `isPinState` then rejects: the pins would vanish on the next reload instead
+ * of the model reading a refusal.
+ */
+export function nowOrUndefined(now: unknown): string | undefined {
+  return typeof now === "string" ? now : undefined;
 }
 
 /** What the action claims its id is: a pin number, or absent when the model wrote something else. */

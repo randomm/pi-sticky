@@ -14,8 +14,6 @@ export function isPlainObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && Object.getPrototypeOf(x) === Object.prototype;
 }
 
-/** An id the reducer may count from: 1, a whole number, and representable exactly. */
-
 /**
  * What a uid has to look like: an opaque address handed to the model and compared with `===`, so
  * nothing that could be drawn as markup or a control reaches it. `crypto.randomUUID()` — what
@@ -30,6 +28,13 @@ function isUid(x: unknown): x is string {
 /** The longest pin text or timestamp a snapshot may carry, in UTF-16 units. */
 const MAX_TEXT_UNITS = 8000;
 
+/**
+ * A length bound and nothing else — read `isPinState` as a *shape* guard, never as a content
+ * sanitizer. `"\u001b[2J\nINJECTED"` is a string and passes, by design: this guard answers "could
+ * this be a snapshot", which a session file decides, and the pass that answers "may this be drawn"
+ * is `cleanPinText` in session-entries.ts, which every string that reaches a screen or the model is
+ * copied through. Treating this function as the sanitizer is how a hostile string gets drawn.
+ */
 function isBoundedString(x: unknown): x is string {
   return typeof x === "string" && x.length <= MAX_TEXT_UNITS;
 }

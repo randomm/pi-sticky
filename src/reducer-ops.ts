@@ -8,11 +8,14 @@
  * None of them mutate the state they are given; each returns a fresh whole snapshot, because the
  * snapshot is what the tool publishes and what a later rebuild compares against.
  */
+import { REMOVAL_HISTORY } from "./bounds.ts";
 import { formatLocalTime } from "./time.ts";
 import type { Pin, PinLevel, PinSource, PinState, Removal } from "./types.ts";
 
-/** Removals kept for the user-removal error: the newest 20, which is also `isPinState`'s cap. */
-export const REMOVAL_HISTORY = 20;
+// The one copy of the window lives in bounds.ts, which `isPinState` quotes too: a local `20` here
+// and a local `20` there drift the first time one side is edited, and the drift shows up as the
+// reducer producing snapshots its own guard rejects. Re-exported because `state.ts` publishes it.
+export { REMOVAL_HISTORY };
 
 export interface PinLimits {
   maxPins: number;

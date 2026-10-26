@@ -268,6 +268,11 @@ describe("applyAction refuses an update whose fields are not what they claim", (
       { op: "unpin", ids: [1], source: "user", now: LATER },
       { op: "unpin", ids: "all", source: "agent", now: LATER },
       { op: "unpin", ids: [1, 9], source: "agent", now: LATER },
+      // The shape of each op with a `now` the guard accepts but no other caller would send: the
+      // round trip has to hold for the timestamp fields too, not only text, level and source.
+      { op: "pin", text: "now-t", level: "info", source: "agent", now: "" },
+      { op: "update", id: 2, now: "not a date at all", source: "agent", level: "warning" },
+      { op: "unpin", ids: [2], source: "user", now: " " },
     ];
     for (const action of accepted) {
       // A state whose nextId does not outrank its removal ids is not a state a rebuild could have
