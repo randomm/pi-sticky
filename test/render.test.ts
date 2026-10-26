@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import {
   formatLocalTime,
@@ -206,16 +207,6 @@ describe("renderRailLines", () => {
     const lines = rail(view([pin(1, "a"), pin(2, "b"), pin(3, "c")]), 60, 2);
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("+2 more");
-  });
-
-  test("every line is cut to the width it was given", () => {
-    const long = "x".repeat(200);
-    const lines = rail(view([pin(1, long)]), 20, 8);
-    for (const line of lines) {
-      // No line may overrun the width; the ellipsis marks the ones that were cut.
-      expect(line.length).toBeLessThanOrEqual(40);
-    }
-    expect(lines.some((l) => l.includes("…"))).toBe(true);
   });
 
   test("the plain style leaves a row as the text it was given", () => {

@@ -7,9 +7,14 @@
  * OSC, so delegating would leak.
  *
  * Pass order is load-bearing and fixed: escapes first (a surviving introducer would be measured as
- * printable), then controls, then invisible format characters, then lone surrogates, then the
+ * printable), then lone surrogates, then controls, then invisible format characters, then the
  * combining-mark cap, then newline collapse and trim, and the grapheme budget last so the ellipsis
  * can never be cut away. Width is NOT bounded here; render.ts owns display width.
+ *
+ * Surrogates are dropped before the invisible pass on purpose, and the order is a correctness
+ * fix, not a preference: Segmenter folds an unpaired low surrogate into the cluster that follows it
+ * (`\u{dc41}` + U+E0041 is one cluster), so a tag character sheltered behind one is never tested and
+ * survives the pass. Dropping surrogates first makes every cluster self-contained.
  *
  * Three rules come from docs/research-summary.md and are what pi-tui gets wrong. An unterminated
  * string ends at the first ESC, BEL, 0x18, 0x1A or 0x9C. A CSI carries no terminator of its own,
@@ -62,9 +67,10 @@ function at(text: string, i: number): string {
  * edge cases wrong. A run of base-less combining marks is folded into a single cluster by `\p{M}`
  * continuator rules, so the budget would under-count it, and a cut can end on a bare combining mark
  * or variation selector detached from its base (a keycap's U+20E3, a heart's VS16). The earlier
- * passes leave each cluster self-contained: ZWJ and VS16 survive only inside an emoji cluster, so
- * Segmenter keeps the family intact and the budget counts it as one, while the tag block is already
- * gone and cannot split a flag.
+ * passes leave each cluster self-contained (the surrogate pass runs before this one, which is what
+ * makes it true): ZWJ and VS16 survive only inside an emoji cluster, so Segmenter keeps the family
+ * intact and the budget counts it as one, while the tag block is already gone and cannot split a
+ * flag.
  */
 function graphemes(text: string): string[] {
   const out: string[] = [];
@@ -139,7 +145,11 @@ function isEmojiBase(cluster: string): boolean {
   );
 }
 
-/** Drop invisible characters cluster by cluster, so a family's ZWJ survives as a unit. */
+/**
+ * Drop invisible characters cluster by cluster, so a family's ZWJ survives as a unit. Surrogate
+ * pairs are read whole because `isEmojiBase` decides the ZWJ/VS16 exception from the cluster's base
+ * code point, and a pair split in half would give that test half a number to decide on.
+ */
 function dropInvisible(text: string): string {
   let out = "";
   for (const cluster of graphemes(text)) {
@@ -230,9 +240,9 @@ export function sanitizePinText(
   maxChars: number,
 ): { text: string; truncated: boolean } {
   let text = stripSequences(raw);
+  text = dropLoneSurrogates(text);
   text = stripControls(text);
   text = dropInvisible(text);
-  text = dropLoneSurrogates(text);
   text = capMarks(text);
   text = tidyNewlines(text);
   return cutToBudget(text, maxChars);
