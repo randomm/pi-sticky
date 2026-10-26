@@ -27,6 +27,8 @@
  */
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as boundTimeout } from "node:timers/promises";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 /** How long `settlePendingWrites()` waits in total before it gives up and lets removal run. */
 const SETTLE_TIMEOUT_MS = 500;
@@ -36,6 +38,36 @@ const SETTLE_QUIET_MS = 10;
 const SETTLE_QUIET_MAX_MS = 100;
 /** Poll interval for the same wait; one timer per round when the directory is already quiet. */
 const SETTLE_POLL_MS = 10;
+/** How long `settleSessionAbort()` waits for `session.abort()` before it gives up on it. */
+const ABORT_TIMEOUT_MS = 2000;
+
+/**
+ * Await `session.abort()` with a bound, returning the error to report when it did not settle.
+ *
+ * pi's `abort()` ends in `await waitForIdle()`, and that only resolves once the agent run has
+ * finished — so an extension tool whose `execute()` never settles (a hung request, a `custom()`
+ * overlay that never closes) holds harness teardown there forever, and the test with it. The
+ * timer is unref'd and cleared once either side wins, so the wait cannot keep the test process
+ * alive.
+ *
+ * Returning rather than throwing is deliberate: the caller still has to emit `session_shutdown`,
+ * dispose the recorder and remove the temp dir, and a rejection would skip them from inside the
+ * `try` that protects them.
+ */
+export async function settleSessionAbort(session: AgentSession): Promise<Error | undefined> {
+  const bound = new AbortController();
+  try {
+    const timedOut = await Promise.race([
+      session.abort().then(() => false as const),
+      boundTimeout(ABORT_TIMEOUT_MS, true, { ref: false, signal: bound.signal }),
+    ]);
+    return timedOut
+      ? new Error(`session.abort() did not settle within ${ABORT_TIMEOUT_MS}ms`)
+      : undefined;
+  } finally {
+    bound.abort();
+  }
+}
 
 /** Wait until nothing is still writing inside `dir`, so that `rmSync()` is the last word. */
 export async function settlePendingWrites(dir: string): Promise<void> {

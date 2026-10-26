@@ -38,7 +38,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ErrorCollector } from "./harness-run.ts";
 import type { BuiltHarness } from "./harness-session.ts";
-import { settlePendingWrites } from "./harness-settle.ts";
+import { settlePendingWrites, settleSessionAbort } from "./harness-settle.ts";
 import { isSummarizationRequest } from "./harness-text.ts";
 import type { HarnessOptions } from "./harness.ts";
 import { RecordingUi } from "./recording-ui.ts";
@@ -209,7 +209,11 @@ export async function disposeHarness(built: BuiltHarness): Promise<void> {
   try {
     // `dispose()` is only safe once nothing is in flight, so pi's own teardown awaits `abort()`
     // too; doing the same here settles a prompt that is still running before we remove under it.
-    await built.session.abort();
+    // The bound inside `settleSessionAbort()` is what keeps a hung `execute()` from wedging the
+    // teardown: it never rejects, so the shutdown emit, the recorder teardown and `rmSync()`
+    // below still run, and a session that never went idle is reported, not passed over.
+    const abortError = await settleSessionAbort(built.session);
+    if (abortError) teardownErrors.push(abortError);
     // pi's AgentSessionRuntime.dispose() emits session_shutdown ("quit") through the runner
     // before invalidating it; doing the same here is what gives an extension's shutdown
     // handler and every recorded component's dispose() a chance to run in a test.

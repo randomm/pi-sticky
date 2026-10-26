@@ -63,27 +63,20 @@ const UI_MEMBERS = {
 } as const satisfies Record<keyof ExtensionUIContext, "method" | "data">;
 
 /**
- * Compile-time proof that the recorder implements what the map claims. `RecordingUi` must be
- * assignable to a shape whose `"method"` members are callable: a recorder that drops one is a
- * type error here, not an `undefined` in front of an extension. The check lives in a type
- * position, so nothing is constructed when this module is imported.
+ * Compile-time proof that the recorder implements what the map claims: an assignment, so tsc
+ * really checks it. A member `RecordingUi` lacks, or one whose kind the map gets wrong (a value
+ * declared `"data"` that the recorder only has as a method, or the other way round), is a type
+ * error on this line rather than an `undefined` in front of an extension.
+ *
+ * What is *not* enforced is a member the recorder has and the map omits — it is simply not
+ * forwarded, and `recording-ui.test.ts` asserts the forwarded set for that.
+ *
+ * This used to be `type Assert<Checks extends readonly true[]> = Checks` fed a conditional type.
+ * An alias is never resolved unless something gives it a declared type, so nothing checked it and
+ * the proof was a no-op: dropping a `RecordingUi` method type-checked clean.
  */
-type MemberMap = typeof UI_MEMBERS;
-type RequiredMembers = {
-  [K in keyof MemberMap as MemberMap[K] extends "method" ? K : never]: () => unknown;
-};
-type DataMembers = {
-  [K in keyof MemberMap as MemberMap[K] extends "data" ? K : never]: unknown;
-};
-type Assert<Checks extends readonly true[]> = Checks;
-export type UiMembersMatchRecorder = Assert<
-  [
-    RecordingUi extends RequiredMembers ? true : false,
-    RecordingUi extends DataMembers ? true : false,
-  ] extends readonly true[]
-    ? true
-    : never
->;
+const _uiMembersMatchRecorder: ExtensionUIContext = null as unknown as RecordingUi;
+void _uiMembersMatchRecorder;
 
 /**
  * A plain object carrying every `ExtensionUIContext` member as an own property, bound to

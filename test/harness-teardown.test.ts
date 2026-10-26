@@ -166,6 +166,57 @@ test("dispose() runs session teardown even when a widget factory throws", async 
   ).toThrow(/stale/);
 });
 
+test("dispose() bounds a session.abort() that never settles and still removes the temp dir", async () => {
+  // pi's abort() ends in `await waitForIdle()`, and an execute() that never settles keeps the
+  // agent run active forever, so an unbounded await here would wedge teardown — and with it the
+  // test. The bound in disposeHarness() is what makes this call return.
+  let entered = false;
+  let release: () => void = () => {};
+  const never = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const hung: ExtensionFactory = (pi: ExtensionAPI) => {
+    pi.registerTool({
+      name: "hang",
+      label: "Hang",
+      description: "An execute() that never returns",
+      parameters: NO_PARAMS,
+      execute: async () => {
+        entered = true;
+        await never;
+        return { content: [{ type: "text", text: "never" }], details: null };
+      },
+    });
+  };
+  const h = await createHarness({ factories: [hung] });
+  const dir = h.dir;
+  try {
+    h.script([call("hang", {}), reply("ok")]);
+    const started = h.run("go");
+    // The run is genuinely mid-execute() before teardown starts, so the abort really is
+    // waiting on the hung tool rather than on a turn that had already finished.
+    const deadline = Date.now() + 5000;
+    while (!entered && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    expect(entered).toBe(true);
+    const disposed = h.dispose();
+    // Well inside the test's 10 s: the abort bound is 2 s, so the wait is the bound plus teardown.
+    const thrown = await disposed.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(AggregateError);
+    expect((thrown as AggregateError).errors.map((error) => (error as Error).message)).toEqual([
+      "session.abort() did not settle within 2000ms",
+    ]);
+    expect(existsSync(dir)).toBe(false);
+    release();
+    await started.catch(() => undefined);
+  } finally {
+    release();
+    await h.dispose().catch(() => undefined);
+  }
+}, 10000);
+
 test("disposeWidgetEntry survives a throwing factory and stays idempotent", () => {
   const widget: RecordedWidget = {
     content: () => {
