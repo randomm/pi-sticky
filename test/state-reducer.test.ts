@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 
 import { type ApplyLimits, EMPTY_STATE, applyAction } from "../src/state.ts";
 import type { PinLevel } from "../src/types.ts";
-import { LATER, NOW, pin, removal, state, uidSource } from "./fixtures.ts";
+import { LATER, LATER_TIME, NOW, pin, removal, state, uidSource } from "./fixtures.ts";
 
 const limits = (maxPins = 5): ApplyLimits => ({ maxPins, newUid: uidSource() });
 
@@ -23,7 +23,7 @@ describe("applyAction pin", () => {
     expect(result.state.pins).toHaveLength(1);
     const [only] = result.state.pins;
     expect(only?.id).toBe(1);
-    expect(only?.uid).toBe("uid-1");
+    expect(only?.uid).toBe("mint-1");
     expect(only?.createdAt).toBe(NOW);
     expect(only?.updatedAt).toBe(NOW);
     expect(result.state.nextId).toBe(2);
@@ -120,7 +120,7 @@ describe("applyAction update", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("removed by the user");
-    expect(result.error).toContain("14:30");
+    expect(result.error).toContain(LATER_TIME);
   });
 });
 

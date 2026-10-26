@@ -81,14 +81,21 @@ export function badUid(): ApplyResult {
 
 /**
  * The text as it may be stored: cleaned, or absent when the model sent a non-string, or sent one
- * that cleans to nothing. The reducer cleans rather than trusting its caller, because a state is
- * published as `details` and read back by `reconstruct`, and `isPinState` is a shape guard that
- * accepts a `\u001b[2J` — the pass that decides what may be drawn is this one.
+ * that cleans to nothing, or sent one that cleans to more than a snapshot may carry. The reducer
+ * cleans rather than trusting its caller, because a state is published as `details` and read back by
+ * `reconstruct`, and `isPinState` is a shape guard that accepts a `\u001b[2J` — the pass that decides
+ * what may be drawn is this one.
+ *
+ * The length bound is `MAX_TEXT_UNITS`, the same number `isBoundedString` reads, and it is applied
+ * *after* cleaning: the value that has to fit the guard is the one that gets stored, not the one the
+ * model typed, so escapes the sanitizer drops cost nothing. Without it an over-long text returned ok
+ * with a snapshot the guard then rejected, and every pin in that snapshot — not just the long one —
+ * vanished on the next reload.
  */
 export function cleanTextOrUndefined(text: unknown): string | undefined {
   if (typeof text !== "string") return undefined;
   const clean = cleanPinText(text);
-  return clean === "" ? undefined : clean;
+  return clean === "" || clean.length > MAX_TEXT_UNITS ? undefined : clean;
 }
 
 /** A uid the state guard will accept, or absent when the injected source minted something else. */

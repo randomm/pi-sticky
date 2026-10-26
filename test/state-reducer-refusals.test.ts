@@ -203,7 +203,9 @@ describe("applyAction refuses a uid the guard would reject", () => {
     if (!uuid.ok) return;
     expect(isPinState(uuid.state)).toBe(true);
     const counter = applyAction(EMPTY_STATE, { ...PIN, now: LATER } as never, limits(uidSource()));
-    expect(counter.ok && counter.state.pins[0]?.uid).toBe("uid-1");
+    // The fixtures' own source mints `mint-<n>` (`uidSource`), not `uid-<id>`: an address that a
+    // fixture pin already holds would be refused as a collision before it ever reached the snapshot.
+    expect(counter.ok && counter.state.pins[0]?.uid).toBe("mint-1");
   });
 
   test("a bad uid is refused before the duplicate lookup and before the limit", () => {

@@ -19,6 +19,15 @@ export const MAX_PINS = 20;
  */
 export const MAX_TEXT_UNITS = 8000;
 
+/**
+ * The largest pin id a snapshot may carry, and so the largest `nextId` it may hold: the pin a reducer
+ * mints takes `nextId` and leaves `nextId + 1` behind, so a state at this ceiling has no id to give
+ * the next pin. It is `Number.MAX_SAFE_INTEGER` because that is exactly where
+ * `isPositiveSafeInteger` — which `isCoherent` reads for both ids and counters — stops accepting a
+ * number, so the reducer refuses at the same point the guard does rather than one step later.
+ */
+export const MAX_PIN_ID = Number.MAX_SAFE_INTEGER;
+
 /** An id the reducer may count from: 1, a whole number, and representable exactly. */
 export function isPositiveSafeInteger(x: unknown): x is number {
   return typeof x === "number" && Number.isSafeInteger(x) && x >= 1;

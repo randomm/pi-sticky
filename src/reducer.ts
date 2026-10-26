@@ -62,10 +62,15 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       if (!isLevel(action.level)) return badLevel();
       if (!isSource(action.source)) return badSource();
       // The uid is minted here rather than in `pinOp` so a source that hands back something the
-      // guard's UID pattern refuses (a fixture, a future caller's own generator) is a refusal instead
-      // of an ok result carrying a snapshot no rebuild will read back.
+      // guard's UID pattern refuses (a fixture, a future caller's own generator), or one a pin or a
+      // removal already holds, is a refusal instead of an ok result carrying a snapshot no rebuild
+      // will read back: `isCoherent` refuses one address bound to two identities, and a dismissal
+      // addressed to a shared uid retires a pin the user never named. Checked before `pinOp` runs so
+      // the duplicate branch — which mints nothing — never has to answer for it.
       const minted = uidOrUndefined(uid());
       if (minted === undefined) return badUid();
+      if (state.pins.some((pin) => pin.uid === minted)) return badUid();
+      if (state.removed.some((removal) => removal.uid === minted)) return badUid();
       return pinOp(
         state,
         { text, level: action.level, source: action.source, now },

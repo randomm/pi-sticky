@@ -8,7 +8,7 @@
  * None of them mutate the state they are given; each returns a fresh whole snapshot, because the
  * snapshot is what the tool publishes and what a later rebuild compares against.
  */
-import { REMOVAL_HISTORY } from "./bounds.ts";
+import { MAX_PIN_ID, REMOVAL_HISTORY } from "./bounds.ts";
 import { formatLocalTime } from "./time.ts";
 import type { Pin, PinLevel, PinSource, PinState, Removal } from "./types.ts";
 
@@ -36,6 +36,11 @@ export function removedByUser(state: PinState, id: number): Removal | undefined 
 
 function notFound(id: number) {
   return { ok: false as const, error: `No pin #${id}.` };
+}
+
+/** The refusal for an id counter that has run out. Short: the model only has to stop pinning. */
+function noIdsLeft() {
+  return { ok: false as const, error: "No more pin ids are available." };
 }
 
 function userRemoved(id: number, at: string) {
@@ -71,6 +76,13 @@ export function pinOp(
       error: `${limits.maxPins} pins are already shown, which is the limit. Update or unpin one first.`,
     };
   }
+  // The pin takes `nextId` and the returned state carries `nextId + 1`, so at the ceiling the new
+  // snapshot's counter is no longer a safe integer: `isCoherent` refuses it through
+  // `isPositiveSafeInteger` and every pin in the snapshot is skipped by the next rebuild. Refusing
+  // here keeps the ok results the guard accepts. Deliberately after the duplicate and limit checks:
+  // neither mints an id, so neither is affected by a counter that cannot grow, and a re-pin of an
+  // existing pin at the ceiling is still the ok answer it was before.
+  if (state.nextId >= MAX_PIN_ID) return noIdsLeft();
   const pin: Pin = {
     id: state.nextId,
     uid,

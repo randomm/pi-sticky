@@ -13,9 +13,9 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { plainStyle, renderRailLines } from "../src/render.ts";
 import type { PinLevel, PinView } from "../src/types.ts";
-import { NOW, pin, view } from "./fixtures.ts";
+import { NOW, NOW_TIME, pin, view } from "./fixtures.ts";
 
-const FIXED_TIME = (iso: string): string => (iso === NOW ? "12:00" : iso);
+const FIXED_TIME = (iso: string): string => (iso === NOW ? NOW_TIME : iso);
 
 const rail = (view: PinView, width: number, maxLines: number): string[] =>
   renderRailLines(view, width, { maxLines, style: plainStyle, formatTime: FIXED_TIME });

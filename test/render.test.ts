@@ -10,16 +10,20 @@ import {
   renderRailLines,
 } from "../src/render.ts";
 import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
-import { LATER, NOW, pin, view } from "./fixtures.ts";
+import { LATER, LATER_TIME, NOW, NOW_TIME, localTime, pin, view } from "./fixtures.ts";
 
-const FIXED_TIME = (iso: string): string => (iso === NOW ? "12:00" : "14:30");
+const FIXED_TIME = (iso: string): string => (iso === NOW ? NOW_TIME : LATER_TIME);
 
 const rail = (view: PinView, width: number, maxLines: number): string[] =>
   renderRailLines(view, width, { maxLines, style: plainStyle, formatTime: FIXED_TIME });
 
 describe("formatLocalTime", () => {
-  test("renders hours and minutes zero-padded", () => {
-    expect(formatLocalTime("2026-10-23T04:05:00.000Z")).toBe("04:05");
+  test("renders the local hours and minutes of the instant, zero-padded", () => {
+    // A literal `04:05` here is only the reading under TZ=UTC; `formatLocalTime` deliberately reads
+    // the local clock, so the expectation is computed the same way the implementation does, and the
+    // padding and shape have to hold in whatever zone the run happens to be in.
+    expect(formatLocalTime("2026-10-23T04:05:00.000Z")).toBe(localTime("2026-10-23T04:05:00.000Z"));
+    expect(formatLocalTime(NOW)).toBe(NOW_TIME);
   });
 
   test("is ASCII digits and a colon", () => {
@@ -87,7 +91,7 @@ describe("renderList", () => {
 
   test("a replied pin says the user replied and when", () => {
     const text = renderList(view([{ ...pin(1, "a"), repliedAt: LATER }]), 5);
-    expect(text).toContain("(replied by the user at 14:30)");
+    expect(text).toContain(`(replied by the user at ${LATER_TIME})`);
   });
 
   test("lists more pins than the rail could show", () => {
@@ -110,12 +114,12 @@ describe("renderMarkdown", () => {
 
   test("each pin carries level, id, time and text", () => {
     const lines = renderMarkdown(view([pin(1, "check", "warning")])).split("\n");
-    expect(lines[2]).toBe("- **warning** #1 (12:00): check");
+    expect(lines[2]).toBe(`- **warning** #1 (${NOW_TIME}): check`);
   });
 
   test("a replied pin records the reply", () => {
     const lines = renderMarkdown(view([{ ...pin(1, "a"), repliedAt: LATER }])).split("\n");
-    expect(lines[2]).toContain("(replied by the user at 14:30)");
+    expect(lines[2]).toContain(`(replied by the user at ${LATER_TIME})`);
   });
 
   test("nothing is cut, whatever the width of the terminal", () => {
@@ -172,7 +176,7 @@ describe("renderRailLines", () => {
   test("a row names the id, the time and the marker", () => {
     const [_, first] = rail(view([pin(1, "check", "warning")]), 60, 8);
     expect(first).toContain("#1");
-    expect(first).toContain("12:00");
+    expect(first).toContain(NOW_TIME);
     expect(first).toContain("!");
   });
 
@@ -238,7 +242,7 @@ describe("renderRailLines", () => {
     });
     expect(calls.some((c) => c.startsWith("header:"))).toBe(true);
     expect(calls).toContain("marker:warning:!");
-    expect(calls.some((c) => c.startsWith("dim:12:00"))).toBe(true);
+    expect(calls.some((c) => c.startsWith(`dim:${NOW_TIME}`))).toBe(true);
   });
 
   test("formatTime defaults to the local clock rather than being required", () => {
