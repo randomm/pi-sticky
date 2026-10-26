@@ -17,6 +17,7 @@
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "./escape.ts";
+import { isPanelSize } from "./panel-geometry.ts";
 import { formatLocalTime } from "./time.ts";
 
 import type { PanelStyle } from "./render.ts";
@@ -34,12 +35,8 @@ export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
 /** How wide the ` #id HH:MM` tail is allowed to be before the text loses room to a whole column. */
 const META_RESERVE = 10;
 
-/** pi-tui's cut ellipsis, and the resets it wraps it in, both spelled from code points. */
+/** pi-tui's cut ellipsis, spelled from its own code point. */
 const ELLIPSIS = String.fromCodePoint(0x2026);
-const INJECTED_RESET = new RegExp(
-  `${String.fromCharCode(0x1b)}\\[0m${String.fromCodePoint(0x2026)}${String.fromCharCode(0x1b)}\\[0m`,
-  "g",
-);
 
 /** One drawn row of the panel: the pin's text column and its id/time tail. */
 export interface PanelRow {
@@ -64,6 +61,11 @@ export function panelContentRows(height: number, focused: boolean): number {
  * Offset of the row the selected pin starts on: the smallest offset that puts it on screen,
  * clamped so the window never scrolls past the last pin. Taking the *pin* index rather than a row
  * index is what makes the scroll follow the bar the keys move.
+ *
+ * The wrapper over `panelWindowOffset` that a caller outside the builder uses: it derives the row table
+ * itself, which costs a full wrap of every pin's text. `buildPanelLines` does not go through here — it
+ * already has the table and passes it in, because wrapping the same pins three times per frame to draw a
+ * window of them is the cost this avoids.
  */
 export function panelScrollOffset(
   contentRows: number,
@@ -72,9 +74,31 @@ export function panelScrollOffset(
   textWidth: number,
   style: PanelStyle,
 ): number {
-  const total = panelAllRows(pins, textWidth, style).length;
+  return panelWindowOffset(
+    contentRows,
+    selection,
+    panelAllRows(pins, textWidth, style),
+    panelRowStartOf(pins, textWidth, style, selection),
+  );
+}
+
+/**
+ * The same offset, from the rows the caller has already built and the start of the selected pin: the
+ * window's start for a selection, given every row of every pin in order.
+ *
+ * `buildPanelLines` goes through this rather than through `panelScrollOffset` because it has the table
+ * already: the wrapper above re-derives it, and doing that twice more per frame — once here, once inside
+ * the row-start lookup — is what used to wrap the full text of every pin three times to draw a window of
+ * them.
+ */
+function panelWindowOffset(
+  contentRows: number,
+  selection: number,
+  all: readonly PanelRow[],
+  start: number,
+): number {
+  const total = all.length;
   if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
-  const start = panelRowStart(pins, textWidth, style, selection);
   if (start < 0) return total - contentRows;
   return Math.min(start, total - contentRows);
 }
@@ -102,7 +126,14 @@ export function panelPinRows(pin: ViewPin, textWidth: number, style: PanelStyle)
   return rows.length > 0 ? rows : [{ text: ` ${marker} `, meta }];
 }
 
-/** Rows of every pin, in order, flattened: the window the scroll offset moves. */
+/**
+ * Rows of every pin, in order, flattened: the window the scroll offset moves.
+ *
+ * Rows are grouped by pin, not identified by it, so a row of its own is not enough to say which pin it
+ * belongs to — two pins can produce byte-identical rows, and a pin that wraps produces several that
+ * differ only in their empty `meta`. The count each pin owns is therefore taken from the pin itself
+ * rather than inferred by scanning the table, which is what lets `panelRowStartOf` walk the groups.
+ */
 export function panelAllRows(
   pins: readonly ViewPin[],
   textWidth: number,
@@ -113,52 +144,62 @@ export function panelAllRows(
   return rows;
 }
 
-/** First row of the pin at `index`, or -1 when there is no such pin. */
-export function panelRowStart(
+/**
+ * First row of the pin at `index`, or -1 when there is no such pin.
+ *
+ * Derived from the same per-pin row builder the table is made of, so the two cannot disagree about how
+ * many rows a pin owns — the question the scroll window turns on.
+ */
+function panelRowStartOf(
   pins: readonly ViewPin[],
   textWidth: number,
   style: PanelStyle,
   index: number,
 ): number {
-  if (index < 0) return -1;
+  if (index < 0 || index >= pins.length) return -1;
   let start = 0;
-  for (let i = 0; i <= index; i++) {
+  for (let i = 0; i < index; i++) {
     const pin = pins[i];
     if (!pin) return -1;
-    if (i === index) return start;
     start += panelPinRows(pin, textWidth, style).length;
   }
-  return -1;
+  return start;
 }
 
 /**
- * One drawn line whose escape bytes are its own, so nothing may be stripped from it: the header
- * and the hint, which carry only what the theme put there. Cut before padding, because a theme can
- * widen a short string past the panel — the ellipsis and the reset `truncateToWidth` adds around it
- * are removed again, they are the cut's own bytes and were never asked for.
- */
-function fitStyled(line: string, width: number): string {
-  const spare = width - visibleWidth(line);
-  if (spare >= 0) return line + " ".repeat(spare);
-  return fitPlain(line.replace(INJECTED_RESET, ELLIPSIS), width);
-}
-
-/**
- * One drawn line whose text is untrusted, so whatever survives is stripped: the pin rows. An
- * over-wide line is the case the rail's own `cut` documents — `truncateToWidth` measures an escape
- * whose terminator it does not recognise as printable columns — so when its result still measures
- * too wide the line is cut again from the escape-stripped text, the only string here whose width
- * both sides agree on. Stripped whether or not the cut fired, so a row that fits is still free of
- * escape bytes; re-measured after that, because stripping can leave a line that no longer fills the
- * panel and a short row would let the chat behind it show through.
+ * One drawn line whose text is untrusted, so whatever survives is stripped: the pin rows, and — since
+ * the escape policy below applies to every drawn line — the header and the hint too. An over-wide line
+ * is the case the rail's own `cut` documents — `truncateToWidth` measures an escape whose terminator it
+ * does not recognise as printable columns — so when its result still measures too wide the line is cut
+ * again from the escape-stripped text, the only string here whose width both sides agree on. Stripped
+ * whether or not the cut fired, so a row that fits is still free of escape bytes; re-measured after
+ * that, because stripping can leave a line that no longer fills the panel and a short row would let the
+ * chat behind it show through.
  */
 function fitPlain(line: string, width: number): string {
   const spare = width - visibleWidth(line);
   if (spare >= 0) return padPlain(stripSequences(line), width);
-  const cut = stripSequences(truncateToWidth(line, width, "…"));
+  const cut = stripSequences(truncateToWidth(line, width, ELLIPSIS));
   if (visibleWidth(cut) <= width) return padPlain(cut, width);
-  const plain = stripSequences(truncateToWidth(stripSequences(line), width, "…"));
+  const plain = stripSequences(truncateToWidth(stripSequences(line), width, ELLIPSIS));
   return padPlain(plain, width);
+}
+
+/**
+ * One drawn line whose bytes come from the *theme*: the header and the hint.
+ *
+ * The same escape policy as a pin row, applied to a styled line rather than exempted from it. The
+ * exemption used to be here — a styled line that measured within the width was padded and returned
+ * verbatim — and that was a hole, not a convenience: `visibleWidth` counts an OSC 8 hyperlink, an OSC
+ * 2/52 window-title or an APC sequence as *zero* columns, so a theme whose `header`/`dim` emitted one
+ * would be measured as free and flushed right over the chat, its padding extending a smuggled hyperlink
+ * across columns the user believes are blank. Nothing in a panel row is a hyperlink and AGENTS.md says a
+ * pin never draws one, so refusing every escape byte on every drawn line costs nothing real. What the
+ * theme loses is only the sequences pi-tui would have counted as zero-width anyway; SGR colouring is
+ * untouched, because `stripSequences` keeps what it does not recognise as an escape to remove.
+ */
+function fitStyled(line: string, width: number): string {
+  return fitPlain(line, width);
 }
 
 /** Pad an already-safe line out to the width. */
@@ -169,7 +210,7 @@ function padPlain(line: string, width: number): string {
 /** The text column and its dim `#id HH:MM` tail; the bar goes over the whole row. */
 function pinRow(row: PanelRow, width: number, style: PanelStyle, selected: boolean): string {
   const tail = row.meta === "" ? "" : ` ${row.meta}`;
-  const body = `${row.text}${tail === "" ? "" : style.dim(tail)}`;
+  const body = tail === "" ? row.text : `${row.text}${style.dim(tail)}`;
   return fitPlain(selected ? style.selected(body) : body, width);
 }
 
@@ -184,7 +225,9 @@ export function buildPanelLines(
   height: number,
   style: PanelStyle,
 ): string[] {
-  if (width <= 0 || height <= 0) return [];
+  // A fractional size is one the panel cannot honour: the whole point of this function is that every
+  // line measures exactly `width` columns, and padding to 30.5 leaves the chat showing through.
+  if (!isPanelSize(width, height)) return [];
   // Nothing pinned is no rows at all, not a titled box asserting it is empty: the overlay is opened
   // for the pins, and a frame in which the last one was dismissed should show the prompt around it
   // rather than a header that repeats the absence. The check lives here, with the pins in front of it,
@@ -199,8 +242,11 @@ export function buildPanelLines(
   }
 
   const textWidth = Math.max(1, width - META_RESERVE);
+  // The layout of every pin is wrapped *once* here and handed to the offset along with the selected
+  // pin's own start, so a frame pays for one pass over the pins rather than three.
   const all = panelAllRows(content.pins, textWidth, style);
-  const offset = panelScrollOffset(budget, content.selection, content.pins, textWidth, style);
+  const start = panelRowStartOf(content.pins, textWidth, style, content.selection);
+  const offset = panelWindowOffset(budget, content.selection, all, start);
   for (let i = 0; i < budget && lines.length < height; i++) {
     const row = all[offset + i];
     if (!row) {

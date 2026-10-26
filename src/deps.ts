@@ -10,9 +10,18 @@
  * `pi-sticky.state` writer in this ticket: an agent change publishes its snapshot as the tool
  * result's `details` and a user change appends a `pi-sticky.user` entry, and both paths rebuild
  * with `reconstruct` rather than trusting a handed-in state.
+ *
+ * The panel's visibility flag is deliberately absent from this object: its *storage* is a `PanelDeps`
+ * concern, and the three modules this object is handed to read none of it (see `panel-deps.ts`).
+ *
+ * `redraw` takes `Notifier`, and `rebuild` takes `RebuildContext` — projections of pi's context, in both
+ * cases the members the callee actually uses — because the callers hold three different shapes (a tool
+ * context, a command context, the live context) and none of them needs to name the whole interface to
+ * ask for a frame or a re-read.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import type { Notifier, RebuildContext } from "./commands.ts";
 import type { PinState, PinView, StickyConfig, UserAction } from "./types.ts";
 
 export interface StickyDeps {
@@ -24,8 +33,21 @@ export interface StickyDeps {
   getState(): PinState;
   /** The view every surface draws: the tool's listing, the rail, `/pins` and the reminder. */
   getView(): PinView;
-  /** Rebuild state from the session and redraw. Without a live context it still rebuilds. */
-  redraw(ctx?: ExtensionContext): void;
+  /**
+   * Redraw every surface from the live state. `ctx` is the context the change came from — the tool
+   * call's or the command's — and the one the rail is drawn through; without it the live context of the
+   * last `session_start` is used, and without that either the rebuild still happens and nothing draws.
+   */
+  redraw(ctx?: Notifier): void;
+  /**
+   * The visibility the session file asks for: the last `pi-sticky.ui` entry, else shown.
+   *
+   * A dep rather than a direct call of `initialShown(ctx)` from `rebuild`, because the context a rebuild
+   * is handed is the projection above and `initialShown` asks it through the same two members — so the
+   * one place that reads the session for the user's choice stays in `panel-deps.ts` and this object says
+   * what a rebuild is allowed to ask.
+   */
+  shownFrom(ctx: RebuildContext): boolean;
   /**
    * Adopt a snapshot the caller has just committed. Called by the tool with the state
    * `applyAction` produced *before* it asks for the redraw: the caller commits the snapshot (pi
@@ -35,17 +57,6 @@ export interface StickyDeps {
   commit(state: PinState): void;
   /** Record one of the user's actions as a `pi-sticky.user` entry. */
   appendUserAction(action: UserAction): void;
-  /**
-   * The user's panel-visibility choice, as the live flag the overlay's `visible()` reads every
-   * frame. It is set without recording by the auto-show on a new pin and by `ctrl+alt+p`, and set
-   * *and* recorded by an explicit toggle — which is what keeps a preference the user never made out
-   * of the session file (persistence decision).
-   */
-  isPanelShown(): boolean;
-  /** Change the live flag only, and redraw. Records nothing. */
-  setPanelShown(shown: boolean): void;
-  /** Append the `pi-sticky.ui` entry that makes a toggle survive a reload and a resume. */
-  recordPanelShown(shown: boolean): void;
 }
 
 /**

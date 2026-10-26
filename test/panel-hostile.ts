@@ -35,6 +35,30 @@ export const TAIL = "tail";
 /** Right-to-left override: reorders the row it is drawn into. */
 export const RLO = String.fromCharCode(0x202e);
 
+/**
+ * Inputs that end in a key the panel owns without being that key: CSI cursor-position and cursor-back,
+ * an `O`-prefixed final, an ESC-bracketed paste, OSC and APC with the letter in their string body, a `d`
+ * carrying a NUL, a surrogate or surrounding spaces, and `d` glued to a CR. None is a bare press, so none
+ * may dismiss or reply — see `isBarePress` in `src/panel-keys.ts`, which is consulted *before* `matchesKey`.
+ */
+export const HOSTILE_KEY_INPUTS = [
+  `${ESC}[1;3d`,
+  `${ESC}Od`,
+  `${ESC}d`,
+  `${LONE_SURROGATE}d`,
+  "d\0",
+  " d",
+  " d ",
+  `${ESC}[0md`,
+  `${ESC}]0;d${BEL}`,
+  `${ESC}_pi;d${BEL}`,
+  `${ESC}[1;3D`,
+  `${ESC}d\r`,
+  "d\r",
+  "\rd",
+  `${ESC}[200~d`,
+];
+
 /** The code points a drawn line must never carry. */
 export function offenders(text: string): string[] {
   const bad: string[] = [];

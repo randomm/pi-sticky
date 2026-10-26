@@ -1,15 +1,10 @@
 /**
- * The pure line builder: what the panel draws at a given size, without a session, a theme instance
- * or an overlay. Four things are asserted on and each is a promise the drawn surface has to keep —
- * every line is exactly `width` columns (the panel is flush right, so a short line would let the
- * chat show through), the header and the hint never scroll away, the selected pin is the one
- * highlighted, and hostile text is drawn as text.
- *
- * The hostile offenders are the same bytes as `test/state-untrusted.test.ts`'s sweep — OSC 52, an
- * OSC 8 pair, a CSI erase, pi-tui's APC marker, a Kitty prefix, an 8-bit DCS, U+202E and a lone
- * surrogate — but drawn *through the builder* rather than through `reconstruct`: the sanitizer is
- * what removes them from a pin, and this file is what proves the panel does not reintroduce them
- * with its own wrapping, padding and theming.
+ * The pure line builder: what the panel draws at a given size, with no session, theme instance or
+ * overlay. Four promises are asserted on: every line is exactly `width` columns (the panel is flush
+ * right, so a short line would let the chat show through), the header and the hint never scroll away,
+ * the selected pin is the one highlighted, and hostile text is drawn as text — the bytes of
+ * `test/state-untrusted.test.ts`'s sweep, drawn through the builder: the sanitizer strips them from a
+ * pin, and this proves the panel does not put them back with its wrapping, padding and theming.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -20,30 +15,23 @@ import {
   panelAllRows,
   panelContentRows,
   panelPinRows,
-  panelRowStart,
   panelScrollOffset,
 } from "../src/panel-lines.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin, view } from "./fixtures.ts";
-import { HOSTILE, offenders } from "./panel-hostile.ts";
+import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
 
-/** The hint is long; the widths that assert on it must be long enough to draw it whole. */
-const HINT_WIDTH = 48;
-
-/** Identity colours, so a drawn line can be compared to what was asked for. */
+/** Identity colours, so a drawn line can be compared to what was asked for; also the row builders'
+ * shape when a test does not care about colour. `colour()` adds bytes, to exercise the styled path. */
 const style: RenderPanelStyle = {
   header: (s) => s,
   marker: (_level, s) => s,
   dim: (s) => s,
   selected: (s) => `[${s}]`,
 };
-
-/** Identity colours, the shape the row builders take when a test does not care about colour. */
-const plainStyle: RenderPanelStyle = { ...style };
-
-/** Colours that add bytes, so the styled path is exercised too. */
+const plainStyle: RenderPanelStyle = style;
 const colour = (token: string) => ({
   header: (s: string) => `<h:${token}>${s}`,
   marker: (_level: unknown, s: string) => `<m:${token}>${s}`,
@@ -67,10 +55,10 @@ function expectUniformWidth(lines: string[], width: number): void {
   for (const line of lines) expect(visibleWidth(line)).toBe(width);
 }
 
-// The overlay is opened for the pins, and a frame in which the last one was dismissed leaves nothing
-// the user asked to see: an empty panel is a frame of the prompt around it, not a titled box asserting
-// that it has nothing in it. `panel-lines` still pads whatever it draws to the width it is given, so
-// "nothing to draw" has to be decided where the pins are known — which is the component, not this.
+/** The hint is long; the widths that assert on it must be long enough to draw it whole. */
+const HINT_WIDTH = 48;
+
+// A frame in which the last pin was dismissed leaves nothing the user asked to see.
 test("an empty view draws no rows, so the frame has nothing to clear", () => {
   expect(buildPanelLines(content([]), 40, 10, style)).toEqual([]);
 });
@@ -188,19 +176,23 @@ test("the offset is the selected pin's first row, so a wrapped pin scrolls the w
   const pins = [one(1, "a".repeat(80)), one(2, "second")];
   const textWidth = 23;
   const first = panelPinRows(pins[0] as ViewPin, textWidth, plainStyle).length;
-  expect(panelRowStart(pins, textWidth, plainStyle, 1)).toBe(first);
+  // The row table is what says how many rows a pin owns, so it is the thing the offset is measured on:
+  // `panelScrollOffset` derives it from the same pins and `panelAllRows` is the table itself.
+  expect(panelAllRows(pins, textWidth, plainStyle).slice(0, first).length).toBe(first);
   expect(panelScrollOffset(2, 1, pins, textWidth, plainStyle)).toBe(
     Math.min(first, panelAllRows(pins, textWidth, plainStyle).length - 2),
   );
 });
 
-test("the offset never scrolls past the last pin", () => {
-  const pins = Array.from({ length: 6 }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
-  const total = panelAllRows(pins, 30, plainStyle).length;
-  expect(panelScrollOffset(3, 5, pins, 30, plainStyle)).toBe(total - 3);
-  expect(panelScrollOffset(3, 99, pins, 30, plainStyle)).toBe(total - 3);
-  expect(panelScrollOffset(3, -1, pins, 30, plainStyle)).toBe(0);
-  expect(panelScrollOffset(0, 0, pins, 30, plainStyle)).toBe(0);
+test("the offset never scrolls past the last pin, and a pin that is not there is not drawn", () => {
+  const six = Array.from({ length: 6 }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
+  const total = panelAllRows(six, 30, plainStyle).length;
+  expect(panelScrollOffset(3, 5, six, 30, plainStyle)).toBe(total - 3);
+  // A selection past the last pin has no first row, so the window answers with the last one it can show
+  // rather than an empty one; a negative one draws no bar at all.
+  expect(panelScrollOffset(3, 99, six, 30, plainStyle)).toBe(total - 3);
+  expect(panelScrollOffset(3, -1, six, 30, plainStyle)).toBe(0);
+  expect(panelScrollOffset(0, 0, six, 30, plainStyle)).toBe(0);
 });
 
 test("a height that leaves no row for pins still draws the header, and the hint when focused", () => {
@@ -231,6 +223,30 @@ test("a coloured header over a narrow panel is cut without losing the theme's ow
   const lines = buildPanelLines(content([one(1, "x")]), 12, 4, colour("k"));
   expectUniformWidth(lines, 12);
   expect(lines[0]?.startsWith("<h:k>")).toBe(true);
+});
+
+// The styled lines used to bypass the escape policy when they fitted: `visibleWidth` counts an OSC 8
+// pair as zero columns, so a theme that wrapped its argument in one measured as free and was padded to
+// the full width — and the panel pads flush right, so the payload owns the chat behind it.
+test("a theme that emits a hyperlink paints no escape bytes onto the panel, at any width", () => {
+  const hostileStyle: RenderPanelStyle = {
+    header: (text) => `${ESC}]8;;https://evil${ST}${text}${ESC}]8;;${ST}`,
+    marker: (_level, text) => text,
+    dim: (text) => `${ESC}]52;c;AAAA${BEL}${text}`,
+    selected: (text) => text,
+  };
+  for (const focused of [false, true]) {
+    for (const width of [40, 60]) {
+      const lines = buildPanelLines(
+        content([one(1, "Decide X")], 0, focused),
+        width,
+        6,
+        hostileStyle,
+      );
+      expectUniformWidth(lines, width);
+      for (const line of lines) expect(offenders(line)).toEqual([]);
+    }
+  }
 });
 
 test("hostile text drawn at a width that forces a cut carries no escape, control or surrogate", () => {
@@ -268,11 +284,6 @@ test("rows are built for every pin in order and no pin is skipped", () => {
     `#2 ${localTime(NOW)}`,
     `#3 ${localTime(NOW)}`,
   ]);
-});
-
-test("panelRowStart reports -1 for a pin that does not exist", () => {
-  expect(panelRowStart([one(1, "a")], 20, plainStyle, 3)).toBe(-1);
-  expect(panelRowStart([one(1, "a")], 20, plainStyle, -1)).toBe(-1);
 });
 
 test("the view a test builds with fixtures.ts draws like any other", () => {

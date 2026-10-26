@@ -11,6 +11,7 @@
 import { expect, test } from "bun:test";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_CONFIG } from "../src/config.ts";
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelHost } from "../src/panel-component.ts";
 import type { PanelDeps, PanelWiring } from "../src/panel-deps.ts";
@@ -18,8 +19,9 @@ import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
+import { EMPTY_STATE } from "../src/state.ts";
 import type { PinView } from "../src/types.ts";
-import { pin } from "./fixtures.ts";
+import { NOW, pin } from "./fixtures.ts";
 import { createPlainTheme, createStubTui } from "./harness.ts";
 import { contextWith, flush } from "./panel-lifecycle-fixture.ts";
 
@@ -48,7 +50,17 @@ function wiring(
 ) {
   const railDraws: number[] = [];
   const state = { view: opts.view ?? ONE, shown: opts.shown ?? true };
+  // `PanelDeps` *is* `StickyDeps` plus the panel's own members, so a wiring stub has to answer the
+  // pins-facing half too — none of which this file exercises, because it drives the owner and not the
+  // tool. They are inert here precisely because the owner reads none of them.
   const deps: PanelDeps = {
+    config: DEFAULT_CONFIG,
+    now: () => NOW,
+    getState: () => EMPTY_STATE,
+    redraw: () => {},
+    shownFrom: () => true,
+    commit: () => {},
+    appendUserAction: () => {},
     getView: () => state.view,
     isPanelShown: () => state.shown,
     setPanelShown: (shown) => {
@@ -130,6 +142,48 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
   expect(h.panel.component()).toBeDefined();
   h.panel.close();
   expect(h.panel.component()).toBeUndefined();
+});
+
+test("a frame that changed nothing does not reinstall the rail, and a change to any part of the answer does", async () => {
+  // pi-tui asks the overlay's `visible()` on every render cycle, and each of those asks the owner to
+  // reconsider the rail. Installing a widget costs a dispose, a fresh component and a full wrap of every
+  // pin, so the per-frame path has to be a comparison — and it must still fire for a resize, a toggle and
+  // the arrival of a pin, the three things that really do change the answer.
+  const ctx = contextWith([]);
+  const h = wiring(ctx);
+  h.panel.open(ctx);
+  await flush();
+
+  // The first redraw is the one that establishes the answer; the ones after it are frames.
+  h.panel.refresh();
+  const installed = h.railDraws.length;
+  h.panel.refresh();
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(installed);
+
+  h.terminal.note(120);
+  h.panel.refresh();
+  expect(h.railDraws.length).toBeGreaterThan(installed);
+
+  const afterResize = h.railDraws.length;
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(afterResize);
+
+  h.state.shown = false;
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(afterResize + 1);
+
+  // A pin appearing changes the *count*, which is in the key; a pin merely *edited* would not be, and
+  // the rail's own component is rebuilt from the live view whenever the key differs, so the count is the
+  // cheap test and not the whole claim.
+  const afterToggle = h.railDraws.length;
+  h.state.view = { pins: [pin(2, "Another"), pin(3, "Yet more")], removed: [] };
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(afterToggle + 1);
+
+  const afterPins = h.railDraws.length;
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(afterPins);
 });
 
 test("focus reaches the open component, and a panel with no component is a no-op", async () => {
