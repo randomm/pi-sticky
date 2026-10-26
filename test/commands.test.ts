@@ -134,7 +134,7 @@ test("a dismissal made on one branch still hides the pin on another", async () =
   }
 });
 
-test("/pins notifies the full Markdown listing", async () => {
+test("/pins notifies the full plain-text listing", async () => {
   const h = await createHarness({ factories: [extension] });
   try {
     h.script([
@@ -149,10 +149,13 @@ test("/pins notifies the full Markdown listing", async () => {
     expect(h.ui.notifications).toHaveLength(1);
     const note = h.ui.notifications[0];
     expect(note?.type).toBe("info");
-    expect(note?.message).toContain("# Pinned for you");
-    expect(note?.message).toContain("- **warning** #1");
-    expect(note?.message).toContain(`(${localTime(LATER)})`);
-    expect(note?.message).toContain("Decide X");
+    expect(note?.message).toContain("Pinned for you (1):");
+    expect(note?.message).toContain(`#1 [warning] ${localTime(LATER)} Decide X`);
+    // pi draws notify text as-is, so the listing must not carry markup for a parser that does not
+    // exist: no emphasis around the level, no `# ` heading, no `- ` bullet.
+    expect(note?.message).not.toInclude("**");
+    expect(note?.message).not.toInclude("# ");
+    expect(note?.message).not.toInclude("- ");
   } finally {
     await h.dispose();
   }

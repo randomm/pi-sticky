@@ -1,7 +1,7 @@
 /**
  * Everything the user or the model sees of a pin list: the ordered view, the tool's
- * model-facing listing, the compact rail above the editor, and the full Markdown view
- * for `/pins` in RPC. Pure — the only host import is pi-tui's width helpers, which is
+ * model-facing listing, the compact rail above the editor, and the full plain-text listing
+ * for `/pins`. Pure — the only host import is pi-tui's width helpers, which is
  * why no test here needs a session, a provider or a uiContext.
  *
  * Width is owned here, never in sanitize.ts: a line is styled first and then cut with
@@ -123,21 +123,36 @@ export function renderList(view: PinView, maxPins: number): string {
   return [head, ...lines].join("\n");
 }
 
-/** The `/pins` view for RPC: every pin in full, nothing cut (no session header — R12). */
-export function renderMarkdown(view: PinView): string {
+/** Continuation indent for a pin text that carries line breaks. */
+const CONTINUATION = "   ";
+
+/**
+ * The `/pins` listing: every pin in full, nothing cut, drawn as plain text (no session header —
+ * R12). Pi draws `ctx.ui.notify` text as-is, so this surface emits no markup at all: no heading,
+ * no bullet, no emphasis, and nothing here is shaped so a Markdown parser on the host side could
+ * one day read it as structure. A leading `#` therefore always means a pin id, never a heading.
+ *
+ * A pin text keeps its own line breaks — the rail collapses them, this surface does not — so each
+ * break is redrawn with a three-space indent to line the continuation under the text column.
+ */
+export function renderPinsText(view: PinView): string {
   const pins = orderPins(view.pins);
   if (pins.length === 0) return "Nothing is pinned.";
-  const lines = pins.map(
-    (pin) =>
-      `- **${pin.level}** #${pin.id} (${formatLocalTime(pin.createdAt)}): ${pin.text}${repliedSuffix(pin)}`,
-  );
-  return ["# Pinned for you", "", ...lines].join("\n");
+  const lines: string[] = [`Pinned for you (${pins.length}):`];
+  for (const pin of pins) {
+    const head = `#${pin.id} [${pin.level}] ${formatLocalTime(pin.createdAt)} `;
+    const body = `${pin.text}${repliedSuffix(pin)}`;
+    // Only breaks the sanitizer left behind (LF) survive here; the indent is applied to the whole
+    // body, replied suffix included, so a reply note is never stranded at column zero.
+    lines.push(head + body.replaceAll("\n", `\n${CONTINUATION}`));
+  }
+  return lines.join("\n");
 }
 
 /**
  * A pin's text as the rail can draw it: a rail row is exactly one terminal line, so every line
  * break the model put in the text becomes a single space (a run of them collapses to one). The
- * rail is the only surface with a line budget; `renderList` and `renderMarkdown` keep the newlines.
+ * rail is the only surface with a line budget; `renderList` and `renderPinsText` keep the newlines.
  *
  * The character class is wider than the `\n` the sanitizer leaves behind on purpose: the rail is
  * also called with views built directly (tests, and any future caller), and one terminal line per
