@@ -196,11 +196,16 @@ async function buildSteps(
  * twice (a `finally` block plus an explicit cleanup), so the second call does nothing at all —
  * in particular no second `session_shutdown`, which would make a shutdown-counting assertion
  * depend on how often the harness happened to be disposed.
+ *
+ * A step that throws is collected rather than swallowed: teardown stays best-effort and always
+ * reaches `rmSync()`, but the collected errors come back as an `AggregateError` once the
+ * directory is gone, so a failed `session.dispose()` cannot pass as a clean teardown.
  */
 export async function disposeHarness(built: BuiltHarness): Promise<void> {
   if (disposed.has(built)) return;
   disposed.add(built);
   const { dir } = built;
+  const teardownErrors: unknown[] = [];
   try {
     // `dispose()` is only safe once nothing is in flight, so pi's own teardown awaits `abort()`
     // too; doing the same here settles a prompt that is still running before we remove under it.
@@ -218,20 +223,29 @@ export async function disposeHarness(built: BuiltHarness): Promise<void> {
     await settlePendingWrites(dir);
   } finally {
     // Both teardown steps run in `finally` so no throw from a recorder can leave the session
-    // live or the directory behind. Each is guarded because pi's own runtime does the same:
-    // a teardown that throws must not mask the reason we got here.
+    // live or the directory behind. Each is guarded so one failure does not skip the other; the
+    // errors are collected and reported after the removal rather than swallowed.
     try {
       built.ui.dispose();
-    } catch {
+    } catch (error) {
       // RecordingUi.dispose() already guards components and factories; anything left over is
-      // harness-internal and must not fail the test's teardown.
+      // recorded and reported below rather than dropped.
+      teardownErrors.push(error);
     }
     try {
       built.session.dispose();
-    } catch {
-      // Teardown is best-effort.
+    } catch (error) {
+      // Teardown is best-effort: the removal below still runs, and this is reported after it.
+      teardownErrors.push(error);
     }
     rmSync(dir, { recursive: true, force: true });
+  }
+  // Outside the `finally`: a throw inside it would overwrite the control flow of the block it
+  // protects (and lint rejects it). The teardown has run in full at this point — abort, shutdown,
+  // recorder, session and rmSync — so reporting a failed step here cannot skip any of them; and
+  // when the `try` above threw, that error propagates instead, which is the reason we got here.
+  if (teardownErrors.length > 0) {
+    throw new AggregateError(teardownErrors, "harness teardown failed");
   }
 }
 

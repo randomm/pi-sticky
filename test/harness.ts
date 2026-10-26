@@ -178,8 +178,24 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
       // Always a non-negative count, which is the contract `assertTurnSucceeded` relies on.
       const since = session.messages.length;
       errors.beginRun();
-      await session.prompt(prompt);
-      await session.waitForIdle();
+      try {
+        await session.prompt(prompt);
+        await session.waitForIdle();
+      } catch (error) {
+        // The run's extension errors are reported even when the prompt rejects, so they are
+        // neither thrown nor lost: pi records an extension error as an `ExtensionError` without
+        // failing the run, so a rejection a handler also caused still reports both. The run's
+        // errors become the thrown error through `runFailure()` — a plain `Error` naming one, an
+        // `AggregateError` with `errors` for several — and the original rejection is kept as its
+        // `cause`, so its message and stack survive. Teardown still wins: once `dispose()` has
+        // started the verdict says nothing about the prompt, so only the rejection is reported.
+        // A rejection with no errors of the run to report is rethrown unchanged.
+        const during = errors.errorsDuringRun();
+        if (tornDown || during.length === 0) throw error;
+        const failure = runFailure(during);
+        failure.cause = error;
+        throw failure;
+      }
       if (tornDown) return;
       assertTurnSucceeded(session.messages, since);
       const during = errors.errorsDuringRun();

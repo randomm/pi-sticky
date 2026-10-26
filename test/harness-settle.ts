@@ -15,9 +15,10 @@
  * and `models-store.json` behind in roughly one disposal in five (measured; sequential runs
  * never leak, which is why the suite passes). So poll the directory and require a *quiet
  * window* — no entry newer than the previous sample for `quietMs` — before returning. The quiet
- * condition is checked on the initial sample before the first sleep, so the common case (a
- * directory that has been idle since the caller got here) costs one macrotask turn and no
- * polls. The window starts at `SETTLE_QUIET_MS` and doubles each time activity is seen, up to
+ * condition is measured from the newest mtime rather than from the moment the caller arrived, so
+ * the common case (a directory that has been idle for a while) costs one poll and no longer
+ * waits out a fresh window. The window starts at `SETTLE_QUIET_MS` and doubles each time
+ * activity is seen, up to
  * `SETTLE_QUIET_MAX_MS`: a turn aborted mid-stream keeps writing on `setTimeout` delays (faux
  * schedules a chunk every few milliseconds) and must not be mistaken for quiet on a single idle
  * poll. Then hand the macrotask back once more, so a write already scheduled at that point
@@ -41,13 +42,11 @@ export async function settlePendingWrites(dir: string): Promise<void> {
   const deadline = Date.now() + SETTLE_TIMEOUT_MS;
   let quietMs = SETTLE_QUIET_MS;
   let previous = newestEntryTime(dir);
-  let quietSince = Date.now();
-  // Already quiet on the first sample: done, minus the final macrotask below that lets a write
-  // scheduled at this point land before the removal.
-  if (Date.now() - quietSince >= quietMs) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    return;
-  }
+  // Seed the quiet clock from the directory itself: an empty or absent dir (no entries, so the
+  // newest mtime reads 0) is quiet from now, while a dir holding files starts its window at the
+  // newest mtime, so a directory idle for a while breaks out on the first poll instead of
+  // waiting a full window from this instant.
+  let quietSince = previous === 0 ? Date.now() : previous;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
     const current = newestEntryTime(dir);

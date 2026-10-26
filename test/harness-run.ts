@@ -65,7 +65,7 @@ const COMPLETED_STOP_REASONS = [
 export function assertTurnSucceeded(messages: readonly unknown[], since: number): void {
   const appended = since > messages.length || since < 0 ? [] : messages.slice(since);
   const turns = appended.filter(isAssistantTurn);
-  const failed = turns.find((turn) => !incompleteTurn(turn));
+  const failed = turns.find((turn) => !completedTurn(turn));
   if (failed) {
     throw new Error(turnFailure(failed));
   }
@@ -82,7 +82,7 @@ function isAssistantTurn(message: unknown): message is AssistantTurn {
 }
 
 /** Whether the turn ran to a conclusion; a missing stopReason counts as incomplete. */
-function incompleteTurn(turn: AssistantTurn): boolean {
+function completedTurn(turn: AssistantTurn): boolean {
   return (
     turn.stopReason !== undefined &&
     (COMPLETED_STOP_REASONS as readonly string[]).includes(turn.stopReason)
