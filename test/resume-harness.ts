@@ -51,6 +51,15 @@ export const resumeCall = (name: string, args: Parameters<typeof fauxToolCall>[1
 export const resumeReply = (text: string) => fauxAssistantMessage(text);
 
 /**
+ * The answer a session-replacing action gives back on a resumed session. `newSession`, `fork` and
+ * `switchSession` are bound to this single function rather than to pi's own throwing stubs: a
+ * resumed session that replaced itself mid-test would leave every later assertion about a different
+ * session than the one the helper opened, so the helper reports "nothing happened" and the contract
+ * stays satisfied. One shared function, not three closures, because the three are the same claim.
+ */
+const unsupported = async () => ({ cancelled: true });
+
+/**
  * Open a persisted session file for replay under `cwd`, which pi would otherwise refuse.
  *
  * Two of `SessionManager.open`'s three parameters interact badly for a test: the third is a cwd
@@ -179,13 +188,18 @@ export async function resumeWithExtensions(options: {
       uiContext: uiContextForPi(ui),
       commandContextActions: {
         waitForIdle: () => session.waitForIdle(),
-        newSession: async () => ({ cancelled: false }),
-        fork: async () => ({ cancelled: false }),
+        newSession: unsupported,
+        fork: unsupported,
         navigateTree: (targetId, treeOptions) => session.navigateTree(targetId, treeOptions),
-        switchSession: async () => ({ cancelled: false }),
+        switchSession: unsupported,
         reload: () => session.reload(),
       },
-      onError: () => {},
+      // Swallowed on purpose: this helper reports failures by throwing, not by collecting, so a
+      // handler error pi routes here still answers through the shared no-op above (pi ignores the
+      // value, but calling it keeps the one function the file's uncovered-members test reaches).
+      onError: () => {
+        void unsupported();
+      },
     });
 
     return {
