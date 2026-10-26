@@ -37,6 +37,7 @@ const PROMPT_GUIDELINES: readonly string[] = [
   "Do not pin progress updates or routine status. Keep each pin to one or two sentences and say what the user should do.",
   "Update an existing pin instead of adding a new one on the same topic, and unpin it when it is resolved.",
   "The user may read a pin hours later, so make each pin understandable on its own.",
+  'When the user replies to a pin (their message starts with "Replying to pin #N"), act on the reply, then update or unpin that pin.',
 ];
 
 const Params = Type.Object({

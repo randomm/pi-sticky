@@ -117,8 +117,11 @@ export function panelPinRows(pin: ViewPin, textWidth: number, style: PanelStyle)
   const meta = `#${pin.id} ${formatLocalTime(pin.createdAt)}`;
   const marker = style.marker(pin.level, MARKER[pin.level]);
   if (textWidth <= 0) return [{ text: ` ${marker} `, meta }];
-  const text = pin.repliedAt === undefined ? pin.text : `${pin.text} ↩`;
-  const wrapped = wrapTextWithAnsi(text, textWidth);
+  // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
+  // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks
+  // like. The wrap happens *after* the mark is added, so a row cut to the width cannot lose it.
+  const body = pin.repliedAt === undefined ? pin.text : style.dim(`↩ ${pin.text}`);
+  const wrapped = wrapTextWithAnsi(body, textWidth);
   const rows = wrapped.map((line, index) => ({
     text: index === 0 ? ` ${marker} ${line}` : `   ${line}`,
     meta: index === 0 ? meta : "",

@@ -77,6 +77,7 @@ test("an enabled config registers the tool, both commands and the lifecycle hand
   expect([...stub.handlers.keys()].sort()).toEqual(
     [
       "before_agent_start",
+      "input",
       "session_compact",
       "session_shutdown",
       "session_start",
