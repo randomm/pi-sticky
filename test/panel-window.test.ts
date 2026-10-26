@@ -20,6 +20,7 @@ import {
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
+import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 const style: RenderPanelStyle = {
   header: (s) => s,
@@ -65,16 +66,23 @@ function inside(line: string): string {
 type PanelContent = ReturnType<typeof content>;
 
 /**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
- * and the builder is handed both — no caller can size one frame and draw another.
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
+ * is `TERMINAL_ROWS` tall, and the builder is handed both — no caller can size one frame and draw another.
+ * A test that wants a short *window* asks for a short terminal, which is the only thing that sizes a
+ * frame now.
  */
-function built(c: PanelContent, width: number, height: number, s: RenderPanelStyle): string[] {
-  return buildPanelLines(c, width, height, s, panelLayout(c.pins, width, height, c.selection, s));
+function built(
+  c: PanelContent,
+  width: number,
+  s: RenderPanelStyle,
+  rows = TERMINAL_ROWS,
+): string[] {
+  return buildPanelLines(c, width, s, panelLayout(c.pins, width, rows, c.selection, s));
 }
 
 test("the selected pin's row is drawn with the selected style, and only that row", () => {
   const pins = [one(1, "First"), one(2, "Second")];
-  const lines = built(content(pins, 1, true), 40, 4, style);
+  const lines = built(content(pins, 1, true), 40, style, 10);
   // The bar goes over the inner columns only: the gutters of the selected row are drawn by the frame,
   // not by the bar, so the row opens with the gutter and only then the highlight.
   expect(lines.some((line) => line.includes("[ • Second") && inside(line).startsWith(" ["))).toBe(
@@ -85,21 +93,23 @@ test("the selected pin's row is drawn with the selected style, and only that row
 
 test("an unfocused panel highlights nothing", () => {
   const pins = [one(1, "First"), one(2, "Second")];
-  const lines = built(content(pins, 1, false), 40, 4, style);
+  const lines = built(content(pins, 1, false), 40, style, 10);
   expect(lines.some((line) => line.includes("[") && line.includes("]"))).toBe(false);
 });
 
 test("a negative selection draws no bar", () => {
-  const lines = built(content([one(1, "First")], -1, true), 40, 4, style);
+  const lines = built(content([one(1, "First")], -1, true), 40, style, 10);
   expect(lines.some((line) => line.includes("[") && line.includes("]"))).toBe(false);
 });
 
 test("scrolling follows the selected pin and never moves the header or the hint", () => {
   const pins = Array.from({ length: 6 }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
-  const lines = built(content(pins, 5, true), HINT_WIDTH, 4, style);
+  // Eight terminal rows is a six-row window: the two borders are not content rows, so the header and the
+  // hint stay where they are and only the pins between them move.
+  const lines = built(content(pins, 5, true), HINT_WIDTH, style, 8);
   // The header is the top border and the hint the bottom one, so a scrolled window can move neither.
   expect(lines[0]).toContain("📌 Pinned for you (6)");
-  expect(lines[3]).toContain(HINT);
+  expect(lines.at(-1)).toContain(HINT);
   expect(lines.some((line) => line.includes("Pin 6"))).toBe(true);
   // Pin 1 has scrolled out of the window, which is what an offset is for.
   expect(lines.some((line) => line.includes("Pin 1 "))).toBe(false);
@@ -115,12 +125,12 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
   const inner = width - FRAME_COLUMNS;
   const all = panelAllRows(pins, inner - META_RESERVE, plainStyle);
   const wrapped = panelPinRows(pins[1] as ViewPin, inner - META_RESERVE, plainStyle).length;
-  const lines = built(content(pins, 1, false), width, 4, style);
-  // The second pin owns `wrapped` rows, so a two-row window cannot show the whole of it — and what it
+  const lines = built(content(pins, 1, false), width, style, 6);
+  // The second pin owns `wrapped` rows, so a four-row window cannot show the whole of it — and what it
   // does show is the *start* of that pin, not a continuation row dropped in mid-entry.
   expect(wrapped).toBeGreaterThan(2);
   expect(all.length).toBe(1 + wrapped);
-  const window = lines.slice(1, 3);
+  const window = lines.slice(1, 5);
   expect(window.some((line) => line.includes("b".repeat(20)))).toBe(true);
   // No row of the window is an earlier pin's, and none is a mid-entry tail (those are indented three,
   // under the text column, with no marker and no id).
@@ -132,24 +142,25 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
 test("the window never scrolls past the last pin, and a bar past the end draws no bar", () => {
   const six = Array.from({ length: 6 }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
   const width = 44;
-  // A three-row window over six pins: content rows are the height less the two borders, so five rows
-  // draw three pins. The window stops at the end of the table whatever the selection, so the last pin is
-  // always on screen and the blank rows a shorter list would leave never appear past the end of a longer
-  // one. A negative selection has no bar and starts at the top, which is the row that always exists.
+  // A four-row window over six pins: content rows are the height less the two borders, so a ten-row
+  // terminal draws four pins. The window stops at the end of the table whatever the selection, so the
+  // last pin is always on screen and the blank rows a shorter list would leave never appear past the end
+  // of a longer one. A negative selection has no bar and starts at the top, which is the row that always
+  // exists.
   for (const selection of [3, 5, 99]) {
-    const lines = built(content(six, selection, true), width, 5, style);
+    const lines = built(content(six, selection, true), width, style, 10);
     expect(lines.some((line) => line.includes("Pin 6"))).toBe(true);
     expect(lines.some((line) => inside(line).trim() === "")).toBe(false);
     expectUniformWidth(lines, width);
   }
-  // From the top the window shows the first three pins and, with a bar drawn, the last pin has scrolled
+  // From the top the window shows the first four pins and, with a bar drawn, the last pin has scrolled
   // away — which is the window following the selection, not the frame dropping rows.
-  const first = built(content(six, 0, true), width, 5, style);
+  const first = built(content(six, 0, true), width, style, 10);
   expect(first.some((line) => line.includes("Pin 1"))).toBe(true);
   expect(first.some((line) => line.includes("Pin 6"))).toBe(false);
-  const top = built(content(six, -1, true), width, 5, style);
+  const top = built(content(six, -1, true), width, style, 10);
   expect(top.some((line) => line.includes("Pin 1"))).toBe(true);
   // A bar on a pin that is not there highlights nothing at all.
-  const past = built(content(six, 99, true), width, 5, style);
+  const past = built(content(six, 99, true), width, style, 10);
   expect(past.filter((line) => line.includes("]")).length).toBe(0);
 });

@@ -4,7 +4,18 @@
  * Shared by `panel-lines.test.ts` (the builder) and `integration-panel.test.ts` (a whole session),
  * which are the two places that can put them on screen. The sanitizer is what removes them from a
  * pin; these files prove the panel's own wrapping, padding and theming do not put any back.
+ *
+ * The file also states the terminal the panel tests draw against. A frame's height comes from
+ * `panelMaxRows`, which halves the terminal it is given, so a builder test names that terminal and
+ * never passes a frame's own height as one: the two are different quantities and an earlier shape let
+ * a test conflate them.
  */
+
+/**
+ * The terminal rows a panel test sizes a frame against: an explicit terminal, not the height of the
+ * frame it is drawing. A frame drawn at this height is `TERMINAL_ROWS / 2` rows tall.
+ */
+export const TERMINAL_ROWS = 40;
 
 /** The escapes pi-tui itself recognises, so a pin that survives them would be parsed as input. */
 export const ESC = String.fromCharCode(0x1b);

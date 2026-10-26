@@ -7,8 +7,8 @@
  *
  * Three siblings cover what would otherwise crowd this file: `panel-lines-hostile.test.ts` draws the same
  * frame with hostile pins and a theme that smuggles escape sequences in, `panel-rows.test.ts` covers the
- * row table the window is cut from, and `panel-frame-theme.test.ts` pins which theme token the frame asks
- * for.
+ * row table the window is cut from, `panel-lines-height.test.ts` pins that the builder draws exactly the
+ * height the layout counted, and `panel-frame-theme.test.ts` pins which theme token the frame asks for.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -18,7 +18,6 @@ import {
   PANEL_MIN_FRAME_COLUMNS,
   PANEL_MIN_FRAME_ROWS,
   buildPanelLines,
-  panelAllRows,
   panelContentRows,
   panelLayout,
   panelPinRows,
@@ -26,10 +25,9 @@ import {
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin } from "./fixtures.ts";
-import { offenders } from "./panel-hostile.ts";
+import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
-/** Identity colours, so a drawn line can be compared to what was asked for; also the row builders'
- * shape when a test does not care about colour. `colour()` adds bytes, to exercise the styled path. */
+/** Identity colours, so a drawn line can be compared to what was asked for. */
 const style: RenderPanelStyle = {
   header: (s) => s,
   marker: (_level, s) => s,
@@ -37,22 +35,11 @@ const style: RenderPanelStyle = {
   selected: (s) => `[${s}]`,
   border: (s) => s,
   // What a real theme does to a border glyph: colour it, which costs no columns. A style that put
-  // *visible* bytes around one would be asking for a frame wider than the overlay, so the panel's width
-  // policy is allowed to cut it — `colour()` spells the coloured form for the tests that need to see one.
+  // *visible* bytes around one would be asking for a frame wider than the overlay, which the builder
+  // refuses outright — `panel-frame-theme.test.ts` draws that case.
   borderFocused: (s) => s,
 };
 const plainStyle: RenderPanelStyle = style;
-const colour = (token: string): RenderPanelStyle => ({
-  header: (s: string) => `<h:${token}>${s}`,
-  marker: (_level: unknown, s: string) => `<m:${token}>${s}`,
-  dim: (s: string) => `<d:${token}>${s}`,
-  selected: (s: string) => `<s:${token}>${s}`,
-  // SGR-shaped, because that is what a theme does: colour a glyph and add no columns. A wrapper that put
-  // visible characters around a border glyph would be asking for a frame wider than the overlay, and the
-  // builder's answer to that is the one every drawn line gets — it is cut.
-  border: (s: string) => `\u{1b}[2m${s}`,
-  borderFocused: (s: string) => `\u{1b}[1m${s}`,
-});
 
 const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin => ({
   ...pin(id, text, "info", extra),
@@ -65,7 +52,7 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
 });
 
-/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
+/** What the builder draws: the ordered pins, the selected pin index, and whether the panel has focus. */
 type PanelContent = ReturnType<typeof content>;
 
 /** The frame's own width: the gutters and their spaces, which the builder takes off every drawn row. */
@@ -77,29 +64,26 @@ const RULE = "─";
 /** The two columns the corners own. */
 const CORNER_WIDTH = 2;
 
-/** The id/time tail the row builder reserves before the text column. */
-const META_RESERVE = 10;
-
-/** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
-const MIN_FRAME_WIDTH = 30;
-const MIN_FRAME_HEIGHT = 3;
+/** The rows a frame gets in `TERMINAL_ROWS`: half the terminal, which is the panel's own ceiling. */
+const FRAME_ROWS = TERMINAL_ROWS / 2;
 
 /** Every line the same visible width, or the panel would composite over the chat behind it. */
 function expectUniformWidth(lines: string[], width: number): void {
   for (const line of lines) expect(visibleWidth(line)).toBe(width);
 }
 
-/** A frame the given size, with one pin, in whichever focus state the caller asked for. */
-function frameOf(width: number, height: number, focused = false): string[] {
-  return built(content([one(1, "Decide X")], 0, focused), width, height, style);
+/** A frame the given width, with one pin, in whichever focus state the caller asked for. */
+function frameOf(width: number, focused = false): string[] {
+  return built(content([one(1, "Decide X")], 0, focused), width, style);
 }
 
 /**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
- * and the builder is handed both — no caller can size one frame and draw another.
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
+ * is `TERMINAL_ROWS` tall, and the builder is handed both — a caller cannot size one frame, draw another,
+ * or draw a number of rows that disagrees with the table it was handed beside them.
  */
-function built(c: PanelContent, width: number, height: number, s: RenderPanelStyle): string[] {
-  return buildPanelLines(c, width, height, s, panelLayout(c.pins, width, height, c.selection, s));
+function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
+  return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
 }
 
 /** A line's columns with the frame's glyphs taken back off, so row shapes read plainly. */
@@ -117,7 +101,7 @@ const HINT_WIDTH = 60;
 
 // A frame in which the last pin was dismissed leaves nothing the user asked to see.
 test("an empty view draws no rows, so the frame has nothing to clear", () => {
-  expect(built(content([]), 40, 10, style)).toEqual([]);
+  expect(built(content([]), 40, style)).toEqual([]);
 });
 
 test("a focused panel puts the hint in the bottom border and costs the pins no row", () => {
@@ -125,43 +109,44 @@ test("a focused panel puts the hint in the bottom border and costs the pins no r
   // The *same* content drawn both ways: the bar is what differs, and it is what the two frames are
   // compared on once the highlight is taken off.
   const pins = [one(1, "Decide X")];
-  const rows = (focused: boolean) => built(content(pins, -1, focused), HINT_WIDTH, 10, style);
+  const rows = (focused: boolean) => built(content(pins, -1, focused), HINT_WIDTH, style);
   const focused = rows(true);
   const unfocused = rows(false);
   // The hint is a border row, not a content row: everything the unfocused frame draws appears in the
   // focused one, and the only extra line is the bottom border carrying the hint.
-  expect(drawn(focused)).toEqual(drawn(unfocused).concat(focused[9] as string));
-  expect(focused).toHaveLength(10);
-  expect(focused[9]).toContain(HINT);
-  expect(focused[9]?.startsWith("╰")).toBe(true);
-  expect(focused[9]?.endsWith("╯")).toBe(true);
+  expect(focused.length).toBe(unfocused.length);
+  expect(drawn(focused)).toEqual(drawn(unfocused).concat(focused.at(-1) as string));
+  expect(focused).toHaveLength(FRAME_ROWS);
+  expect(focused.at(-1)).toContain(HINT);
+  expect(focused.at(-1)?.startsWith("╰")).toBe(true);
+  expect(focused.at(-1)?.endsWith("╯")).toBe(true);
   expectUniformWidth(focused, HINT_WIDTH);
 });
 
 test("an unfocused panel draws no hint, and its bottom border is all rule", () => {
-  const lines = frameOf(40, 3);
+  const lines = built(content([one(1, "x")]), 40, style);
   expect(lines.some((line) => line.includes(HINT))).toBe(false);
-  expect(lines[2]).toBe(`╰${"─".repeat(38)}╯`);
+  expect(lines.at(-1)).toBe(`╰${"─".repeat(38)}╯`);
 });
 
 test("the frame closes at every size the builder draws at, with the header in the top rule", () => {
   for (const width of [30, 33, 60, 100]) {
     for (const focused of [false, true]) {
-      const lines = frameOf(width, 8, focused);
-      expect(lines).toHaveLength(8);
+      const lines = frameOf(width, focused);
+      const last = lines.length - 1;
       expectUniformWidth(lines, width);
       // The rule is what fills the border beside the header: padding there would leave a gap the chat
       // shows through, so a border always reads as corners, label, rule, corners.
       expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
       expect(lines[0]?.endsWith(`${RULE}╮`)).toBe(true);
-      expect(lines[7]?.startsWith("╰")).toBe(true);
+      expect(lines[last]?.startsWith("╰")).toBe(true);
       // The rule is what closes a border, and no border ever ends in a blank: unfocused the bottom border
       // is nothing but rule, and focused it ends in the hint — which the rule follows when any of the
       // border is left for it, and which reaches the corner itself when the hint was cut to its room.
-      expect(lines[7]?.endsWith(focused ? "╯" : `${RULE}╯`)).toBe(true);
+      expect(lines[last]?.endsWith(focused ? "╯" : `${RULE}╯`)).toBe(true);
       expect(lines[0]?.includes(RULE)).toBe(true);
       expect(lines[0]).toContain("📌 Pinned for you (1)");
-      for (const row of lines.slice(1, 7)) {
+      for (const row of lines.slice(1, last)) {
         // Every content row is gutter, one space, content fitted to the inner width, one space, gutter.
         expect(row.startsWith("│ ")).toBe(true);
         expect(row.endsWith(" │")).toBe(true);
@@ -173,16 +158,19 @@ test("the frame closes at every size the builder draws at, with the header in th
 
 test("a pin row is one space inside each gutter, at the inner width", () => {
   const width = 60;
-  const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), width, 3, style);
+  const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), width, style);
   // Byte-exact: content fitted to `width - 4` and padded out between the gutters, with the rule filling
   // the top and bottom borders. Unfocused, so nothing is highlighted.
   expect(lines[1]).toBe(`│ ${` • Decide X #1 ${localTime(NOW)}`.padEnd(width - FRAME_COLUMNS)} │`);
   expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
-  expect(lines[2]).toBe(`╰${RULE.repeat(width - CORNER_WIDTH)}╯`);
+  // The frame pads out to its budget, so the row after the pin is a blank row of the panel — the gutters
+  // drawn across it, not a short line the chat could show through.
+  expect(lines[2]).toBe(`│${" ".repeat(width - CORNER_WIDTH)}│`);
+  expect(lines.at(-1)).toBe(`╰${RULE.repeat(width - CORNER_WIDTH)}╯`);
 });
 
 test("the header names the count and the pin row names the id and the local time", () => {
-  const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), 40, 3, style);
+  const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), 40, style);
   expect(lines[0]).toContain("📌 Pinned for you (1)");
   expect(lines[1]).toContain("#1");
   expect(lines[1]).toContain(localTime(NOW));
@@ -198,7 +186,7 @@ test("the level marker is the rail's: ! for warning, ? for action, a bullet for 
   // A style whose bar is a character that appears nowhere else, so a row can be read for its marker
   // without the selection highlight or an id being mistaken for one.
   const marks: RenderPanelStyle = { ...style, selected: (s) => s };
-  const lines = built(content(pins), 40, 5, marks);
+  const lines = built(content(pins), 40, marks);
   expect(inside(lines[1] as string)).toContain("!");
   expect(inside(lines[2] as string)).toContain("?");
   expect(inside(lines[3] as string)).toContain("•");
@@ -207,11 +195,11 @@ test("the level marker is the rail's: ! for warning, ? for action, a bullet for 
 test("CJK and emoji text is measured, not counted: each row still fills the width inside the frame", () => {
   const pins = [one(1, "决定してください 🎯 続ける"), one(2, "日本語のテキスト")];
   for (const width of [33, 40, 60]) {
-    const lines = built(content(pins, 0, true), width, 8, style);
-    expect(lines).toHaveLength(8);
+    const lines = built(content(pins, 0, true), width, style);
+    const last = lines.length - 1;
     expectUniformWidth(lines, width);
     // The wrapped rows sit between the gutters: nothing of the pin reaches a border column.
-    for (const row of lines.slice(1, 7)) {
+    for (const row of lines.slice(1, last)) {
       expect(row.startsWith("│ ")).toBe(true);
       expect(row.endsWith(" │")).toBe(true);
     }
@@ -219,13 +207,13 @@ test("CJK and emoji text is measured, not counted: each row still fills the widt
 });
 
 test("a 33-column panel — what 33% of a 100-column terminal resolves to — still fits its rows", () => {
-  const lines = built(content([one(1, "A pin with a good deal of text in it")]), 33, 6, style);
+  const lines = built(content([one(1, "A pin with a good deal of text in it")]), 33, style);
   expectUniformWidth(lines, 33);
   expect(lines[0]).toContain("📌 Pinned for you (1)");
 });
 
 test("a word wider than the frame is cut with an ellipsis, not drawn past the gutter", () => {
-  const lines = built(content([one(1, "supercalifragilisticexpialidocious")]), 30, 4, style);
+  const lines = built(content([one(1, "supercalifragilisticexpialidocious")]), 30, style);
   expectUniformWidth(lines, 30);
   expect(
     inside(lines[1] as string)
@@ -245,29 +233,35 @@ test("a text that carries a newline becomes two rows under the text column", () 
 });
 
 test("a replied pin is marked in its row", () => {
-  const lines = built(content([one(1, "Decide X", { repliedAt: NOW })]), 40, 3, style);
+  const lines = built(content([one(1, "Decide X", { repliedAt: NOW })]), 40, style);
   expect(lines[1]).toContain("↩");
 });
 
-test("a non-positive width or height draws nothing", () => {
-  expect(built(content([one(1, "x")]), 0, 5, style)).toEqual([]);
-  expect(built(content([one(1, "x")]), 40, 0, style)).toEqual([]);
+test("a non-positive width draws nothing", () => {
+  expect(built(content([one(1, "x")]), 0, style)).toEqual([]);
 });
 
 test("a height below the frame's floor draws nothing, because one border would have nowhere to be", () => {
-  // The layout pass sizes the frame against the *terminal*, so a height below `PANEL_MIN_FRAME_ROWS`
-  // can only reach the builder from a caller that asked for an open box — which it refuses, whatever
-  // row table it was handed alongside it.
-  for (const height of [1, 2]) {
-    const pins = [one(1, "x")];
+  // The height now comes out of the layout, which counts it against the *terminal*, so a frame below
+  // `PANEL_MIN_FRAME_ROWS` can only be the terminal's doing: a two-row terminal halves to one row and
+  // the builder refuses to draw the open box that comes out of it, whatever row table it was handed
+  // beside the height.
+  const pins = [one(1, "x")];
+  for (const terminalRows of [1, 2]) {
     expect(
       buildPanelLines(
         content(pins, 0, false),
         40,
-        height,
         style,
-        panelLayout(pins, 40, 40, 0, style),
+        panelLayout(pins, 40, terminalRows, 0, style),
       ),
+    ).toEqual([]);
+  }
+  // ...and the same holds for a height a caller hands the geometry check directly, because a row table
+  // cannot rescue a size the frame cannot close at.
+  for (const height of [1, 2]) {
+    expect(
+      buildPanelLines(content(pins, 0, false), 40, style, { owned: [], start: -1, height }),
     ).toEqual([]);
   }
 });
@@ -277,6 +271,6 @@ test("the frame's floor is the overlay's own minWidth, and three rows", () => {
   // what a closable frame is, and a frame the builder would refuse is one the overlay never reports.
   expect(PANEL_MIN_FRAME_COLUMNS).toBe(30);
   expect(PANEL_MIN_FRAME_ROWS).toBe(3);
-  expect(frameOf(PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS)).toHaveLength(3);
-  expect(frameOf(PANEL_MIN_FRAME_COLUMNS - 1, PANEL_MIN_FRAME_ROWS)).toEqual([]);
+  expect(frameOf(PANEL_MIN_FRAME_COLUMNS)).toHaveLength(FRAME_ROWS);
+  expect(frameOf(PANEL_MIN_FRAME_COLUMNS - 1)).toEqual([]);
 });

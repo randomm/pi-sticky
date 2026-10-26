@@ -27,12 +27,15 @@ function component(pins: ViewPin[], tui?: TUI) {
 
 test("a height comes from the terminal and is capped, so a very tall terminal is not laid out whole", () => {
   const tall = { requestRender: () => {}, terminal: { columns: 120, rows: 400 } } as unknown as TUI;
-  // The frame is content-height, not ceiling-height: two border rows over the pin's own rows. A tall
-  // terminal is no reason to lay out 200 rows the overlay clips, and a TUI that cannot be asked answers
-  // with the fallback row count halved rather than zero, so a frame is still a frame.
-  expect(component(pins("One"), tall).c.render(40)).toHaveLength(3);
-  expect(component(pins("One"), {} as unknown as TUI).c.render(40)).toHaveLength(3);
-  // The ceiling is what a long list is cut to, and it is half the terminal however tall it is.
+  // The frame fills the height the terminal allows — half of it, which is the overlay's own `maxHeight`
+  // — and a pin list shorter than that is padded with blank rows rather than left out to the chat.
+  // A tall terminal is no reason to lay out 200 rows the overlay clips, and a TUI that cannot be asked
+  // answers with the fallback row count halved rather than zero, so a frame is still a frame.
+  expect(component(pins("One"), tall).c.render(40)).toHaveLength(200);
+  expect(component(pins("One"), {} as unknown as TUI).c.render(40)).toHaveLength(12);
+  // The ceiling is what a long list is cut to, and it is half the terminal however tall it is: 200 rows
+  // for a 400-row one, and the fallback halved for a TUI with no rows to ask. The old `Math.max(3, …)`
+  // floor in the ceiling is gone, so a frame is never taller than the terminal that holds it.
   const many = pins(...Array.from({ length: 300 }, (_unused, i) => `Pin ${i + 1}`));
   expect(component(many, tall).c.render(40)).toHaveLength(200);
   expect(component(many, {} as unknown as TUI).c.render(40)).toHaveLength(12);

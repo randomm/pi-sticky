@@ -1,16 +1,16 @@
 /**
  * The lines of the right-hand pins panel, as a pure function. Nothing here knows about a session,
- * a theme instance or an overlay: it is handed the ordered pins, the width and height the component
- * resolved for the overlay, which pin is selected and whether the panel holds focus, and it returns
- * exactly `height` lines, each of exactly `width` visible columns (operator decision *Margin*: the
- * panel is flush right, so a short line has to be padded or the content behind it shows through).
+ * a theme instance or an overlay: it is handed the ordered pins, the width the component resolved for
+ * the overlay, the row table `panelLayout` built for that width, which pin is selected and whether the
+ * panel holds focus, and it returns exactly `layout.height` lines, each of exactly `width` visible
+ * columns (operator decision *Margin*: the panel is flush right, so a short line has to be padded or the
+ * content behind it shows through).
  *
- * Three shapes come out of it, in this order: the top border, which *carries* the header
- * `📌 Pinned for you (n)` in its rule; the window of pin rows, each drawn between the two gutters;
- * and the bottom border, which carries the keys hint in its rule while the panel holds focus. The
- * content budget is `height - 2` whatever the focus — the hint owns a border row, never a content row
- * — and the scroll offset only ever moves that window, so neither the header nor the hint can be
- * scrolled away (operator decision *Height*).
+ * The height is *not* a parameter. `panelLayout` counts the frame's rows and the builder draws them, so
+ * the box is as tall as the rows it draws and no caller can size one frame and draw another; the content
+ * budget is `layout.height - BORDER_ROWS` whatever the focus — the hint owns a border row, never a
+ * content row — and the scroll offset only ever moves that window, so neither the header nor the hint can
+ * be scrolled away (operator decision *Height*).
  *
  * Below `PANEL_MIN_FRAME_COLUMNS` columns or `PANEL_MIN_FRAME_ROWS` rows the panel draws nothing: an
  * inner width of less than one column, or a height with no room for both borders, cannot be a *closed*
@@ -33,10 +33,10 @@ import {
   FRAME_BOTTOM_RIGHT,
   FRAME_TOP_LEFT,
   FRAME_TOP_RIGHT,
-  GUTTER,
   INJECTED_RESET,
   RULE,
   blankRow,
+  frameGlyphs,
   glyph,
   gutter,
   padPlain,
@@ -83,6 +83,18 @@ function isPanelFrameSize(width: number, height: number): boolean {
   return (
     isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
   );
+}
+
+/**
+ * Whether every glyph of one frame measures a single column through the theme.
+ *
+ * Six glyphs make the box — four corners, the gutter on each side and the rule — and each of them is
+ * drawn at a column the panel promised to fill, so a theme that wraps one in *visible* bytes is asking
+ * for a frame wider than the overlay was given, whichever of the six it wrapped. Measuring only some of
+ * them would leave the rest to be padded out over the chat behind a flush-right panel.
+ */
+function frameIsOneColumn(frame: (text: string) => string): boolean {
+  return frameGlyphs().every((glyphText) => visibleWidth(frame(glyphText)) === 1);
 }
 
 /** What the builder draws. `pins` is already in ranked order — the panel never re-sorts. */
@@ -188,20 +200,19 @@ function fitLabel(label: string, room: number): string {
  *
  * `layout` is the row table `panelLayout` built for the width `width` — the same table the frame's
  * height was counted from, so the box is as tall as the rows it draws and no pin is wrapped twice. The
- * builder does not build one of its own: it draws the rows and the height the caller sized together, and
- * `panelLayout` is the one place a pin is wrapped for a frame.
+ * builder draws exactly `layout.height` lines and builds no table of its own: it owns the drawing, never
+ * the sizing, so a caller cannot ask for one frame and draw another.
  */
 export function buildPanelLines(
   content: PanelContent,
   width: number,
-  height: number,
   style: PanelStyle,
   layout: PanelLayout,
 ): string[] {
   // A size the panel cannot promise about draws nothing at all: the whole point of this function is
   // that every line measures exactly `width` columns, and padding to 30.5 — or drawing a box whose two
   // border rows have eaten the height — leaves the chat showing through an open frame.
-  if (!isPanelFrameSize(width, height)) return [];
+  if (!isPanelFrameSize(width, layout.height)) return [];
   // Nothing pinned is no rows at all, not a titled box asserting it is empty: the overlay is opened
   // for the pins, and a frame in which the last one was dismissed should show the prompt around it
   // rather than a header that repeats the absence. The check lives here, with the pins in front of it,
@@ -210,10 +221,13 @@ export function buildPanelLines(
 
   const frame = content.focused ? style.borderFocused : style.border;
   // A border the theme colours with *visible* bytes — a wrapper rather than a colour — asks for a frame
-  // wider than the overlay was given. That is not a frame the panel can promise, so the answer is the
-  // same one a fractional size gets: nothing, and the rail keeps the pins. A real theme's `fg` adds only
-  // SGR bytes, which `visibleWidth` does not count, so this never fires on pi's own colours.
-  if (visibleWidth(frame(GUTTER)) !== 1 || visibleWidth(frame(RULE)) !== 1) return [];
+  // wider than the overlay was given, and that is true of any of the six glyphs the frame draws: four
+  // corners, the gutter on each side and the rule between them. A corner owns the column the chat behind
+  // the panel ends at, so a wrapper around one is the same over-wide frame as a wrapper around a gutter.
+  // That is not a frame the panel can promise, so the answer is the same one a fractional size gets:
+  // nothing, and the rail keeps the pins. A real theme's `fg` adds only SGR bytes, which `visibleWidth`
+  // does not count, so this never fires on pi's own colours.
+  if (!frameIsOneColumn(frame)) return [];
   // The frame's own glyphs go through the same line policy as every other drawn string: the gutters and
   // corners must measure one column whatever the theme, or a colouring that pi-tui counts as zero-width
   // would leave a row short and the chat showing through it.
@@ -222,7 +236,7 @@ export function buildPanelLines(
   // for the whole frame: the offset and the selected pin's own start row both come out of the one table
   // the caller sized the frame with.
   const inner = width - GUTTER_COLUMNS;
-  const budget = panelContentRows(height);
+  const budget = panelContentRows(layout.height);
   const owned = layout.owned;
   const offset = panelWindowOffset(
     budget,

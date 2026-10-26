@@ -27,7 +27,7 @@ import type { PanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, NOW_TIME, pin } from "./fixtures.ts";
-import { HOSTILE, offenders } from "./panel-hostile.ts";
+import { HOSTILE, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
 
 const replied = (id: number, text: string): ViewPin => ({
   ...pin(id, text, "info", { createdAt: NOW }),
@@ -145,11 +145,10 @@ describe("a replied panel row", () => {
       const lines = buildPanelLines(
         { pins, selection: 0, focused: false },
         width,
-        5,
         plainPanel,
-        panelLayout(pins, width, 5, 0, plainPanel),
+        panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
       );
-      expect(lines).toHaveLength(5);
+      expect(lines).toHaveLength(TERMINAL_ROWS / 2);
       expectUniformWidth(lines, width);
       for (const line of lines) {
         expect(offenders(line)).toEqual([]);
@@ -163,9 +162,8 @@ describe("a replied panel row", () => {
       const lines = buildPanelLines(
         { pins, selection: 0, focused: true },
         width,
-        5,
         plainPanel,
-        panelLayout(pins, width, 5, 0, plainPanel),
+        panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
       );
       expectUniformWidth(lines, width);
       const row = lines[1] ?? "";
@@ -182,9 +180,8 @@ describe("a replied panel row", () => {
         const lines = buildPanelLines(
           { pins, selection: 0, focused },
           width,
-          6,
           plainPanel,
-          panelLayout(pins, width, 6, 0, plainPanel),
+          panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
         );
         expectUniformWidth(lines, width);
         for (const line of lines) expect(offenders(line)).toEqual([]);

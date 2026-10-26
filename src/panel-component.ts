@@ -220,7 +220,7 @@ export class PanelComponent implements Component {
       this.#selection,
       this.#styleOf(),
     );
-    const lines = buildPanelLines(content, width, layout.height, this.#styleOf(), layout);
+    const lines = buildPanelLines(content, width, this.#styleOf(), layout);
     this.#frame = { lines, width, pins, selection: this.#selection, focused: this.#focused };
     return lines;
   }

@@ -12,6 +12,7 @@ import { buildPanelLines, panelAllRows, panelLayout, panelPinRows } from "../src
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin, view } from "./fixtures.ts";
+import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 const plainStyle: RenderPanelStyle = {
   header: (s) => s,
@@ -54,12 +55,12 @@ test("rows are built for every pin in order and no pin is skipped", () => {
 });
 
 test("the view a test builds with fixtures.ts draws like any other", () => {
+  const pins = view([pin(1, "Decide X", "action")]).pins;
   const lines = buildPanelLines(
-    content(view([pin(1, "Decide X", "action")]).pins, 0, true),
+    content(pins, 0, true),
     40,
-    3,
     plainStyle,
-    panelLayout(view([pin(1, "Decide X", "action")]).pins, 40, 3, 0, plainStyle),
+    panelLayout(pins, 40, TERMINAL_ROWS, 0, plainStyle),
   );
   expect(lines[0]).toContain("📌 Pinned for you (1)");
   expect(lines[1]).toContain("?");

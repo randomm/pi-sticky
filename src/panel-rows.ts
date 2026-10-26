@@ -16,7 +16,7 @@
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
+import { BORDER_ROWS, panelFrameRows, panelMaxRows } from "./panel-height.ts";
 
 export { BORDER_ROWS } from "./panel-height.ts";
 export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
@@ -166,6 +166,10 @@ export interface PanelLayout {
  * `owned` and the terminal the caller was given (`tui.terminal.rows`, or `undefined` when none can be
  * asked, which `panelMaxRows` answers with its fallback). `buildPanelLines` draws the `height` it is
  * handed and builds no table of its own, so a caller cannot ask for one frame and draw another.
+ *
+ * The height is the frame's own budget, not `owned.length`: the builder pads a frame shorter than its
+ * budget with blank rows and refuses an open one, so a frame is as tall as the terminal's half and the
+ * ceiling is what stops a list of a thousand pins from outgrowing it (`panelFrameRows`).
  */
 export function panelLayout(
   pins: readonly ViewPin[],
@@ -176,9 +180,13 @@ export function panelLayout(
 ): PanelLayout {
   const textWidth = Math.max(1, frameWidth - GUTTER_COLUMNS - META_RESERVE);
   const owned = panelRowOwners(pins, textWidth, style);
+  // The frame is as tall as the terminal's half, whatever the pin count: `panelFrameRows` cuts that
+  // budget to the ceiling, and a shorter list than the budget is padded with blank rows by the builder
+  // (a pin count above the ceiling is what the window scrolls for).
+  const budget = panelContentRows(panelMaxRows(terminalRows));
   return {
     owned,
     start: panelRowStartOf(owned, selection),
-    height: panelFrameRows(owned.length, terminalRows),
+    height: panelFrameRows(Math.max(owned.length, budget), terminalRows),
   };
 }

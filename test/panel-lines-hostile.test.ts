@@ -17,7 +17,7 @@ import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
-import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
+import { BEL, ESC, HOSTILE, ST, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
 
 const plain: RenderPanelStyle = {
   header: (s) => s,
@@ -43,11 +43,11 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
 type PanelContent = ReturnType<typeof content>;
 
 /**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
- * and the builder is handed both — no caller can size one frame and draw another.
+ * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
+ * is `TERMINAL_ROWS` tall, and the builder is handed both — no caller can size one frame and draw another.
  */
-function built(c: PanelContent, width: number, height: number, s: RenderPanelStyle): string[] {
-  return buildPanelLines(c, width, height, s, panelLayout(c.pins, width, height, c.selection, s));
+function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
+  return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
 }
 
 /** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
@@ -72,18 +72,21 @@ test("a themed panel draws through all six colours", () => {
     border: (s: string) => `\u{1b}[2m${s}`,
     borderFocused: (s: string) => `\u{1b}[1m${s}`,
   };
-  const focused = built(content([one(1, "Decide X")], 0, true), 40, 3, painted);
-  const resting = built(content([one(1, "Decide X")], 0, false), 40, 3, painted);
+  const focused = built(content([one(1, "Decide X")], 0, true), 40, painted);
+  const resting = built(content([one(1, "Decide X")], 0, false), 40, painted);
   expect(focused[0]).toContain("<h:t>");
   expect(focused[1]).toContain("<m:t>");
   expect(focused[1]).toContain("<s:t>");
+  // The dim is the id/time tail of the pin row, which is the row that carries the marker: the frame pads
+  // out to the terminal's half now, so the pin is found by what it draws rather than by a row number a
+  // blank row of padding could shift.
+  expect(focused.find((line) => line.includes("<m:t>"))).toContain("<d:t>");
   // The frame is drawn through the style's `border`/`borderFocused` members, which is what lets the theme
   // own the frame's colour: the recording-theme test in `panel-lines.test.ts` is what pins which token is
   // asked for, and the uniform-width sweeps what proves the bytes a theme adds cost no columns. The
   // escape bytes themselves are refused on every drawn line — border glyphs included.
   expect(focused.join("\n")).toContain("╰");
   expect(focused.join("\n")).toContain("╭");
-  expect(focused[2]).toContain("<d:t>");
   expect(resting.join("\n")).toContain("│");
 });
 
@@ -94,7 +97,7 @@ test("a coloured header over a narrow frame is cut without losing the theme's ow
     ...plain,
     header: (s: string) => `<h:k>${s}`,
   };
-  const lines = built(content([one(1, "x")]), MIN_FRAME_WIDTH, 4, painted);
+  const lines = built(content([one(1, "x")]), MIN_FRAME_WIDTH, painted);
   expectUniformWidth(lines, MIN_FRAME_WIDTH);
   expect(lines[0]?.includes("<h:k>")).toBe(true);
 });
@@ -112,7 +115,9 @@ test("a theme that emits a hyperlink paints no escape bytes onto the panel, at a
   };
   for (const focused of [false, true]) {
     for (const width of [40, 60]) {
-      const lines = built(content([one(1, "Decide X")], 0, focused), width, 6, hostileStyle);
+      const lines = built(content([one(1, "Decide X")], 0, focused), width, hostileStyle);
+      // The frame pads out to the terminal's half, so the sweep has rows to check beyond the one pin.
+      expect(lines.length).toBe(TERMINAL_ROWS / 2);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }
@@ -128,10 +133,9 @@ test("hostile text drawn at a width that forces a cut carries no escape, control
       const lines = built(
         content([one(1, cleanPinText(HOSTILE), { level: "warning" })], 0, focused),
         width,
-        6,
         plain,
       );
-      expect(lines).toHaveLength(6);
+      expect(lines.length).toBe(TERMINAL_ROWS / 2);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }
@@ -146,10 +150,9 @@ test("every drawn line measures exactly the width from the frame's floor to 120 
       const lines = built(
         content([one(1, cleanPinText(HOSTILE)), one(2, "日本語 🎯 tail")], 1, focused),
         width,
-        7,
         plain,
       );
-      expect(lines).toHaveLength(7);
+      expect(lines.length).toBe(TERMINAL_ROWS / 2);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }

@@ -7,7 +7,8 @@
  * corners, the gutter on each side and the rule between them, and each of them is measured through the
  * theme before a row is assembled, because a theme that coloured a glyph with *visible* bytes would ask
  * for a frame wider than the overlay was given. `buildPanelLines` (`panel-lines.ts`) draws the rows;
- * nothing here knows about pins, heights or the scroll window.
+ * nothing here knows about pins, heights or the scroll window. The six glyphs are also exported as one
+ * list (`frameGlyphs`), which is what lets that guard ask all of them rather than the two it once read.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 
@@ -25,6 +26,15 @@ export const RULE = "─";
 
 /** The columns the frame's two corners own; the gutters own `GUTTER_COLUMNS` (`panel-rows.ts`). */
 export const CORNER_COLUMNS = 2;
+
+/**
+ * Every glyph the frame draws itself, in the order the box is assembled: the four corners, the gutter
+ * and the rule. One list rather than six call sites, so the guard that asks each of them to measure one
+ * column (`panel-lines.ts`) cannot be written against two of them and leave four unmeasured.
+ */
+export function frameGlyphs(): string[] {
+  return [FRAME_TOP_LEFT, FRAME_TOP_RIGHT, FRAME_BOTTOM_LEFT, FRAME_BOTTOM_RIGHT, GUTTER, RULE];
+}
 
 /** pi-tui's cut ellipsis, spelled from its own code point. */
 export const ELLIPSIS = String.fromCodePoint(0x2026);

@@ -20,6 +20,7 @@ import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
+import { TERMINAL_ROWS } from "./panel-hostile.ts";
 import { boot, panelComponent, pinEntry } from "./panel-lifecycle-fixture.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
@@ -53,9 +54,8 @@ const frame = (
   buildPanelLines(
     { pins, selection, focused },
     width,
-    6,
     style,
-    panelLayout(pins, width, 6, selection, style),
+    panelLayout(pins, width, TERMINAL_ROWS, selection, style),
   );
 
 describe("the replied row of the panel", () => {
@@ -89,9 +89,8 @@ describe("the replied row of the panel", () => {
     buildPanelLines(
       { pins, selection: 0, focused: false },
       40,
-      6,
       dimStyle,
-      panelLayout(pins, 40, 6, 0, dimStyle),
+      panelLayout(pins, 40, TERMINAL_ROWS, 0, dimStyle),
     );
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
