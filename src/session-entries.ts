@@ -18,9 +18,6 @@
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUserAction } from "./state-guards.ts";
 
-// Re-exported so the module that reads entries is also where a caller reaches the guards those
-// readers call: importing the readers without the guards is how a snapshot gets trusted unvetted.
-export { isPinState, isUserAction };
 import type { Pin, PinState, Removal, UserAction } from "./types.ts";
 import { STATE_TYPE, TOOL_NAME, USER_TYPE } from "./types.ts";
 
@@ -42,15 +39,25 @@ function copyRemoval(removal: Removal): Removal {
 
 /**
  * A private copy of a snapshot: fresh arrays and fresh pin and removal objects, so a caller that
- * mutates what `reconstruct` returned reaches neither the entry it came from nor EMPTY_STATE.
+ * mutates what `reconstruct` returned reaches neither the entry it came from nor a value another
+ * rebuild shares. Module-private: only the readers below and `emptyState` hand a state out.
  */
-export function copyState(snapshot: PinState): PinState {
+function copyState(snapshot: PinState): PinState {
   return {
     v: 1,
     nextId: snapshot.nextId,
     pins: snapshot.pins.map(copyPin),
     removed: snapshot.removed.map(copyRemoval),
   };
+}
+
+/**
+ * A state a caller may mutate: the empty state, freshly built rather than copied out of one shared
+ * value. `reconstruct` starts every rebuild from it, and pi clears extension state on reload, so a
+ * single handed-out object would let one push be a pin in every later session too.
+ */
+export function emptyState(): PinState {
+  return { v: 1, nextId: 1, pins: [], removed: [] };
 }
 
 /** The snapshot inside a `pin_for_user` tool result, if the entry holds one. */

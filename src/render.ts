@@ -112,10 +112,19 @@ export function renderMarkdown(view: PinView): string {
   return ["# Pinned for you", "", ...lines].join("\n");
 }
 
+/**
+ * A pin's text as the rail can draw it: a rail row is exactly one terminal line, so every line
+ * break the model put in the text becomes a single space (a run of them collapses to one). The
+ * rail is the only surface with a line budget; `renderList` and `renderMarkdown` keep the newlines.
+ */
+function toOneLine(text: string): string {
+  return text.replace(/\n+/g, " ");
+}
+
 function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string): string {
   const marker = style.marker(pin.level, MARKER[pin.level]);
   const time = style.dim(formatTime(pin.createdAt));
-  const text = pin.repliedAt === undefined ? pin.text : `${pin.text} ↩`;
+  const text = toOneLine(pin.repliedAt === undefined ? pin.text : `${pin.text} ↩`);
   return ` ${marker} #${pin.id} ${time}  ${pin.repliedAt === undefined ? text : style.dim(text)}`;
 }
 

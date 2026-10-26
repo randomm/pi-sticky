@@ -246,6 +246,21 @@ describe("renderRailLines", () => {
     expect(lines[1]).toMatch(/[0-9]{2}:[0-9]{2}/);
   });
 
+  test("a pin whose text carries newlines still draws exactly one rail row", () => {
+    // A pin text comes from a model. A newline in it would otherwise push the rail past its
+    // budget and print a line the rail never accounted for (a `# fake header` in the transcript).
+    const lines = rail(view([pin(1, "a\n\n# fake header\nb")]), 60, 8);
+    expect(lines).toHaveLength(2);
+    for (const line of lines) expect(line).not.toInclude("\n");
+    expect(lines[1]).toInclude("a # fake header b");
+  });
+
+  test("the listing and the Markdown view keep their newlines", () => {
+    const pinned = view([pin(1, "a\n\n# fake header\nb")]);
+    expect(renderList(pinned, 5)).toInclude("a\n\n# fake header\nb");
+    expect(renderMarkdown(pinned)).toInclude("a\n\n# fake header\nb");
+  });
+
   test("ordering in the rail matches orderPins", () => {
     const input: ViewPin[] = [
       pin(1, "fact"),

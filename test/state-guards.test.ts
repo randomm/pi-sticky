@@ -5,8 +5,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { EMPTY_STATE, isPinState, reconstruct } from "../src/state.ts";
-import type { PinLevel, PinState } from "../src/types.ts";
+import { EMPTY_STATE, isPinState, isUserAction, reconstruct } from "../src/state.ts";
+import type { Pin, PinLevel, PinState, Removal } from "../src/types.ts";
 import {
   LATER,
   NOW,
@@ -18,6 +18,31 @@ import {
   userAction,
   userEntry,
 } from "./fixtures.ts";
+
+const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
+
+/** A hostile uid: an escape, a zero-width space, empty, or too long to be an address. */
+const BAD_UIDS = [`uid${cp(0x1b)}[2J`, `uid${cp(0x200b)}`, "", "x".repeat(65)];
+
+/**
+ * A list of `n` valid pins / removals with one hole in the middle — the shape that fooled the old
+ * guard, because `Array.prototype.every` skips holes and reports a list of pins that is not one.
+ * Built by assignment and `delete` rather than a literal elision, so Biome's rules about literal
+ * holes stay live in this file.
+ */
+function sparsePins(n: number): Pin[] {
+  const pins: Pin[] = new Array(n);
+  for (let i = 0; i < n; i++) pins[i] = pin(i + 1, `p${i}`);
+  delete pins[Math.floor(n / 2)];
+  return pins;
+}
+
+function sparseRemovals(n: number): Removal[] {
+  const removed: Removal[] = new Array(n);
+  for (let i = 0; i < n; i++) removed[i] = removal(i + 1);
+  delete removed[Math.floor(n / 2)];
+  return removed;
+}
 
 describe("isPinState", () => {
   test("accepts the empty state and a populated one", () => {
@@ -67,6 +92,62 @@ describe("isPinState", () => {
     }
     expect(isPinState(new Fake())).toBe(false);
   });
+
+  test("rejects a sparse pins or removed array, which .every() would sail past", () => {
+    expect(isPinState(state(sparsePins(3), 4))).toBe(false);
+    expect(isPinState(state([], 4, sparseRemovals(3)))).toBe(false);
+    expect(isPinState({ v: 1, pins: [], nextId: 1, removed: new Array(5) })).toBe(false);
+    expect(isPinState({ v: 1, pins: new Array(3), nextId: 1, removed: [] })).toBe(false);
+  });
+
+  test("rejects a snapshot over the structural bounds", () => {
+    const many = Array.from({ length: 21 }, (_, i) => pin(i + 1, `p${i}`));
+    expect(isPinState(state(many, 22))).toBe(false);
+    expect(isPinState(state(many.slice(0, 20), 21))).toBe(true);
+    const manyRemovals = Array.from({ length: 21 }, (_, i) => removal(i + 1));
+    expect(isPinState(state([], 22, manyRemovals))).toBe(false);
+    expect(isPinState(state([], 22, manyRemovals.slice(0, 20)))).toBe(true);
+    expect(isPinState(state([pin(1, "x".repeat(8001))], 2))).toBe(false);
+    expect(isPinState(state([pin(1, "x".repeat(8000))], 2))).toBe(true);
+    expect(isPinState(state([{ ...pin(1, "a"), createdAt: "t".repeat(8001) }], 2))).toBe(false);
+    expect(isPinState(state([pin(1, "a")], 2, [{ ...removal(1), at: "t".repeat(8001) }]))).toBe(
+      false,
+    );
+  });
+
+  test("rejects a uid that is not a safe opaque address", () => {
+    for (const uid of BAD_UIDS) {
+      expect(isPinState(state([{ ...pin(1, "a"), uid }], 2))).toBe(false);
+      expect(isPinState(state([pin(1, "a")], 2, [{ ...removal(1), uid }]))).toBe(false);
+    }
+    // A uuid is what applyAction mints, so it has to be a shape the guard accepts.
+    const uuid = "0f8f1f3a-2c6b-4a1e-9d5c-7b0e8a6f1c2d";
+    expect(isPinState(state([{ ...pin(1, "a"), uid: uuid }], 2))).toBe(true);
+  });
+});
+
+describe("isUserAction", () => {
+  const snapshot = state([pin(1, "a"), pin(2, "b")], 3);
+  const action = (uid: string) => ({ v: 1, uid, action: "dismiss", at: NOW });
+
+  test("accepts a well-shaped action and refuses a bad version or action", () => {
+    expect(isUserAction(action("uid-1"))).toBe(true);
+    expect(isUserAction({ ...action("uid-1"), v: 2 })).toBe(false);
+    expect(isUserAction({ ...action("uid-1"), action: "explode" })).toBe(false);
+    expect(isUserAction(null)).toBe(false);
+  });
+
+  test("refuses a uid that is not a safe opaque address", () => {
+    for (const uid of BAD_UIDS) expect(isUserAction(action(uid))).toBe(false);
+  });
+
+  test("an action with a hostile uid is skipped by the rebuild, leaving the pin alone", () => {
+    const branch = [toolResultEntry(snapshot)];
+    for (const uid of BAD_UIDS) {
+      const entries = [userEntry(userAction(uid, "dismiss", LATER))];
+      expect(reconstruct(branch, entries).state.pins.map((p) => p.id)).toEqual([1, 2]);
+    }
+  });
 });
 
 describe("reconstruct", () => {
@@ -90,6 +171,30 @@ describe("reconstruct", () => {
   test("a malformed snapshot is ignored rather than trusted", () => {
     const branch = [toolResultEntry({ v: 1, pins: "not an array" }), toolResultEntry(snapshot)];
     expect(reconstruct(branch, []).state).toEqual(snapshot);
+  });
+
+  test("a sparse snapshot is skipped and never makes the rebuild throw", () => {
+    // The regression: holes passed `.every(isPin)` because every() skips them, the shape guard
+    // said yes and the coherence walk then threw on a hole it read as an object.
+    const sparse = state(sparsePins(3), 4);
+    const holes = { v: 1, pins: [], nextId: 1, removed: new Array(3) };
+    const branch = [toolResultEntry(sparse), toolResultEntry(holes)];
+    expect(() => reconstruct(branch, [])).not.toThrow();
+    expect(reconstruct(branch, []).state).toEqual(EMPTY_STATE);
+    // The previous valid snapshot is what stands, not the sparse one that followed it.
+    expect(reconstruct([toolResultEntry(snapshot), toolResultEntry(sparse)], []).state).toEqual(
+      snapshot,
+    );
+  });
+
+  test("an over-bound snapshot is skipped", () => {
+    const tooMany = state(
+      Array.from({ length: 21 }, (_, i) => pin(i + 1, `p${i}`)),
+      22,
+    );
+    expect(reconstruct([customEntry(tooMany)], []).state).toEqual(EMPTY_STATE);
+    const tooLong = state([pin(1, "x".repeat(8001))], 2);
+    expect(reconstruct([customEntry(tooLong)], []).state).toEqual(EMPTY_STATE);
   });
 
   test("a custom pi-sticky.state entry provides a snapshot", () => {

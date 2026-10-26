@@ -14,13 +14,12 @@
  * out of the entry it came from.
  */
 import {
-  copyState,
-  isPinState,
-  isUserAction,
+  emptyState,
   snapshotFromCustom,
   snapshotFromEntry,
   userActionFrom,
 } from "./session-entries.ts";
+import { isPinState, isUserAction } from "./state-guards.ts";
 import { formatLocalTime } from "./time.ts";
 
 // Re-exported so the module the plan names as the state surface keeps its guards; the rules
@@ -38,9 +37,10 @@ import type {
   ViewPin,
 } from "./types.ts";
 /**
- * The state a session with no pins has. Frozen (object and both arrays) so nothing can grow it in
- * place: `reconstruct` starts every rebuild from this same value, and a pin pushed into it would
- * be a pin in every later session too. A caller never gets this object itself, only a copy.
+ * The state a session with no pins has: frozen (object and both arrays) so nothing can grow it in
+ * place — a pin pushed into this value would be a pin in every later session too. A rebuild never
+ * starts from it (it starts from `emptyState()`, a fresh copy); it is what the tests compare an
+ * empty result against.
  */
 export const EMPTY_STATE: PinState = Object.freeze({
   v: 1 as const,
@@ -72,6 +72,34 @@ export interface ApplyLimits {
   newUid?: () => string;
 }
 
+/**
+ * The ids of an `unpin` as the model actually sent them: "all", or a dense list of positive safe
+ * integers. Anything else — a bare number, a string, an array holding a hole or a fraction — is not
+ * a batch of ids, so the reducer refuses the action rather than comparing garbage against the pins.
+ * Duplicates collapse, because asking twice for one pin is asking for it once.
+ */
+function normaliseIds(ids: unknown): number[] | "all" | undefined {
+  if (ids === "all") return "all";
+  if (!Array.isArray(ids)) return undefined;
+  const out: number[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    if (!(i in ids)) return undefined;
+    const id = ids[i];
+    if (!isPositiveSafeInteger(id)) return undefined;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+function isPositiveSafeInteger(x: unknown): x is number {
+  return typeof x === "number" && Number.isSafeInteger(x) && x >= 1;
+}
+
+/** A text the model sent, or absent when JSON put something that is not a string in its place. */
+function textOrUndefined(text: unknown): string | undefined {
+  return typeof text === "string" ? text : undefined;
+}
+
 function newRemoval(pin: Pin, by: PinSource, at: string): Removal {
   return { id: pin.id, uid: pin.uid, by, at };
 }
@@ -101,7 +129,8 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
   const uid = limits.newUid ?? (() => crypto.randomUUID());
   switch (action.op) {
     case "pin": {
-      const duplicate = findDuplicate(state, action.text, action.level);
+      const text = textOrUndefined(action.text) ?? "";
+      const duplicate = findDuplicate(state, text, action.level);
       if (duplicate) {
         return { ok: true, state, affected: [duplicate.id], duplicateOf: duplicate.id };
       }
@@ -114,7 +143,7 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       const pin: Pin = {
         id: state.nextId,
         uid: uid(),
-        text: action.text,
+        text,
         level: action.level,
         source: action.source,
         createdAt: action.now,
@@ -138,12 +167,13 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
         const byUser = removedByUser(state, action.id);
         return byUser ? userRemoved(action.id, byUser.at) : notFound(action.id);
       }
-      if (action.text === undefined && action.level === undefined) {
+      const text = textOrUndefined(action.text);
+      if (text === undefined && action.level === undefined) {
         return { ok: false, error: "update needs text or level" };
       }
       const updated: Pin = {
         ...pin,
-        text: action.text ?? pin.text,
+        text: text ?? pin.text,
         level: action.level ?? pin.level,
         updatedAt: action.now,
       };
@@ -160,14 +190,18 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
       };
     }
     case "unpin": {
-      const ids = action.ids === "all" ? state.pins.map((pin) => pin.id) : action.ids;
-      const victims = state.pins.filter((pin) => ids.includes(pin.id));
+      const ids = normaliseIds(action.ids);
+      if (ids === undefined) {
+        return { ok: false, error: 'id is required for action "unpin"' };
+      }
+      const requested = ids === "all" ? state.pins.map((pin) => pin.id) : ids;
+      const victims = state.pins.filter((pin) => requested.includes(pin.id));
       // What the model asked for and nothing matched, in the order it asked: a reply that names
       // only these numbers tells the model the rest were never pins, rather than silently claiming
       // the ones it got.
-      const missing = ids.filter((id) => !victims.some((pin) => pin.id === id));
+      const missing = requested.filter((id) => !victims.some((pin) => pin.id === id));
       if (victims.length === 0) {
-        const first = ids[0];
+        const first = requested[0];
         if (first === undefined) return { ok: true, state, affected: [], missing: [] };
         const byUser = removedByUser(state, first);
         return byUser ? userRemoved(first, byUser.at) : notFound(first);
@@ -176,7 +210,7 @@ export function applyAction(state: PinState, action: Action, limits: ApplyLimits
         ok: true,
         state: {
           v: 1,
-          pins: state.pins.filter((pin) => !ids.includes(pin.id)),
+          pins: state.pins.filter((pin) => !requested.includes(pin.id)),
           nextId: state.nextId,
           removed: withRemovals(
             state,
@@ -223,13 +257,14 @@ function viewFrom(state: PinState, actions: readonly UserAction[]): PinView {
  * in array order, so a dismissal made outside the branch still hides its pin.
  *
  * What comes back is the caller's to keep: the snapshot is copied out of its entry (see
- * `copyState`), so mutating the result reaches neither that entry nor the shared `EMPTY_STATE`.
+ * `emptyState` in session-entries.ts), so mutating the result reaches neither that entry nor any
+ * value another rebuild shares.
  */
 export function reconstruct(
   branch: readonly unknown[],
   allEntries: readonly unknown[],
 ): { state: PinState; view: PinView } {
-  let state: PinState = copyState(EMPTY_STATE);
+  let state: PinState = emptyState();
   for (const entry of branch) {
     const snapshot = snapshotFromEntry(entry) ?? snapshotFromCustom(entry);
     if (snapshot) state = snapshot;

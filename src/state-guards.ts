@@ -13,30 +13,53 @@ export function isPlainObject(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && Object.getPrototypeOf(x) === Object.prototype;
 }
 
-function isString(x: unknown): x is string {
-  return typeof x === "string";
-}
-
-/** A non-empty string: an empty uid would be addressed by every stray action entry. */
-function isNonEmpty(x: unknown): x is string {
-  return isString(x) && x.length > 0;
-}
-
 /** An id the reducer may count from: 1, a whole number, and representable exactly. */
 function isPositiveSafeInteger(x: unknown): x is number {
   return typeof x === "number" && Number.isSafeInteger(x) && x >= 1;
+}
+
+/**
+ * What a uid has to look like: an opaque address handed to the model and compared with `===`, so
+ * nothing that could be drawn as markup or a control reaches it. `crypto.randomUUID()` — what
+ * `applyAction` mints — matches, and so do the fixtures.
+ */
+const UID = /^[A-Za-z0-9_-]{1,64}$/;
+
+function isUid(x: unknown): x is string {
+  return typeof x === "string" && UID.test(x);
+}
+
+/** The longest pin text or timestamp a snapshot may carry, in UTF-16 units. */
+const MAX_TEXT_UNITS = 8000;
+
+function isBoundedString(x: unknown): x is string {
+  return typeof x === "string" && x.length <= MAX_TEXT_UNITS;
+}
+
+/**
+ * A dense array: one whose own keys are exactly its indices 0..length-1. `Array.prototype.every`
+ * skips holes, so without this a `new Array(5)` or a `[pin, , pin]` would pass an element check
+ * while its holes are `undefined` — which the coherence walk below then reads as an object and
+ * throws on, taking the whole rebuild with it.
+ */
+function isDense(arr: readonly unknown[]): boolean {
+  if (Object.keys(arr).length !== arr.length) return false;
+  for (let i = 0; i < arr.length; i++) {
+    if (!(i in arr)) return false;
+  }
+  return true;
 }
 
 function isPin(x: unknown): x is Pin {
   if (!isPlainObject(x)) return false;
   return (
     isPositiveSafeInteger(x.id) &&
-    isNonEmpty(x.uid) &&
-    isString(x.text) &&
+    isUid(x.uid) &&
+    isBoundedString(x.text) &&
     (x.level === "info" || x.level === "action" || x.level === "warning") &&
     (x.source === "agent" || x.source === "user") &&
-    isString(x.createdAt) &&
-    isString(x.updatedAt)
+    isBoundedString(x.createdAt) &&
+    isBoundedString(x.updatedAt)
   );
 }
 
@@ -44,9 +67,9 @@ function isRemoval(x: unknown): x is Removal {
   if (!isPlainObject(x)) return false;
   return (
     isPositiveSafeInteger(x.id) &&
-    isNonEmpty(x.uid) &&
+    isUid(x.uid) &&
     (x.by === "agent" || x.by === "user") &&
-    isString(x.at)
+    isBoundedString(x.at)
   );
 }
 
@@ -56,8 +79,8 @@ function isRemoval(x: unknown): x is Removal {
  * has used — pins and removals alike, since the next pin is given `nextId`.
  *
  * The parameters are typed as the guarded shapes rather than re-derived from `unknown`: the caller
- * has already run every element through isPin/isRemoval, and re-checking here would only duplicate
- * that. `as` is the narrow bridge over that fact, nothing more.
+ * has already run every element through isPin/isRemoval — dense arrays, holes and all — and
+ * re-checking here would only duplicate that. `as` is the narrow bridge over that fact, nothing more.
  */
 function isCoherent(state: { pins: Pin[]; removed: Removal[]; nextId: unknown }): boolean {
   if (!isPositiveSafeInteger(state.nextId)) return false;
@@ -81,20 +104,33 @@ function isCoherent(state: { pins: Pin[]; removed: Removal[]; nextId: unknown })
   return state.nextId > highest;
 }
 
+/**
+ * The bounds a snapshot cannot talk its way past: neither list longer than the largest `maxPins`
+ * the config allows (which is also the reducer's own removal-history cap).
+ */
+const MAX_SNAPSHOT_ENTRIES = 20;
+
+function withinBounds(list: readonly unknown[]): boolean {
+  return list.length <= MAX_SNAPSHOT_ENTRIES;
+}
+
 /** Strict shape and consistency guard: plain objects only, `v === 1`, every field typed. */
 export function isPinState(x: unknown): x is PinState {
   if (!isPlainObject(x) || x.v !== 1) return false;
   if (!Array.isArray(x.pins) || !Array.isArray(x.removed)) return false;
+  if (!withinBounds(x.pins) || !withinBounds(x.removed)) return false;
+  if (!isDense(x.pins) || !isDense(x.removed)) return false;
   if (!x.pins.every(isPin) || !x.removed.every(isRemoval)) return false;
   return isCoherent(x as unknown as { pins: Pin[]; removed: Removal[]; nextId: unknown });
 }
 
 /**
- * A `pi-sticky.user` payload: a uid, a time and one of the two actions the user can take. An
- * empty uid matches no pin, so it is refused rather than carried into the rebuild.
+ * A `pi-sticky.user` payload: a uid, a time and one of the two actions the user can take. The uid
+ * is the pin's own address and is compared with `===`, so the same shape rule applies — a uid that
+ * is empty, hostile or over-long matches no pin and is refused rather than carried into the rebuild.
  */
 export function isUserAction(x: unknown): x is UserAction {
   if (!isPlainObject(x) || x.v !== 1) return false;
-  if (!isNonEmpty(x.uid) || !isString(x.at)) return false;
+  if (!isUid(x.uid) || !isBoundedString(x.at)) return false;
   return x.action === "dismiss" || x.action === "reply";
 }
