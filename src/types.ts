@@ -59,6 +59,12 @@ export interface PinView {
   removed: readonly Removal[];
 }
 
+/** The user's panel-visibility choice, recorded as a `pi-sticky.ui` entry. */
+export interface UIShown {
+  v: 1;
+  shown: boolean;
+}
+
 /** Effective configuration from the environment (see docs/plan.md 6.9). */
 export interface StickyConfig {
   disabled: boolean;

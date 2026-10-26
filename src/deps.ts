@@ -35,6 +35,17 @@ export interface StickyDeps {
   commit(state: PinState): void;
   /** Record one of the user's actions as a `pi-sticky.user` entry. */
   appendUserAction(action: UserAction): void;
+  /**
+   * The user's panel-visibility choice, as the live flag the overlay's `visible()` reads every
+   * frame. It is set without recording by the auto-show on a new pin and by `ctrl+alt+p`, and set
+   * *and* recorded by an explicit toggle — which is what keeps a preference the user never made out
+   * of the session file (persistence decision).
+   */
+  isPanelShown(): boolean;
+  /** Change the live flag only, and redraw. Records nothing. */
+  setPanelShown(shown: boolean): void;
+  /** Append the `pi-sticky.ui` entry that makes a toggle survive a reload and a resume. */
+  recordPanelShown(shown: boolean): void;
 }
 
 /**

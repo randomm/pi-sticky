@@ -16,10 +16,10 @@
  * hostile-looking uid could never be dismissed or replied to.
  */
 import { cleanPinText } from "./sanitize.ts";
-import { isPinState, isPlainObject, isUserAction } from "./state-guards.ts";
+import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
 
-import type { Pin, PinState, Removal, UserAction } from "./types.ts";
-import { STATE_TYPE, TOOL_NAME, USER_TYPE } from "./types.ts";
+import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
+import { STATE_TYPE, TOOL_NAME, UI_TYPE, USER_TYPE } from "./types.ts";
 
 function copyPin(pin: Pin): Pin {
   return {
@@ -90,4 +90,32 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
   }
   if (!isUserAction(entry.data)) return undefined;
   return { v: 1, uid: entry.data.uid, action: entry.data.action, at: cleanPinText(entry.data.at) };
+}
+
+/**
+ * The data of a `pi-sticky.ui` custom entry, if it holds the user's panel-visibility choice.
+ *
+ * `reconstruct` never calls this: an entry that says the panel was open is not a pin, and a rebuild
+ * that read it would move view state into pin state. The panel's own reader asks for the *last* one
+ * of these in `getEntries()` — session-wide, the same scope a dismissal is read at — and a shape it
+ * does not recognise is skipped so a malformed entry cannot pin the panel shut.
+ */
+export function uiShownFrom(entry: unknown): UIShown | undefined {
+  if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== UI_TYPE) {
+    return undefined;
+  }
+  return isUIShown(entry.data) ? { v: 1, shown: entry.data.shown } : undefined;
+}
+
+/**
+ * The visibility the user last asked for, out of every `pi-sticky.ui` entry of the session, or
+ * `undefined` when the session holds none. Entries are read oldest first, so the last one wins.
+ */
+export function latestUIShown(entries: readonly unknown[]): boolean | undefined {
+  let shown: boolean | undefined;
+  for (const entry of entries) {
+    const data = uiShownFrom(entry);
+    if (data) shown = data.shown;
+  }
+  return shown;
 }

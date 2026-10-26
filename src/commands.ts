@@ -1,23 +1,31 @@
 /**
- * The two commands the user has: `/pins` reads every pin in full, `/unpin` takes them away.
- *
- * A dismissal never mutates live state. It is recorded the way the user's other actions are —
+ * The pins commands. `/pins` reads every pin in full and opens or hides the panel, `/unpin` takes
+ * pins away.
+ * * A dismissal never mutates live state. It is recorded the way the user's other actions are —
  * one `pi-sticky.user` entry per pin, addressed by the pin's `uid` — and the state is rebuilt from
  * the session with `reconstruct`, the same path a reload takes. That is what makes a dismissal
  * stick session-wide across `/tree` (docs/research-summary.md U10): the entry is read from *all*
  * entries, not only the branch the user was on when they typed it.
  *
- * `/unpin` hands the whole batch to `applyAction` once with `source: "user"`, so the reducer — and
+ * `/pins` hands the whole batch to `applyAction` once with `source: "user"`, so the reducer — and
  * not a second copy of its rules — decides which ids matched. Unknown ids are reported one line
  * each and do not stop the rest; a refusal (a batch that is nothing at all) is notified verbatim
  * and records nothing. `/pins` uses `ctx.ui.notify` rather than an overlay: the overlay panel is
  * the later ticket, and `renderPinsText` already answers "Nothing is pinned." for an empty view.
+ *
+ * `dismiss` is exported because the panel's `d` key is the same action with one id and no argument
+ * string: two dismissal paths would be two chances for a `d` to forget the entry that makes a
+ * dismissal stick session-wide.
  */
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import type { StickyDeps } from "./deps.ts";
 import { renderPinsText } from "./render.ts";
 import { applyAction } from "./state.ts";
+
+/** What `/pins <token>` means beyond a list of ids. */
+const SHOW = "show";
+const HIDE = "hide";
 
 /** `/unpin all`, compared before the tokens are read as numbers. */
 const ALL = "all";
@@ -36,7 +44,11 @@ function parseIds(args: string): number[] | undefined {
  * Remove a batch as the user. The uids are read from the state *before* the entries land, because
  * the rebuild that follows moves the dismissed pins out of `pins` and into `removed`.
  */
-function dismiss(deps: StickyDeps, ctx: ExtensionCommandContext, ids: number[] | "all"): void {
+export function dismiss(
+  deps: StickyDeps,
+  ctx: ExtensionCommandContext,
+  ids: number[] | "all",
+): void {
   const before = deps.getState();
   const result = applyAction(
     before,
@@ -57,11 +69,27 @@ function dismiss(deps: StickyDeps, ctx: ExtensionCommandContext, ids: number[] |
   deps.redraw(ctx);
 }
 
-export function registerCommands(pi: ExtensionAPI, deps: StickyDeps): void {
+export function registerCommands(
+  pi: ExtensionAPI,
+  deps: StickyDeps,
+  panel: {
+    show(ctx: ExtensionCommandContext | undefined): void;
+    hide(ctx: ExtensionCommandContext | undefined): void;
+  },
+): void {
   pi.registerCommand("pins", {
-    description: "Show every pinned message in full",
-    handler: async (_args, ctx) => {
+    description: "Show every pinned message, or open/close the panel: /pins show | hide",
+    handler: async (args, ctx) => {
       if (!ctx.hasUI) return;
+      const verb = args.trim().toLowerCase();
+      if (verb === SHOW) {
+        panel.show(ctx);
+        return;
+      }
+      if (verb === HIDE) {
+        panel.hide(ctx);
+        return;
+      }
       ctx.ui.notify(renderPinsText(deps.getView()), "info");
     },
   });
