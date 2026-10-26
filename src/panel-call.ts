@@ -23,7 +23,6 @@ import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
 import type { PanelComponent } from "./panel-component.ts";
-import type { PanelStyle } from "./render.ts";
 
 /**
  * The shape of pi's `custom()`, taken from the interface itself.
@@ -117,14 +116,6 @@ type PanelFactoryLead = Parameters<PiFactoryParam> extends [infer T, infer U, in
 export interface PanelRecord {
   component: PanelComponent | undefined;
   /**
-   * The colours the factory derived from the theme pi handed it.
-   *
-   * Recorded rather than handed to the owner: the factory's own closure is what colours the component it
-   * returns, and the owner has no surface of its own to paint — a field the owner held and nobody read
-   * was how this seam once over-declared its contract.
-   */
-  style: PanelStyle | undefined;
-  /**
    * The release handle pi's factory was given, with the result type pi resolves its promise with. The
    * close path passes `PANEL_CLOSED`, and `panel-lifecycle.test.ts` asserts on the recorded value, so
    * the tie between what is handed to `done` and what the host sees is the point of typing it.
@@ -141,5 +132,5 @@ export interface PanelRecord {
  * interface — a missing `onClose` is a panel that closes silently and fails its test loudly.
  */
 export function newPanelRecord(): PanelRecord {
-  return { component: undefined, done: undefined, onClose: undefined, style: undefined };
+  return { component: undefined, done: undefined, onClose: undefined };
 }

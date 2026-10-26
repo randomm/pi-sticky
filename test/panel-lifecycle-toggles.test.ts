@@ -9,9 +9,20 @@
  */
 import { expect, test } from "bun:test";
 
+import { panelCommands } from "../src/commands.ts";
 import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-refusals.ts";
 import { KEY, UI_TYPE } from "../src/types.ts";
-import { PINNED, TWO_PINNED, boot, panelComponent, uiEntry } from "./panel-lifecycle-fixture.ts";
+import {
+  PINNED,
+  TWO_PINNED,
+  boot,
+  contextWith,
+  panelComponent,
+  uiEntry,
+} from "./panel-lifecycle-fixture.ts";
+import { wiring } from "./panel-owner-wiring.ts";
+
+import type { PanelOwner } from "../src/panel.ts";
 
 test("/pins with no argument keeps its listing notify and opens nothing new", async () => {
   const { stub, ctx } = await boot(PINNED);
@@ -170,4 +181,31 @@ test("an existing marker in the draft is replaced, not stacked", async () => {
   panelComponent(call)?.focus();
   call?.component?.handleInput?.("\r");
   expect(ctx.recorder.getEditorText()).toBe("Re #1: keep this draft");
+});
+
+test("the /pins verbs reach the owner through one adapter, and a missing owner is inert", async () => {
+  // The adapter is the whole contract between the command layer and the panel (`panelCommands` in
+  // `commands.ts`): both verbs read the owner through an accessor at *call* time, so a command fired
+  // before any owner exists — or after the extension dropped it — must be a no-op rather than a
+  // throw out of the command handler. Nothing else in the suite calls the adapter directly: every
+  // other case goes through `registerCommands`, which hides both halves of the pair behind the one
+  // owner the extension built.
+  const built = wiring(contextWith([]));
+  const builtPanel = built.panel;
+  let owner: PanelOwner | undefined = builtPanel;
+  const commands = panelCommands(() => owner);
+
+  // Both verbs reach the owner they were handed, and take the context the handler gave them. The
+  // context is the recorder-backed one the lifecycle fixtures build: `show` reads only its `ui` to
+  // notify, and the adapter's signature is what makes that projection pi's command context.
+  const ctx = contextWith(PINNED) as unknown as Parameters<typeof commands.show>[0];
+  commands.show(ctx);
+  commands.hide();
+  // The owner is the one under test: the show settled the flag to shown and the hide put it back.
+  expect(builtPanel.isVisible()).toBe(false);
+
+  // The absent owner: the accessor answers `undefined` and neither verb throws or records.
+  owner = undefined;
+  expect(() => commands.show(ctx)).not.toThrow();
+  expect(() => commands.hide()).not.toThrow();
 });

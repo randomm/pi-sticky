@@ -39,7 +39,6 @@ import { FOCUS_KEY, TOGGLE_KEY } from "./panel-keys.ts";
 import { TerminalWidth } from "./panel-width.ts";
 import { PanelOwner } from "./panel.ts";
 import { registerReminder } from "./reminder.ts";
-import { panelThemeStyle } from "./render.ts";
 import { reconstruct } from "./state.ts";
 import { EMPTY_STATE } from "./state.ts";
 import { createPinTool } from "./tool.ts";

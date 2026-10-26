@@ -4,15 +4,17 @@
  * is decided by `panelIsVisible` below, which the rail also asks.
  *
  * Pi's behaviour worth knowing before changing anything here:
- * - An open overlay blocks `switchTuiMode` (pi's `hasOverlayEntries` guard), so the panel is opened
- *   *once per session*, not per visibility change; `visible()` decides each frame.
+ * - An open overlay blocks `switchTuiMode` (pi's `hasOverlayEntries`), so the panel is opened *once
+ *   per session*, not per visibility change; `visible()` decides each frame.
  * - `session_start` and `session_tree` are the only open points, and each closes the previous panel by
  *   calling its `done()` exactly once — pi's own `close()` is `closed`-guarded and a no-op after
  *   `resetExtensionUI`, so nothing here touches `OverlayHandle.hide()`.
  * - `nonCapturing` for the overlay's whole life: showing never steals focus, so the shortcuts are the
  *   only way in and `Escape` in `handleInput` the only way out.
  *
- * Geometry, refusal strings and the boundary they share live in `panel-geometry.ts`.
+ * Geometry, refusal strings and the boundary they share live in `panel-geometry.ts`. Because an open
+ * overlay blocks pi's fullscreen switch (`hasOverlayEntries`), a panel left open is a TUI mode the user
+ * cannot enter, so closing on every session boundary is not tidiness — it is the user's other mode.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -31,8 +33,8 @@ import { RailGuard } from "./panel-rail.ts";
 import { refusalToShow } from "./panel-refusals.ts";
 
 /**
- * The panel owner: one record, one open call, and the toggles the commands and the shortcuts share.
- * A fresh instance per extension call, so nothing of it survives `session_shutdown`.
+ * The panel owner: one record, one open call, and the toggles the commands and shortcuts share. A
+ * fresh instance per extension call, so nothing of it survives `session_shutdown`.
  */
 export class PanelOwner {
   #wiring: PanelWiring;
@@ -41,11 +43,9 @@ export class PanelOwner {
   /** The rail's install guard: the one cache between a frame that changed nothing and a redraw. */
   readonly #rail = new RailGuard();
   /**
-   * Why the last close could not release its overlay, or `undefined` when it closed cleanly.
-   *
-   * Captured rather than dropped: `close()` has no context to notify through, and the owner has just
-   * forgotten the record the failure belongs to. The next `open()` — the first moment there is a ui to
-   * tell — reports it once and clears it.
+   * Why the last close could not release its overlay, or `undefined` when it closed cleanly. Captured
+   * rather than dropped: `close()` has no context to notify through, and the owner has just forgotten
+   * the record the failure belongs to. The next `open()` reports it once and clears it.
    */
   #closeFailure: string | undefined;
 
@@ -95,13 +95,12 @@ export class PanelOwner {
     // asked for it. `isVisible()` answers from this record and the live view, which is what makes the
     // handoff decidable in the same turn as `open()`.
     this.#record = record;
-    this.#rail.reset();
+    this.#railConsider(false);
     const visible = (columns: number, rows: number): boolean => this.#visible(columns, rows);
 
-    // The member is read at *call* time, in the same expression that calls it, rather than captured
-    // above: a host whose `custom` is installed per call — a test recorder watching the component's
-    // own `requestRender` by handing it a TUI of its own — has to be consulted now, or the panel opens
-    // on the `custom` that existed a moment ago and the watch is silently bypassed.
+    // `custom` is read at *call* time, not captured above: a host that installs it per call — a test
+    // recorder watching the component's `requestRender` by handing it a TUI of its own — has to be
+    // consulted now, or the panel opens on the `custom` from a moment ago and the watch is bypassed.
     void ui
       .custom(
         panelFactory(record, this.#wiring, {
@@ -138,9 +137,9 @@ export class PanelOwner {
     // changes is the moment both surfaces get asked to decide again. Redrawing the rail from here is
     // the only way a widening reaches a rail that was drawn narrow — pi keeps the component a factory
     // returned until the key is written again, and nothing else writes it. It costs nothing on a frame
-    // that changed nothing, because `redrawRail` is the guarded one below.
+    // that changed nothing, because `#railConsider(true)` is the guarded one below.
     this.#wiring.terminal.note(columns);
-    this.#refreshRail();
+    this.#railConsider(true);
     return this.isVisible();
   }
 
@@ -166,7 +165,7 @@ export class PanelOwner {
     const record = this.#record;
     this.#record = undefined;
     this.#tui = undefined;
-    this.#rail.reset();
+    this.#railConsider(false);
     // The width is *not* dropped here, and `PanelWidth` is not cleared on a rebuild either. pi-tui
     // states a width when the terminal changes and the only thing that listens is the overlay's
     // `visible()`, so closing the panel does not make the terminal a different width — and a session
@@ -200,7 +199,7 @@ export class PanelOwner {
    * an overlay that was never opened cannot own the pins, and a predicate that answered from the flag
    * alone would tell the rail to stand down for it.
    *
-   * The one answer `#refreshRail` caches against: whatever this returns is what the rail was last asked
+   * The one answer `#railConsider` caches against: whatever this returns is what the rail was last asked
    * to yield to — the same question, spelled in the key as the width, the flag and the view it reads.
    */
   isVisible(): boolean {
@@ -210,16 +209,14 @@ export class PanelOwner {
   }
 
   /**
-   * The width this instance was last told, which is what every visibility question is measured in.
-   *
-   * Asked of the wiring rather than read from a module global: two sessions in one process have two
-   * terminals, and a width carried over from the first is how the second hides its pins on neither
-   * surface. See `panel-width.ts` for the two silences, and `judgeColumns` for what each is measured as.
+   * The width this instance was last told — what every visibility question is measured in. Asked of
+   * the wiring, not a module global: two sessions in one process have two terminals, and a width
+   * carried from the first is how the second hides its pins on neither surface. See `panel-width.ts`
+   * for the two silences and `judgeColumns` for what each is measured as.
    */
   #columns(): number {
     return judgeColumns(this.#wiring.terminal.status());
   }
-
   /**
    * Tell the open component that the view changed, and ask for the rail to be reconsidered; does
    * nothing when no panel is open.
@@ -227,21 +224,23 @@ export class PanelOwner {
    * The rail is decided when it is *installed*, not when it is asked to render: pi keeps the component a
    * factory returned until the key is written again, so a visibility change that only redrew the overlay
    * would leave a rail standing over a panel that had just taken the pins (and the reverse). Both
-   * surfaces are settled here, which is the one place every change passes — and `update()` and
-   * `redrawRail()` are each guarded against a change that did not happen, because this runs on every
-   * frame as well as on every edit.
+   * surfaces are settled here, which is the one place every change passes, and both halves are
+   * guarded against a change that did not happen — this runs on every frame as well as every edit.
    */
   refresh(): void {
     this.#record?.component?.update();
-    this.#refreshRail();
+    this.#railConsider(true);
   }
 
   /**
-   * Ask whether the rail needs reinstalling, and draw it when it does. The answer and its
-   * cache are the guard's — see `panel-rail.ts` for why the key is what it is.
+   * Reconsider the rail. `open` is the caller's verdict on whether a panel is still open: `true` on a
+   * change that may have moved the answer while the panel stayed (a frame, a toggle, a pin, a
+   * dismissal) — compare and redraw only if it moved; `false` on the two lifecycle edges that just
+   * destroyed it (a fresh record, a dropped one) — forget the answer, so the next frame compares
+   * against nothing. The answer, its cache and both verdicts are the guard's: see `panel-rail.ts`.
    */
-  #refreshRail(): void {
-    this.#rail.consider(this.#wiring.deps, this.#columns(), () => this.#wiring.redrawRail());
+  #railConsider(open: boolean): void {
+    this.#rail.consider(this.#wiring.deps, this.#columns(), () => this.#wiring.redrawRail(), open);
   }
 
   /** Give the panel the keyboard. Works whether or not it is drawn at the moment. */

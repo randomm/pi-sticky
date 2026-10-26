@@ -47,10 +47,11 @@ export function panelFactory(
   return (tui, theme, _keybindings, done) => {
     record.done = done;
     hooks.onTui(tui);
-    // Built once, for the life of this component: the theme pi handed the factory does not change under
-    // it, and the rail resolves its own style the same way, in its constructor.
+    // Derived once, for the life of this component: the theme pi handed the factory does not change
+    // under it, and the rail resolves its own style the same way, in its constructor. It belongs to the
+    // component alone — the owner has no surface of its own to paint, so it goes to the host and is
+    // never recorded on the record, where a field nobody read once over-declared this seam.
     const style = wiring.themeStyle(theme);
-    record.style = style;
     const host: PanelHost = {
       getView: () => deps.getView(),
       // `undefined`, not the colourless style: that leaves the component to colour itself from the theme

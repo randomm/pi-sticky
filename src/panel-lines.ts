@@ -167,39 +167,31 @@ function panelRowStartOf(
 }
 
 /**
- * One drawn line whose text is untrusted, so whatever survives is stripped: the pin rows, and — since
- * the escape policy below applies to every drawn line — the header and the hint too. An over-wide line
- * is the case the rail's own `cut` documents — `truncateToWidth` measures an escape whose terminator it
- * does not recognise as printable columns — so when its result still measures too wide the line is cut
+ * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
+ * *theme*. Every drawn line goes through this one escape policy, with no styled branch: an over-wide
+ * line is the case the rail's own `cut` documents — `truncateToWidth` measures an escape whose terminator
+ * it does not recognise as printable columns — so when its result still measures too wide the line is cut
  * again from the escape-stripped text, the only string here whose width both sides agree on. Stripped
  * whether or not the cut fired, so a row that fits is still free of escape bytes; re-measured after
  * that, because stripping can leave a line that no longer fills the panel and a short row would let the
  * chat behind it show through.
+ *
+ * The styled branch used to exist, and was a hole rather than a convenience: a styled line that measured
+ * within the width was padded and returned verbatim, and `visibleWidth` counts an OSC 8 hyperlink, an
+ * OSC 2/52 window-title or an APC sequence as *zero* columns — so a theme whose `header`/`dim` emitted
+ * one measured as free and was flushed right over the chat, its padding extending a smuggled hyperlink
+ * across columns the user believes are blank. Nothing in a panel row is a hyperlink and AGENTS.md says a
+ * pin never draws one, so refusing every escape byte on every drawn line costs nothing real; what the
+ * theme loses is only sequences pi-tui would have counted as zero-width anyway, since `stripSequences`
+ * keeps what it does not recognise as an escape to remove and SGR colouring survives intact.
  */
-function fitPlain(line: string, width: number): string {
+function fitLine(line: string, width: number): string {
   const spare = width - visibleWidth(line);
   if (spare >= 0) return padPlain(stripSequences(line), width);
   const cut = stripSequences(truncateToWidth(line, width, ELLIPSIS));
   if (visibleWidth(cut) <= width) return padPlain(cut, width);
   const plain = stripSequences(truncateToWidth(stripSequences(line), width, ELLIPSIS));
   return padPlain(plain, width);
-}
-
-/**
- * One drawn line whose bytes come from the *theme*: the header and the hint.
- *
- * The same escape policy as a pin row, applied to a styled line rather than exempted from it. The
- * exemption used to be here — a styled line that measured within the width was padded and returned
- * verbatim — and that was a hole, not a convenience: `visibleWidth` counts an OSC 8 hyperlink, an OSC
- * 2/52 window-title or an APC sequence as *zero* columns, so a theme whose `header`/`dim` emitted one
- * would be measured as free and flushed right over the chat, its padding extending a smuggled hyperlink
- * across columns the user believes are blank. Nothing in a panel row is a hyperlink and AGENTS.md says a
- * pin never draws one, so refusing every escape byte on every drawn line costs nothing real. What the
- * theme loses is only the sequences pi-tui would have counted as zero-width anyway; SGR colouring is
- * untouched, because `stripSequences` keeps what it does not recognise as an escape to remove.
- */
-function fitStyled(line: string, width: number): string {
-  return fitPlain(line, width);
 }
 
 /** Pad an already-safe line out to the width. */
@@ -211,7 +203,7 @@ function padPlain(line: string, width: number): string {
 function pinRow(row: PanelRow, width: number, style: PanelStyle, selected: boolean): string {
   const tail = row.meta === "" ? "" : ` ${row.meta}`;
   const body = tail === "" ? row.text : `${row.text}${style.dim(tail)}`;
-  return fitPlain(selected ? style.selected(body) : body, width);
+  return fitLine(selected ? style.selected(body) : body, width);
 }
 
 /**
@@ -233,11 +225,11 @@ export function buildPanelLines(
   // rather than a header that repeats the absence. The check lives here, with the pins in front of it,
   // rather than in the component: this is the function that knows what an empty *view* is.
   if (content.pins.length === 0) return [];
-  const lines: string[] = [fitStyled(style.header(`${HEADER} (${content.pins.length})`), width)];
+  const lines: string[] = [fitLine(style.header(`${HEADER} (${content.pins.length})`), width)];
   const budget = panelContentRows(height, content.focused);
   if (budget === 0) {
-    if (content.focused && lines.length < height) lines.push(fitStyled(style.dim(HINT), width));
-    while (lines.length < height) lines.push(fitPlain("", width));
+    if (content.focused && lines.length < height) lines.push(fitLine(style.dim(HINT), width));
+    while (lines.length < height) lines.push(fitLine("", width));
     return lines.slice(0, height);
   }
 
@@ -250,13 +242,13 @@ export function buildPanelLines(
   for (let i = 0; i < budget && lines.length < height; i++) {
     const row = all[offset + i];
     if (!row) {
-      lines.push(fitPlain("", width));
+      lines.push(fitLine("", width));
       continue;
     }
     lines.push(pinRow(row, width, style, content.focused && i === content.selection - offset));
   }
 
-  if (content.focused && lines.length < height) lines.push(fitStyled(style.dim(HINT), width));
-  while (lines.length < height) lines.push(fitPlain("", width));
+  if (content.focused && lines.length < height) lines.push(fitLine(style.dim(HINT), width));
+  while (lines.length < height) lines.push(fitLine("", width));
   return lines.slice(0, height);
 }

@@ -18,8 +18,13 @@ const FALLBACK_ROWS = 24;
 const MAX_PANEL_ROWS = 100;
 
 /**
- * Rows to draw: the terminal's own height, capped. A terminal that cannot be asked — no TUI, no
- * `terminal` member, or one that states zero — answers with the fallback, so a frame is still a frame.
+ * Rows to draw: the terminal's own height, capped.
+ *
+ * Typed `unknown` rather than `number | undefined` because the argument is the *host's* member, not
+ * this module's: `PanelComponent` hands it `#tui?.terminal?.rows`, and a TUI that is absent, has no
+ * `terminal` member, or states zero is a real state of the pi boundary rather than a type error. The
+ * answer is always a usable row count, so a caller never has to re-narrow it: a terminal that cannot
+ * be asked answers with the fallback, and a frame is still a frame.
  */
 export function panelRows(rows: unknown): number {
   const available = typeof rows === "number" && rows > 0 ? rows : FALLBACK_ROWS;
