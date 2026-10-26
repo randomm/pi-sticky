@@ -9,13 +9,24 @@
  * empty and two pins can draw byte-identical rows, so neither question can be answered by scanning the
  * output.
  *
- * The drawing of these rows — the gutters, the bar, the borders around them — is `panel-frame.ts`.
+ * The drawing of these rows — the gutters, the bar, the borders around them — is `panel-lines.ts`, and
+ * `panelLayout` is the one place a frame's rows are built: the table it returns is what the builder draws
+ * *and* what the frame's height is counted from, so a pin is wrapped once per frame and the columns the
+ * gutters own (`GUTTER_COLUMNS`) are stated here for exactly that reason.
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+
+import { panelFrameRows } from "./panel-height.ts";
+
+/** The frame's own two rows of border, which no pin count removes — `panel-height.ts` owns the number. */
+const BORDER_ROWS = panelFrameRows(0, Number.POSITIVE_INFINITY);
 
 export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
 
 import { formatLocalTime } from "./time.ts";
+
+/** The columns the frame owns: one gutter and its space on each side, plus the two corners. */
+export const GUTTER_COLUMNS = 4;
 
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
@@ -133,4 +144,46 @@ export function panelWindowOffset(
   if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
   if (start < 0) return total - contentRows;
   return Math.min(start, total - contentRows);
+}
+
+/**
+ * One frame's rows: the table, the row the selection starts at, and the rows the frame needs.
+ *
+ * Returned by `panelLayout`, the one place the pins are wrapped for a frame, so the builder draws the
+ * very rows the height was counted from.
+ */
+export interface PanelLayout {
+  owned: PanelOwned[];
+  start: number;
+  height: number;
+}
+
+/**
+ * The row table of one frame, wrapped *once* per pin at the text column
+ * (`frameWidth - GUTTER_COLUMNS - META_RESERVE`) — the table `buildPanelLines` draws and the height is
+ * counted from, which is what makes a frame as tall as its rows and keeps a resize from sizing the box
+ * at a width it is not drawn at. The builder pads each row out to the inner width when it draws it.
+ *
+ * `rows` says which ceiling the height uses: a number of *content* rows when the caller already knows
+ * the frame's height (`buildPanelLines` itself, handed `height - 2`), or the terminal when the caller is
+ * *sizing* the frame (`PanelComponent.render`, which passes `tui.terminal.rows`). One wrap serves both,
+ * where the component used to wrap the pins a second time at the width of the previous frame.
+ */
+export function panelLayout(
+  pins: readonly ViewPin[],
+  frameWidth: number,
+  rows: number | unknown,
+  selection: number,
+  style: PanelStyle,
+): PanelLayout {
+  const textWidth = Math.max(1, frameWidth - GUTTER_COLUMNS - META_RESERVE);
+  const owned = panelRowOwners(pins, textWidth, style);
+  // A content-row budget is a frame the caller already fixed, so the window cannot outgrow it; anything
+  // else is the terminal, capped by `panelMaxRows` (`panel-height.ts`).
+  const ceiling = typeof rows === "number" ? rows + BORDER_ROWS : rows;
+  return {
+    owned,
+    start: panelRowStartOf(owned, selection),
+    height: panelFrameRows(owned.length, ceiling),
+  };
 }

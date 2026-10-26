@@ -38,6 +38,20 @@ test("a height comes from the terminal and is capped, so a very tall terminal is
   expect(component(many, {} as unknown as TUI).c.render(40)).toHaveLength(12);
 });
 
+test("a resize sizes the frame at the width just asked for, not the last one cached", () => {
+  // One long pin: at 40 columns it owns several wrapped rows, at 100 it owns one. A height computed at
+  // the *cached* width would size the 100-column frame at 40 — the pin keeps the rows of the narrow
+  // frame — and every render would wrap the pin twice, once to size the frame and once to draw it.
+  const long = "word ".repeat(40).trim();
+  const widened = component(pins(long)).c;
+  widened.render(40);
+  const resized = widened.render(100);
+  // The same pins drawn by a component that only ever saw 100: one frame, one wrap, one height.
+  const fresh = component(pins(long)).c.render(100);
+  expect(resized).toHaveLength(fresh.length);
+  expect(resized).toEqual(fresh);
+});
+
 test("`theme()` reads back what was injected and `invalidate()` drops the cached frame", () => {
   const themed = new PanelComponent(host(pins("One")).stub, createStubTui(), undefined);
   expect(themed.theme()).toBeUndefined();

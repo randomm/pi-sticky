@@ -42,7 +42,7 @@ export const PANEL_MIN_FRAME_ROWS = 3;
  * the conversation, not a second transcript, and an overlay that filled the rows hid the chat it is
  * meant to annotate. The cap is a ceiling rather than a height — the component draws only as many rows
  * as its pins need (`panel-height.ts`) — and `minWidth` is the narrowest frame the builder will close
- * (`PANEL_MIN_FRAME_COLUMNS` in `panel-lines.ts`), which is why the two numbers are the same 30. The
+ * (`PANEL_MIN_FRAME_COLUMNS`, exported from this file just above), which is why the two numbers are the same 30. The
  * rows a frame needs are the builder's floor too (`PANEL_MIN_FRAME_ROWS`), but pi-tui's
  * `OverlayOptions` has no `minHeight` to state it in, so the component is what keeps a frame from being
  * asked for a height it would refuse to close.
@@ -64,7 +64,8 @@ export const PANEL_OVERLAY_OPTIONS: OverlayOptions = {
  * cannot honour, and the honest answer is the rail's. The integer rule is written once, here: both
  * questions pi-tui asks — "does the overlay draw?" and "can this frame be laid out?" — are answered in
  * terms of it, so they cannot disagree about what a fractional width means. How *small* a promiseable
- * size is is the frame builder's question (`PANEL_MIN_FRAME_COLUMNS` in `panel-lines.ts`), not this
+ * size is is the frame builder's floor (`PANEL_MIN_FRAME_COLUMNS`, exported from this file just above),
+ * not this
  * predicate's: the overlay and the rail agree on this one.
  */
 export function isPanelSize(width: number, height: number): boolean {

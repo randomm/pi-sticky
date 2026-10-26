@@ -23,15 +23,12 @@ import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { panelFrameRows } from "./panel-height.ts";
 import type { PanelHost } from "./panel-host.ts";
 import { dispatchPanelKey } from "./panel-input.ts";
-import { PANEL_MIN_FRAME_COLUMNS, buildPanelLines } from "./panel-lines.ts";
+import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
-import { META_RESERVE, panelAllRows } from "./panel-rows.ts";
+import { panelLayout } from "./panel-rows.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
-
-/** The frame's gutters, quoted so the row count is taken at the width the builder lays the rows out at. */
-const GUTTER_COLUMNS = 4;
 
 /**
  * Colours for a component whose host has none to give and whose factory got no theme: the rail's
@@ -55,24 +52,6 @@ interface PanelFrame {
   pins: readonly ViewPin[];
   selection: number;
   focused: boolean;
-}
-
-/**
- * Rows the panel draws for `pins` at `frameWidth`: the frame over the wrapped rows, capped at half the
- * terminal. Each pin is wrapped once here to size the frame and once again by the builder, which is what
- * it costs to draw a panel as tall as its content instead of as tall as the overlay.
- *
- * The gutter and id/time columns are the frame's own rule, taken from `panel-rows.ts` rather than
- * invented, so the width the rows are counted at is the width the builder will cut them at.
- */
-function panelHeightFor(
-  pins: readonly ViewPin[],
-  frameWidth: number,
-  style: PanelStyle,
-  terminalRows: unknown,
-): number {
-  const inner = Math.max(1, frameWidth - GUTTER_COLUMNS - META_RESERVE);
-  return panelFrameRows(panelAllRows(pins, inner, style).length, terminalRows);
 }
 
 /**
@@ -231,7 +210,18 @@ export class PanelComponent implements Component {
       selection: this.#selection,
       focused: this.#focused,
     };
-    const lines = buildPanelLines(content, width, this.#height(), this.#styleOf());
+    // One layout pass at the width pi-tui just handed over: the row table it builds is what both the
+    // frame's height and the drawn window come from, so a pin is wrapped once per frame and a resize
+    // sizes the box at the width it is drawn at rather than the last cached one.
+    const layout = panelLayout(
+      pins,
+      width,
+      this.#tui?.terminal?.rows,
+      this.#selection,
+      this.#styleOf(),
+    );
+    const height = panelFrameRows(layout.owned.length, this.#tui?.terminal?.rows);
+    const lines = buildPanelLines(content, width, height, this.#styleOf(), layout);
     this.#frame = { lines, width, pins, selection: this.#selection, focused: this.#focused };
     return lines;
   }
@@ -259,28 +249,6 @@ export class PanelComponent implements Component {
 
   #handleInput(data: string): void {
     dispatchPanelKey(data, this, this.#host);
-  }
-
-  /**
-   * Rows to draw for the pins this component is about to lay out: `panel-height.ts` owns the rule, this
-   * only hands it the pins, the width the frame will be drawn at and the terminal it was built with.
-   */
-  #height(): number {
-    return panelHeightFor(
-      this.#host.getView().pins,
-      this.#frameWidth(),
-      this.#styleOf(),
-      this.#tui?.terminal?.rows,
-    );
-  }
-
-  /**
-   * The width the frame being sized will be drawn at: the one just cached, because `render()` is what
-   * sizes a frame and pi-tui hands it the width. Only a session's very first frame has nothing cached,
-   * and there the overlay's own `minWidth` is the width pi lays it out at.
-   */
-  #frameWidth(): number {
-    return this.#frame?.width ?? PANEL_MIN_FRAME_COLUMNS;
   }
 }
 

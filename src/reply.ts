@@ -3,12 +3,14 @@
  *
  * One `pi.on("input")` handler owns the whole thing — detection, rewrite and recording — because the
  * three have to agree about the marker and about which pin was answered, and a second copy of the
- * pattern in the panel or the tool is how the two drift. `replyMarker` (`panel-component.ts`) is the
+ * pattern in the panel or the tool is how the two drift. `replyMarker` is exported here and called by
+ * `panel-deps.ts`: it is the
  * producer of `Re #<id>: ` that the panel's Enter puts at offset 0 of the editor; this module is its
  * inverse, and the two regexes differ on purpose: the producer emits exactly one space after the
  * colon, the parser accepts any run of spaces and tabs after the colon, so a draft edited by hand still
  * counts as a reply. The marker is anchored at offset 0, and `Re 7:` / `Re #x:` are not matches — the
- * same asymmetry `panel-component.test.ts` pins for the producer.
+ * same asymmetry the producer's own cases pin — those live beside `decideReply`'s in
+ * `test/reply.test.ts`, not in the panel's component test.
  *
  * The rewrite is what the model reads:
  *

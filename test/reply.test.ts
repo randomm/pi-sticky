@@ -9,15 +9,16 @@
  * from the deps it was handed. The end-to-end case — a rewritten message reaching the faux model — is
  * `test/integration-reply.test.ts`.
  *
- * The mirror of `replyMarker` is deliberate: `panel-component.test.ts` pins what the panel's Enter
- * produces, and the cases below are the strings that producer could have written plus the two it could
- * not. The two patterns differ in one character class (the producer emits one space after the colon, the
- * parser accepts any run of spaces and tabs), so the tab and no-space cases exist only here — a parser
- * that copied the producer's pattern would silently refuse a hand-edited draft, and nothing else in the
- * suite would notice.
+ * The mirror of `replyMarker` is deliberate: `replyMarker` is the producer — `src/reply.ts` exports it and
+ * `panel-deps.ts` calls it for the panel's Enter — and its tests sit beside `decideReply` below, at the
+ * bottom of this file. The cases there are the strings that producer could have written plus the two it
+ * could not. The two patterns differ in one character class (the producer emits one space after the
+ * colon, the parser accepts any run of spaces and tabs), so the tab and no-space cases exist only here — a
+ * parser that copied the producer's pattern would silently refuse a hand-edited draft, and nothing else in
+ * the suite would notice.
  */
 import { expect, test } from "bun:test";
-import { decideReply } from "../src/reply.ts";
+import { decideReply, replyMarker } from "../src/reply.ts";
 import type { ReplyDecision } from "../src/reply.ts";
 import { USER_TYPE } from "../src/types.ts";
 import { LATER, NOW, pin } from "./fixtures.ts";
@@ -195,4 +196,16 @@ test("a reply whose body is only whitespace is the quoted line alone", () => {
       text: REWRITTEN,
     });
   }
+});
+
+test("the reply marker replaces one that is already there and keeps the draft verbatim", () => {
+  // The producer side, exercised at its one copy (`panel-deps.ts` calls it for the panel's Enter). The
+  // mirror of the parser above: a draft that only *looks* like a marker — `Re 7:`, `Re #x:`, or one
+  // indented by a space the user typed — is not a marker to replace, because the pattern is anchored at
+  // offset 0 of the raw buffer.
+  expect(replyMarker("how about the blue one", 3)).toBe("Re #3: how about the blue one");
+  expect(replyMarker("Re 7: keep this", 3)).toBe("Re #3: Re 7: keep this");
+  expect(replyMarker("Re #9: draft", 4)).toBe("Re #4: draft");
+  expect(replyMarker("Re #x: not a marker", 4)).toBe("Re #4: Re #x: not a marker");
+  expect(replyMarker("  Re #1: indented", 4)).toBe("Re #4:   Re #1: indented");
 });

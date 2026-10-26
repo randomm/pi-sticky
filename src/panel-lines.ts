@@ -26,45 +26,56 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "./escape.ts";
-import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
 import {
-  META_RESERVE,
-  panelContentRows,
-  panelRowOwners,
-  panelRowStartOf,
-  panelWindowOffset,
-} from "./panel-rows.ts";
-
-import type { PanelStyle } from "./render.ts";
-import type { ViewPin } from "./types.ts";
-
-export {
+  CORNER_COLUMNS,
+  ELLIPSIS,
+  FRAME_BOTTOM_LEFT,
+  FRAME_BOTTOM_RIGHT,
+  FRAME_TOP_LEFT,
+  FRAME_TOP_RIGHT,
+  GUTTER,
+  INJECTED_RESET,
+  RULE,
+  blankRow,
+  glyph,
+  gutter,
+  padPlain,
+} from "./panel-frame.ts";
+import { isPanelSize } from "./panel-geometry.ts";
+import {
+  GUTTER_COLUMNS,
   META_RESERVE,
   PANEL_MIN_FRAME_COLUMNS,
   PANEL_MIN_FRAME_ROWS,
   panelAllRows,
   panelContentRows,
+  panelLayout,
   panelPinRows,
+  panelWindowOffset,
+} from "./panel-rows.ts";
+import type { PanelLayout, PanelRow } from "./panel-rows.ts";
+
+import type { PanelStyle } from "./render.ts";
+import type { ViewPin } from "./types.ts";
+
+export {
+  GUTTER_COLUMNS,
+  META_RESERVE,
+  panelAllRows,
+  panelContentRows,
+  panelLayout,
+  panelPinRows,
+  type PanelLayout,
   type PanelRow,
 } from "./panel-rows.ts";
+
+export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
 
 /** Line 1 of the panel, written into the top border. The rail's header carries ` · /pins`; here `/pins` is on the keyboard. */
 const HEADER = "📌 Pinned for you";
 
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
-
-/** The four glyphs of the rounded box, the gutter drawn on each side, and the rule between them. */
-const FRAME_TOP_LEFT = "╭";
-const FRAME_TOP_RIGHT = "╮";
-const FRAME_BOTTOM_LEFT = "╰";
-const FRAME_BOTTOM_RIGHT = "╯";
-const GUTTER = "│";
-const RULE = "─";
-
-/** The columns the frame owns: one gutter and its space on each side, plus the two corners. */
-const GUTTER_COLUMNS = 4;
-const CORNER_COLUMNS = 2;
 
 /** Whether a size is one a closed frame fits in: the builder draws nothing below either bound. */
 function isPanelFrameSize(width: number, height: number): boolean {
@@ -74,19 +85,7 @@ function isPanelFrameSize(width: number, height: number): boolean {
 }
 
 /**
- * The escape sequences `truncateToWidth` introduces when it cuts: a reset before the ellipsis and one
- * after it, spelled at runtime from code points (a literal escape in source is rewritten on its way into
- * the file). A border label that was cut would otherwise carry them onto the screen, where nothing
- * consumes them — the same idiom `render.ts`'s `cut` uses for a rail line.
- */
-const INJECTED_RESET = new RegExp(
-  `${String.fromCharCode(0x1b)}\\[0m${String.fromCodePoint(0x2026)}${String.fromCharCode(0x1b)}\\[0m`,
-  "g",
-);
-
-/** pi-tui's cut ellipsis, spelled from its own code point. */
-const ELLIPSIS = String.fromCodePoint(0x2026);
-
+ * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
 /** What the builder draws. `pins` is already in ranked order — the panel never re-sorts. */
 export interface PanelContent {
   pins: readonly ViewPin[];
@@ -123,14 +122,9 @@ function fitLine(line: string, width: number): string {
   return padPlain(plain, width);
 }
 
-/** Pad an already-safe line out to the width. */
-function padPlain(line: string, width: number): string {
-  return line + " ".repeat(Math.max(0, width - visibleWidth(line)));
-}
-
 /** A pin's text column and its dim `#id HH:MM` tail, fitted to the inner width between the gutters. */
 function pinRow(
-  row: { text: string; meta: string },
+  row: PanelRow,
   inner: number,
   style: PanelStyle,
   selected: boolean,
@@ -139,39 +133,6 @@ function pinRow(
   const tail = row.meta === "" ? "" : ` ${row.meta}`;
   const body = tail === "" ? row.text : `${row.text}${style.dim(tail)}`;
   return gutter(fitLine(selected ? style.selected(body) : body, inner), gutterAt);
-}
-
-/**
- * A content row between the gutters whose text column is empty: the inner columns are blank, so the row
- * is the two glyphs and the padding between them, assembled from parts that each measure what they claim.
- */
-function blankRow(inner: number, gutterAt: (text: string) => string): string {
-  return `${gutterAt(GUTTER)} ${" ".repeat(inner)} ${gutterAt(GUTTER)}`;
-}
-
-/**
- * `│ ` + the inner columns + ` │`. The parts are *joined*, never handed to `fitLine` as one string: a
- * theme that colours a gutter adds bytes `visibleWidth` does not count, and a cut over the whole row
- * would spend the gutter's column on an ellipsis — an open box is the failure this function exists to
- * make impossible, so each of its four parts is measured on its own and cannot be traded away.
- */
-function gutter(inner: string, gutterAt: (text: string) => string): string {
-  return `${gutterAt(GUTTER)} ${inner} ${gutterAt(GUTTER)}`;
-}
-
-/**
- * One frame glyph — a gutter or a corner — drawn in the theme's colour and occupying exactly one column.
- *
- * The glyph goes through the same escape policy as every other drawn line (`stripSequences`), because a
- * corner is drawn at the far right of a flush-right panel: a theme that smuggled a title or clipboard
- * sequence in around it would own the columns behind it. `visibleWidth` counts an OSC pair as free, so the
- * sequence cannot be traded for width — it is refused, and `padPlain` *rather than a cut* puts the column
- * back, since `truncateToWidth` spends a one-column cut on its own ellipsis and would turn a corner into
- * `…`. A theme's SGR colour is refused with the rest; `panelThemeStyle` is what asks the theme for the
- * frame's colour, and the test over there is what pins that wiring.
- */
-function glyph(frame: (text: string) => string, glyphText: string): string {
-  return padPlain(stripSequences(frame(glyphText)), 1);
 }
 
 /**
@@ -200,7 +161,6 @@ function borderLine(
   const rule = Math.max(0, width - CORNER_COLUMNS - visibleWidth(text));
   return `${glyph(frame, left)}${text}${RULE.repeat(rule)}${glyph(frame, right)}`;
 }
-
 /**
  * A border label at the room the border gives it, under the same escape policy as every other drawn line:
  * the theme's bytes are refused before the label is measured, so nothing a theme wraps the label in can
@@ -226,12 +186,19 @@ function fitLabel(label: string, room: number): string {
  * between the gutters, and the bottom border carrying the hint while focused. A negative selection
  * draws no highlight. An empty view draws no rows at all — the overlay is opened for the pins, and with
  * none the frame has nothing to clear.
+ *
+ * `layout` is the row table `panelLayout` built for the width `width` — the same table the frame's
+ * height was counted from, so the box is as tall as the rows it draws and no pin is wrapped twice. A
+ * caller with no table to hand gets one built here: `panelLayout` wraps at the text column, which is the
+ * width the rows are cut at, and its `rows` argument is this frame's content budget, so the window it
+ * reports cannot outgrow the height the caller asked for.
  */
 export function buildPanelLines(
   content: PanelContent,
   width: number,
   height: number,
   style: PanelStyle,
+  layout: PanelLayout | undefined = undefined,
 ): string[] {
   // A size the panel cannot promise about draws nothing at all: the whole point of this function is
   // that every line measures exactly `width` columns, and padding to 30.5 — or drawing a box whose two
@@ -254,17 +221,17 @@ export function buildPanelLines(
   // would leave a row short and the chat showing through it.
   const gutterAt = (text: string) => glyph(frame, text);
   // The gutters own four columns, so every pin is laid out at the inner width — and laid out *once*
-  // here: the offset and the selected pin's own start row both come out of this one table.
+  // for the whole frame: the height, the offset and the selected pin's own start row all come out of
+  // the one table the caller sized the frame with, or out of this one when it handed us nothing.
   const inner = width - GUTTER_COLUMNS;
-  const textWidth = Math.max(1, inner - META_RESERVE);
-  const owned = panelRowOwners(content.pins, textWidth, style);
-  const start = panelRowStartOf(owned, content.selection);
   const budget = panelContentRows(height);
+  const built = layout ?? panelLayout(content.pins, width, budget, content.selection, style);
+  const owned = built.owned;
   const offset = panelWindowOffset(
     budget,
     content.selection,
     owned.map((entry) => entry.row),
-    start,
+    built.start,
   );
 
   const header = `${HEADER} (${content.pins.length})`;

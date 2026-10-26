@@ -12,9 +12,8 @@
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
 import { PanelComponent } from "../src/panel-component.ts";
-import { replyMarker } from "../src/reply.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
-import { createOverlayHandle, createStubTui } from "./harness.ts";
+import { createOverlayHandle } from "./harness.ts";
 import { host, pins } from "./panel-component-host.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
 
@@ -48,7 +47,6 @@ test("render draws the header, the pins and — while focused — the hint", () 
   expect(c.render(40).some((line) => line.includes("Watch out"))).toBe(true);
   // The hint lives in the bottom border, which is drawn at the full width: a frame narrower than the
   // hint cuts it, so the whole hint only appears at a width that has room for it beside the corners.
-  expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(false);
   expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(false);
   c.focus();
   expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(true);
