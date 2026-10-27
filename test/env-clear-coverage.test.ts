@@ -184,14 +184,21 @@ test("the predicate flags a file that builds the extension without the clear", (
   expect(unprotected({ "innocent.test.ts": 'import { NOW } from "./fixtures.ts";' })).toEqual([]);
 });
 
-test("importing the clear takes both disable variables out of the environment", () => {
-  // `env-clear.ts` deletes *both* variables, and this file imports it, so both are absent here. The
+test("importing the clear leaves an environment that enables the extension", () => {
+  // `env-clear.ts` deletes *both* variables and never restores them, and this file imports it. The
   // assertion is the mechanical half of the rule the header of that file argues: a clear that loses one
   // line still clears the role, still lets every extension-building file load, and the whole suite goes
-  // green on an extension that registered nothing. Mutation-checked by hand: delete either line from
-  // `env-clear.ts` and this test is the one that fails.
-  expect(process.env.PI_ENSEMBLE_ROLE, "the pi-rukas role is gone").toBeUndefined();
-  expect(process.env.PI_STICKY_DISABLE, "PI_STICKY_DISABLE is gone").toBeUndefined();
+  // green on an extension that registered nothing — that is the failure this catches.
+  //
+  // It is asserted on what `readConfig` makes of the environment rather than on `process.env` itself:
+  // an operator's shell may legitimately hold one of the two variables, and only the verdict is the
+  // contract (`toBeUndefined()` on the raw variable would be green either way). Mutation-checked by
+  // hand: delete either line from `env-clear.ts` and this test is the one that fails, under an ambient
+  // `PI_STICKY_DISABLE=1` as well as without one.
+  expect(
+    readConfig(process.env).disabled,
+    "the clear leaves an environment that enables the extension",
+  ).toBe(false);
 });
 
 test("the clear is what makes an extension built from the environment register the tool", () => {

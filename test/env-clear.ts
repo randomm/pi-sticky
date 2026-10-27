@@ -10,14 +10,19 @@
  * one process and whichever file imported the clear first has already fixed `process.env` for the rest of
  * the run — run that file alone under a pi-rukas role and nothing is registered.
  *
- * **Both** variables are deleted, and that is not cosmetic. Bun runs test-file module scopes in
- * lexicographic order in one process and an env write in one file is visible to every file after it, so
- * a file that sorts earlier than this one and writes `PI_STICKY_DISABLE` — `test/config.test.ts` does,
- * at test scope — decides whether the extension registers anything for the rest of the run. Clearing
- * only the role leaves the whole suite free to go green on an extension that registered nothing.
+ * **Both** variables are deleted, and that is not cosmetic. Bun hoists a file's imports above its own
+ * top-level statements, so the order that decides `process.env` for the rest of the run is the order the
+ * clears are *imported* in, not the order the writes are written in — and a file that never imports this
+ * one can still write a variable. `test/config.test.ts` writes `PI_STICKY_DISABLE` at test scope, and an
+ * assertion that throws before its `finally` leaves the write standing for every file that runs after
+ * it. Clearing only the role therefore leaves the whole suite free to go green on an extension that
+ * registered nothing: `PI_STICKY_DISABLE=1 bun test` reads as 806 passing tests, all of them asserting
+ * against an empty recorder.
  *
  * The variables are *deleted* and not restored: an operator's own shell is not the state under test,
- * and there is no test that wants the extension disabled.
+ * and there is no test that wants the extension disabled. `test/env-clear-coverage.test.ts` asserts that
+ * the environment the clear leaves behind enables the extension, which is the mechanical half of this
+ * paragraph — delete either line below and that test is the one that fails.
  *
  * Import it for its side effect — the line is exactly `import "./env-clear.ts";`, the pattern
  * `test/env-clear-coverage.test.ts` matches — in any file that reaches the extension through the
