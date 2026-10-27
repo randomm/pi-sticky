@@ -6,7 +6,8 @@
 > `PI_STICKY_PLACEMENT` / `PI_STICKY_FILE` variables (the last two still listed in the config table at
 > 6.9) — are recorded in `docs/research-summary.md` section 4. The task checkboxes below were never
 > ticked and say nothing about what shipped. Do not file work against this file; section numbering is
-> kept because code and `docs/spike-results.md` cite it (6.2, 6.9, section 8).
+> kept because code and `docs/spike-results.md` cite it (6.2, 6.9, section 8), and `src/deps.ts`
+> refers to the `StickyDeps` block in the "File structure (historical)" section.
 
 > **For agentic workers:** Part 2 of this file is the original implementation plan, kept as history. It was executed by the pi-rukas work driver (one issue per task group). Use the executing-plans skill inline only when no driver is available. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,7 +19,7 @@
 
 **Spec:** Part 1 of this file. The owner asked for a single file, so the spec and the plan travel together.
 
-**Status:** drafted 2026-10-23; historical (see the banner above). The pi API facts below were checked against the installed pi 1.3.0 sources (`@earendil-works/pi-coding-agent`: `docs/`, `examples/`, `dist/core/extensions/types.d.ts`). The ecosystem scan read package READMEs only, not their source code. Six assumptions still need a runtime check; Task 1 checks them before anything else is built (section 8).
+**Status:** drafted 2026-10-23; historical (see the banner above). The pi API facts below were checked against the installed pi 1.3.0 sources (`@earendil-works/pi-coding-agent`: its `docs/`, `examples/` and `dist/`, read as an installed package — see AGENTS.md, "Context7 Protocol"). The ecosystem scan read package READMEs only, not their source code. Six assumptions were listed for a runtime check; all six are recorded as held in `docs/spike-results.md` (A1–A5 run in `test/spike.test.ts`; section 8).
 
 ---
 
@@ -45,7 +46,7 @@ Scan of the npm registry on 2026-10-23 (packages tagged `pi-package`, about 35 s
 
 ## 3. Use cases
 
-1. **Long interactive run.** The user starts a task in the pi terminal UI and leaves. After 40 minutes the agent hits a design choice it cannot make alone. It pins "Decide: keep the old config format or migrate? I paused the migration step." and continues with other work. Two hours later the user opens the terminal and sees the pin below the editor at once.
+1. **Long interactive run.** The user starts a task in the pi terminal UI and leaves. A while later the agent hits a design choice it cannot make alone. It pins "Decide: keep the old config format or migrate? I paused the migration step." and continues with other work. Two hours later the user opens the terminal and sees the pin below the editor at once.
 2. **pi-rukas PM session.** The pi-rukas PM (the main agent) drives several work cycles. A cycle parks with `needs-human-attention`. The PM, or pi-rukas itself through the event bus, pins "Cycle #553 needs you: intent gate parked on a stale path list". When the cycle resumes, the pin is removed.
 3. **Final result.** At the end of a long run the agent pins "Done: benchmark report in docs/bench/2026-10-23.md. Two models failed to load; see section 4." The user reads it, then types `/unpin 3`.
 4. **Headless run (phase 2).** A run without a terminal UI (print, JSON or a headless worker) still records pins. With `PI_STICKY_FILE` set, the extension also writes them to a Markdown file that another tool (a scheduled job, a notifier) can watch.
@@ -92,7 +93,7 @@ Widget key and status key: `pi-sticky`. Placement: `belowEditor` by default (see
 ### 6.2 The `pin_for_user` tool
 
 - `name: "pin_for_user"`, `label: "Pin for user"`.
-- `exposure: "model-only"`: declared to the model, not callable from codemode scripts. Pinning is an action toward the user, like asking a question. This also keeps every call a real transcript tool call, so its result `details` lands on the branch. Nested codemode calls leave no transcript entry (`docs/extensions.md`, Tools). Assumption A1 checks that the tool stays declared when codemode is active; a typical `~/.pi/agent/settings.json` has `"defaultTools": ["+codemode"]`.
+- `exposure: "model-only"`: declared to the model, not callable from codemode scripts. Pinning is an action toward the user, like asking a question. This also keeps every call a real transcript tool call, so its result `details` lands on the branch. Nested codemode calls leave no transcript entry (`docs/extensions.md`, Tools). Assumption A1 checks that the tool stays declared when codemode is active; `~/.pi/agent/settings.json` has `"defaultTools": ["+codemode"]` on the machine this was developed on.
 - `executionMode: "sequential"`: two pin calls in one assistant message must not race on the same state.
 - Parameters (TypeBox; `StringEnum` from `@earendil-works/pi-ai`):
 
@@ -315,21 +316,23 @@ These failure modes are implied by the spec but easy to miss. Each one has a tes
 
 ## File structure (historical)
 
-The `StickyDeps` interface is kept below because Task 5 and `src/deps.ts` refer to it (`src/deps.ts`
-deliberately diverges from it). The file-by-file table that used to sit alongside it listed files that
-were never created and omitted most of the ones that were, so it is gone: the jsdoc header of each
-module in `src/` is the authoritative description of that module.
+The file-by-file table that used to sit alongside this section listed files that were never created and
+omitted most of the ones that were, so it is gone: the jsdoc header of each module in `src/` is the
+authoritative description of that module. The same applies to the **Files:** lists in Part 2 — they name
+the modules as originally planned, not the modules that shipped.
 
-`extension.ts` holds the single mutable `state` and `hidden` values. Everything else receives them through a `deps` object:
+`StickyDeps` is reproduced below only as a historical record: the interface in `src/deps.ts` is the
+contract, and this one is what was written before the footer-status hide mode and the `pi-sticky.ui`
+entry were removed (docs/research-summary.md section 4). Do not treat it as a contract.
 
 ```ts
-interface StickyDeps {
+interface StickyDeps {              // historical — the interface in src/deps.ts is the contract
   config: StickyConfig;
   getState(): PinState;
   commit(next: PinState, via: "tool" | "entry", ctx?: ExtensionContext): void; // sets state; appends a pi-sticky.state entry when via === "entry"; redraws when ctx is given; mirrors
-  getHidden(): boolean;
-  setHidden(hidden: boolean, ctx: ExtensionContext): void;                    // appends pi-sticky.ui, redraws
-  now(): string;                                                              // ISO time; injectable in tests
+  getHidden(): boolean;             // removed: footer-status hide mode (research-summary §4)
+  setHidden(hidden: boolean, ctx: ExtensionContext): void;                    // removed: appends pi-sticky.ui (research-summary §4)
+  now(): string;                    // ISO time; injectable in tests
 }
 ```
 
@@ -558,7 +561,7 @@ interface StickyDeps {
 - Test: `test/tool.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2–4; `StickyDeps` (File structure section).
+- Consumes: Tasks 2–4; `StickyDeps` (the interface in `src/deps.ts` is the contract; the block in the "File structure (historical)" section is the historical one).
 - Produces:
 
   ```ts
@@ -729,7 +732,7 @@ This task adds nothing new. It proves that the five Review Focus items hold end 
 - Create: `README.md`, `docs/acceptance/2026-MM-DD.md`
 
 - [ ] **Step 1: README.** Cover what it does (one paragraph), install (`pi install git:git@github.com:randomm/pi-sticky`, with the warning not to symlink into `~/.pi/agent/extensions/`, section 6.10), the tool for models, the commands, the bus API with a TypeScript example, configuration (the table from 6.9) and limits.
-- [ ] **Step 2: Manual acceptance in tmux on a test machine**, with a real model through the default provider. Run `tmux new -d -s sticky -x 100 -y 40 'pi -e ./src/index.ts'`, then ask the agent to pin three messages, one per level, and to update one. Check with `tmux capture-pane -p -t sticky` after each step:
+- [ ] **Step 2: Manual acceptance in tmux on a test machine**, with a real model through the default provider. Run `tmux new -d -s sticky -x 100 -y 40 'pi -e ./src/index.ts'`, then ask the agent to pin three messages, one per level, and to update one. Check with `tmux capture-pane -p -t sticky` after each step. **The maintained acceptance surface today is the README ("The panel", "The rail", "Replying"): run those checks.** The steps below are the original 2026-10-23 checklist, kept as written — steps 1 and 3 name surfaces (a below-editor widget, a footer-status hide mode) that were cut before release, and step 7's 40-column pane is a width, not the rail:
   1. the widget appears below the editor in the ordering of R4;
   2. after about 100 lines of other output, the widget is still in place;
   3. `/pins` overlay, `/pins hide`, `/pins show`, `/unpin 2`;
