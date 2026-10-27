@@ -21,6 +21,7 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { TICK_INTERVAL_MS } from "../src/panel-tick.ts";
 import { KEY } from "../src/types.ts";
+import { RailComponent } from "../src/widget.ts";
 import { LATER } from "./fixtures.ts";
 import {
   PINNED,
@@ -30,7 +31,8 @@ import {
   frameWidth,
   panelComponent,
 } from "./panel-lifecycle-fixture.ts";
-import { createStubTui } from "./ui-stubs.ts";
+import { ONE } from "./panel-owner-wiring.ts";
+import { createPlainTheme, createStubTui } from "./ui-stubs.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
 /** One interval this file has seen: the callback it was handed, and whether it was cleared. */
@@ -184,6 +186,52 @@ test("a tick that re-ages the rail does not dispose its own hand away", async ()
   );
   component.dispose?.();
   expect(live()).toHaveLength(1);
+});
+
+test("the rail's teardown is reported, once, and only by the component that drew", async () => {
+  // Three things have to be true of the same line, and only a direct call to the component can separate
+  // them: pi replaces a widget by disposing the component the key held *and* rebuilding its factory, so a
+  // `dispose()` that reported unconditionally would let a reinstall, a recorder reaching for the component
+  // it holds, and a host that replays a stored factory each stand in for the rail going away — and stop the
+  // minute hand that asks for the install in the first place.
+  let reports = 0;
+  const rail = new RailComponent(
+    ONE,
+    DEFAULT_CONFIG,
+    createPlainTheme(),
+    () => LATER,
+    () => {
+      reports += 1;
+    },
+  );
+  // Built and never drawn: it was never on the screen, so its teardown says nothing.
+  rail.dispose();
+  expect(reports).toBe(0);
+  // Drawn, and now it is the rail — drawing is not a teardown.
+  expect(rail.render(60).length).toBeGreaterThan(0);
+  rail.dispose();
+  expect(reports).toBe(1);
+  // A teardown is told once: pi's own teardown is not idempotent for every host, and a second report would
+  // be read as a second surface going away.
+  rail.dispose();
+  expect(reports).toBe(1);
+  // A component that drew *after* it took the rail's place, and the first one's disposal is then a reinstall
+  // rather than a loss — which is exactly what a tick's own re-age costs, every minute.
+  const replacement = new RailComponent(
+    ONE,
+    DEFAULT_CONFIG,
+    createPlainTheme(),
+    () => LATER,
+    () => {
+      reports += 1;
+    },
+  );
+  replacement.render(60);
+  rail.dispose();
+  expect(reports).toBe(1);
+  // …and the component now on screen reports its own going.
+  replacement.dispose();
+  expect(reports).toBe(2);
 });
 
 test("a panel's dispose leaves the hand the rail still needs", async () => {

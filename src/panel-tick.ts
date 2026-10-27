@@ -138,7 +138,7 @@ export class PanelTick {
     // that throws out of pi's process. Read through `this` at tick time — and the wiring read at *failure*
     // time, so a session whose ui has already gone is asked whether it can still be told, rather than being
     // reached for through a context the guard has no business holding.
-    this.#handle = setInterval(() => this.tick(), TICK_INTERVAL_MS);
+    this.#handle = setInterval(() => containTick(this, this.#wiring), TICK_INTERVAL_MS);
   }
 
   /**

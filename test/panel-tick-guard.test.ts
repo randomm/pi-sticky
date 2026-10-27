@@ -17,6 +17,45 @@ import { expect, test } from "bun:test";
 import { forgetTickWarning } from "../src/panel-tick-guard.ts";
 import { NEXT_MINUTE, hand, throwOnce, thrower } from "./panel-tick-hand.ts";
 
+test("what the interval fires is the contained dispatch, not the tick", () => {
+  // Every other case in this file calls the guard itself, which is honest about what it tests and blind to
+  // this: `PanelTick.start` is the one place that decides *what the timer runs*, and a `start` that passed
+  // `this.tick()` to `setInterval` would keep every case below green while leaving a throwing host to
+  // terminate pi's process. So the handoff is taken from the timer: the callback is captured at `start` and
+  // fired here exactly as `setInterval` would fire it — detached, with nothing above it.
+  forgetTickWarning();
+  const real = globalThis.setInterval;
+  const realClear = globalThis.clearInterval;
+  // What `setInterval` is handed, and what `clearInterval` is later called with: the hand's handle must be
+  // the same object `start` armed, or a reload would leave the old interval running.
+  const seen: Array<() => void> = [];
+  const cleared: unknown[] = [];
+  globalThis.setInterval = ((fn: () => void) => {
+    seen.push(fn);
+    return { fn } as unknown as ReturnType<typeof setInterval>;
+  }) as unknown as typeof setInterval;
+  globalThis.clearInterval = ((handle: unknown) =>
+    cleared.push(handle)) as unknown as typeof clearInterval;
+  const h = hand();
+  const host = throwOnce(h.asked);
+  h.over({ redraw: () => host.redraw() });
+  try {
+    h.tick.start();
+    if (seen.length !== 1) throw new Error(`start armed ${seen.length} intervals, expected 1`);
+    // Detached, the way the timer calls it: the callback must not need a receiver, and must not throw.
+    const call = seen[0] as () => void;
+    expect(() => call()).not.toThrow();
+    expect(h.frames()).toBe(0);
+    // The hand still owns its handle, so a reload cannot leak the old interval: `start` clears before arming.
+    h.tick.start();
+    h.tick.stop();
+    expect(cleared.length).toBe(2);
+  } finally {
+    globalThis.setInterval = real;
+    globalThis.clearInterval = realClear;
+  }
+});
+
 test("a throwing redraw is contained, and the next minute still redraws", () => {
   // The containment swallows the throw, and a minute whose age has moved since is asked again — a host that
   // failed one minute does not own the panel's age for the rest of the session. The guard never redraws from
