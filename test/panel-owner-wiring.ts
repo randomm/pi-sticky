@@ -14,6 +14,7 @@ import { PanelOwner } from "../src/panel.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { PinView } from "../src/types.ts";
 import { DAY_BEFORE_NOW, NOW, pin } from "./fixtures.ts";
+import type { RecordedCustomCall } from "./recorded-ui-types.ts";
 
 /**
  * The style the wiring hands the owner. `PanelOwner` never draws, so it never calls `themeStyle`: every
@@ -34,6 +35,16 @@ export const ONE: PinView = {
   removed: [],
 };
 
+/**
+ * The `custom()` calls a hand-built context recorded, read through the recorder these files put on it.
+ *
+ * `PanelOwner["open"]`'s parameter is pi's own `ExtensionContext`, which has no recorder — the recorder is
+ * the harness's addition, spelled by `panel-lifecycle-fixture.ts`'s own `frameWidth` on a context it typed
+ * for that. Here the context arrives widened to the owner's type, so the read is one narrow cast.
+ */
+const framesOf = (context: Parameters<PanelOwner["open"]>[0]): RecordedCustomCall[] =>
+  (context as unknown as { recorder: { customCalls: RecordedCustomCall[] } }).recorder.customCalls;
+
 /** The wiring, with the decisions the test wants to watch: what the rail was told, and the view. */
 export function wiring(
   ctx: Parameters<PanelOwner["open"]>[0],
@@ -44,9 +55,12 @@ export function wiring(
   const railKeys: string[] = [];
   /** The `recordPanelShown` calls, so a test can see which half of the setter pair ran. */
   const records: boolean[] = [];
-  const state: { view: PinView; shown: boolean; rpc?: boolean } = {
+  const state: { view: PinView; shown: boolean; rpc?: boolean; clock?: string } = {
     view: opts.view ?? ONE,
     shown: opts.shown ?? true,
+    // The instant the owner ages a rail it is about to install. Fixed at `NOW` so a guard whose key ignored
+    // the age and one whose key read a second clock both answer the same way until a test moves it.
+    clock: NOW,
   };
   /**
    * The one place a `PanelDeps` is built for these files.
@@ -73,7 +87,7 @@ export function wiring(
     config: { focusKey: "ctrl+alt+p", maxWidgetLines: 12 },
     // The same reason: the component asks the host for the instant its ages are measured at, and a
     // hand-built deps that cannot answer one is an exception in the draw path rather than a stub.
-    now: () => NOW,
+    now: () => state.clock ?? NOW,
     setPanelShown: (shown: boolean) => {
       state.shown = shown;
     },
@@ -103,5 +117,19 @@ export function wiring(
   if (opts.custom !== undefined) {
     (ctx as unknown as { ui: Record<string, unknown> }).ui.custom = opts.custom;
   }
-  return { panel, terminal, railDraws, railKeys, records, state, ctx };
+  return {
+    panel,
+    terminal,
+    railDraws,
+    railKeys,
+    records,
+    state,
+    ctx,
+    /** State a width the way pi-tui does — the overlay's per-frame `visible()` — and reconsider the rail. */
+    frame: (columns: number) => {
+      const options = framesOf(ctx).at(-1)?.options?.overlayOptions;
+      const visible = typeof options === "function" ? undefined : options?.visible;
+      visible?.(columns, 24);
+    },
+  };
 }

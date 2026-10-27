@@ -79,10 +79,15 @@ export interface PanelContent {
    *
    * Part of the content rather than read here: the reserve and the drawn tail are the same figure only if
    * they are the same frame's answer to the same instant, and a builder that asked the clock for its own
-   * would measure a tail a minute away from the one it prints. The component always names it; a caller that
-   * does not is drawing a frame whose pins carry no age, which is what the rows fall back to.
+   * would measure a tail a minute away from the one it prints. The component always names it.
+   *
+   * Required, because both halves of that figure read it: `widestMetaColumns` measures the stamped tail and
+   * `panelLayout` stamps it, and an optional field lets one caller hand the two halves different instants —
+   * or none, which used to measure every tail as `--`, four columns narrower than the `999d` a frame draws.
+   * A caller with no clock of its own passes the instant it is drawing at, which is what the rows do when
+   * *their* `now` is left out.
    */
-  ageNow?: string;
+  ageNow: string;
 }
 
 /**

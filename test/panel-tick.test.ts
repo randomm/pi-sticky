@@ -11,42 +11,9 @@
  */
 import { expect, test } from "bun:test";
 
-import { PanelTick, TICK_INTERVAL_MS, surfaceDrawn } from "../src/panel-tick.ts";
-import type { TickWiring } from "../src/panel-tick.ts";
+import { TICK_INTERVAL_MS, surfaceDrawn } from "../src/panel-tick.ts";
 
-const T0 = "2026-10-25T10:37:13.000Z";
-const SAME_MINUTE = "2026-10-25T10:37:59.000Z";
-const NEXT_MINUTE = "2026-10-25T10:38:01.000Z";
-
-/** A hand whose clock the test moves, with the number of frames it has asked for. */
-function hand(over: Partial<TickWiring> = {}): {
-  tick: PanelTick;
-  at(iso: string): void;
-  frames(): number;
-} {
-  let iso = T0;
-  let frames = 0;
-  const wiring: TickWiring = {
-    pinCount: () => 1,
-    // The owner's answer over both surfaces: the tests below move it rather than a width or a flag, because
-    // the hand asks the owner that installs the surfaces and never measures a terminal of its own.
-    panelDrawn: () => true,
-    now: () => iso,
-    redraw: () => {
-      frames += 1;
-    },
-    ...over,
-  };
-  // The tick's clock is the wiring's own: a hand whose two clocks disagree measures an age against an
-  // instant no frame was drawn at.
-  return {
-    at(next) {
-      iso = next;
-    },
-    frames: () => frames,
-    tick: new PanelTick(wiring, wiring.now),
-  };
-}
+import { NEXT_MINUTE, SAME_MINUTE, T0, hand } from "./panel-tick-hand.ts";
 
 test("a whole minute is the bucket the age is asked about", () => {
   expect(TICK_INTERVAL_MS).toBe(60_000);

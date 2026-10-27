@@ -23,12 +23,11 @@ import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
 /**
- * The columns the two gutters own, and the undimmed tail's format. Both are owned by `panel-tail.ts` — the
- * module that imports neither this file nor the geometry, which is what keeps the row table and the geometry
- * from importing each other — and re-exported here so the callers that lay these rows out keep naming the
- * module whose rows they lay out.
+ * The columns the two gutters own, re-exported so the callers that lay these rows out keep naming the module
+ * whose rows they lay out. The tail's format is *not* re-exported: `panel-tail.ts` is its owner and the two
+ * callers that need it name it there.
  */
-export { GUTTER_COLUMNS, pinMeta } from "./panel-tail.ts";
+export { GUTTER_COLUMNS } from "./panel-tail.ts";
 
 import { META_COLUMNS } from "./panel-frame-geometry.ts";
 import { GUTTER_COLUMNS } from "./panel-tail.ts";
@@ -101,10 +100,9 @@ export function panelPinRows(
   const marker = style.marker(pin.level, MARKER[pin.level]);
   if (textWidth <= 0) {
     // No text column is the degenerate frame: the row is the marker and nothing else, and there is no row
-    // below it for the age to live on, so the first row carries the whole tail however wide it is.
-    const tails = pinTails(pin, 1, metaColumns, now, style.dim);
-    // The degenerate frame has no second row, so the one row carries the whole tail: id and age, whichever
-    // half the layout would otherwise have split between two lines.
+    // below it for the age to live on, so the one row carries the whole tail: id and age, whichever half the
+    // layout would otherwise have split between two lines — stamped whole rather than through `pinTails`,
+    // which decides which of its two rows gets which half and has no second row to give one to here.
     return [{ text: ` ${marker} `, tail: fullStamp(pin, style.dim, now) }];
   }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the

@@ -22,7 +22,15 @@ import { createStickyExtension } from "../src/extension.ts";
 import { TICK_INTERVAL_MS } from "../src/panel-tick.ts";
 import { KEY } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
-import { PINNED, boot, contextWith, flush, panelComponent } from "./panel-lifecycle-fixture.ts";
+import {
+  PINNED,
+  boot,
+  contextWith,
+  flush,
+  frameWidth,
+  panelComponent,
+} from "./panel-lifecycle-fixture.ts";
+import { createStubTui } from "./ui-stubs.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
 /** One interval this file has seen: the callback it was handed, and whether it was cleared. */
@@ -189,4 +197,49 @@ test("a panel's dispose leaves the hand the rail still needs", async () => {
   expect(live()).toHaveLength(1);
   panelComponent(railOnly.ctx.recorder.customCalls.at(-1))?.dispose();
   expect(live()).toHaveLength(1);
+});
+
+test("at 80 columns the tick's minute asks for a new rail, and a minute that did not move asks for none", async () => {
+  // The narrow-terminal case, where the rail — not the overlay — holds the pins, so the tick's `redraw()`
+  // reaches `RailGuard` and nothing else. A key that spelled only the view answered "already installed" to
+  // that frame, pi kept the component it already had, and the age on the rows froze: the only thing a rail
+  // can be re-aged *through* is the install, because `RailComponent` caches its rows by width. So the tick's
+  // decision is observable exactly one way — whether the widget key was written — and that is what this
+  // counts, from a baseline the rail's answer is already settled at.
+  watchTimers();
+  const started = LATER;
+  let clock = started;
+  const stub = stubApi();
+  createStickyExtension(DEFAULT_CONFIG, () => clock)(stub.api);
+  const ctx = contextWith(PINNED);
+  stub.emit("session_start", { reason: "startup" }, ctx);
+  await flush();
+  frameWidth(ctx.recorder, 80);
+  expect(live()).toHaveLength(1);
+  expect(ctx.recorder.widgets.has(KEY)).toBe(true);
+
+  // The hand the session on screen owns — the last interval not cleared, since the first frame's open
+  // replaces the one `session_start` built. Tick it once so both minute records are settled: a tick's first
+  // minute always draws, and the question here is the minutes after it.
+  const hand = live().at(-1);
+  if (!hand) throw new Error("no hand to fire");
+  hand.fn();
+  frameWidth(ctx.recorder, 80);
+  const written = () => ctx.recorder.widgetInstalls.get(KEY) ?? 0;
+
+  // A minute that did not move is a comparison, not an install: pi-tui asks far more often than a minute, and
+  // a rail that re-wrapped every pin on each ask would be the cost this guard exists to refuse.
+  clock = new Date(Date.parse(started) + 20_000).toISOString();
+  const settled = written();
+  hand.fn();
+  expect(written()).toBe(settled);
+
+  // Four minutes on, the age on the rail's rows has to change, so the frame is a different answer and the key
+  // is written — and the same minute asked twice is still one write, not two.
+  clock = new Date(Date.parse(started) + 4 * 60_000).toISOString();
+  hand.fn();
+  expect(written()).toBeGreaterThan(settled);
+  const reaged = written();
+  hand.fn();
+  expect(written()).toBe(reaged);
 });

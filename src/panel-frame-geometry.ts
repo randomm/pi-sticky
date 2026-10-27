@@ -35,11 +35,11 @@ import type { MetaDimmer } from "./panel-tail.ts";
 import type { ViewPin } from "./types.ts";
 
 /**
- * A pin-shaped stand-in for the tail's reserved floor: the id/age tail of the widest id the panel reserves
- * room for, aged a thousand years. The age is at worst four columns (`999d`) and `--`, the unreadable
- * stamp's answer, at worst two, so the width is the product's and only the id varies — which is what the
- * reserve exists for. (A pin of id 999, not the number 999: spelling the tail here would be a second copy of
- * the format `panel-row-tail.ts` owns.)
+ * A pin-shaped stand-in for the tail's reserved floor: the id half of the widest id the panel reserves room
+ * for. The age half is `RESERVED_NOW`'s job, not this one's — see the pair below.
+ *
+ * (A pin of id 999, not the number 999: spelling the tail here would be a second copy of the format
+ * `panel-row-tail.ts` owns.)
  */
 const RESERVED_PIN: ViewPin = {
   id: 999,
@@ -47,12 +47,25 @@ const RESERVED_PIN: ViewPin = {
   text: "",
   level: "info",
   source: "agent",
-  createdAt: "2970-01-01T00:00:00.000Z",
+  createdAt: "1970-01-01T00:00:00.000Z",
   updatedAt: "1970-01-01T00:00:00.000Z",
 };
 
-/** The age of a pin that is not a stamp at all: the widest age's shape, so the floor covers a missing one. */
-const RESERVED_NOW = "1970-01-01T00:00:00.000Z";
+/**
+ * The instant that makes `RESERVED_PIN`'s age the four-column `999d` the floor is sized on: exactly 999 days
+ * after the pin's own stamp.
+ *
+ * The age is a *difference*, so it is the pair that spells `#999 999d` — the pin's `createdAt` and the instant
+ * it is aged against, 999 days apart. Read the two the wrong way and the floor stops measuring the tail the
+ * panel means to reserve: both halves on the same side of the difference and the answer is `--` (two columns
+ * instead of four), or a gap a thousand years wide and the answer is the formatter's largest day count, which
+ * charges every frame for columns no row ever draws. `formatPinAge` (`time.ts`) caps nothing, so the distance
+ * has to be named rather than assumed from a year.
+ */
+/** 999 days: the widest age the panel reserves a tail for, as the difference `RESERVED_NOW` is measured by. */
+const RESERVED_AGE_MS = 999 * 24 * 60 * 60 * 1000;
+
+const RESERVED_NOW = new Date(Date.parse(RESERVED_PIN.createdAt) + RESERVED_AGE_MS).toISOString();
 
 /**
  * The columns `pinRow` puts before the tail, beside the tail itself rather than inside it.
@@ -86,8 +99,9 @@ export const RESERVED_TAIL = reservedTail();
 export const FRAME_COLUMNS = GUTTER_COLUMNS + CORNER_COLUMNS;
 
 /**
- * The floor of the id/age tail's reserve, in columns: the width of `pinMeta(RESERVED_PIN, RESERVED_NOW)`
- * (`#999 999d`) plus the separator — the tail the panel reserves room for out of the box, chosen because that
+ * The floor of the id/age tail's reserve, in columns: the width of the whole tail `RESERVED_PIN` draws at
+ * `RESERVED_NOW` (`#999 999d`) plus the separator — the tail the panel reserves room for out of the box,
+ * chosen because that
  * is the widest id a session of the whole pin budget (`MAX_PINS`, `bounds.ts`) ever mints before its ids start
  * counting up, and the widest age the formatter answers beside it.
  *
@@ -121,8 +135,10 @@ export const MIN_COLUMNS_FOR_META = FRAME_COLUMNS + META_COLUMNS + META_SEPARATO
  *
  * `now` is the instant the frame is aged against, and it is the same one the row table stamps its tails at:
  * the reserve is measured on the string the row prints, so a frame that aged its rows and measured them at
- * two different instants would charge the text for a tail it did not draw. Absent, the tails carry the clock
- * time they always showed, which is what a caller with no clock draws.
+ * two different instants would charge the text for a tail it did not draw. Required rather than optional for
+ * that reason: an absent one used to fall through to the empty string, which stamps every tail as `--` and
+ * measured a tail no row draws — the same class of bug as the flat reserve this file replaced. A caller with
+ * no clock of its own passes the instant it is drawing at, exactly as the rows' own default does.
  *
  * The reserve is measured across the whole view rather than per pin, so the layout cannot wrap a row at a
  * width the builder then has to cut to fit a wider id beside it.
@@ -130,14 +146,14 @@ export const MIN_COLUMNS_FOR_META = FRAME_COLUMNS + META_COLUMNS + META_SEPARATO
 export function widestMetaColumns(
   pins: readonly ViewPin[],
   dim: MetaDimmer,
-  /** The instant the frame is aged against; absent, the tails carry the clock time they always showed. */
-  now?: string,
+  /** The instant the frame is aged against; the same one the rows of that frame stamp their tails at. */
+  now: string,
 ): number {
   return widestStampColumns(
     pins,
     // The whole tail, which is what the reserve has to cover whatever row each half lands on: a frame that
     // measured only the id would charge the text for columns the age then took off the end of the row.
-    (pin) => fullStamp(pin, dim, now ?? ""),
+    (pin) => fullStamp(pin, dim, now),
     META_COLUMNS,
   );
 }

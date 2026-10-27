@@ -29,7 +29,7 @@ import { FOCUS_KEY } from "../src/panel-keys.ts";
 import { HINT } from "../src/panel-lines.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { StickyConfig, ViewPin } from "../src/types.ts";
-import { pin } from "./fixtures.ts";
+import { LATER, pin } from "./fixtures.ts";
 import { createOverlayHandle } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
 import { built } from "./panel-frame.ts";
@@ -50,6 +50,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false, reply
   selection,
   focused,
   replyHint: replyHintText,
+  // Required by `PanelContent`; these cases are about the border's label, not the age.
+  ageNow: LATER,
 });
 
 /** Wide enough for the whole hint and the whole reply label, corners and margins included. */

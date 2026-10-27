@@ -28,7 +28,7 @@ import {
 } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
-import { ageStamp, fullStamp, idStamp } from "../src/panel-tail.ts";
+import { idStamp } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -61,10 +61,6 @@ function rowsOf(lines: string[]): string[] {
  * string no row ever draws.
  */
 const metaOf = (id: number): string => idStamp(at(id, ""), style.dim);
-
-/** The age's tail as the row table stamps it for a pin whose age has a row of its own. */
-/** The whole tail — id and age — as the degenerate zero-text-column frame draws it. */
-const fullOf = (id: number): string => fullStamp(at(id, ""), style.dim, LATER);
 
 test("every pin's rows carry its #id and its age, uncut, at every width and every id", () => {
   // 30 → 80 covers the builder's own floor (`PANEL_MIN_FRAME_COLUMNS`) through the widest frame the

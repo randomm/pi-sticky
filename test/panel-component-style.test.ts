@@ -26,7 +26,7 @@ import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import type { PanelHost } from "../src/panel-host.ts";
 import { HINT } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS } from "../src/panel-rows.ts";
-import { ageStamp, fullStamp } from "../src/panel-tail.ts";
+import { fullStamp } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
 import { DAY_BEFORE_NOW, NOW, pin } from "./fixtures.ts";
 

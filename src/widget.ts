@@ -75,6 +75,17 @@ export class RailComponent implements Component {
 
   /** Whether this component has been drawn at least once since its last report. */
   #onScreen = false;
+  /**
+   * The one rail this extension instance has on screen, as reported by the component that drew it.
+   *
+   * The report `dispose()` makes is about *the rail the user was looking at*, and pi disposes the component a
+   * key held at the same moment it installs the replacement — so a per-component verdict cannot tell a rail
+   * that went away from a rail that was replaced. This cell can: the install names the component that is now
+   * the rail, and a teardown by anything else is a reinstall. Held as an erased shape rather than as a
+   * `RailComponent` because the only thing read of it is identity, and a field typed as its own class would
+   * be a leak of a private type into itself.
+   */
+  static #live: { invalidate(): void } | undefined;
 
   render(width: number): string[] {
     // The one fact `dispose()` needs to be honest about: a component pi never drew is not a surface that
@@ -92,6 +103,10 @@ export class RailComponent implements Component {
     });
     this.#cachedWidth = width;
     this.#cachedLines = lines;
+    // Drawing is what makes this component *the* rail: pi hands a factory out per install and the host
+    // renders the one it kept, so the component that has drawn is the one on the screen — and the one whose
+    // teardown is worth reporting.
+    RailComponent.#live = this;
     return lines;
   }
 
@@ -118,30 +133,57 @@ export class RailComponent implements Component {
    * reach the component it holds (the recorder does exactly that) gets a fresh one that was never on
    * screen, and a teardown report from it would stop the hand for a rail the user is still looking at.
    * Optional, because the rail is also built by tests that have no surfaces to keep time for.
+   *
+   * **Edge-triggered, per rail rather than per component**: reported only when this component is the one the
+   * extension still believes is the rail. A report that every disposed rail component made would fire on
+   * every install, because that is what `setExtensionWidget` does to the component it is replacing, and a
+   * tick that re-ages a rail pays exactly one of those disposals per minute. It is kept rather than dropped
+   * because the per-tick `#drawn()` check does not cover the case: the hand asks whether a surface *is*
+   * drawn, and only the teardown lets it ask at the moment neither one is — the last dismissal clears the
+   * widget without a session boundary, and a rail pi pops without asking has no other witness.
    */
   dispose(): void {
     this.invalidate();
     if (!this.#onScreen) return;
     this.#onScreen = false;
+    if (RailComponent.#live !== this) return;
+    RailComponent.#live = undefined;
     this.#onDispose?.();
   }
+}
+
+/** What `drawPins` asks of the panel owner: the minute the rail reports, and who owns the pins. */
+export interface RailPanel {
+  /**
+   * The predicate pi-tui itself asks before drawing the overlay — the whole handoff, in one member. Omitted
+   * means there is no panel to yield to (rpc, print and json pass nothing), so the rail draws.
+   */
+  isVisible(): boolean;
+  /**
+   * The instant the rows are about to be stamped at, reported *before* they are drawn.
+   *
+   * Optional because a rail can be drawn for an owner that has no guard to speak to, and read before the
+   * draw rather than after it because the draw is reached from inside the guard's own decision: a minute
+   * written afterwards is one the call that asked for this frame never saw. See `RailHandoff`
+   * (`panel-rail-handoff.ts`).
+   */
+  railDrawn?(iso: string): void;
 }
 
 export function drawPins(
   ctx: ExtensionContext,
   view: PinView,
   config: StickyConfig,
-  /**
-   * The live panel owner, whose `isVisible` is the predicate pi-tui itself asks before drawing the
-   * overlay — the whole handoff, in one argument. Omitted means there is no panel to yield to (rpc,
-   * print and json pass nothing), so the rail draws.
-   */
-  panel?: { isVisible(): boolean },
+  /** The live panel owner — see `RailPanel`. */
+  panel?: RailPanel,
   /** The extension's clock, so both rail paths age at the instant the panel ages at. */
   clock?: AgeClock,
   /** The rail was disposed by pi; the extension stops the minute's redraw for it. */
   onRailDispose?: () => void,
 ): void {
+  // First, whatever the mode: the age the rows are about to carry is the one the rail's guard has to compare
+  // the next frame against, and a frame drawn without it would leave the guard holding the previous minute.
+  panel?.railDrawn?.(ageAt(clock));
   if (!ctx.hasUI) return;
   if (view.pins.length === 0) {
     ctx.ui.setWidget(KEY, undefined);

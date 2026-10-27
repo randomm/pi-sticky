@@ -56,6 +56,15 @@ export type { CustomComponent };
  */
 export class RecordingUi implements ExtensionUIContext {
   readonly widgets = new Map<string, RecordedWidget>();
+  /**
+   * How many times each widget key was *written*, including the clear.
+   *
+   * `widgets` answers what is installed; this answers how often the extension asked, which is the only way to
+   * see a guard that decided — or refused — to reinstall. A rail is re-installed by writing the key, so the
+   * count is the observable half of `RailGuard`'s decision for a surface whose rows the recorder cannot read
+   * back (it stores the factory, not the component pi built).
+   */
+  readonly widgetInstalls = new Map<string, number>();
   readonly statuses = new Map<string, string>();
   readonly notifications: RecordedNotification[] = [];
   readonly customCalls: RecordedCustomCall[] = [];
@@ -137,6 +146,7 @@ export class RecordingUi implements ExtensionUIContext {
     // pi disposes the component a key previously held before installing the new one, in
     // either placement; the recorder does the same so a test can assert on teardown.
     this.#disposeWidget(key);
+    this.widgetInstalls.set(key, (this.widgetInstalls.get(key) ?? 0) + 1);
     if (content === undefined) return;
     this.widgets.set(key, {
       content,

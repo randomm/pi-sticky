@@ -1,3 +1,4 @@
+import type { AgeClock } from "./panel-age.ts";
 /**
  * The extension's minute hand, owned by one extension instance and started by one session.
  *
@@ -18,7 +19,7 @@
  *   the hand when the owner says neither surface is drawn, and never starts one: a teardown that could
  *   rebuild a hand would re-arm the clock the surface just asked to stop.
  */
-import type { AgeClock } from "./panel-age.ts";
+import { forgetTickWarning } from "./panel-tick-guard.ts";
 import { PanelTick } from "./panel-tick.ts";
 import type { TickWiring } from "./panel-tick.ts";
 
@@ -70,6 +71,10 @@ export class SessionTick {
    */
   restart(mode: string): void {
     this.stop();
+    // A new session is a new host, so a failure the previous one reported does not speak for this one:
+    // the guard's one-line memory (`panel-tick-guard.ts`) is cleared here rather than at the tick, which
+    // cannot tell a first failure from the hundredth minute of the same one.
+    forgetTickWarning();
     if (!DRAWING_MODES.includes(mode)) return;
     this.#tick = this.#make();
     this.#tick.start();

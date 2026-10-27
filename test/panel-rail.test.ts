@@ -9,7 +9,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { NOW, pin } from "./fixtures.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { contextWith, flush } from "./panel-lifecycle-fixture.ts";
 import { wiring } from "./panel-owner-wiring.ts";
 
@@ -87,5 +87,51 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
 
   // …and a frame that changed nothing after it costs nothing again.
   h.panel.refresh();
+  expect(h.railDraws.length).toBe(installed + 2);
+});
+
+test("a minute that moved re-installs the rail, and a frame or a keypress does not", async () => {
+  // The rail is a component pi keeps, so the age on its rows only moves when the guard's key moves. Two
+  // rules, one guard: the minute the owner aged its last rail at is in the key (so the tick's redraw is not
+  // answered "already installed"), and a frame or a keypress — which move nothing the key spells — is
+  // answered by a comparison. A bucket that was read twice, once by the rows and once by the key, would
+  // break the first rule; a key that ignored it would break it silently, at 80 columns, once a minute.
+  const ctx = contextWith([]);
+  const h = wiring(ctx);
+  h.terminal.note(80);
+  h.panel.open(ctx);
+  await flush();
+  h.panel.refresh();
+  const installed = h.railDraws.length;
+  expect(installed).toBeGreaterThan(0);
+
+  // A frame (`visible()`, which pi-tui asks every render cycle) and a keypress (`refresh()`, which is what
+  // unfocusing and a command redraw both reach) cost nothing.
+  h.frame(80);
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(installed);
+
+  // The minute the rail's rows are stamped at moved. The draw the guard asks for is the extension's own
+  // `redrawRail`, and that draw is what reports the minute it stamped — so a test drives the pair the way
+  // `extension.ts` does, and the guard sees the age the installed component actually printed.
+  // One minute past `LATER`, the bucket the rail's rows move to.
+  const LATER2 = new Date(Date.parse(LATER) + 60_000).toISOString();
+  // The pair `drawRail` is: record the instant the rows are stamped at, then ask for the rail. The owner
+  // cannot read the age itself and get the right answer — the instant belongs to the draw, not to the frame
+  // that asked for it — so the test drives the two calls in the order `extension.ts` does.
+  const tickTheRail = (at: string) => {
+    h.state.clock = at;
+    h.panel.railDrawn?.(at);
+    h.panel.refresh();
+  };
+  tickTheRail(LATER);
+  expect(h.railDraws.length).toBe(installed + 1);
+  // The same minute again: the answer the guard already holds, so a comparison and no second install.
+  tickTheRail(LATER);
+  expect(h.railDraws.length).toBe(installed + 1);
+  // A minute the rows really did move to installs once more.
+  tickTheRail(LATER2);
+  expect(h.railDraws.length).toBe(installed + 2);
+  tickTheRail(LATER2);
   expect(h.railDraws.length).toBe(installed + 2);
 });

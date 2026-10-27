@@ -198,8 +198,11 @@ test("hostile text drawn at a width that forces a cut carries no escape, control
         width,
         plain,
       );
-      // Three rows: the two borders and the cut row between them.
-      expect(lines.length).toBe(3);
+      // The cut rows: the two borders, plus one row for a pin whose text fits the text column and one
+      // more once the `#id`/age pair no longer fits beside it — the age takes the row below rather than
+      // the id's columns. Two rows of content at the frame's own floor, one anywhere roomier.
+      expect([3, 4]).toContain(lines.length);
+      if (width > MIN_FRAME_WIDTH) expect(lines).toHaveLength(3);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }

@@ -77,7 +77,10 @@ const view = (id: number) => ({
  * and only ever *below* `roomFor` — the bound where the frame can hold the tail beside a column of text.
  */
 const roomFor = (id: number): number =>
-  FRAME_COLUMNS + widestMetaColumns([at(id)], bracketingStyle.dim) + META_SEPARATOR_COLUMNS + 1;
+  FRAME_COLUMNS +
+  widestMetaColumns([at(id)], bracketingStyle.dim, LATER) +
+  META_SEPARATOR_COLUMNS +
+  1;
 
 /** The lines of a one-pin frame at `width`, drawn with the wrapping theme. */
 function frame(id: number, width: number): string[] {
