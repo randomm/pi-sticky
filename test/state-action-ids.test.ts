@@ -12,7 +12,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { MAX_PINS } from "../src/bounds.ts";
-import { type ApplyLimits, applyAction } from "../src/state.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
 import { NOW, pin, state, uidSource } from "./fixtures.ts";
 
 const limits = (maxPins = 5): ApplyLimits => ({ maxPins, newUid: uidSource() });

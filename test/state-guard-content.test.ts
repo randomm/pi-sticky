@@ -14,7 +14,8 @@ import { describe, expect, test } from "bun:test";
 
 import { plainStyle, renderList, renderRailLines } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
-import { isPinState, reconstruct } from "../src/state.ts";
+import { isPinState } from "../src/state-guards.ts";
+import { reconstruct } from "../src/state.ts";
 import { customEntry, pin, removal, state, toolResultEntry } from "./fixtures.ts";
 
 const cp = (...codes: number[]): string => String.fromCodePoint(...codes);

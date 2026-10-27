@@ -6,6 +6,10 @@
  *
  * `RecordingUi.custom()` resolves a `done()` only when it is called in the same turn, so every
  * assertion here reads the *record* (`customCalls[i].result`), never an awaited value.
+ *
+ * `test/env-clear.ts` is imported for its side effect only: `boot` at module scope is a call to
+ * `createStickyExtension` — one of the two calls that read `PI_ENSEMBLE_ROLE` — and an ambient
+ * pi-rukas role would register nothing, so a panel assertion here would read an empty recorder.
  */
 import { expect, test } from "bun:test";
 

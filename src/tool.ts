@@ -21,9 +21,9 @@ import { Type } from "typebox";
 
 import { isPositiveSafeInteger } from "./bounds.ts";
 import { type StickyDeps, copyState } from "./deps.ts";
+import { applyAction } from "./reducer.ts";
 import { renderList } from "./render.ts";
 import { sanitizePinText } from "./sanitize.ts";
-import { applyAction } from "./state.ts";
 import { TOOL_NAME } from "./types.ts";
 import type { PinLevel, PinState, PinView } from "./types.ts";
 

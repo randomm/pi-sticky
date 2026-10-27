@@ -8,7 +8,8 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines, panelAllRows, panelLayout, panelPinRows } from "../src/panel-lines.ts";
+import { buildPanelLines } from "../src/panel-lines.ts";
+import { panelAllRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin, view } from "./fixtures.ts";

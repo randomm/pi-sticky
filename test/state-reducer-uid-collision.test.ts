@@ -9,13 +9,10 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import {
-  type ActionInput,
-  type ApplyLimits,
-  EMPTY_STATE,
-  applyAction,
-  isPinState,
-} from "../src/state.ts";
+import type { ActionInput } from "../src/action.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
+import { isPinState } from "../src/state-guards.ts";
+import { EMPTY_STATE } from "../src/state.ts";
 import { NOW, pin, removal, state } from "./fixtures.ts";
 
 const pinAction = (text: string) =>

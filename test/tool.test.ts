@@ -10,6 +10,8 @@
  */
 import { expect, test } from "bun:test";
 
+import "./env-clear.ts";
+
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { EMPTY_STATE } from "../src/state.ts";

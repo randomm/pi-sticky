@@ -10,6 +10,9 @@
  * than the one the helper opened. The live harness is where those three are exercised.
  */
 import { expect, test } from "bun:test";
+
+import "./env-clear.ts";
+
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

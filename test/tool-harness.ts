@@ -11,7 +11,13 @@
  * `redraw` is *not* a rebuild. pi appends the tool result only after `execute` returns, so the
  * redraw the tool triggers still reads the branch as it was, and the state moves when `call`
  * appends the entry — the order pi itself imposes.
+ *
+ * `./env-clear.ts` is imported for its side effect only: this harness builds its config from
+ * `DEFAULT_CONFIG`, and an ambient pi-rukas `PI_ENSEMBLE_ROLE` is the one thing that would make
+ * `readConfig` report the extension disabled.
  */
+import "./env-clear.ts";
+
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";

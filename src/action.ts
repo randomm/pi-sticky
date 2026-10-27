@@ -48,7 +48,7 @@ export type Action =
  * `applyAction` can name the batch for the payload no model typed and the field for everything a
  * model did type wrongly.
  */
-export type IdsResult = { ok: true; ids: number[] | "all" } | { ok: false; oversized?: true };
+type IdsResult = { ok: true; ids: number[] | "all" } | { ok: false; oversized?: true };
 
 /**
  * What `applyAction` is actually handed: the body of the tool call as the wire delivered it, with

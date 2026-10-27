@@ -21,7 +21,7 @@ import {
   snapshotFromEntry,
   userActionFrom,
 } from "./session-entries.ts";
-import { isPinState, isUIShown, isUserAction } from "./state-guards.ts";
+import { isPinState } from "./state-guards.ts";
 
 import type { PinState, PinView, Removal, UserAction, ViewPin } from "./types.ts";
 
@@ -37,13 +37,6 @@ export const EMPTY_STATE: PinState = Object.freeze({
   nextId: 1,
   removed: Object.freeze([]) as readonly [],
 }) as unknown as PinState;
-
-// Re-exported so the module the plan names as the state surface keeps its guards and its reducer;
-// the rules themselves live in state-guards.ts and reducer.ts.
-export { isPinState, isUIShown, isUserAction };
-export { applyAction } from "./reducer.ts";
-export type { Action, ActionInput, ApplyLimits, ApplyResult } from "./action.ts";
-export { REMOVAL_HISTORY } from "./bounds.ts";
 
 /** A user action is addressed by uid: the only address that survives a branch edit. */
 function applyUserAction(state: PinState, action: UserAction): PinState {

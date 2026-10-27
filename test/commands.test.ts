@@ -3,6 +3,10 @@
  * `ExtensionCommandContext` and a dismissal has to reach the session through `pi.appendEntry`
  * before any rebuild can see it. A hand-built context would let a command that only mutates memory
  * look correct — the whole point of a dismissal is that it is written down.
+ *
+ * `test/env-clear.ts` is imported for its side effect only: `extension` at module scope is a call to
+ * `createStickyExtension` — one of the two calls that read `PI_ENSEMBLE_ROLE` — and an ambient
+ * pi-rukas role would register nothing, so a command handler below would not exist at all.
  */
 import { expect, test } from "bun:test";
 
@@ -11,6 +15,7 @@ import { createStickyExtension } from "../src/extension.ts";
 import { LATER, localTime } from "./fixtures.ts";
 import { call, createHarness, reply } from "./harness.ts";
 import { userEntries } from "./integration-support.ts";
+import "./env-clear.ts";
 
 const extension = createStickyExtension(DEFAULT_CONFIG, () => LATER);
 

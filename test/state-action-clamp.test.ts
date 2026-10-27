@@ -12,7 +12,8 @@ import { describe, expect, test } from "bun:test";
 import { clampMaxPins } from "../src/action.ts";
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { type ApplyLimits, applyAction, isPinState } from "../src/state.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
+import { isPinState } from "../src/state-guards.ts";
 import type { PinState } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 

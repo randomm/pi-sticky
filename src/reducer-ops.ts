@@ -12,12 +12,8 @@ import { MAX_PIN_ID, REMOVAL_HISTORY } from "./bounds.ts";
 import { formatLocalTime } from "./time.ts";
 import type { Pin, PinLevel, PinSource, PinState, Removal } from "./types.ts";
 
-// The one copy of the window lives in bounds.ts, which `isPinState` quotes too: a local `20` here
-// and a local `20` there drift the first time one side is edited, and the drift shows up as the
-// reducer producing snapshots its own guard rejects. Re-exported because `state.ts` publishes it.
-export { REMOVAL_HISTORY };
-
-export interface PinLimits {
+/** The budget the three ops are given. The one copy of the window they cut to is `REMOVAL_HISTORY`. */
+interface PinLimits {
   maxPins: number;
 }
 

@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import {
-  formatLocalTime,
   orderPins,
   plainStyle,
   renderList,
   renderPinsText,
   renderRailLines,
 } from "../src/render.ts";
+import { formatLocalTime } from "../src/time.ts";
 import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
 import { LATER, LATER_TIME, NOW, NOW_TIME, localTime, pin, view } from "./fixtures.ts";
 

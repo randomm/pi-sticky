@@ -12,7 +12,9 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { type ApplyLimits, type ApplyResult, EMPTY_STATE, applyAction } from "../src/state.ts";
+import type { ApplyResult } from "../src/action.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
+import { EMPTY_STATE } from "../src/state.ts";
 import type { PinState } from "../src/types.ts";
 import { NOW, pin, state } from "./fixtures.ts";
 

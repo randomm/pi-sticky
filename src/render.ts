@@ -21,10 +21,6 @@ import { foldBreaks, stripSequences } from "./escape.ts";
 
 import { formatLocalTime } from "./time.ts";
 
-// Re-exported so the public surface the plan names for render.ts keeps `formatLocalTime`; the
-// implementation lives in time.ts, which the state reducer also imports.
-export { formatLocalTime };
-
 import type { PinLevel, PinView, ViewPin } from "./types.ts";
 
 /** Rank of a level: warning first, then what the user must decide, then facts. */

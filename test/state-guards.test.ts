@@ -11,7 +11,8 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { HostContext } from "../src/context.ts";
 import { initialShown } from "../src/panel-deps.ts";
 import { latestUIShown } from "../src/session-entries.ts";
-import { EMPTY_STATE, isPinState, isUIShown, isUserAction, reconstruct } from "../src/state.ts";
+import { isPinState, isUIShown, isUserAction } from "../src/state-guards.ts";
+import { EMPTY_STATE, reconstruct } from "../src/state.ts";
 
 /** The members `initialShown` asks of a context, spelled for a guard test with no ui to give. */
 function context(entries: readonly unknown[]): HostContext {

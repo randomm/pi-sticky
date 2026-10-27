@@ -5,7 +5,13 @@
  * these build what a session would otherwise hand the extension: a context whose session manager
  * returns a chosen branch, a `custom()` recorder whose `done()` is observable, and the two branch
  * entry shapes the panel reads (`pin_for_user` snapshots and `pi-sticky.ui` toggles).
+ *
+ * `boot` at module scope is one of the two calls that read `PI_ENSEMBLE_ROLE`, so this fixture imports
+ * `./env-clear.ts` first: an ambient pi-rukas role would register nothing, and every panel test that
+ * boots through here would read an empty recorder and pass.
  */
+import "./env-clear.ts";
+
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
