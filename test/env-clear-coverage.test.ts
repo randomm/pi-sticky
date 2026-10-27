@@ -18,10 +18,11 @@
  * files that had drifted when this was written.
  *
  * Same shape as `file-size.test.ts`: read files off disk, assert on the set, and prove the
- * predicate on synthetic source so the check cannot pass by matching nothing. The file also asserts,
- * from its own imports, that `env-clear.ts` really takes *both* variables out of `process.env` — a
- * clear that silently loses one of the two leaves the whole suite able to go green on an extension
- * that registered nothing.
+ * predicate on synthetic source so the check cannot pass by matching nothing. The file then witnesses the
+ * clear itself: it puts both disable variables into `process.env` and then re-enters `env-clear.ts` under a
+ * fresh query string, which bun treats as a new module and runs the body again. A clear that loses one of
+ * its two lines leaves the suite red on an extension that registered nothing, in an operator's shell and in
+ * a clean one.
  */
 import { expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
@@ -31,9 +32,6 @@ import { readConfig } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import type { StickyConfig } from "../src/types.ts";
 import { TOOL_NAME } from "../src/types.ts";
-// This file both forces and observes the two variables, so it must not be at the mercy of whatever an
-// earlier file in the same process left in `process.env` — it clears them itself.
-import "./env-clear.ts";
 import { LATER } from "./fixtures.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
@@ -46,15 +44,23 @@ const BUILDS = /createStickyExtension\(|\bboot\(/;
 /** Bare side-effect import of the clear. */
 const CLEARS = /^\s*import\s+["']\.\/env-clear\.ts["'];?\s*$/m;
 
+/** The helper modules that clear the environment for every file that imports them. */
+const HELPERS = ["integration-support", "panel-lifecycle-fixture", "tool-harness"];
+
 /**
- * An import of one of the helpers that clear the environment themselves. The `(?!type\s)` is the point:
- * a type-only import is elided at runtime, so its module body — and the `env-clear.ts` import at the top
- * of it — never runs, and a file guarded only by one is unguarded. A `(?:type\s+)?` would have admitted
- * it; the negative lookahead rejects it without rejecting the multi-line value imports real files use
- * (see `panel-lifecycle-toggles.test.ts`), and the rejection is proved on synthetic source below.
+ * An import of one of the helpers that clear the environment themselves, generated from `HELPERS` so the
+ * guarded set has exactly one source: a name added to `HELPERS` with no pattern behind it guards nothing.
+ * The `(?!type\s)` is the point: a type-only import is elided at runtime, so its module body — and the
+ * `env-clear.ts` import at the top of it — never runs, and a file guarded only by one is unguarded. A
+ * `(?:type\s+)?` would have admitted it; the negative lookahead rejects it without rejecting the
+ * multi-line value imports real files use (see `panel-lifecycle-toggles.test.ts`), and the rejection is
+ * proved on synthetic source below. The alternation is `HELPERS.join("|")`, so a helper that joins the
+ * guarded set is guarded the moment it joins the list, and one that drops out stops matching at once.
  */
-const HELPER =
-  /^\s*import\s+(?!type\s)[^;]*?from\s+["']\.\/(integration-support|panel-lifecycle-fixture|tool-harness)\.ts["'];/m;
+const HELPER = new RegExp(
+  `^\\s*import\\s+(?!type\\s)[^;]*?from\\s+["']\\./(${HELPERS.join("|")})\\.ts["'];`,
+  "m",
+);
 
 /**
  * A file counts as guarded when it clears the environment itself, or imports a helper that does for
@@ -66,9 +72,11 @@ function guarded(source: string): boolean {
 }
 
 /**
- * These two own the two variables as *inputs*: `test/index.test.ts` and `test/config.test.ts` force
- * and restore them per case, so they must not be cleared — and neither reaches the extension through
- * the ambient environment anyway.
+ * The three files that own the two variables rather than observe them: `test/index.test.ts` and
+ * `test/config.test.ts` force and restore them per case, so they must not be cleared — and neither
+ * reaches the extension through the ambient environment anyway. This file witnesses the clear itself,
+ * constructing the environment it asserts on, so it is exempt for the same reason. None of the three
+ * builds the extension off `process.env`.
  */
 const EXEMPT = ["index.test.ts", "config.test.ts", "env-clear.ts", "env-clear-coverage.test.ts"];
 
@@ -89,9 +97,6 @@ function unprotected(sources: Record<string, string>): string[] {
     .filter((name) => BUILDS.test(sources[name] ?? ""))
     .filter((name) => !guarded(sources[name] ?? ""));
 }
-
-/** The helper modules that clear the environment for every file that imports them. */
-const HELPERS = ["integration-support", "panel-lifecycle-fixture", "tool-harness"];
 
 /** One helper import with the given prefix, e.g. `import type { Booted } from "…";`. */
 function helperImport(prefix: string, helper: string): string {
@@ -185,65 +190,72 @@ test("the predicate flags a file that builds the extension without the clear", (
 });
 
 test("importing the clear leaves an environment that enables the extension", () => {
-  // `env-clear.ts` deletes *both* variables and never restores them, and this file imports it. The
-  // assertion is the mechanical half of the rule the header of that file argues: a clear that loses one
-  // line still clears the role, still lets every extension-building file load, and the whole suite goes
-  // green on an extension that registered nothing — that is the failure this catches.
-  //
-  // It is asserted on what `readConfig` makes of the environment rather than on `process.env` itself:
-  // an operator's shell may legitimately hold one of the two variables, and only the verdict is the
-  // contract (`toBeUndefined()` on the raw variable would be green either way). Mutation-checked by
-  // hand: delete either line from `env-clear.ts` and this test is the one that fails, under an ambient
-  // `PI_STICKY_DISABLE=1` as well as without one.
+  // What the clear leaves in `process.env` for every file that imports it, asserted on the verdict
+  // `readConfig` reaches there rather than on the raw variables (an operator's shell may hold one
+  // legitimately, and `toBeUndefined()` on the variable would be green either way).
   expect(
     readConfig(process.env).disabled,
     "the clear leaves an environment that enables the extension",
   ).toBe(false);
 });
 
-test("the clear is what makes an extension built from the environment register the tool", () => {
+test("the clear is what makes an extension built from the environment register the tool", async () => {
   // The witness for the rule, in the file that enforces it, and the reason the rule is worth having:
-  // `readConfig` reads `process.env` when `createStickyExtension` is *called*, so with either variable
-  // in the environment the extension registers no tool at all — and a test that never checks
-  // registration still passes while asserting against an empty recorder.
+  // `readConfig` reads `process.env` when `createStickyExtension` is *called*, so with either variable in
+  // the environment the extension registers no tool at all — and a test that never checks registration
+  // still passes while asserting against an empty recorder.
   //
-  // Both variables are forced here rather than merely observed, because `env-clear.ts` deletes them at
-  // import: reading them would be a tautology. The environment is cleared at entry first, so the
-  // "cleared environment enables" branch below is genuinely constructed rather than inherited from
-  // whatever an earlier file left behind (bun runs one process, and `config.test.ts` writes
-  // `PI_STICKY_DISABLE` at test scope). Each is then set on its own, so the refusal is attributable to
-  // that one variable, and the ambient values are restored afterwards for the rest of the suite.
+  // The environment is *constructed*, not inherited. Both variables are written here and then taken out by
+  // the clear itself, re-entered under a query string: bun keys its module registry on the whole specifier,
+  // so a fresh one runs `env-clear.ts`'s body again instead of hitting the copy some earlier file already
+  // imported. Delete one of the clear's two lines and that variable is still poisoned at the assertions
+  // below, `readConfig` reports the extension disabled, and the tool list comes back empty. That holds in a
+  // shell holding neither variable, which is the point — the witness used to read whatever an earlier file's
+  // import had left behind, so it went on passing with the clear gutted.
+  //
+  // The query string is what makes this work and cannot be a plain `import`: the body runs once per process,
+  // so the clear's own two deletes are the only code here that can empty the environment, and both are
+  // needed — hence the per-variable halves below rather than one delete at the end.
   const savedRole = process.env.PI_ENSEMBLE_ROLE;
   const savedDisable = process.env.PI_STICKY_DISABLE;
+  let reentries = 0;
   try {
-    clearEnv("PI_ENSEMBLE_ROLE");
-    clearEnv("PI_STICKY_DISABLE");
+    for (const [name, value] of POISONED) {
+      // One variable at a time, so the failure names the line that went missing: with the clear's delete for
+      // `name` removed, only this round goes red. Both values are ones `isDisabled` honours, so the clear is
+      // emptying something that genuinely disables — `readConfig` and `buildTool` are asked of the same
+      // environment the clear was just handed.
+      clearEnv(name);
+      process.env[name] = value;
+      expect(readConfig(process.env).disabled, `${name}=${value} disables`).toBe(true);
+      expect(buildTool(readConfig(process.env)).tools, `${name} registers nothing`).toEqual([]);
 
-    process.env.PI_ENSEMBLE_ROLE = "developer";
-    expect(readConfig(process.env).disabled, "a pi-rukas role disables").toBe(true);
-    expect(buildTool(readConfig(process.env)).tools).toEqual([]);
-    clearEnv("PI_ENSEMBLE_ROLE");
-
-    process.env.PI_STICKY_DISABLE = "1";
-    expect(readConfig(process.env).disabled, "PI_STICKY_DISABLE disables").toBe(true);
-    expect(buildTool(readConfig(process.env)).tools).toEqual([]);
-    clearEnv("PI_STICKY_DISABLE");
-
-    // With neither set — the state `env-clear.ts` leaves every other test file in — the same pair of
-    // calls enables the extension and registers the tool, which is what those files read their
-    // assertions from.
-    expect(readConfig(process.env).disabled, "a cleared environment enables").toBe(false);
-    expect(buildTool(readConfig(process.env)).tools.map((tool) => tool.name)).toEqual([TOOL_NAME]);
+      await import(`./env-clear.ts?witness=${++reentries}`);
+      expect(process.env[name], `${name} cleared by the clear`).toBeUndefined();
+      expect(readConfig(process.env).disabled, `${name} cleared enables`).toBe(false);
+      expect(buildTool(readConfig(process.env)).tools.map((tool) => tool.name)).toEqual([
+        TOOL_NAME,
+      ]);
+    }
   } finally {
-    // Delete unconditionally and only then restore what the environment actually held: leaving the
-    // `if` as the only path would re-install whatever an earlier file leaked instead of the cleared
-    // state every later file depends on.
+    // Delete unconditionally and only then restore what the shell actually held. The reverse order —
+    // restore, or restore-only — would reinstate this test's own poison, or whatever an earlier file
+    // leaked, for every file that runs after it in the same process.
     clearEnv("PI_ENSEMBLE_ROLE");
     clearEnv("PI_STICKY_DISABLE");
     if (savedRole !== undefined) process.env.PI_ENSEMBLE_ROLE = savedRole;
     if (savedDisable !== undefined) process.env.PI_STICKY_DISABLE = savedDisable;
   }
 });
+
+/**
+ * The two variables the clear owns, each with a value that disables: a member of `DISABLE_VALUES` in
+ * `src/config.ts` for `PI_STICKY_DISABLE`, any non-empty string for `PI_ENSEMBLE_ROLE`.
+ */
+const POISONED: readonly (readonly [string, string])[] = [
+  ["PI_ENSEMBLE_ROLE", "x"],
+  ["PI_STICKY_DISABLE", "1"],
+];
 
 /**
  * Take one variable out of the environment the way `env-clear.ts` does. An assignment of `undefined`

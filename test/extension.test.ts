@@ -64,12 +64,10 @@ function boot(entries: unknown[] = []) {
 }
 
 test("the suite's ambient environment leaves the extension enabled", () => {
-  // M11. `test/env-clear.ts` deletes `PI_ENSEMBLE_ROLE` and `PI_STICKY_DISABLE` once per process, before
-  // any file's module-scope `createStickyExtension` runs. Without it, running the suite from inside a
-  // pi-rukas subagent — where `PI_ENSEMBLE_ROLE` is set — makes `readConfig` report the extension
-  // disabled, and a disabled extension registers nothing: every panel, tool and command assertion in the
-  // suite would then read an empty recorder and pass without testing anything. A green run that asserted
-  // nothing is the failure this pins, so the guard is asserted here rather than trusted.
+  // M11. The one thing this file cannot establish for itself: whether `env-clear.ts` had already emptied
+  // the environment by the time its module-scope builders ran. `env-clear-coverage.test.ts` is where that
+  // is witnessed; this case only reads what it finds, which is why it fails on its own under an ambient
+  // disable rather than passing on a recorder that registered nothing.
   expect(readConfig(process.env).disabled).toBe(false);
   const { stub } = boot();
   expect(stub.tools).toHaveLength(1);

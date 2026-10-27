@@ -18,7 +18,6 @@ import "./env-clear.ts";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
-import { PANEL_MIN_COLUMNS } from "../src/panel-geometry.ts";
 import { FOCUS_KEY, TOGGLE_KEY } from "../src/panel-keys.ts";
 import { TOO_NARROW } from "../src/panel-refusals.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
@@ -130,19 +129,11 @@ test("a rebind does not widen what the destructive panel keys accept", async () 
   expect(stub.entries).toEqual([{ customType: "pi-sticky.ui", data: { v: 1, shown: false } }]);
   focus?.handler(ctx);
   expect(stub.entries.length).toBe(1);
-  // The boundary, not a copy of the sentence. `boot` without a width leaves the terminal below
-  // `PANEL_MIN_COLUMNS`, so the refusal the user hears here is the one `panelHasRoom` decided on, and it
-  // must be the sentence spelled out of that constant *and* the exported constant — the two are
-  // byte-identical today, so a `return "…100 columns…"` hardcoded inside `refusalToShow` would satisfy
-  // a single assertion on either one and leave the boundary free to move away from the copy.
-  expect(PANEL_MIN_COLUMNS).toBe(100);
-  expect(ctx.recorder.notifications).toEqual([
-    {
-      message: `The pins panel needs at least ${PANEL_MIN_COLUMNS} columns; use /pins.`,
-      type: "warning",
-    },
-  ]);
-  expect(ctx.recorder.notifications[0]?.message).toBe(TOO_NARROW);
+  // `boot` without a width leaves the terminal below `PANEL_MIN_COLUMNS`, so the refusal the user hears
+  // here is the width one `panelHasRoom` decided on. Asserted against the exported constant alone: the
+  // pairing of that copy to the boundary is `panel-refusals.test.ts`'s job, and what this file is about is
+  // that a rebound shortcut still reaches the owner's refusal — once, as a warning.
+  expect(ctx.recorder.notifications).toEqual([{ message: TOO_NARROW, type: "warning" }]);
 });
 
 test("a configuration built by hand still registers what it was given", async () => {

@@ -10,7 +10,6 @@
 import { expect, test } from "bun:test";
 
 import { panelCommands } from "../src/commands.ts";
-import { PANEL_MIN_COLUMNS } from "../src/panel-geometry.ts";
 import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-refusals.ts";
 import { KEY, UI_TYPE } from "../src/types.ts";
 import {
@@ -50,17 +49,11 @@ test("/pins hide never notifies, and /pins show notifies the two dead ends", asy
 
   const narrow = await boot(PINNED, 80);
   await narrow.stub.commands.get("pins")?.handler("show", narrow.ctx);
-  // The line is asserted against the boundary constant rather than a copy of the sentence: the number
-  // the user reads and the number `panelHasRoom` measures against are one `PANEL_MIN_COLUMNS`, and a
-  // literal here would let the refusal drift from the boundary it states.
-  expect(narrow.ctx.recorder.notifications).toEqual([
-    {
-      message: `The pins panel needs at least ${PANEL_MIN_COLUMNS} columns; use /pins.`,
-      type: "warning",
-    },
-  ]);
-  // ...and that is the string the exported constant holds — the one README.md quotes verbatim.
-  expect(narrow.ctx.recorder.notifications[0]?.message).toBe(TOO_NARROW);
+  // One assertion, on the exported constant: `panel-refusals.test.ts` owns the pairing between the
+  // boundary and this copy, and repeating the sentence here spelled out of `PANEL_MIN_COLUMNS` checked the
+  // same string three ways without checking anything this file is about — that `/pins show` reaches the
+  // refusal at a narrow terminal and notifies it once, as a warning.
+  expect(narrow.ctx.recorder.notifications).toEqual([{ message: TOO_NARROW, type: "warning" }]);
 
   const empty = await boot([], 120);
   await empty.stub.commands.get("pins")?.handler("show", empty.ctx);

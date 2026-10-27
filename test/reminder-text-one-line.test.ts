@@ -5,9 +5,8 @@
  *
  * The reminder is read back out of the message a `before_agent_start` returned, because the text the
  * extension builds is the text the model gets; `test/reminder.test.ts` holds the flag-lifetime cases,
- * this file the line-count guarantee. `test/env-clear.ts` is imported for its side effect only: an
- * ambient pi-rukas `PI_ENSEMBLE_ROLE` disables the extension, and a disabled one registers no
- * `before_agent_start` handler at all — so the loop below would observe no messages and still pass.
+ * this file the line-count guarantee. `./env-clear.ts` is imported for its side effect: the loop below
+ * only observes anything if the extension registered its handler — `env-clear.ts` is the rationale.
  */
 import { expect, test } from "bun:test";
 

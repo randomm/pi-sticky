@@ -10,12 +10,18 @@
  * would take a while to arrange, and it is also what catches a wrong line coming back from the wrong
  * branch (`return "Nothing is pinned."` where `NOTHING_PINNED` is returned — that fails here too).
  *
- * One thing no assertion can catch, stated so the next reader does not look for it: while the boundary
- * is `100`, the interpolation and a hardcoded `"…100 columns…"` are the same string, so a `return` of
- * the literal instead of `TOO_NARROW` is not observable at the boundary. The single copy is what keeps
- * that difference from ever mattering, and the first rebind of the boundary is what would expose it.
+ * One thing the boundary itself cannot catch, and why it is asserted in source rather than in behaviour:
+ * while `PANEL_MIN_COLUMNS` is `100`, the interpolation and a hardcoded `"…100 columns…"` are the same
+ * string, and `TOO_NARROW` is computed once at module load from that constant — so returning the literal in
+ * place of it changes nothing any test can observe. A width cannot separate them either: `panelHasRoom`
+ * refuses `100.5` for the integer rule and `99` for the boundary rule, and both answer with the one
+ * sentence. What the case below pins instead is that `refusalToShow` reaches for the *constant* — the
+ * single copy `test/doc-citations.test.ts` proves README quotes — so a copy of the number inside the
+ * function is caught even though it is behaviourally invisible. `test/panel-lifecycle-*.test.ts` drive the
+ * same two lines through `/pins show` and the panel shortcuts; this file holds the pairing.
  */
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 
 import { PANEL_MIN_COLUMNS, panelHasRoom } from "../src/panel-geometry.ts";
 import { NOTHING_PINNED, TOO_NARROW, refusalToShow } from "../src/panel-refusals.ts";
@@ -40,6 +46,35 @@ test("the width refusal is the exported constant and the sentence spelled out of
   expect(refusalToShow(PANEL_MIN_COLUMNS - 1, ONE_PIN)).toBe(TOO_NARROW);
   expect(TOO_NARROW).toBe(NARROW_SENTENCE);
   expect(NOTHING_PINNED).toBe("Nothing is pinned.");
+});
+
+test("a fractional width at the boundary is refused too, by the integer rule and not the boundary", () => {
+  // The two questions `panelHasRoom` asks are separable, and the case states which one refused 100.5: a
+  // width at or past the boundary is still not a size the panel can promise a frame at. Behaviourally this
+  // pins the predicate's shape, not the copy — see the header for why the copy is pinned in source.
+  const fractional = PANEL_MIN_COLUMNS + 0.5;
+  expect(panelHasRoom(fractional), "a fractional width is not a size the panel can honour").toBe(
+    false,
+  );
+  expect(refusalToShow(fractional, ONE_PIN)).toBe(TOO_NARROW);
+});
+
+test("refusalToShow returns the exported constant, not a copy of the sentence it spells", () => {
+  // The assertion the boundary cannot make. A `return "The pins panel needs at least 100 columns; use
+  // /pins."` inside `refusalToShow` is byte-identical to `TOO_NARROW` while the boundary is 100, so no
+  // call — at any width, fractional or not — can tell the two apart: `TOO_NARROW` itself interpolates the
+  // same constant. What the mutant does break is the single-copy rule the module header argues and
+  // `test/doc-citations.test.ts` depends on, so it is caught where it is observable: in the source of the
+  // branch that decides the line. The bare number is refused too, and the constant's own name is what the
+  // function must mention.
+  const source = readFileSync(new URL("../src/panel-refusals.ts", import.meta.url), "utf8");
+  const body = source.slice(source.indexOf("export function refusalToShow"));
+  expect(body, "the too-narrow branch returns the constant").toMatch(/return\s+TOO_NARROW\s*;/);
+  // No second copy of the sentence, and no bare boundary digit, anywhere in the function's own text.
+  expect(body, "no literal of the refusal copy inside the function").not.toContain(
+    "columns; use /pins",
+  );
+  expect(body, "no literal of the boundary inside the function").not.toMatch(/\b100\b/);
 });
 
 test("a roomy terminal with pins is refused nothing at all", () => {

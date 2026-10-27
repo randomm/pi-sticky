@@ -11,8 +11,8 @@
  *
  * Compaction needs a file-backed session and a budget small enough that a turn falls before the
  * keep-recent cut (docs/spike-results.md); `h.summarizeWith` queues the canned summary pi's
- * summarizer consumes. `test/env-clear.ts` is imported for its side effect: it deletes the two variables
- * that make `readConfig` report the extension disabled (see `env-clear-coverage.test.ts`).
+ * summarizer consumes. `./env-clear.ts` is imported for its side effect: this file builds its extension at
+ * module scope, so it needs the disable variables gone before that call — `env-clear.ts` is the rationale.
  */
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";

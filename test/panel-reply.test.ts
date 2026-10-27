@@ -2,9 +2,8 @@
  * The panel as the user sees it after a reply: the selected row carries the `↩ ` mark and the dim, the
  * bar still goes over it, and the whole thing is drawn by the session rather than by a hand-built view.
  *
- * `test/env-clear.ts` is imported for its side effect only: it deletes the two variables that make
- * `readConfig` report the extension disabled, so nothing in this file can be handed a config that
- * registers nothing and leaves the assertions reading an empty recorder.
+ * `./env-clear.ts` is imported for its side effect: this file builds its extension at module scope, so it
+ * needs the disable variables gone before that call. `env-clear.ts` is the rationale.
  *
  * Two layers again. `panelPinRows` / `buildPanelLines` answers the drawing question directly, and the
  * exact-string assertions are what catch the trailing-to-leading migration (a `toContain("↩")` assertion
