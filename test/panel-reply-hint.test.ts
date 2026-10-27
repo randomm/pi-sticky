@@ -26,7 +26,7 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { PanelComponent } from "../src/panel-component.ts";
 import { replyHint } from "../src/panel-hint.ts";
 import { FOCUS_KEY } from "../src/panel-keys.ts";
-import { HINT, buildPanelLines } from "../src/panel-lines.ts";
+import { HINT } from "../src/panel-lines.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { StickyConfig, ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
@@ -83,8 +83,6 @@ test("an unfocused panel draws the reply label in its bottom border", () => {
 test("an unfocused panel with no label to give draws nothing but rule", () => {
   // The `off` case as the user sees it: the border is the frame's own, and no placeholder word steps in.
   expect(built(content([one(1, "x")], 0, false, ""), 40, style).at(-1)).toBe(`╰${"─".repeat(38)}╯`);
-  // ...and the same for a caller that says nothing at all — the field is optional, and absent is blank.
-  expect(built(content([one(1, "x")], 0, false), 40, style).at(-1)).toBe(`╰${"─".repeat(38)}╯`);
 });
 
 test("the label is cut with the border's own policy rather than pushed past a corner", () => {
@@ -167,6 +165,35 @@ test("with the focus key off, the resting bottom border stays all rule", () => {
 
 test("a rebound focus key is named as the operator rebound it", () => {
   const { c } = panel({ ...DEFAULT_CONFIG, focusKey: "alt+shift+k" }, false);
+  expect(c.render(WIDE).at(-1)).toContain("alt+shift+k to reply");
+});
+
+test("a label the host changes between frame requests costs a redraw, not a stale border", () => {
+  // The frame cache is keyed on everything the frame is drawn from, and the resting label is one of
+  // them. The host builds it from the configuration, so a `/reload` that rebounds the focus key (or
+  // turns it `off`) has to reach the border: a cache that keyed on width, pins, bar and focus alone
+  // would hand pi-tui the *old* label for a frame request that changed nothing the key named.
+  const { c, h } = panel(DEFAULT_CONFIG, false);
+  expect(c.render(WIDE).at(-1)).toContain("to reply");
+  const cached = c.render(WIDE);
+  expect(c.render(WIDE)).toBe(cached); // nothing changed: the cache keeps its fast path
+  h.stub.replyHint = () => "";
+  const rebound = c.render(WIDE);
+  expect(rebound).not.toBe(cached);
+  expect(rebound.at(-1)).toBe(`╰${"─".repeat(WIDE - 2)}╯`);
+  expect(rebound.at(-1)).not.toContain("to reply");
+});
+
+test("a changed label reaches the frame through update(), not only through render()", () => {
+  // `update()` is the member that compares the live host state and decides whether to invalidate; the
+  // resting label is part of what it compares, so a redraw asked for after the label changed is not
+  // answered with "same frame" and a border nobody drew.
+  const { c, h } = panel(DEFAULT_CONFIG, false);
+  c.render(WIDE);
+  h.stub.replyHint = () => "alt+shift+k to reply";
+  const before = h.state.renders;
+  c.update();
+  expect(h.state.renders).toBeGreaterThan(before);
   expect(c.render(WIDE).at(-1)).toContain("alt+shift+k to reply");
 });
 

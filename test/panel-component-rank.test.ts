@@ -124,9 +124,9 @@ test("the bar indexes the ranked list, so j/k walk it and d follows", () => {
 });
 
 test("a view that has not moved costs no sort, and a new view is ranked again", () => {
-  // The memo is keyed on the array identity (`panel-ranking.ts`), which is what keeps `render()`'s frame
-  // cache hitting for a redraw of an unchanged view: a fresh ranked array per call would rebuild the frame
-  // on every frame pi-tui asks for.
+  // The memo is per component and keyed on the array identity (`PanelComponent.#ranked`), which is what
+  // keeps `render()`'s frame cache hitting for a redraw of an unchanged view: a fresh ranked array per
+  // call would rebuild the frame on every frame pi-tui asks for.
   const { c, state } = panel([at(1, "fact", "info"), at(2, "decide", "action")]);
   const first = c.render(40);
   expect(c.render(40)).toBe(first);
@@ -143,4 +143,32 @@ test("a view that has not moved costs no sort, and a new view is ranked again", 
 test("the pins the component exposes for its keys are the ranked ones", () => {
   const { c } = panel([at(1, "fact", "info"), at(2, "decide", "action")]);
   expect(c.pins.map((p) => p.id)).toEqual([2, 1]);
+});
+
+test("two components over two views each draw their own order, rendered interleaved", () => {
+  // The rank memo used to be a module-level `let`, so it was *process* state: a second `PanelComponent`
+  // over a second view overwrote the one pair, and whichever panel asked next had its order thrown away
+  // and worked out again. Two panels in one session — a stale overlay pi never rebuilt beside a fresh one,
+  // or a test harness that built one per case — then competed over one cell. Interleaved rendering is
+  // how that shows up: each component must still draw the order of *its* view, and must still hit its own
+  // cache for a view that has not moved.
+  const a = panel([at(1, "a info", "info"), at(2, "a decide", "action")]);
+  const b = panel([at(3, "b info", "info"), at(4, "b warn", "warning")]);
+  // Named rather than destructured from the pair: what each component draws is the whole assertion, so
+  // the loop spells the panel out and cannot transpose it.
+  for (const round of [0, 1, 2]) {
+    void round;
+    expect(drawnIds(a.c.render(60))).toEqual([2, 1]);
+    expect(drawnIds(b.c.render(60))).toEqual([4, 3]);
+  }
+  // Each component keeps its own one-cell memo, so the interleaving above cost neither of them a frame:
+  // the array identity of the ranked view is still what each cache holds against its own view.
+  const first = a.c.render(60);
+  b.c.render(60);
+  expect(a.c.render(60)).toBe(first);
+  const other = b.c.render(60);
+  a.c.render(60);
+  expect(b.c.render(60)).toBe(other);
+  expect(a.c.pins.map((p) => p.id)).toEqual([2, 1]);
+  expect(b.c.pins.map((p) => p.id)).toEqual([4, 3]);
 });

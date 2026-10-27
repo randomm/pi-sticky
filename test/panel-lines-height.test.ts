@@ -15,7 +15,6 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
-import { buildPanelLines } from "../src/panel-lines.ts";
 import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -65,7 +64,7 @@ function drawn(count: number, width: number, terminalRows: number | undefined): 
   // from and not a second pass that could disagree with it. A terminal that cannot be asked is the
   // shared default, not a `0`, which would be a terminal with no rows at all.
   return framed(
-    { pins: pinsOf(count), selection: 0, focused: true },
+    { pins: pinsOf(count), selection: 0, focused: true, replyHint: "" },
     width,
     style,
     terminalRows ?? TERMINAL_ROWS,
@@ -78,8 +77,11 @@ test("the builder draws exactly the height the layout counted, at every terminal
   for (const terminalRows of [3, 5, 6, 7, 8, 12, 24, 40, 200, 400, undefined]) {
     for (const count of [1, 2, 3, 5, 12, 60, 300]) {
       const { lines, layout } = drawn(count, 40, terminalRows);
+      // One height, one owner: `framed` returns the lines and the table from a *single* `panelLayout`
+      // pass, so the number the builder drew to is the number that same pass counted — which is the
+      // promise this file exists for: a frame counted from one table and drawn from another cannot get
+      // through here.
       const counted = layout.height;
-      const drawnHeight = layout.height;
       // A terminal with no room for both borders is refused outright: the layout says two rows and the
       // builder answers an open box with nothing at all.
       const closable = counted >= 3;
@@ -88,10 +90,6 @@ test("the builder draws exactly the height the layout counted, at every terminal
       if (typeof terminalRows === "number") {
         expect(lines.length).toBeLessThanOrEqual(terminalRows);
       }
-      // One height, one owner: the number the builder drew to is the number *the same* layout pass
-      // counted — `framed` returns the pair from a single call — which is the promise this file exists
-      // for: a frame counted from one table and drawn from another cannot get through here.
-      expect(counted).toBe(drawnHeight);
       // ...and the height is the frame's own promise: as tall as the rows of that table, never past the
       // terminal's half, never under the two borders it needs to be a closed box. The rows are the
       // *wrapped table's*, not the pin count — the id/time tail owns its columns now, so a pin whose text
@@ -133,7 +131,12 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
   expect(drawn(5, 40, 40).lines).toHaveLength(7);
   expect(drawn(50, 40, 40).lines).toHaveLength(20);
   // The window keeps the *selected* pin on screen at the ceiling rather than dropping rows off the bottom.
-  const scrolled = built({ pins: pinsOf(50), selection: 49, focused: true }, 40, style, 40);
+  const scrolled = built(
+    { pins: pinsOf(50), selection: 49, focused: true, replyHint: "" },
+    40,
+    style,
+    40,
+  );
   expect(scrolled).toHaveLength(20);
   expect(scrolled[0]).toContain("📌 Pinned for you (50)");
   expect(scrolled.at(-1)).toContain("Enter reply");
@@ -144,5 +147,7 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
   expect(panelMaxRows(5)).toBe(2);
   expect(drawn(1, 40, 5).layout.height).toBe(BORDER_ROWS);
   expect(drawn(1, 40, 5).lines).toEqual([]);
-  expect(built({ pins: [one(1, "x")], selection: 0, focused: false }, 40, style, 5)).toEqual([]);
+  expect(
+    built({ pins: [one(1, "x")], selection: 0, focused: false, replyHint: "" }, 40, style, 5),
+  ).toEqual([]);
 });

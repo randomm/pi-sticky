@@ -27,6 +27,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
 
 /**

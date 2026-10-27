@@ -57,7 +57,7 @@ const frame = (
   selection: number,
   focused: boolean,
   width = 40,
-): string[] => built({ pins, selection, focused }, width, style);
+): string[] => built({ pins, selection, focused, replyHint: "" }, width, style);
 
 describe("the replied row of the panel", () => {
   test("opens the text column with the mark and carries no trailing one", () => {
@@ -87,7 +87,7 @@ describe("the replied row of the panel", () => {
       },
     };
     const pins = [repliedPin(1, "Decide X")];
-    built({ pins, selection: 0, focused: false }, 40, dimStyle);
+    built({ pins, selection: 0, focused: false, replyHint: "" }, 40, dimStyle);
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
 

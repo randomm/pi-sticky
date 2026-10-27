@@ -14,7 +14,7 @@
  * builder's floor are `PANEL_MIN_FRAME_COLUMNS`, and `test/panel-id-never-cut.test.ts` sweeps every width
  * from that floor to 80 and every id to 999.
  */
-import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
+import { PANEL_MIN_FRAME_COLUMNS } from "./panel-geometry.ts";
 
 /**
  * The widest id/time tail a row carries. `panelPinRows` stamps `` `#${pin.id} ${formatLocalTime(...)}` ``
@@ -32,10 +32,6 @@ export const FRAME_COLUMNS = 6;
 
 /** The columns between a pin's text and its tail: what `pinRow` puts before the meta. */
 export const META_SEPARATOR_COLUMNS = 1;
-
-/** The narrowest frame the builder closes and the shortest it closes at — `panel-geometry.ts`'s numbers. */
-export const MIN_FRAME_COLUMNS = PANEL_MIN_FRAME_COLUMNS;
-export const MIN_FRAME_ROWS = PANEL_MIN_FRAME_ROWS;
 
 /**
  * The narrowest frame in which a first row fits its widest id whole: the frame, the tail, the separator,

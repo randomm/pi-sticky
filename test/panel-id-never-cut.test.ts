@@ -66,7 +66,7 @@ test("every pin's first row carries its #id and time, uncut, at every width and 
     for (let id = 1; id <= 999; id += 7) {
       for (const text of texts) {
         const pins = [at(id, text)];
-        const lines = built({ pins, selection: 0, focused: false }, width, style);
+        const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, width, style);
         const first = rowsOf(lines)[0];
         expect(first).toBeDefined();
         // Present, in one piece, and not the ellipsis standing in for it.
@@ -89,7 +89,9 @@ test("every id from 1 to 999 keeps its #id uncut at the widths where the tail is
   for (const width of [PANEL_MIN_FRAME_COLUMNS, 33]) {
     for (let id = 1; id <= 999; id++) {
       const pins = [at(id, "Decide")];
-      const first = rowsOf(built({ pins, selection: 0, focused: false }, width, style))[0];
+      const first = rowsOf(
+        built({ pins, selection: 0, focused: false, replyHint: "" }, width, style),
+      )[0];
       expect(first).toBeDefined();
       expect(first).toContain(`#${id} `);
       expect(first).toContain(localTime(NOW));
@@ -103,7 +105,7 @@ test("a long text is what the cut takes, not the id", () => {
   // its columns and cuts the rest. The id stays; the text loses a character to `…`, which is the row
   // giving up width from the side that was always meant to give.
   const lines = built(
-    { pins: [at(999, "z".repeat(200))], selection: 0, focused: false },
+    { pins: [at(999, "z".repeat(200))], selection: 0, focused: false, replyHint: "" },
     40,
     style,
   );
@@ -117,7 +119,7 @@ test("a pin whose text needs only one column still shows its id", () => {
   // The floor case: at `MIN_COLUMNS_FOR_META` the text column is exactly one wide, and a row with no text
   // column at all is the case whose tail `fitLine` used to cut away at column zero.
   const pins = [at(999, "a")];
-  const lines = built({ pins, selection: 0, focused: false }, MIN_ID_ROOM, style);
+  const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, MIN_ID_ROOM, style);
   // The frame floor is exactly this width (`MIN_COLUMNS_FOR_META === PANEL_MIN_FRAME_COLUMNS`, pinned
   // below), so this is the narrowest frame the builder will close at all: a border, one pin row, a border.
   expect(lines.length).toBe(3);
@@ -148,7 +150,7 @@ test("the reservation is the widest tail the product can stamp, and the floor le
 
 test("a continuation row carries no id, so the id appears exactly once per pin", () => {
   const pins = [at(42, "a decision long enough to wrap in a narrow panel somewhere")];
-  const lines = built({ pins, selection: 0, focused: false }, 34, style);
+  const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, 34, style);
   const rows = rowsOf(lines);
   expect(rows.length).toBeGreaterThan(1);
   expect(rows.filter((line) => line.includes("#42"))).toHaveLength(1);

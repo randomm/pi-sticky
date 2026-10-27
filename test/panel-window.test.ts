@@ -12,12 +12,11 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
 import { HINT } from "../src/panel-lines.ts";
-import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
+import { GUTTER_COLUMNS, panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 const style: RenderPanelStyle = {
   header: (s) => s,
@@ -38,10 +37,9 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
-
-/** The frame's own width: the gutters and their spaces, which the builder takes off every drawn row. */
-const FRAME_COLUMNS = 4;
 
 /** What `panelLayout` reserves for the id/time tail before the text column — the product's number, not a copy. */
 const META_RESERVE = META_COLUMNS + META_SEPARATOR_COLUMNS;
@@ -106,9 +104,9 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
   // The long pin is the *selected* one: a window only scrolls for a selection it can address, so the
   // entry it must scroll as a whole is the one the bar is on.
   const pins = [one(1, "first"), one(2, "b".repeat(80))];
-  // The frame is four columns and the id/time tail ten, so a 44-column frame lays pins out at 30.
+  // The gutters own four columns and the id/time tail ten, so a 44-column frame lays pins out at 30.
   const width = 44;
-  const inner = width - FRAME_COLUMNS;
+  const inner = width - GUTTER_COLUMNS;
   const all = panelAllRows(pins, inner - META_RESERVE, plainStyle);
   const wrapped = panelPinRows(pins[1] as ViewPin, inner - META_RESERVE, plainStyle).length;
   const lines = built(content(pins, 1, false), width, style, 6);

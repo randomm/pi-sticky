@@ -139,7 +139,7 @@ describe("a replied panel row", () => {
     // make impossible — so the sweep starts where a frame closes rather than at one column.
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
       const pins = [replied(1, "Decide X")];
-      const lines = built({ pins, selection: 0, focused: false }, width, plainPanel);
+      const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, width, plainPanel);
       // The one-pin panel is three rows — border, pin, border — at every width the frame closes at.
       expect(lines).toHaveLength(3);
       expectUniformWidth(lines, width);
@@ -152,7 +152,7 @@ describe("a replied panel row", () => {
   test("a selected replied row keeps the bar, the mark and the width", () => {
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
       const pins = [replied(1, "Decide X")];
-      const lines = built({ pins, selection: 0, focused: true }, width, plainPanel);
+      const lines = built({ pins, selection: 0, focused: true, replyHint: "" }, width, plainPanel);
       expectUniformWidth(lines, width);
       const row = lines[1] ?? "";
       expect(row).toInclude("[");
@@ -165,7 +165,7 @@ describe("a replied panel row", () => {
     for (const focused of [false, true]) {
       for (const width of [12, 20, 33]) {
         const pins: ViewPin[] = [{ ...replied(1, cleanPinText(HOSTILE)), level: "warning" }];
-        const lines = built({ pins, selection: 0, focused }, width, plainPanel);
+        const lines = built({ pins, selection: 0, focused, replyHint: "" }, width, plainPanel);
         expectUniformWidth(lines, width);
         for (const line of lines) expect(offenders(line)).toEqual([]);
       }

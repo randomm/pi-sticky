@@ -39,6 +39,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
 
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */

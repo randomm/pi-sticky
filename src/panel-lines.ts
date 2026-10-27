@@ -72,7 +72,7 @@ function frameIsOneColumn(frame: (text: string) => string): boolean {
   return frameGlyphs().every((glyphText) => visibleWidth(frame(glyphText)) === 1);
 }
 
-/** What the builder draws. `pins` is in the order the component ranked them (`panel-ranking.ts`). */
+/** What the builder draws. `pins` is in the order `PanelComponent.#ranked` ranked them. */
 export interface PanelContent {
   pins: readonly ViewPin[];
   /** Selected *pin* index, not row index: a pin that wraps owns several rows. */
@@ -80,10 +80,11 @@ export interface PanelContent {
   focused: boolean;
   /**
    * What the bottom border says while the panel is *not* focused — `ctrl+alt+p to reply`, built by the
-   * component from the configured focus key (`panel-hint.ts`). `""` is no label at all: the border is
-   * then nothing but rule, which is what an operator who turned the focus key `off` sees.
+   * component from the configured focus key (`panel-hint.ts`). Required, and `""` is no label at all: the
+   * border is then nothing but rule, which is what an operator who turned the focus key `off` sees.
+   * Optional-and-absent would be a second spelling of the same state, and the border cannot tell them.
    */
-  replyHint?: string;
+  replyHint: string;
 }
 
 /**
@@ -253,7 +254,7 @@ export function buildPanelLines(
   // for the border takes; no label at all when the caller has none to give.
   lines.push(
     borderLine(
-      content.focused ? HINT : (content.replyHint ?? ""),
+      content.focused ? HINT : content.replyHint,
       style.dim,
       FRAME_BOTTOM_LEFT,
       FRAME_BOTTOM_RIGHT,
