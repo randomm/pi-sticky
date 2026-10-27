@@ -20,7 +20,8 @@ const NUL = String.fromCharCode(0);
 const PARA = String.fromCodePoint(0x2028);
 
 import { KEY, TOOL_NAME, USER_TYPE } from "../src/types.ts";
-import { LATER, RAIL_AGE } from "./fixtures.ts";
+import { RAIL_AGE } from "./fixtures-age.ts";
+import { LATER } from "./fixtures.ts";
 import { call, createHarness, reply } from "./harness.ts";
 import { detailsOf, extension, pin, pinResultMessage, rows } from "./integration-support.ts";
 

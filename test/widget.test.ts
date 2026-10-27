@@ -12,7 +12,8 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { StickyConfig } from "../src/types.ts";
 import { drawPins } from "../src/widget.ts";
-import { LATER, NOW_AGE, localTime, pin, view } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, localTime, pin, view } from "./fixtures.ts";
 import type { ExtensionMode } from "./harness.ts";
 import { RecordingUi } from "./recording-ui.ts";
 

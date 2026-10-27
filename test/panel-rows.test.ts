@@ -11,7 +11,8 @@ import { expect, test } from "bun:test";
 import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { LATER, NOW, NOW_AGE, pin, view } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, NOW, pin, view } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 const plainStyle: RenderPanelStyle = {

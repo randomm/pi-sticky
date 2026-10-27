@@ -15,7 +15,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
-import { LATER, NOW, NOW_AGE, pin } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
 

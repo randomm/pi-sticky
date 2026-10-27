@@ -10,7 +10,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { formatLocalTime, formatPinAge } from "../src/time.ts";
-import { HOUR_BEFORE_NOW, MINUTE_BEFORE_NOW, NOW, NOW_TIME, localTime } from "./fixtures.ts";
+import { HOUR_BEFORE_NOW, MINUTE_BEFORE_NOW } from "./fixtures-age.ts";
+import { NOW, NOW_TIME, localTime } from "./fixtures.ts";
 
 describe("formatLocalTime", () => {
   test("renders the local hours and minutes of the instant, zero-padded", () => {

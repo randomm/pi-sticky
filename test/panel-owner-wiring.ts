@@ -13,7 +13,8 @@ import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { PinView } from "../src/types.ts";
-import { DAY_BEFORE_NOW, NOW, pin } from "./fixtures.ts";
+import { DAY_BEFORE_NOW } from "./fixtures-age.ts";
+import { NOW, pin } from "./fixtures.ts";
 import type { RecordedCustomCall } from "./recorded-ui-types.ts";
 
 /**

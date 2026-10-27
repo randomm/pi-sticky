@@ -32,7 +32,8 @@ import { idStamp } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { LATER, NOW, NOW_AGE, pin } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 const style: PanelStyle = {

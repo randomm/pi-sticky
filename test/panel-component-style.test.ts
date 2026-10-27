@@ -28,7 +28,8 @@ import { HINT } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS } from "../src/panel-rows.ts";
 import { fullStamp } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
-import { DAY_BEFORE_NOW, NOW, pin } from "./fixtures.ts";
+import { DAY_BEFORE_NOW } from "./fixtures-age.ts";
+import { NOW, pin } from "./fixtures.ts";
 
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { ONE } from "./panel-owner-wiring.ts";

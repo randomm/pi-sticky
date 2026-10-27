@@ -10,17 +10,8 @@ import {
 } from "../src/render.ts";
 import { formatLocalTime } from "../src/time.ts";
 import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
-import {
-  HOUR_BEFORE_NOW,
-  LATER,
-  LATER_TIME,
-  MINUTE_BEFORE_NOW,
-  NOW,
-  NOW_TIME,
-  localTime,
-  pin,
-  view,
-} from "./fixtures.ts";
+import { HOUR_BEFORE_NOW, MINUTE_BEFORE_NOW } from "./fixtures-age.ts";
+import { LATER, LATER_TIME, NOW, NOW_TIME, localTime, pin, view } from "./fixtures.ts";
 
 const FIXED_TIME = (iso: string): string => (iso === NOW ? NOW_TIME : LATER_TIME);
 
