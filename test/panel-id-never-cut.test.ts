@@ -58,8 +58,9 @@ const metaOf = (id: number): string => `#${id} ${localTime(NOW)}`;
 
 test("every pin's first row carries its #id and time, uncut, at every width and every id", () => {
   // 30 → 80 covers the builder's own floor (`PANEL_MIN_FRAME_COLUMNS`) through the widest frame the
-  // 33%-of-a-terminal overlay reaches on a wide screen; 1 → 999 the ids a long session can hold, where
-  // `#999 12:00` is the widest tail and the narrowest margin for the arithmetic to be wrong in.
+  // 33%-of-a-terminal overlay reaches on a wide screen; the ids are stepped so the width-times-texts
+  // cross stays inside bun's per-test budget. Every id from 1 to 999 is swept on its own below, where
+  // the cost is one text rather than fifty-one widths' worth of them.
   const texts = ["x", "Decide which provider to keep", "y".repeat(120)];
   for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 80; width++) {
     for (let id = 1; id <= 999; id += 7) {
@@ -74,6 +75,25 @@ test("every pin's first row carries its #id and time, uncut, at every width and 
         // The id is never the thing standing in for a cut: an id that lost the fight read `#…`.
         expect(first).not.toContain("#…");
       }
+    }
+  }
+});
+
+test("every id from 1 to 999 keeps its #id uncut at the widths where the tail is tightest", () => {
+  // The sweep above steps its ids; this one walks all 999 of them. Split out because the two together
+  // blow bun's per-test budget, and because the axis that matters for the *id* is the id itself: the
+  // reservation is sized on the widest tail the product can stamp, so a regression is a digit of `#999`
+  // losing its column, and the narrow frames are where that shows. 30 is the floor the builder closes at
+  // and 33 what 33% of a 100-column terminal resolves to — the width the 12-pin session this came out of
+  // actually drew at, and the one `integration-panel-surface.test.ts` renders the live component at.
+  for (const width of [PANEL_MIN_FRAME_COLUMNS, 33]) {
+    for (let id = 1; id <= 999; id++) {
+      const pins = [at(id, "Decide")];
+      const first = rowsOf(built({ pins, selection: 0, focused: false }, width, style))[0];
+      expect(first).toBeDefined();
+      expect(first).toContain(`#${id} `);
+      expect(first).toContain(localTime(NOW));
+      expect(first).not.toContain("#…");
     }
   }
 });

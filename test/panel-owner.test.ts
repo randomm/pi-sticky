@@ -11,38 +11,21 @@
 import { expect, test } from "bun:test";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
+
 import { PANEL_CLOSED } from "../src/panel-call.ts";
 import { PANEL_NOT_RELEASED, releasePanel } from "../src/panel-close.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import type { PanelHost } from "../src/panel-host.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 import { createOverlayHandle, createPlainTheme, createStubTui } from "./harness.ts";
 import { contextWith, flush, handCustom } from "./panel-lifecycle-fixture.ts";
+import { handHostStub } from "./panel-owner-host.ts";
 import { ONE } from "./panel-owner-wiring.ts";
 import { wiring } from "./panel-owner-wiring.ts";
 
 /** Nothing pinned: the view a test hands the owner when the answer must be "not on screen". */
 const EMPTY: PinView = { pins: [], removed: [] };
-
-/** A host with nothing to give but the pins: the shape a caller outside `PanelOwner` builds. */
-function handHostStub(): PanelHost {
-  return {
-    getView: () => ONE,
-    style: () => undefined,
-    // No focus key to advertise: this host is about colours and the handle, not the border's label.
-    replyHint: () => "",
-    requestRender: () => {},
-    dismiss: () => {},
-    unfocus: () => {},
-    // Drawn by default: the key tests are about the keys, and `panel-lifecycle-toggles.test.ts` is where
-    // the invisible-panel case is driven through the real owner.
-    isVisible: () => true,
-    startReply: () => {},
-    notify: () => {},
-  };
-}
 
 test("a host whose custom() rejects leaves no panel claimed, so the rail keeps drawing", async () => {
   const ctx = contextWith([]);
