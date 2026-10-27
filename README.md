@@ -32,8 +32,12 @@ To see what is installed, remove an extension, or update one:
 ```sh
 pi list
 pi remove <source as shown by pi list>   # pi uninstall is an alias
-pi update
+pi update --extensions                   # all installed packages
+pi update git:github.com/randomm/pi-sticky   # one package
 ```
+
+Bare `pi update` updates pi itself, not this extension. A clone installed by path is updated with
+`git pull` in the clone, then a pi restart — pi loads that path and never copies it.
 
 Install with `pi install` only. Never symlink or copy this repository into
 `~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
@@ -70,14 +74,15 @@ Once focused:
 
 - `↑`/`↓` or `j`/`k` move the selection bar.
 - `Enter` puts `Re #<id>: ` at the start of the editor, keeps the draft that was already there, and
-  hands focus back to the main editor.
+  hands focus back to the main editor. It counts as a reply only as a bare carriage return or line
+  feed, so under the Kitty keyboard protocol type `Re #<id>: ` by hand.
 - `d` dismisses the selected pin. The dismissal is recorded on the session, so it sticks across
   `/tree` and a reload.
 - `Esc` returns to the editor. The panel stays open.
 
 When the agent pins something while the panel is hidden, the panel shows itself once. A pin the user
-has replied to stays on screen, dimmed, with a `↩` before its text, until the agent unpins it or the
-user dismisses it.
+has replied to stays on screen until the agent unpins it or the user dismisses it, marked as
+described under Replying.
 
 If there is no room for the panel — under 100 columns, or nothing pinned — `/pins show` and
 `ctrl+alt+t` notify `The pins panel needs at least 100 columns; use /pins.` or `Nothing is pinned.`
@@ -94,7 +99,7 @@ When the panel is not drawn, the pins appear above the editor instead:
 ```
 
 One line per pin, in ranked order: a marker for the attention level (`!` warning, `?` action, `•`
-info), the id, the local time, the text (one line), and `↩ ` on a pin the user has answered. When the pins do not all fit, the last row
+info), the id, the local time, and the text (one line). When the pins do not all fit, the last row
 reads `+<n> more · /pins`. `PI_STICKY_MAX_LINES` is the whole budget, header included.
 
 ### Replying
@@ -109,9 +114,13 @@ here is what I decided
 ```
 
 The rewrite, and the record that this pin was answered, happen for any message whose first characters
-are the marker; a draft that merely contains it is an ordinary message. The pin stays on screen,
-dimmed with `↩`. If the id names no visible pin you get `No pin #<digits> to reply to.` and the
-message is sent as typed.
+are the marker; a draft that merely contains it is an ordinary message. If the id names no visible
+pin you get `No pin #<digits> to reply to.` and the message is sent as typed.
+
+An answered pin stays on screen until the agent unpins it or the user dismisses it, and the marking
+depends on the surface: the rail and the panel dim the whole row and open its text column with
+`↩ `, while `/pins` and the `pin_for_user` tool result have no colour and say
+`(replied by the user at HH:MM)` after the text instead.
 
 ## Keys and commands
 
@@ -121,7 +130,7 @@ message is sent as typed.
 | `ctrl+alt+p` | Focus the panel, showing it if it was hidden. |
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
-| `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. |
+| `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |
 | `d` | Dismiss the selected pin. |
 | `Esc` | Back to the editor; the panel stays open. |
 | `/pins` | List every pin in full as text. |
@@ -131,8 +140,9 @@ message is sent as typed.
 | `/unpin all` | Remove every pin. |
 
 The keys work while the panel holds focus. `/pins` with an argument that is neither `show` nor `hide`
-is the plain-text listing, not an error. `/unpin` with no arguments notifies `Nothing to unpin.`; an
-id that matches nothing notifies `No pin #<id>` and the rest of the batch still applies.
+is the plain-text listing, not an error. `/unpin` with no arguments notifies `Nothing to unpin.`; a
+token that is not a number or `all` notifies `Nothing to unpin: expected pin ids or "all".`; an id
+that matches nothing notifies `No pin #<id>` and the rest of the batch still applies.
 
 ## Configuration
 
