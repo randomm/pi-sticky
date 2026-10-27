@@ -22,6 +22,7 @@ import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";
 import { boot, panelComponent, pinEntry } from "./panel-lifecycle-fixture.ts";
+import { replyTo } from "./reply-support.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
 /** Identity colours, including a bar that is visible in the drawn string. */
@@ -210,8 +211,15 @@ describe("the replied panel on a real session", () => {
       { type: "input", text: "Re #1: yes", source: "interactive" },
       ctx,
     );
+    // The rewrite of the `info` pin #1 this branch holds, built by the shared fixture so the code-span
+    // form is the one string the whole reply suite agrees on. What reaches the *panel* is what pi would
+    // be handed, and the `pin` the handler addressed the entry by is asserted on `stub.entries` below —
+    // the decision member itself is pinned in `test/reply-handler.test.ts`.
     expect(results).toEqual([
-      { action: "transform", text: 'Replying to pin #1 (info): "Decide X"\n\nyes' },
+      {
+        action: "transform",
+        text: replyTo({ ...pin(1, "Decide X", "info") }, "yes"),
+      },
     ]);
     expect(stub.entries).toEqual([
       { customType: "pi-sticky.user", data: { v: 1, uid: "aaaa1111", action: "reply", at: LATER } },
