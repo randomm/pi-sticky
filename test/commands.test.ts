@@ -4,8 +4,8 @@
  * before any rebuild can see it. A hand-built context would let a command that only mutates memory
  * look correct — the whole point of a dismissal is that it is written down.
  *
- * `./env-clear.ts` is imported for its side effect: this file builds its extension at module scope, so it
- * needs the disable variables gone before that call. `env-clear.ts` is the rationale.
+ * `./env-clear.ts` is imported for its side effect: the builders below read the disable variables when
+ * they are *called*, so this file needs them gone — `env-clear.ts` is the rationale.
  */
 import { expect, test } from "bun:test";
 

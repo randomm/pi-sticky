@@ -7,9 +7,8 @@
  * `RecordingUi.custom()` resolves a `done()` only when it is called in the same turn, so every
  * assertion here reads the *record* (`customCalls[i].result`), never an awaited value.
  *
- * `./env-clear.ts` is imported for its side effect: `boot` and the `createStickyExtension` calls below read
- * the disable variables when they are *called*, so the file needs them gone. `env-clear.ts` is the
- * rationale.
+ * `./env-clear.ts` is imported for its side effect: the builders below read the disable variables when
+ * they are *called*, so this file needs them gone — `env-clear.ts` is the rationale.
  */
 import { expect, test } from "bun:test";
 

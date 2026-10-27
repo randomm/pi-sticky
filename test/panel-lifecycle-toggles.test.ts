@@ -49,10 +49,8 @@ test("/pins hide never notifies, and /pins show notifies the two dead ends", asy
 
   const narrow = await boot(PINNED, 80);
   await narrow.stub.commands.get("pins")?.handler("show", narrow.ctx);
-  // One assertion, on the exported constant: `panel-refusals.test.ts` owns the pairing between the
-  // boundary and this copy, and repeating the sentence here spelled out of `PANEL_MIN_COLUMNS` checked the
-  // same string three ways without checking anything this file is about — that `/pins show` reaches the
-  // refusal at a narrow terminal and notifies it once, as a warning.
+  // The pairing of this copy to the boundary is `panel-refusals.test.ts`'s job; here it is only that
+  // `/pins show` notifies the refusal once, at a narrow terminal, as a warning.
   expect(narrow.ctx.recorder.notifications).toEqual([{ message: TOO_NARROW, type: "warning" }]);
 
   const empty = await boot([], 120);

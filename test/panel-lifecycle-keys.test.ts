@@ -129,10 +129,8 @@ test("a rebind does not widen what the destructive panel keys accept", async () 
   expect(stub.entries).toEqual([{ customType: "pi-sticky.ui", data: { v: 1, shown: false } }]);
   focus?.handler(ctx);
   expect(stub.entries.length).toBe(1);
-  // `boot` without a width leaves the terminal below `PANEL_MIN_COLUMNS`, so the refusal the user hears
-  // here is the width one `panelHasRoom` decided on. Asserted against the exported constant alone: the
-  // pairing of that copy to the boundary is `panel-refusals.test.ts`'s job, and what this file is about is
-  // that a rebound shortcut still reaches the owner's refusal — once, as a warning.
+  // A rebound shortcut still reaches the owner's refusal: once, as a warning. The pairing of that copy to
+  // the boundary is `panel-refusals.test.ts`'s job.
   expect(ctx.recorder.notifications).toEqual([{ message: TOO_NARROW, type: "warning" }]);
 });
 

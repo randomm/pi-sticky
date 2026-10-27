@@ -36,5 +36,23 @@
  * builds the extension straight from `process.env` — do import it, so neither is at the mercy of what
  * an earlier file in the same process left behind.
  */
+
+/**
+ * How many times this body has run, keyed by the query string of the specifier that ran it. Purely for
+ * `test/env-clear-coverage.test.ts`: the witness re-enters this module under a fresh `?witness=N` and must
+ * be able to tell a real re-run from a cache hit, so the mechanism it depends on is asserted rather than
+ * assumed. The counter lives on `globalThis` because a re-entered module gets a fresh module instance.
+ */
+const registryKey = "pi-sticky.test.env-clear.runs";
+const registry = globalThis as Record<string, unknown>;
+if (!(registryKey in registry)) registry[registryKey] = {};
+
+/** Re-entry counts, keyed by query string. */
+export const CLEARED_RUNS: Record<string, number> = registry[registryKey] as Record<string, number>;
+
+// `import.meta.query` is not in bun's published types, so the query comes off the module URL instead.
+const query = new URL(import.meta.url).searchParams.get("witness") ?? "";
+CLEARED_RUNS[query] = (CLEARED_RUNS[query] ?? 0) + 1;
+
 Reflect.deleteProperty(process.env, "PI_ENSEMBLE_ROLE");
 Reflect.deleteProperty(process.env, "PI_STICKY_DISABLE");
