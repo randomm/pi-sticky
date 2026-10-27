@@ -21,12 +21,13 @@ import {
   META_COLUMNS,
   META_SEPARATOR_COLUMNS,
   MIN_COLUMNS_FOR_META,
+  RESERVED_TAIL,
 } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { NOW, localTime, pin } from "./fixtures.ts";
+import { LATER, NOW, NOW_AGE, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 const style: PanelStyle = {
@@ -40,13 +41,27 @@ const at = (id: number, text: string): ViewPin => ({
   ...pin(id, text, "info", { createdAt: NOW }),
 });
 
-/** The tail `panelPinRows` stamps for `id`, spelled the way the product stamps it. */
-const tail = (id: number): string => `#${id} ${localTime(NOW)}`;
+/**
+ * The tail `panelPinRows` stamps for `id` on a one-row pin: the id and its age, spelled the way the product
+ * stamps them. `NOW` aged at `LATER` is the fixture's one hour and a half, so the widest age any frame in
+ * this file draws; a pin's id and age share the first row only when the pin owns one row, which is the case
+ * every frame here draws — the text is one word, and a word is cut rather than wrapped.
+ */
+const tail = (id: number): string => `#${id} ${NOW_AGE}`;
 
 /** The first content row of a one-pin frame at `width`, or `undefined` where the builder drew nothing. */
 function firstRow(id: number, text: string, width: number): string | undefined {
+  return rowsOf(id, text, width)[0];
+}
+
+/** Every content row of that frame — the pin's id row and, for a wrapping text, the row its age lives on. */
+function rowsOf(id: number, text: string, width: number): string[] {
   const pins = [at(id, text)];
-  return built({ pins, selection: 0, focused: false, replyHint: "" }, width, style).slice(1, -1)[0];
+  return built(
+    { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
+    width,
+    style,
+  ).slice(1, -1);
 }
 
 /** Columns the row must keep for the tail: the tail, the space before it, and one column of text. */
@@ -59,16 +74,20 @@ const roomFor = (id: number): number =>
 for (const id of [1000, 123456, Number.MAX_SAFE_INTEGER]) {
   test(`a ${String(id).length}-digit id keeps its #id uncut at every width the builder closes at`, () => {
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 80; width++) {
-      const first = firstRow(id, "Decide-which-provider-to-keep-and-never-give-it-up", width);
+      const text = "Decide-which-provider-to-keep-and-never-give-it-up";
+      const first = firstRow(id, text, width);
       expect(first).toBeDefined();
       // Every drawn line measures the frame's width, however the row was squeezed.
       expect(visibleWidth(first as string)).toBe(width);
+      // The pin's own rows: the id is always on the first, and the age lives there too when the pair fit,
+      // or on the row below when it did not. The two are one promise — the tail is never what a cut takes.
+      const rows = rowsOf(id, text, width);
       if (width >= roomFor(id)) {
-        // The frame can fit the tail beside a column of text: then the tail is on the row, whole — the id
-        // and the time both, and `#…` standing in for neither.
-        expect(first).toContain(`#${id} `);
-        expect(first).toContain(localTime(NOW));
+        // The frame can fit a tail beside a column of text: then the row that carries the id carries it
+        // whole, and the age is drawn for the pin somewhere below it — `#…` standing in for neither.
+        expect(first).toContain(`#${id}`);
         expect(first).not.toContain("#…");
+        expect(rows.join("|")).toContain(NOW_AGE);
       } else {
         // It cannot. The row still draws and still carries its id — the text is what the cut takes, down to
         // the single column `panelTextColumns` promises. Asserting the id here rather than a text that was
@@ -85,26 +104,35 @@ test("the reserve is a floor, and a wide id buys its own columns out of the text
   // eleven columns and a `MAX_SAFE_INTEGER` one costs its twenty digits. The two rows below are the same
   // frame width and the same text — the only difference is the id — and the wide one loses text columns while
   // both keep their tails whole. That is `widestMetaColumns` sizing the frame from the ids on screen.
-  const wide = firstRow(Number.MAX_SAFE_INTEGER, "a".repeat(80), 60) as string;
-  const narrow = firstRow(1, "a".repeat(80), 60) as string;
-  expect(wide).toContain(`#${Number.MAX_SAFE_INTEGER} ${localTime(NOW)}`);
-  expect(narrow).toContain(`#1 ${localTime(NOW)}`);
-  const keptWide = /a+/.exec(wide.slice(0, wide.indexOf("#")))?.[0].length ?? 0;
-  const keptNarrow = /a+/.exec(narrow.slice(0, narrow.indexOf("#")))?.[0].length ?? 0;
+  const wide = rowsOf(Number.MAX_SAFE_INTEGER, "a".repeat(80), 60) as string[];
+  const narrow = rowsOf(1, "a".repeat(80), 60) as string[];
+  // Both pins are drawn whole: the id on the first row, the age on the second. What the wide id bought was
+  // not a tail — both frames were charged for the tail they drew — it was the *text*.
+  expect(wide[0]).toContain(`#${Number.MAX_SAFE_INTEGER}`);
+  expect(narrow[0]).toContain("#1");
+  expect(wide.join("|")).toContain(NOW_AGE);
+  expect(narrow.join("|")).toContain(NOW_AGE);
+  const keptText = (rows: string[]): number => {
+    const first = rows[0] ?? "";
+    return /a+/.exec(first.slice(0, first.indexOf("#")))?.[0].length ?? 0;
+  };
+  const keptWide = keptText(wide);
+  const keptNarrow = keptText(narrow);
   expect(keptNarrow).toBeGreaterThan(keptWide);
 });
 
 test("the reserved tail is measured, not guessed, and the frame floor covers it", () => {
   // The relationships the "never cut" promise rests on, pinned against each other rather than against a
-  // literal a future edit could move one at a time. The reserve is the *actual* `#999 HH:MM` — its width is
-  // `formatLocalTime`'s, not a guess — plus the separator `pinRow` puts before the tail. `MIN_COLUMNS_FOR_META`
+  // literal a future edit could move one at a time. The reserve is the *actual* `#999 999d` — the widest id
+  // beside the widest age the formatter answers, its width the product's and not a guess — plus the separator
+  // `pinRow` puts before the tail. `MIN_COLUMNS_FOR_META`
   // is that tail beside one column of text, and the builder's floor (`PANEL_MIN_FRAME_COLUMNS`, the overlay's
   // own `minWidth`) must sit at or above it: the narrowest frame the overlay may hand over is wide enough for
   // the reserved tail, and never narrower than the arithmetic that says so. A floor *above* the arithmetic is
   // the builder asking for more than the tail needs, which costs nothing; a floor below it is the `#id`
   // drawing in a frame too narrow for it, which is the defect. An id past `#999` is neither one's problem —
   // it buys its own columns from the text, which the sweeps above prove.
-  expect(META_COLUMNS).toBe(visibleWidth(`#${999} ${localTime(NOW)}`) + META_SEPARATOR_COLUMNS);
+  expect(META_COLUMNS).toBe(visibleWidth(RESERVED_TAIL) + META_SEPARATOR_COLUMNS);
   expect(MIN_COLUMNS_FOR_META).toBe(FRAME_COLUMNS + META_COLUMNS + META_SEPARATOR_COLUMNS + 1);
   expect(PANEL_MIN_FRAME_COLUMNS).toBeGreaterThanOrEqual(MIN_COLUMNS_FOR_META);
 });

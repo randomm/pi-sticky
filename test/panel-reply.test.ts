@@ -24,7 +24,7 @@ import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometr
 import { GUTTER_COLUMNS, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { LATER, NOW, localTime, pin } from "./fixtures.ts";
+import { LATER, NOW, NOW_AGE, pin } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
 import { built } from "./panel-frame.ts";
@@ -58,7 +58,7 @@ const frame = (
   selection: number,
   focused: boolean,
   width = 40,
-): string[] => built({ pins, selection, focused, replyHint: "" }, width, style);
+): string[] => built({ pins, selection, focused, replyHint: "", ageNow: LATER }, width, style);
 
 /**
  * The one row a pin of `text` draws in a frame of `width`: gutter, text padded to the room the tail's
@@ -66,7 +66,7 @@ const frame = (
  * pasted, so it says the same thing the drawer does about how wide a `#id HH:MM` may be.
  */
 function row(id: number, text: string, width: number): string {
-  const tail = ` #${id} ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  const tail = ` #${id} ${NOW_AGE}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
   return `│ ${text.padEnd(width - GUTTER_COLUMNS - tail.length)}${tail} │`;
 }
 
@@ -99,7 +99,7 @@ describe("the replied row of the panel", () => {
       },
     };
     const pins = [repliedPin(1, "Decide X")];
-    built({ pins, selection: 0, focused: false, replyHint: "" }, 40, dimStyle);
+    built({ pins, selection: 0, focused: false, replyHint: "", ageNow: LATER }, 40, dimStyle);
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
 

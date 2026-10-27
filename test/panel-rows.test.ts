@@ -11,7 +11,7 @@ import { expect, test } from "bun:test";
 import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { NOW, localTime, pin, view } from "./fixtures.ts";
+import { LATER, NOW, NOW_AGE, pin, view } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 const plainStyle: RenderPanelStyle = {
@@ -34,13 +34,14 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
   // Required by `PanelContent`; these cases are about the rows, not the resting label.
   replyHint: "",
+  ageNow: LATER,
 });
 
 test("an empty pin text still owns a row, so the bar has something to sit on", () => {
   const rows = panelPinRows(one(1, ""), 20, plainStyle);
   expect(rows).toHaveLength(1);
   expect(rows[0]?.text).not.toBe("");
-  expect(rows[0]?.meta).toContain("#1");
+  expect(rows[0]?.tail).toContain("#1");
 });
 
 test("a zero text width falls back to one row rather than none", () => {
@@ -49,13 +50,14 @@ test("a zero text width falls back to one row rather than none", () => {
 
 test("rows are built for every pin in order and no pin is skipped", () => {
   const pins = [one(1, "a"), one(2, "bb"), one(3, "ccc")];
-  // The drawn tail, not the bare `#id HH:MM`: `panelPinRows` stamps `metaStamp`, and that string is both what
-  // the row prints and what the reserve measures (`panel-tail.ts`). `plainStyle.dim` is identity, so the only
-  // difference from the old expectation is the leading space the tail carries into its own columns.
-  expect(panelAllRows(pins, 30, plainStyle).map((row) => row.meta)).toEqual([
-    ` #1 ${localTime(NOW)}`,
-    ` #2 ${localTime(NOW)}`,
-    ` #3 ${localTime(NOW)}`,
+  // The drawn tail, not the bare `#id`: `panelPinRows` stamps it through `panel-tail.ts`, and that string is
+  // both what the row prints and what the reserve measures. A short text fits one row, so the id and the age
+  // share the first row's tail; `plainStyle.dim` is identity, so the only difference from the undimmed
+  // spelling is the leading space the tail carries into its own columns.
+  expect(panelAllRows(pins, 30, plainStyle, LATER).map((row) => row.tail)).toEqual([
+    ` #1 ${NOW_AGE}`,
+    ` #2 ${NOW_AGE}`,
+    ` #3 ${NOW_AGE}`,
   ]);
 });
 

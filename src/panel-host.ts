@@ -33,6 +33,19 @@ export interface PanelHost {
   style(): PanelStyle | undefined;
   /** Ask for a frame after the view or the selection moved. */
   requestRender(): void;
+  /**
+   * The instant the pin ages in this frame are measured against — the extension's clock, so the panel, the
+   * rail and the minute's tick all read the same one. `undefined` leaves the drawing to name the current
+   * instant: a hand-built host has no session to take a clock from, and a frame is still a frame.
+   */
+  ageNow?(): string | undefined;
+  /**
+   * The component is being torn down — pi has popped the overlay and is disposing it. The extension stops
+   * the minute's redraw here: a panel that is gone is not a surface, and a timer that outlives it asks a
+   * closed overlay for frames until the next session boundary clears it. Optional for the same reason as
+   * `ageNow`: a hand-built host has no timer to stop.
+   */
+  onDispose?(): void;
   /** Record a dismissal of `id` as the user and redraw — `/unpin`'s path, not a second one. */
   dismiss(id: number): void;
   /** Tell the owner the interaction ended, so it can settle which surface owns the pins. */

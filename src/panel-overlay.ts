@@ -63,6 +63,12 @@ export function panelFactory(
       // pi handed the factory — the only colouring a host with no style of its own can offer.
       style: () => style,
       requestRender: () => hooks.tui()?.requestRender(),
+      // The extension's clock, read at draw time: the panel, the rail and the minute's tick are then the
+      // same instant, which is what makes a tick re-age a frame rather than leave the cached one standing.
+      ageNow: () => wiring.deps.now(),
+      // The overlay is going away, so the thing that kept it re-aging stops. Read at close time, through the
+      // wiring, rather than captured here: the component outlives nothing of the extension's own lifecycle.
+      onDispose: () => wiring.onDispose(),
       dismiss: (id) => deps.dismiss(id),
       // The component has already released its own handle when this runs — it is the notification, not
       // the mechanism — so the owner only settles the rail. Calling back into `component.unfocus()` here

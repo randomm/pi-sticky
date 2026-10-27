@@ -13,7 +13,7 @@ import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { PinView } from "../src/types.ts";
-import { pin } from "./fixtures.ts";
+import { DAY_BEFORE_NOW, NOW, pin } from "./fixtures.ts";
 
 /**
  * The style the wiring hands the owner. `PanelOwner` never draws, so it never calls `themeStyle`: every
@@ -25,7 +25,14 @@ import { pin } from "./fixtures.ts";
 const panelStyle: PanelStyle = NO_PANEL_COLOUR;
 
 /** The one-pinned view every hand-built wiring starts from. */
-export const ONE: PinView = { pins: [pin(1, "Decide X")], removed: [] };
+/**
+ * The one-pin view most of these hosts draw with, stamped a day before `NOW` so a panel that ages its rows
+ * against the host's own clock draws a `1d` a test can name rather than the minute the run fell in.
+ */
+export const ONE: PinView = {
+  pins: [pin(1, "Decide X", "info", { createdAt: DAY_BEFORE_NOW })],
+  removed: [],
+};
 
 /** The wiring, with the decisions the test wants to watch: what the rail was told, and the view. */
 export function wiring(
@@ -57,6 +64,13 @@ export function wiring(
   const deps = {
     getView: () => state.view,
     isPanelShown: () => state.shown,
+    // The owner's `replyHint` reaches `config` through the real deps, and these files are about the
+    // guard's key, not the border's label: the component reads this every candidate frame, so an absent
+    // `config` is an exception out of `update()` rather than an inert stub.
+    config: { focusKey: "ctrl+alt+p", maxWidgetLines: 12 },
+    // The same reason: the component asks the host for the instant its ages are measured at, and a
+    // hand-built deps that cannot answer one is an exception in the draw path rather than a stub.
+    now: () => NOW,
     setPanelShown: (shown: boolean) => {
       state.shown = shown;
     },
@@ -72,6 +86,7 @@ export function wiring(
     deps,
     terminal,
     themeStyle: () => panelStyle,
+    onDispose: () => {},
     redrawRail: () => {
       // Read at draw time: the record has to say what the rail was asked to install, not what the view
       // happens to hold when the test finally looks at it. One push per call is also what proves the

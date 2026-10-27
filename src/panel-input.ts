@@ -16,6 +16,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 
 import type { KeyId } from "@earendil-works/pi-tui";
 
+import type { PanelHost } from "./panel-host.ts";
 import { isDismissKey, isSubmitKey, presses } from "./panel-keys.ts";
 import type { ViewPin } from "./types.ts";
 
@@ -82,4 +83,29 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
   const next = target.selection + moved;
   if (next < 0 || next >= pins.length) return;
   target.select(next);
+}
+
+/**
+ * One key, dispatched, with anything it throws turned into a notice.
+ *
+ * pi-tui calls a component's `handleInput` from its input handler with no try/catch of its own, so anything
+ * that escaped — a host whose overlay handle throws on `unfocus()`, a deps callback reading a context whose
+ * session is gone — would surface as an `extension_error` out of the terminal's key path. One try around the
+ * whole dispatch means no future key handler can escape it, and a key that fails does nothing, which is the
+ * safe answer for a panel whose destructive keys are gated on a bare press anyway.
+ *
+ * A function beside the dispatcher rather than a `try` inside the component because the guard is about the
+ * dispatch, not about the component: it belongs where the keys are, and the component is left with the one
+ * line that hands pi-tui its callback.
+ */
+export function containKey(
+  data: string,
+  component: PanelKeyTarget,
+  host: PanelKeyHost & Pick<PanelHost, "notify">,
+): void {
+  try {
+    dispatchPanelKey(data, component, host);
+  } catch {
+    host.notify("A panel key could not be handled.", "warning");
+  }
 }

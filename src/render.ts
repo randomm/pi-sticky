@@ -19,7 +19,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { foldBreaks, stripSequences } from "./escape.ts";
 
-import { formatLocalTime } from "./time.ts";
+import { formatLocalTime, formatPinAge } from "./time.ts";
 
 import type { PinLevel, PinView, ViewPin } from "./types.ts";
 
@@ -223,9 +223,14 @@ export function toOneLine(text: string): string {
   return foldBreaks(text);
 }
 
-function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string): string {
+function pinLine(
+  pin: ViewPin,
+  style: Style,
+  formatTime: (iso: string, now?: string) => string,
+  now: string | undefined,
+): string {
   const marker = style.marker(pin.level, MARKER[pin.level]);
-  const time = style.dim(formatTime(pin.createdAt));
+  const time = style.dim(formatTime(pin.createdAt, now));
   // A replied pin's whole row is dimmed and its text carries a leading `↩ `: the mark is what the user
   // scans for, so it goes at the start of the text column rather than at the end of a row that may be
   // cut there. The dim wraps the text column only, not the id or the time, which stay legible.
@@ -248,7 +253,13 @@ function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string
 export function renderRailLines(
   view: PinView,
   width: number,
-  opts: { maxLines: number; style: Style; formatTime?: (iso: string) => string },
+  opts: {
+    maxLines: number;
+    style: Style;
+    formatTime?: (iso: string, now?: string) => string;
+    /** The instant the ages are measured against; see the note on `formatTime` below. */
+    now?: string;
+  },
 ): string[] {
   const pins = orderPins(view.pins);
   if (pins.length === 0 || width <= 0 || opts.maxLines <= 0) return [];
@@ -268,8 +279,12 @@ export function renderRailLines(
   if (shown <= 0) return lines.map((line) => cut(line, width, styled));
 
   const hidden = pins.length - shown;
-  const formatTime = opts.formatTime ?? formatLocalTime;
-  const rows = pins.slice(0, shown).map((pin) => pinLine(pin, opts.style, formatTime));
+  // The rail draws an *age*, not a clock time (`formatPinAge`, which `/pins` and the model listing do not
+  // use), so the default formatter takes the instant the caller named. A caller that supplies its own
+  // `formatTime` answers for the whole stamp and is handed `now` as its second argument — a fixed string
+  // test that wants one row and one answer needs neither.
+  const formatTime = opts.formatTime ?? ((iso, at) => formatPinAge(iso, at));
+  const rows = pins.slice(0, shown).map((pin) => pinLine(pin, opts.style, formatTime, opts.now));
   if (hidden > 0) rows[shown - 1] = opts.style.dim(`   +${hidden} more · /pins`);
   lines.push(...rows);
   return lines.map((line) => cut(line, width, styled));

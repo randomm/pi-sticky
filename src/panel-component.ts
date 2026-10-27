@@ -1,16 +1,15 @@
 /**
  * The component pi-tui draws inside the pins overlay, and the keys it answers.
  *
- * The pins are ranked on the way in (`#ranked`) and this class is the only reader of that order: the
- * frame, the bar, the clamp, the scroll window and the two destructive keys all index the same array,
- * which is what makes the pin under the bar the pin `d` dismisses.
+ * The pins are ranked on the way in (`RankedPins`, `panel-ranked.ts`) and this class is the only reader of
+ * that order: the frame, the bar, the clamp, the scroll window and the two destructive keys all index the
+ * same array, which is what makes the pin under the bar the pin `d` dismisses.
  *
- * The selection and the focus flag live in this closure, not in the deps object: they are view
- * state of one overlay instance, and a redraw that read them back from a fresh component would lose
- * the user's place. `update()` is what `redraw()` calls on the *open* panel — the view is replaced
- * in place and the TUI is asked for a frame, because pi never rebuilds an overlay it already has. A
- * view that no longer holds the selected pin re-clamps the selection, so a dismissal from `/unpin`
- * cannot leave the bar past the end.
+ * The selection and the focus flag live here, not in the deps object: they are view state of one overlay
+ * instance, and a redraw that read them back from a fresh component would lose the user's place. `update()`
+ * is what `redraw()` calls on the *open* panel — the view is replaced in place and the TUI is asked for a
+ * frame, because pi never rebuilds an overlay it already has. A view that no longer holds the selected pin
+ * re-clamps the selection, so a dismissal from `/unpin` cannot leave the bar past the end.
  *
  * Keys reach this component only while the overlay holds focus (pi-tui routes input to the focused
  * component alone), which is why the keys hint is drawn only while focused — in the bottom border, and
@@ -22,34 +21,22 @@
  * `Enter` submits nothing: it puts `Re #<id>: ` at offset 0 of the raw editor buffer and hands focus back
  * to the main editor. The marker replaces one already there and the rest of the draft is kept verbatim;
  * submitting it is the reply ticket's job.
- *
- * Why the ranking lives here rather than in a module of its own: `#ranked` is the whole ranking path, and
- * ranking inside the drawer would leave `panel-input.ts` indexing the unranked array and `d` acting on the
- * wrong pin — one reader has to serve the frame, the keys and the bar.
  */
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
+import { ageAt, ageBucket } from "./panel-age.ts";
+import { PanelMemory, sameFrame } from "./panel-frame-cache.ts";
+import type { PanelFrame } from "./panel-frame-cache.ts";
 import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
-import { dispatchPanelKey } from "./panel-input.ts";
+import { containKey } from "./panel-input.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
 import { panelLayout } from "./panel-rows.ts";
-import { orderPins, panelThemeStyle } from "./render.ts";
+import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
-
-/** What one cached frame is: the lines, the width they were measured for, and what drew them. */
-interface PanelFrame {
-  lines: string[];
-  width: number;
-  pins: readonly ViewPin[];
-  selection: number;
-  focused: boolean;
-  /** The hint the resting border drew in this frame, so a host whose label changed costs a redraw. */
-  replyHint: string;
-}
 
 /**
  * The overlay's component. pi-tui calls `render` with the overlay's resolved width, so the lines are
@@ -70,20 +57,19 @@ export class PanelComponent implements Component {
   #handle: OverlayHandle | undefined;
   #focused = false;
   #selection = 0;
-  /** The view this component last ranked and the order it came out in — one pair, so neither is stale alone. */
-  #rankedSource: readonly ViewPin[] | undefined;
-  #rankedView: readonly ViewPin[] | undefined;
+  /** The draw-order memo, owned by this component alone: a shared one is process state, not a cache. */
   /**
-   * The frame currently cached, and everything it was drawn from — one object, so `invalidate()` cannot
-   * leave a "same frame" verdict behind against a cache it has just dropped.
+   * What the component has memorised: the last frame and the order its rows were built in, in one object so
+   * `invalidate()` cannot leave a "same frame" verdict behind against a cache it has just dropped, nor an
+   * order behind against a dropped frame. See `PanelMemory` (`panel-frame-cache.ts`).
    *
-   * `update()` compares the live view, bar and focus against it to decide whether a redraw costs a
-   * layout pass, and `render()` compares the *pins* against it for the same reason in the other
-   * direction: `render()` is what pi-tui calls on its own schedule, and an overlay that was not sent an
-   * `update()` can be asked for a frame after the view was swapped under it. A stale frame drawn at the
-   * width the cache was keyed on is the old view's pins still on the user's screen.
+   * `update()` compares the live view, bar and focus against it to decide whether a redraw costs a layout
+   * pass, and `render()` compares the *pins* against it for the same reason in the other direction:
+   * `render()` is what pi-tui calls on its own schedule, and an overlay that was not sent an `update()` can
+   * be asked for a frame after the view was swapped under it. A stale frame drawn at the width the cache was
+   * keyed on is the old view's pins still on the user's screen.
    */
-  #frame: PanelFrame | undefined;
+  #memory = new PanelMemory();
 
   constructor(host: PanelHost, tui?: TUI, theme?: Theme) {
     this.#host = host;
@@ -97,12 +83,9 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * The style to draw with, resolved once on first use: the host's, which `PanelOwner` builds from the
-   * theme pi handed the factory; else the mapping the component's own theme implies, since the colours are
-   * what a caller who built the component directly (a drawing test, or a host that colours itself) actually
-   * supplied — and through `panelThemeStyle`, the very mapping the rail uses, so one mapping colours both
-   * and cannot invent a second shade for the bar; else identity colours, which keep the frame plain rather
-   * than throwing on a missing `selected`.
+   * The style to draw with, resolved once: the host's if it has one, else the mapping its own theme implies
+   * (through `panelThemeStyle`, the very mapping the rail builds, so one mapping colours both surfaces),
+   * else identity colours — which keep the frame plain rather than throwing on a missing `selected`.
    */
   #styleOf(): PanelStyle {
     if (this.#style === undefined) {
@@ -131,16 +114,58 @@ export class PanelComponent implements Component {
     this.#host.requestRender();
   }
 
-  /** Whether the frame cached right now is the frame the view, bar, focus and resting label would draw. */
+  /** Whether the frame cached right now is the frame the view, bar, focus, resting label and age would draw. */
   #sameFrame(pins: readonly ViewPin[]): boolean {
-    const frame = this.#frame;
-    return (
-      frame !== undefined &&
-      frame.pins === pins &&
-      frame.selection === this.#selection &&
-      frame.focused === this.#focused &&
-      frame.replyHint === this.#host.replyHint()
-    );
+    return sameFrame(this.#memory.frame, this.#candidate(pins));
+  }
+
+  /**
+   * Everything the frame the component would draw right now depends on, read once.
+   *
+   * A method rather than five arguments at each call site because `update()` and `render()` ask the same
+   * question at different moments, and a candidate the two built differently is a cache that hits for one
+   * and misses for the other.
+   */
+  #candidate(pins: readonly ViewPin[]): PanelFrame {
+    return {
+      lines: [],
+      width: 0,
+      pins,
+      selection: this.#selection,
+      focused: this.#focused,
+      replyHint: this.#host.replyHint(),
+      ageNow: this.#ageBucket(),
+    };
+  }
+
+  /**
+   * The instant this frame ages its pins at: the host's clock when it has one, else this instant.
+   *
+   * Read once per entry point — not per row — so every age in one frame agrees, and read at draw time
+   * rather than stored on the component: a component lives across the minute its own rows are aged in.
+   */
+  #ageNow(): string {
+    const clock = this.#host.ageNow;
+    return ageAt(clock === undefined ? undefined : () => clock());
+  }
+
+  /** The minute `#ageNow()` falls in — the figure the frame cache and the tick's minute hand both compare. */
+  #ageBucket(): number {
+    return ageBucket(this.#ageNow());
+  }
+
+  /**
+   * The panel's own teardown, called by pi inside the host's `close()` — the same path
+   * `panel-close.ts` documents, which fires `done()` and *then* `component.dispose?.()`.
+   *
+   * The one place the panel tells the extension that its surface is going away. The minute's redraw belongs
+   * to a drawn panel, and a component pi has popped is not drawn: without this the timer would keep asking
+   * a closed overlay for a frame until the next session boundary cleared it. Optional on `PanelHost` for
+   * the same reason `ageNow` is: a hand-built host has no tick to stop.
+   */
+  dispose(): void {
+    this.#memory.invalidate();
+    this.#host.onDispose?.();
   }
 
   /** Focus model: the panel is interactive only while the handle's focus is held. */
@@ -187,56 +212,41 @@ export class PanelComponent implements Component {
     return this.#selection;
   }
 
-  /**
-   * The pins the panel is *drawing* — the view ranked, read at the moment the key arrives, never a copy a
-   * stale frame left behind.
-   *
-   * This is the array `buildPanelLines` draws and the one `dispatchPanelKey` indexes for `Enter` and `d`,
-   * which is the whole point of ranking here rather than in the drawer: the pin under the bar is the pin
-   * the key acts on.
-   */
+  /** The pins the panel is drawing, ranked: the array the bar is drawn over *is* the array the keys index. */
   get pins(): readonly ViewPin[] {
     return this.#ranked();
   }
 
   /**
-   * The view's pins in the order the panel draws them: `orderPins`, the rail's ranking, applied to a copy
-   * (the view's own array is insertion order and stays that way), memoized on the identity of the array it
-   * was handed — `commit`/`reconstruct` publish a fresh array for every change and none without one, and
-   * that identity is what `#sameFrame` and `render()` key on too, so a view that has not moved costs this
-   * component one sort and not one per frame. The memo is *this instance's*: as a module-level `let` it was
-   * process state, so two panels over two views each invalidated the other's order and the one that asked
-   * last paid for the sort — a cache one instance writes and every instance reads is not a cache.
-   *
-   * Every reader of "what is the panel showing" goes through here: the frame, the bar, the clamp, the
-   * scroll window and the two destructive keys. `getView().pins` itself is insertion order, and a second
-   * reader of that is how `d` came to dismiss the wrong pin.
+   * The pins the panel draws, in the order it draws them. The ranking and its memo are
+   * `RankedPins` (`panel-ranked.ts`); the reason this component is the only reader of that order — the
+   * destructive keys index the very array the bar is drawn over — is stated there.
    */
   #ranked(): readonly ViewPin[] {
-    const source = this.#host.getView().pins;
-    if (this.#rankedSource !== source || this.#rankedView === undefined) {
-      this.#rankedSource = source;
-      this.#rankedView = orderPins(source);
-    }
-    return this.#rankedView;
+    return this.#memory.orderOf(this.#host.getView().pins);
   }
 
   render(width: number): string[] {
-    // The live view and the resting label are read here and are part of the cache key, not just of the
-    // frame: width alone cannot tell a swapped view from an unchanged one, and `update()` — the member
-    // that used to be the only change test — is not called on pi-tui's own frame requests. The ranked
+    // The live view, the resting label and the age instant are read here and are part of the cache key, not
+    // just of the frame: width alone cannot tell a swapped view from an unchanged one, and `update()` — the
+    // member that used to be the only change test — is not called on pi-tui's own frame requests. The ranked
     // array is the key rather than the view's own, and it is the same array every time for a view that
     // has not moved, so the cache's fast path survives the ranking. The label is read here for the same
     // reason it is drawn here: a frame that did not name it would keep the old one on screen after the
     // operator rebound the focus key.
     const pins = this.#ranked();
     const replyHint = this.#host.replyHint();
-    const frame = this.#frame;
+    const ageNow = this.#ageNow();
+    // The cache key carries the *bucket*, and the content carries the instant: two redraws in one minute
+    // are the same frame, and the frame that is built still ages every row at one named instant.
+    const ageKey = ageBucket(ageNow);
+    const frame = this.#memory.frame;
     if (
       frame !== undefined &&
       frame.width === width &&
       frame.pins === pins &&
-      frame.replyHint === replyHint
+      frame.replyHint === replyHint &&
+      frame.ageNow === ageKey
     )
       return frame.lines;
     // A view that no longer holds the selected pin re-clamps the bar *before* the frame is laid out, so
@@ -248,6 +258,7 @@ export class PanelComponent implements Component {
       selection: this.#selection,
       focused: this.#focused,
       replyHint,
+      ageNow,
     };
     // One layout pass at the width pi-tui just handed over: the row table it builds is what both the
     // frame's height and the drawn window come from, so a pin is wrapped once per frame and a resize
@@ -259,41 +270,31 @@ export class PanelComponent implements Component {
       this.#tui?.terminal?.rows,
       this.#selection,
       this.#styleOf(),
+      ageNow,
     );
     const lines = buildPanelLines(content, width, this.#styleOf(), layout);
-    this.#frame = {
+    this.#memory.frame = {
       lines,
       width,
       pins,
       selection: this.#selection,
       focused: this.#focused,
       replyHint,
+      ageNow: ageKey,
     };
     return lines;
   }
 
+  /** Forget the memorised frame and the memorised order together (`PanelMemory`). */
   invalidate(): void {
-    this.#frame = undefined;
+    this.#memory.invalidate();
   }
 
   /**
-   * The one key dispatch, contained.
-   *
-   * pi-tui calls this from its input handler with no try/catch of its own, so anything that escaped — a
-   * host whose overlay handle throws on `unfocus()`, a deps callback that reads a context whose session
-   * is gone — would surface as an `extension_error` out of the terminal's key path. One try around the
-   * whole dispatch means no future key handler can escape it; a key that fails does nothing, which is the
-   * safe answer for a panel whose destructive keys are gated on a bare press anyway.
+   * The one key dispatch, contained — the guard is `containKey` (`panel-input.ts`), and the reason a key
+   * that throws is swallowed there rather than here is stated with it.
    */
   handleInput(data: string): void {
-    try {
-      this.#handleInput(data);
-    } catch {
-      this.#host.notify("A panel key could not be handled.", "warning");
-    }
-  }
-
-  #handleInput(data: string): void {
-    dispatchPanelKey(data, this, this.#host);
+    containKey(data, this, this.#host);
   }
 }

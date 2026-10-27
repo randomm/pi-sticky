@@ -30,17 +30,16 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { CORNER_COLUMNS } from "./panel-frame.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "./panel-geometry.ts";
-import { GUTTER_COLUMNS, pinMeta, widestStampColumns } from "./panel-tail.ts";
+import { GUTTER_COLUMNS, fullStamp, widestStampColumns } from "./panel-tail.ts";
 import type { MetaDimmer } from "./panel-tail.ts";
-import { formatLocalTime } from "./time.ts";
 import type { ViewPin } from "./types.ts";
 
 /**
- * A pin-shaped stand-in for the tail's reserved floor: `pinMeta` over the widest id the panel reserves room
- * for, at an epoch timestamp. `formatLocalTime` is what stamps every real tail and `HH:MM` is five columns
- * whatever the zone, so the width is the product's and only the id varies — which is what the reserve exists
- * for. (A pin of id 999, not the number 999: measuring this file's own spelling of the tail would be a second
- * copy of the format `pinMeta` owns.)
+ * A pin-shaped stand-in for the tail's reserved floor: the id/age tail of the widest id the panel reserves
+ * room for, aged a thousand years. The age is at worst four columns (`999d`) and `--`, the unreadable
+ * stamp's answer, at worst two, so the width is the product's and only the id varies — which is what the
+ * reserve exists for. (A pin of id 999, not the number 999: spelling the tail here would be a second copy of
+ * the format `panel-row-tail.ts` owns.)
  */
 const RESERVED_PIN: ViewPin = {
   id: 999,
@@ -48,12 +47,36 @@ const RESERVED_PIN: ViewPin = {
   text: "",
   level: "info",
   source: "agent",
-  createdAt: "1970-01-01T00:00:00.000Z",
+  createdAt: "2970-01-01T00:00:00.000Z",
   updatedAt: "1970-01-01T00:00:00.000Z",
 };
 
-/** The columns `pinRow` puts before the tail, beside the tail itself rather than inside it. */
+/** The age of a pin that is not a stamp at all: the widest age's shape, so the floor covers a missing one. */
+const RESERVED_NOW = "1970-01-01T00:00:00.000Z";
+
+/**
+ * The columns `pinRow` puts before the tail, beside the tail itself rather than inside it.
+ */
 export const META_SEPARATOR_COLUMNS = 1;
+
+/**
+ * The tail the panel reserves room for out of the box, stamped by the one module that stamps tails.
+ *
+ * Read lazily rather than as a module constant: it is measured through the same stamping the rows use, and a
+ * constant here would run that arithmetic while this module is still evaluating — the failure
+ * `panel-tail.ts`'s header records for the pair of modules this one sits between.
+ */
+const reservedTail = (): string => fullStamp(RESERVED_PIN, (text) => text, RESERVED_NOW);
+
+/**
+ * The tail the floor is measured on, spelled for the test that checks the floor still measures it.
+ *
+ * Exported because the promise it pins — `META_COLUMNS` is the width of the *actual* reserved tail, not of a
+ * literal someone estimated — cannot be checked from outside without either copying the format (the failure
+ * this whole area exists to prevent) or reading the constant back against itself (which proves nothing). One
+ * exported spelling, read by the arithmetic and by the assertion over the arithmetic.
+ */
+export const RESERVED_TAIL = reservedTail();
 
 /**
  * The columns the frame takes off every width it is built at: the two gutters with their spaces and the two
@@ -63,16 +86,17 @@ export const META_SEPARATOR_COLUMNS = 1;
 export const FRAME_COLUMNS = GUTTER_COLUMNS + CORNER_COLUMNS;
 
 /**
- * The floor of the id/time tail's reserve, in columns: the width of `pinMeta(RESERVED_PIN)` (`#999 12:00`) plus the
- * separator — the tail the panel reserves room for out of the box, chosen because that is the widest id a
- * session of the whole pin budget (`MAX_PINS`, `bounds.ts`) ever mints before its ids start counting up.
+ * The floor of the id/age tail's reserve, in columns: the width of `pinMeta(RESERVED_PIN, RESERVED_NOW)`
+ * (`#999 999d`) plus the separator — the tail the panel reserves room for out of the box, chosen because that
+ * is the widest id a session of the whole pin budget (`MAX_PINS`, `bounds.ts`) ever mints before its ids start
+ * counting up, and the widest age the formatter answers beside it.
  *
  * A floor, not the reserve. `widestMetaColumns` measures the tails a view really carries and never returns
  * less than this, because ids are not capped at three digits: `nextId` counts up to `MAX_PIN_ID`, so the
  * reserve is sized per frame from the ids on screen and this is only the floor under it — what a view of
  * one-digit ids costs the frame, and the least the builder will ever leave the tail.
  */
-export const META_COLUMNS = visibleWidth(pinMeta(RESERVED_PIN)) + META_SEPARATOR_COLUMNS;
+export const META_COLUMNS = visibleWidth(RESERVED_TAIL) + META_SEPARATOR_COLUMNS;
 
 /**
  * The narrowest frame in which a first row fits its widest reserved id whole: the frame, the tail, the
@@ -88,18 +112,34 @@ export const META_COLUMNS = visibleWidth(pinMeta(RESERVED_PIN)) + META_SEPARATOR
 export const MIN_COLUMNS_FOR_META = FRAME_COLUMNS + META_COLUMNS + META_SEPARATOR_COLUMNS + 1;
 
 /**
- * The columns the widest *drawn* id/time tail in `pins` owns. `dim` is the theme's `dim`, the same member
- * `pinRow` (`panel-lines.ts`) passes to `metaStamp` when it prints the tail, so the reserve is measured on
- * the string the row actually occupies rather than on the undimmed one — a theme whose `dim` wraps its
- * argument in visible bytes makes the tail wider than `pinMeta` alone, and measuring the undimmed string
- * handed those columns to the text and cut the time. The stamping itself is `panel-tail.ts`'s; this only
- * asks for the width, floored at `META_COLUMNS`.
+ * The columns the widest *drawn* id/age tail in `pins` owns. `dim` is the theme's `dim`, the same member
+ * `pinRow` (`panel-lines.ts`) passes to the tail when it prints it, so the reserve is measured on the string
+ * the row actually occupies rather than on the undimmed one — a theme whose `dim` wraps its argument in
+ * visible bytes makes the tail wider than the tail alone, and measuring the undimmed string handed those
+ * columns to the text and cut the id. The stamping itself is `panel-row-tail.ts`'s; this only asks for the
+ * width, floored at `META_COLUMNS`.
+ *
+ * `now` is the instant the frame is aged against, and it is the same one the row table stamps its tails at:
+ * the reserve is measured on the string the row prints, so a frame that aged its rows and measured them at
+ * two different instants would charge the text for a tail it did not draw. Absent, the tails carry the clock
+ * time they always showed, which is what a caller with no clock draws.
  *
  * The reserve is measured across the whole view rather than per pin, so the layout cannot wrap a row at a
  * width the builder then has to cut to fit a wider id beside it.
  */
-export function widestMetaColumns(pins: readonly ViewPin[], dim: MetaDimmer): number {
-  return widestStampColumns(pins, dim, META_COLUMNS);
+export function widestMetaColumns(
+  pins: readonly ViewPin[],
+  dim: MetaDimmer,
+  /** The instant the frame is aged against; absent, the tails carry the clock time they always showed. */
+  now?: string,
+): number {
+  return widestStampColumns(
+    pins,
+    // The whole tail, which is what the reserve has to cover whatever row each half lands on: a frame that
+    // measured only the id would charge the text for columns the age then took off the end of the row.
+    (pin) => fullStamp(pin, dim, now ?? ""),
+    META_COLUMNS,
+  );
 }
 
 /**
@@ -108,7 +148,7 @@ export function widestMetaColumns(pins: readonly ViewPin[], dim: MetaDimmer): nu
  *
  * `metaColumns` comes from `widestMetaColumns` for the frame's own pins; passing it explicitly (rather
  * than taking it from `width`) is what keeps a wide id from being cut: the wrap is sized so a first row
- * still has a column of text to draw *and* room for `#<id> HH:MM` beside it, because a row whose text
+ * still has a column of text to draw *and* room for its tail beside it, because a row whose text
  * column is zero collapses to a blank line `pinRow` draws without its tail — which is how a `#id` used to
  * disappear on a narrow panel. One column of text always draws, cut with `…`, with the meta whole beside
  * it. Below `MIN_COLUMNS_FOR_META` the floor guarantees nothing, which is why the builder refuses to draw

@@ -20,7 +20,7 @@ const NUL = String.fromCharCode(0);
 const PARA = String.fromCodePoint(0x2028);
 
 import { KEY, TOOL_NAME, USER_TYPE } from "../src/types.ts";
-import { LATER, localTime } from "./fixtures.ts";
+import { LATER, RAIL_AGE } from "./fixtures.ts";
 import { call, createHarness, reply } from "./harness.ts";
 import { detailsOf, extension, pin, pinResultMessage, rows } from "./integration-support.ts";
 
@@ -33,7 +33,7 @@ test("a pin from the model is visible in the rail and reported to the model", as
     expect(lines[0]).toContain("📌 Pinned for you (1)");
     expect(lines[0]).toContain("/pins");
     expect(lines[1]).toContain("#1");
-    expect(lines[1]).toContain(localTime(LATER));
+    expect(lines[1]).toContain(RAIL_AGE);
     expect(lines[1]).toContain("Decide X");
     // Placement is above the editor (research-summary U2) and the widget is keyed, so a rebuild
     // replaces it instead of stacking another copy.

@@ -12,7 +12,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { StickyConfig } from "../src/types.ts";
 import { drawPins } from "../src/widget.ts";
-import { LATER, localTime, pin, view } from "./fixtures.ts";
+import { LATER, NOW_AGE, localTime, pin, view } from "./fixtures.ts";
 import type { ExtensionMode } from "./harness.ts";
 import { RecordingUi } from "./recording-ui.ts";
 
@@ -149,9 +149,19 @@ test("rpc rows carry no escape bytes whatever the pin text contains", () => {
   }
 });
 
-test("the rail stamps each pin with the local time it was created", () => {
+test("the rail stamps each pin with the age it carries", () => {
+  // The rail draws an age, not a clock time (pins v2-2): the instant is named by the test and the pin is
+  // stamped a day before it, so the row must read `1d` rather than whatever the machine's zone says.
   const { ctx, ui } = ctxFor("rpc");
-  drawPins(ctx, view([pin(1, "Decide X", "info", { createdAt: LATER })]), config);
+  const DAY = 86_400_000;
+  const dayBefore = new Date(Date.parse(LATER) - DAY).toISOString();
+  drawPins(
+    ctx,
+    view([pin(1, "Decide X", "info", { createdAt: dayBefore })]),
+    config,
+    undefined,
+    () => LATER,
+  );
   const lines = ui.widgets.get("pi-sticky")?.content as string[];
-  expect(lines[1]).toContain(localTime(LATER));
+  expect(lines[1]).toContain(" 1d ");
 });

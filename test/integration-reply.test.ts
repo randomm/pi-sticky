@@ -17,7 +17,7 @@ import "./env-clear.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { KEY, USER_TYPE } from "../src/types.ts";
-import { LATER, LATER_TIME, localTime, pin as pinFixture, userAction } from "./fixtures.ts";
+import { LATER, LATER_TIME, RAIL_AGE, pin as pinFixture, userAction } from "./fixtures.ts";
 import { userEntry } from "./fixtures.ts";
 import { call, createHarness, reply } from "./harness.ts";
 import { detailsOf, pin, rows, userEntries } from "./integration-support.ts";
@@ -109,7 +109,7 @@ test("the rail draws the replied pin dimmed with a leading ↩, and no trailing 
     // Exact string, not `toContain("↩")`: the mark moved from the end of the row to the front of the
     // text column, and an assertion that accepted either form would pass against the old drawing. The
     // clock the extension runs on is `LATER`, which is the stamp every pin of this harness carries.
-    expect(line).toBe(` • #1 ${localTime(LATER)}  ↩ Decide X`);
+    expect(line).toBe(` • #1 ${RAIL_AGE}  ↩ Decide X`);
     expect(line).not.toMatch(/↩\s*$/);
   } finally {
     await h.dispose();
@@ -164,7 +164,7 @@ test("the dimming comes from the session and not the branch: a reply entry off t
   expect(branch.some((entry) => (entry as { customType?: string }).customType === USER_TYPE)).toBe(
     false,
   );
-  expect(recorder.renderWidget(KEY, 80)[1]).toBe(` • #1 ${localTime(LATER)}  ↩ Decide X`);
+  expect(recorder.renderWidget(KEY, 80)[1]).toBe(` • #1 ${RAIL_AGE}  ↩ Decide X`);
 });
 
 test("a reply to an unknown id is sent unchanged and the user is warned", async () => {

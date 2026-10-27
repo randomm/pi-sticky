@@ -36,11 +36,13 @@ import { hasUnseenPins } from "./panel-autoshow.ts";
 import { createPanelWiring } from "./panel-deps.ts";
 import { initialShown } from "./panel-deps.ts";
 import { FOCUS_KEY, TOGGLE_KEY } from "./panel-keys.ts";
-import { registerPanelShortcuts } from "./panel-shortcuts.ts";
+import { panelShortcuts, registerPanelShortcuts } from "./panel-shortcuts.ts";
 import { TerminalWidth } from "./panel-width.ts";
 import { PanelOwner } from "./panel.ts";
 import { registerReminder } from "./reminder.ts";
 import { registerReply } from "./reply.ts";
+import { drawFrom, drawSession, settleSession } from "./session-draw.ts";
+import { createPanelTick } from "./session-tick.ts";
 import { reconstruct } from "./state.ts";
 import { EMPTY_STATE } from "./state.ts";
 import { createPinTool } from "./tool.ts";
@@ -49,8 +51,8 @@ import type { PinState, PinView, StickyConfig, UserAction } from "./types.ts";
 import { drawPins } from "./widget.ts";
 
 /**
- * Build the extension. `clock` is the only source of time in the whole extension: an ISO string,
- * injectable so a test pins what a pin is stamped with instead of reading a wall clock.
+ * Build the extension. `clock` is its only source of time: an ISO string, injectable so a test pins what a
+ * pin is stamped with instead of reading a wall clock.
  */
 export function createStickyExtension(
   config: StickyConfig,
@@ -68,50 +70,59 @@ export function createStickyExtension(
     // `pi-sticky.ui` entry, an auto-show does not, so the flag is rebuilt here and not in `rebuild`,
     // which is about pins and must stay about pins. ONE cell, read by every surface.
     let panelShown = true;
-    // Pins the tool has committed since the last rebuild: the first of them auto-shows a hidden
-    // panel, so a pin the user never saw does not arrive silently (U8), and a redraw of a view the
-    // session already had does not fight a panel the user just closed.
+    // Pins the tool has committed since the last rebuild: the first auto-shows a hidden panel, so a pin the
+    // user never saw does not arrive silently (U8), and a redraw of a view the session already had does not
+    // fight a panel the user just closed.
     let sinceRebuild = 0;
-    /**
-     * How wide this session's terminal is, as pi-tui last stated it. One holder per extension
-     * instance — see `panel-width.ts` for why it is not a module global.
-     */
+    /** How wide this session's terminal is, as pi-tui last stated it — one holder per instance. */
     const terminal = new TerminalWidth();
+
+    /**
+     * The minute hand, owned by this instance and started by `session_start`. `createPanelTick`
+     * (`session-tick.ts`) builds the timer and the handle around it; the wiring it reads is built here from
+     * the live cells above rather than from their values — the rule the overlay follows too, because nothing
+     * that outlives a reload may be a value taken before it. A fresh tick at each session boundary, so one
+     * never carries a dead session's state into the session that replaced it.
+     */
+    const tick = createPanelTick(
+      {
+        columns: () => terminal.columns(),
+        shown: () => panelShown,
+        pinCount: () => view.pins.length,
+        now: clock,
+        redraw: () => redrawAll(live),
+      },
+      clock,
+    );
 
     /**
      * Draw the rail from the current view and the open panel.
      *
-     * The single place the handoff is written. Everything that can change what the rail shows — a
-     * commit, a toggle, a dismissal, a rebuild, a frame — reaches the rail through here, so there is
-     * exactly one call site that has to pass the live `panel`, and a new draw site cannot quietly omit
-     * it. `panel` is read off the holder rather than closed over: the owner's wiring is built from this
-     * function, so the two are mutually recursive and only a cell breaks the cycle — and the cell is
-     * `| undefined`, which is what makes the ordering below (the owner is built before any handler is
-     * registered) a fact the compiler checks rather than a comment.
+     * The single place the handoff is written: everything that can change what the rail shows — a commit, a
+     * toggle, a dismissal, a rebuild, a frame — reaches it through here, so exactly one call site has to pass
+     * the live `panel`. The owner is read off the holder rather than closed over: its wiring is built from
+     * this function, so the two are mutually recursive and only a cell breaks the cycle — and the cell being
+     * `| undefined` makes the ordering below something the compiler checks rather than a comment.
      *
-     * The user's visibility flag is *not* an argument: `panel.isVisible()` already folds it in, so a
-     * second copy of it here could only ever be a copy the caller forgot to refresh.
+     * The visibility flag is *not* an argument: `panel.isVisible()` already folds it in, so a second copy
+     * here could only be one the caller forgot to refresh.
      */
     function drawRail(ctx: ExtensionContext | undefined): void {
-      if (ctx) drawPins(ctx, view, config, panelRef.current);
+      if (ctx) drawPins(ctx, view, config, panelRef.current, clock, () => tick.stop());
     }
 
     /**
-     * The one cell the owner is kept in, for the mutual recursion above. Assigned once, below, before
-     * anything that reads it is registered; every read is optional-chained so a call that somehow
-     * arrives early draws the rail and nothing else rather than throwing.
+     * The one cell the owner is kept in, for the mutual recursion above: assigned once, below, before
+     * anything that reads it is registered, and every read optional-chained so a call that arrives early
+     * draws the rail and nothing else rather than throwing.
      */
     const panelRef: { current: PanelOwner | undefined } = { current: undefined };
 
     /**
-     * Settle the flag and draw both surfaces — the one idiom every change uses, in one order.
-     *
-     * `refresh()` reaches the rail itself, and `drawRail` is what asks the rail the handoff question at
-     * the context this change came from; calling them together is the whole redraw, and a call site that
-     * picked its own order between them would leave the last draw asking about a surface the other had
-     * already moved on from. `ctx` is the full context of the event, tool call or command that asked;
-     * without one the live context of the last `session_start` draws, and without that either nothing
-     * draws and the next `session_start` will.
+     * Settle the flag and draw both surfaces — the one idiom every change uses, in one fixed order, so a
+     * call site cannot pick its own and leave the last draw asking about a surface the other had moved on
+     * from. `ctx` is the context of the event, tool call or command that asked; without one the live context
+     * of the last `session_start` draws, and without that either nothing draws and the next start will.
      */
     function redrawAll(ctx: ExtensionContext | undefined): void {
       drawRail(ctx ?? live);
@@ -126,13 +137,12 @@ export function createStickyExtension(
      * a `/new` of the same file) can read it back. An auto-show passes `false`: the user did not ask for
      * the panel to *stay* open, and their recorded choice must survive it.
      *
-     * This is the only writer that *changes the user's choice* and redraws, which is the point: the flag
-     * is read by the overlay's `visible()`, by the rail's handoff and by `rebuild`, and it used to be
-     * assigned from six places, two of which forgot the redraw. Setting it here and drawing both surfaces
-     * in the same breath is what makes "the pin arrived and the panel stayed hidden" — the failure U8
-     * forbids — unrepresentable. The two other assignments below are exempt by construction: `rebuild`
-     * reads the choice back from the session and `session_shutdown` clears it, and neither is a change
-     * the user made.
+     * This is the only writer that *changes the user's choice* and redraws: the flag is read by the
+     * overlay's `visible()`, by the rail's handoff and by `rebuild`, and setting it here and drawing both
+     * surfaces in the same breath is what makes "the pin arrived and the panel stayed hidden" — the failure
+     * U8 forbids — unrepresentable. The two other assignments below are exempt by construction: `rebuild`
+     * reads the choice back from the session and `session_shutdown` clears it, and neither is a change the
+     * user made.
      */
     function setShown(shown: boolean, record: boolean): void {
       panelShown = shown;
@@ -202,11 +212,10 @@ export function createStickyExtension(
       },
     };
 
-    // The panel's deps are the tool's, plus the four things only the panel needs, built by the panel's
-    // own factory so the shape the panel depends on lives with the panel. The width is read from the
-    // holder rather than from the `ctx` a command handler is handed: pi builds those from a literal that
-    // copies the bound uiContext, so a refusal measured against a command's own context could read a
-    // terminal of zero columns and contradict the overlay on screen.
+    // The panel's deps are the tool's, plus the things only the panel needs, built by the panel's own
+    // factory so the shape it depends on lives with the panel. The width is read from the holder rather than
+    // from a command's own `ctx`: pi builds those from a literal that copies the bound uiContext, so a
+    // refusal measured against one could read a terminal of zero columns and contradict the overlay on screen.
     panelRef.current = new PanelOwner(
       createPanelWiring({
         deps,
@@ -214,19 +223,23 @@ export function createStickyExtension(
         isPanelShown: () => panelShown,
         setPanelShown: (shown) => setShown(shown, false),
         recordPanelShown: (shown) => setShown(shown, true),
+        // The panel's `d` key: one id, through the same batch path the `/unpin` command uses (see
+        // `commands.ts`' `dismiss`), which is where the uids are read from the state *before* the entries land.
         dismiss: (id) => {
           if (live) dismissPins(deps, live, [id]);
         },
         notify: (message, type) => live?.ui.notify(message, type),
         live: () => live,
         redrawRail: () => drawRail(live),
+        // The panel's surface is going away, so the minute's redraw stops asking it for a frame. The tick
+        // itself is stopped at the session boundaries; this is the boundary that is not a session's.
+        onDispose: () => tick.stop(),
       }),
     );
 
     pi.registerTool(createPinTool(deps));
-    // Both the commands and the shortcuts read the owner through the holder, so the invariant above —
-    // built before any handler exists — is carried by one access pattern rather than by the order of two
-    // different ones.
+    // Both the commands and the shortcuts read the owner through the holder, so the invariant above — built
+    // before any handler exists — is carried by one access pattern rather than by the order of two.
     registerCommands(
       pi,
       deps,
@@ -234,59 +247,51 @@ export function createStickyExtension(
     );
     registerReminder(pi, deps);
     registerReply(pi, deps);
+    // The panel's two shortcuts, straight from the configuration: `registerPanelShortcuts` skips an id the
+    // operator turned off, and reads the two descriptions that pi's `/hotkeys` column shows. Both handlers
+    // read the owner through the holder, so the invariant above is carried by one access pattern.
+    registerPanelShortcuts(
+      pi,
+      config,
+      panelShortcuts(() => panelRef.current),
+    );
 
-    // The panel's two shortcuts, straight from the configuration: `registerPanelShortcuts` skips an id
-    // the operator turned off, and reads the two descriptions that pi's `/hotkeys` column shows.
-    registerPanelShortcuts(pi, config, {
-      onToggle: (ctx) => {
-        panelRef.current?.toggle(ctx);
+    // The cells `drawSession` reaches, built by `session-draw.ts` from the shape it declares: one object,
+    // so the three boundaries below cannot each build their own order of the same four moves.
+    const sessionDraw = drawFrom({
+      adopt: (ctx) => {
+        live = ctx;
       },
-      onFocus: (ctx) => {
-        panelRef.current?.focusFromShortcut(ctx);
-      },
+      rebuild,
+      redraw: redrawAll,
+      panel: () => panelRef.current,
+      tick,
     });
 
-    pi.on("session_start", (_event, ctx) => {
-      live = ctx;
-      rebuild(ctx);
-      panelRef.current?.open(ctx);
-      redrawAll(ctx);
-    });
-
-    pi.on("session_tree", (_event, ctx) => {
-      live = ctx;
-      // The panel of the branch the user left is closed and a fresh one opened, so the overlay on
-      // screen is always the one that belongs to the branch being drawn. `open()` closes the record it
-      // is replacing itself, so nothing here has to close it first.
-      rebuild(ctx);
-      panelRef.current?.open(ctx);
-      redrawAll(ctx);
-    });
-
-    pi.on("turn_end", (_event, ctx) => {
-      // Reconcile with the session now that every append of the turn has landed; a commit pi never
-      // got to write is dropped here rather than living on into the next turn.
-      live = ctx;
-      rebuild(ctx);
-      redrawAll(ctx);
-    });
+    pi.on("session_start", (_event, ctx) => drawSession(ctx, sessionDraw));
+    pi.on("session_tree", (_event, ctx) => drawSession(ctx, sessionDraw));
+    // Reconcile with the session now that every append of the turn has landed; a commit pi never got to
+    // write is dropped here rather than living on into the next turn. `settleSession` and not `drawSession`:
+    // a turn ending has not changed which overlay the user is looking at, and reopening one would hand the
+    // panel a fresh record every turn.
+    pi.on("turn_end", (_event, ctx) => settleSession(ctx, sessionDraw));
 
     pi.on("session_shutdown", () => {
-      // The state goes first, and unguarded: the panel's own close fires host handles that may throw,
-      // and a host that cannot close its overlay is no reason to keep a dead session's pins, flag and
-      // terminal width in this instance.
+      // The timer goes with the session whose surfaces it kept re-aging: a `setInterval` that outlives its
+      // session fires into the redraw of whichever session comes next. The state goes next and unguarded —
+      // the panel's own close fires host handles that may throw, and a host that cannot close its overlay is
+      // no reason to keep a dead session's pins, flag and width in this instance. `terminal.forget()` and
+      // not `note(0)`: a session belongs to a terminal, the next one has stated nothing about its width,
+      // and what is forgotten is the number, never the fact that the host gets asked again. The panel goes
+      // last: pi's teardown has already popped the overlay, so its `close()` is a no-op against an entry
+      // that is gone.
+      tick.stop();
       live = undefined;
       state = EMPTY_STATE;
       view = { pins: [], removed: [] };
       panelShown = true;
       sinceRebuild = 0;
-      // A session belongs to a terminal. The next one has stated nothing about its width, so this
-      // instance is back to not knowing it and the rail answers, until a frame says otherwise.
-      // `forget()` and not `note(0)`: the host that measured this terminal measures the next, and what
-      // is forgotten is the number, never the fact that it gets asked.
       terminal.forget();
-      // The panel goes last: pi's own teardown has already popped the overlay by then, and its
-      // `close()` is a no-op against an entry that is gone.
       panelRef.current?.close();
     });
   };

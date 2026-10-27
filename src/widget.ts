@@ -21,6 +21,8 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 
+import type { AgeClock } from "./panel-age.ts";
+import { ageAt } from "./panel-age.ts";
 import { type Style, plainStyle, renderRailLines, themeStyle } from "./render.ts";
 import { KEY } from "./types.ts";
 import type { PinView, StickyConfig } from "./types.ts";
@@ -46,17 +48,29 @@ function panelOwnsPins(panel: { isVisible(): boolean } | undefined): boolean {
 }
 
 /** The component the TUI rail draws from; caches its lines until `invalidate()`. */
-class RailComponent implements Component {
+export class RailComponent implements Component {
   #view: PinView;
   #config: StickyConfig;
   #style: Style;
+  /** The extension's clock, so the rail ages its pins at the instant the panel ages them. */
+  #clock?: AgeClock;
+  /** What the extension does when this rail goes away: it stops the minute's redraw for it. */
+  #onDispose: (() => void) | undefined;
   #cachedWidth?: number;
   #cachedLines?: string[];
 
-  constructor(view: PinView, config: StickyConfig, theme: Theme) {
+  constructor(
+    view: PinView,
+    config: StickyConfig,
+    theme: Theme,
+    clock?: AgeClock,
+    onDispose?: () => void,
+  ) {
     this.#view = view;
     this.#config = config;
     this.#style = themeStyle(theme);
+    this.#clock = clock;
+    this.#onDispose = onDispose;
   }
 
   render(width: number): string[] {
@@ -64,15 +78,40 @@ class RailComponent implements Component {
     const lines = renderRailLines(this.#view, width, {
       maxLines: this.#config.maxWidgetLines,
       style: this.#style,
+      // The instant the rows are aged against, read once per build so every row of one rail says the same
+      // age. A tick reaches this cache the way it reaches the panel's frame: the component is rebuilt by
+      // the install the tick asks for (`RailGuard`'s key carries the age), so the cache is fresh with it.
+      now: ageAt(this.#clock),
     });
     this.#cachedWidth = width;
     this.#cachedLines = lines;
     return lines;
   }
 
+  /**
+   * Forget the cached rows and report the teardown.
+   *
+   * The invalidate is pi's own reason for the member; the report is this extension's. pi replaces a widget
+   * by disposing the one the key held and building the factory again, so this fires on every rail *install*
+   * as well as on a clear — which is why it reaches the extension through a callback that is safe to call
+   * repeatedly, rather than through anything that tears state down.
+   */
   invalidate(): void {
     this.#cachedWidth = undefined;
     this.#cachedLines = undefined;
+    this.#onDispose?.();
+  }
+
+  /**
+   * The rail is being torn down — pi is disposing the component this key held.
+   *
+   * The rail is the other surface a tick re-ages, and pi clears it on a reload and on `session_shutdown`
+   * without asking the extension: the report is how the extension learns its rail is gone, and the only
+   * thing it does with that is stop asking for it. Optional, because the rail is also built by tests that
+   * have no surfaces to keep time for.
+   */
+  dispose(): void {
+    this.invalidate();
   }
 }
 
@@ -86,6 +125,10 @@ export function drawPins(
    * print and json pass nothing), so the rail draws.
    */
   panel?: { isVisible(): boolean },
+  /** The extension's clock, so both rail paths age at the instant the panel ages at. */
+  clock?: AgeClock,
+  /** The rail was disposed by pi; the extension stops the minute's redraw for it. */
+  onRailDispose?: () => void,
 ): void {
   if (!ctx.hasUI) return;
   if (view.pins.length === 0) {
@@ -97,9 +140,11 @@ export function drawPins(
       ctx.ui.setWidget(KEY, undefined);
       return;
     }
-    ctx.ui.setWidget(KEY, (tui: TUI, theme: Theme) => new RailComponent(view, config, theme), {
-      placement: "aboveEditor",
-    });
+    ctx.ui.setWidget(
+      KEY,
+      (tui: TUI, theme: Theme) => new RailComponent(view, config, theme, clock, onRailDispose),
+      { placement: "aboveEditor" },
+    );
     return;
   }
   if (ctx.mode === "rpc") {
@@ -108,6 +153,9 @@ export function drawPins(
       renderRailLines(view, RPC_WIDTH, {
         maxLines: Math.min(RPC_MAX_LINES, config.maxWidgetLines),
         style: plainStyle,
+        // The rpc rail is the same surface at a fixed width, so it draws the age the tui rail draws — the
+        // one string-array path where an age would otherwise have to be spelled a second time.
+        now: ageAt(clock),
       }),
       { placement: "aboveEditor" },
     );

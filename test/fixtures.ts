@@ -4,6 +4,7 @@
  * `{ type: "custom", customType, data }`), pins with stable uids, and a deterministic
  * uid source, so `applyAction` results can be compared without mocking `crypto`.
  */
+import { formatPinAge } from "../src/time.ts";
 import type {
   Pin,
   PinLevel,
@@ -36,6 +37,49 @@ export function localTime(iso: string): string {
 export const NOW_TIME = localTime(NOW);
 /** `LATER` as drawn locally; the expectation for anything stamped with `LATER`. */
 export const LATER_TIME = localTime(LATER);
+
+/**
+ * Instants a fixed distance before `NOW`, for the age the panel and the rail draw.
+ *
+ * An age is a *difference* between two instants, so an age fixture is an instant plus the instant it is
+ * aged against — never a literal `"4m"`, which would be true only of the clock the run happens to read.
+ * These are the bucket edges the formatter's boundaries are asserted at, computed from `NOW` so a change
+ * to it moves every age fixture with it (and TZ-independently: a difference of instants is a difference of
+ * milliseconds, whatever zone either one reads as).
+ */
+const shifted = (ms: number): string => new Date(Date.parse(NOW) - ms).toISOString();
+
+/** One pin minute old at `NOW` — the smallest age past `now`. */
+export const MINUTE_BEFORE_NOW = shifted(60_000);
+/** One pin hour old at `NOW`. */
+export const HOUR_BEFORE_NOW = shifted(3_600_000);
+/** One pin day old at `NOW`. */
+export const DAY_BEFORE_NOW = shifted(86_400_000);
+
+/**
+ * The age `NOW` reads at `now`, as the panel and the rail draw it.
+ *
+ * The tests that pin the panel's *layout* — the tail's columns, the id's seat, the gutter arithmetic — name
+ * the tail the row prints, and that tail now carries an age rather than a clock time. Spelling it through
+ * the product's own formatter keeps those assertions true in any time zone and at any wall clock: a literal
+ * `12:00` was only ever true of the reading `TZ` happened to give it, and a literal `4m` would be true only
+ * of the instant the fixture pair names.
+ */
+export function pinAge(iso: string, now: string): string {
+  return formatPinAge(iso, now);
+}
+
+/** The age of `NOW` at `LATER`, which is the age every panel fixture draws for a pin stamped `NOW`. */
+export const NOW_AGE = pinAge(NOW, LATER);
+
+/**
+ * The age the *integration* rail draws: those harnesses run the extension on the clock `LATER` and seed
+ * their pins at that same instant, so the pin is under a minute old and the rail answers `now`.
+ *
+ * Named rather than written inline because "the rail's age" is a fact about the harness — which instant it
+ * runs at and which instant it stamps — and a literal `now` in an assertion does not say so.
+ */
+export const RAIL_AGE = pinAge(LATER, LATER);
 
 /**
  * Deterministic uid source: pass as `limits.newUid` instead of mocking crypto.

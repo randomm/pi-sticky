@@ -32,7 +32,7 @@ export function frameLayout(
   style: PanelStyle,
   terminalRows = TERMINAL_ROWS,
 ): PanelLayout {
-  return panelLayout(content.pins, width, terminalRows, content.selection, style);
+  return panelLayout(content.pins, width, terminalRows, content.selection, style, content.ageNow);
 }
 
 /**

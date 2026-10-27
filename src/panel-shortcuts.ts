@@ -195,3 +195,21 @@ export function registerPanelShortcuts(
     });
   }
 }
+
+/**
+ * The panel's two shortcut handlers, bound to whoever currently owns the overlay.
+ *
+ * The owner is read through a getter rather than captured: pi registers the shortcuts once, and the owner
+ * is replaced at every branch change, so a handler that closed over one would toggle a panel the user
+ * already left.
+ */
+export function panelShortcuts(
+  getPanel: () =>
+    | { toggle(ctx: ExtensionContext): void; focusFromShortcut(ctx: ExtensionContext): void }
+    | undefined,
+): PanelShortcutHandlers {
+  return {
+    onToggle: (ctx) => getPanel()?.toggle(ctx),
+    onFocus: (ctx) => getPanel()?.focusFromShortcut(ctx),
+  };
+}

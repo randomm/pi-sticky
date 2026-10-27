@@ -19,7 +19,7 @@ import { HINT, buildPanelLines } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { NOW, localTime, pin } from "./fixtures.ts";
+import { LATER, NOW, NOW_AGE, localTime, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 /** Identity colours, so a drawn line can be compared to what was asked for. */
@@ -47,6 +47,7 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
   // Required by `PanelContent`; these cases are about the rows, not the resting label.
   replyHint: "",
+  ageNow: LATER,
 });
 
 /** What the builder draws: the ordered pins, the selected pin index, and whether the panel has focus. */
@@ -158,7 +159,7 @@ test("a pin row is one space inside each gutter, at the inner width", () => {
   // Built from the pieces `pinRow` assembles rather than pasted — the text padded to the room the tail's
   // reserve left (`panelTextColumns` over the frame), the tail padded to exactly that reserve — so the time
   // comes from `localTime` and the reserve from the geometry, and neither can rot with the machine's clock.
-  const tail = ` #1 ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  const tail = ` #1 ${NOW_AGE}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
   const text = " • Decide X".padEnd(width - GUTTER_COLUMNS - tail.length);
   expect(lines[1]).toBe(`│ ${text}${tail} │`);
   expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
@@ -171,7 +172,7 @@ test("the header names the count and the pin row names the id and the local time
   const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), 40, style);
   expect(lines[0]).toContain("📌 Pinned for you (1)");
   expect(lines[1]).toContain("#1");
-  expect(lines[1]).toContain(localTime(NOW));
+  expect(lines[1]).toContain(NOW_AGE);
   expect(lines[1]).toContain("Decide X");
 });
 
@@ -217,22 +218,25 @@ test("a word wider than the frame is cut, not drawn past the gutter, and its id 
   // width pins is that the `#id` survives the cut instead.
   const lines = built(content([one(1, "supercalifragilisticexpialidocious")]), 30, style);
   expectUniformWidth(lines, 30);
-  const row = inside(lines[1] as string).trimEnd();
-  expect(row.endsWith(" ")).toBe(false);
-  expect(row).toContain("#1");
-  expect(row).toContain(localTime(NOW));
+  // The word wraps to three rows, and the age lives on the second of them: the id is what the first row must
+  // keep, and the two halves of the tail are never asked to share a line the text is being cut on.
+  const rows = lines.slice(1, -1).map((line) => inside(line).trimEnd());
+  expect(rows[0]).toContain("#1");
+  expect(rows[1]).toContain(NOW_AGE);
   // ...and the row is still cut: the text column gave up width rather than pushing a character past the
   // gutter the frame owns.
-  expect(row).not.toContain("supercalifragilisticexpialidocious");
+  expect(rows[0]).not.toContain("supercalifragilisticexpialidocious");
 });
 
 test("a text that carries a newline becomes two rows under the text column", () => {
-  const rows = panelPinRows(one(1, "first\nsecond"), 20, plainStyle);
+  const rows = panelPinRows(one(1, "first\nsecond"), 20, plainStyle, LATER);
   expect(rows).toHaveLength(2);
   expect(rows[0]?.text).toContain("first");
   expect(rows[1]?.text).toContain("second");
   expect(rows[1]?.text.startsWith("   ")).toBe(true);
-  expect(rows[1]?.meta).toBe("");
+  // The second row is where the age lives: the row table gives the id's row a text column and the age's row
+  // a tail, so the age of a two-row pin is drawn under its text rather than beside its id.
+  expect(rows[1]?.tail).toBe(` ${NOW_AGE}`);
 });
 
 test("a replied pin is marked in its row", () => {

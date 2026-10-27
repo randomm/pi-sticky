@@ -83,6 +83,7 @@ function panelWiring(parts: Partial<PanelWiringParts> = {}) {
       notify: (message, type) => void notify.push(`${type}:${message}`),
       live: () => undefined,
       redrawRail: () => void rails.push(1),
+      onDispose: () => {},
       ...parts,
     }),
   };
