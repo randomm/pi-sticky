@@ -1,0 +1,105 @@
+/**
+ * The id/time tail of a pin row, as one drawn string: what the row prints and what the layout measures.
+ *
+ * The tail is the last thing on a first row and the one thing on it the frame never spends, so the reserve
+ * the text column gives up has to be the width of the *drawn* tail — `style.dim` applied — rather than the
+ * width of the bare `#<id> HH:MM`. A theme whose `dim` wraps its argument in visible bytes (not a colour,
+ * which `visibleWidth` does not count) makes the drawn tail wider than the undimmed one, and a reserve
+ * measured on the undimmed string spent columns the row did not have: the time was what got cut. One stamp
+ * function — `metaStamp`, used by the row that draws and by the reserve that measures — is what makes the
+ * two figures identical rather than merely similar.
+ *
+ * This module is also the root of the panel's import graph: it reaches no other panel module, and
+ * `GUTTER_COLUMNS` lives here for that reason. `panel-frame-geometry.ts` needs both the gutter columns and
+ * the tail's format, and `panel-rows.ts` needs the geometry to lay the rows out; while each of the two
+ * owned one half of what the other needed, the pair formed a cycle whose constants were read before their
+ * own module finished evaluating, which threw `Cannot access 'GUTTER_COLUMNS' before initialization` for a
+ * caller that happened to import `panel-rows.ts` first. Both halves of that arithmetic are here now, so the
+ * edge runs one way — which `test/panel-import-cycle.test.ts` keeps true by importing this graph cold.
+ */
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+
+import { stripSequences } from "./escape.ts";
+import { ELLIPSIS, padPlain } from "./panel-frame.ts";
+import { formatLocalTime } from "./time.ts";
+import type { ViewPin } from "./types.ts";
+
+/**
+ * The columns the two gutters and their spaces own; the corners are added by `FRAME_COLUMNS`
+ * (`panel-frame-geometry.ts`). Stated in the module that draws neither of them, because both the layout and
+ * the builder subtract them and neither should have to import the other to do it.
+ */
+export const GUTTER_COLUMNS = 4;
+
+/** How a drawn string is coloured: the `dim` member of `PanelStyle` (`render.ts`), taken as a parameter. */
+export type MetaDimmer = (text: string) => string;
+
+/**
+ * The id/time tail of one pin's first row, undimmed: the hash, the id, a space, the local time. The one
+ * owner of that *format*; `metaStamp` is the one owner of the string that gets drawn.
+ */
+export function pinMeta(pin: ViewPin): string {
+  return `#${pin.id} ${formatLocalTime(pin.createdAt)}`;
+}
+
+/**
+ * The tail of `pin` exactly as the row draws it: the theme's `dim` over a leading space and `pinMeta`.
+ * `pinRow` (`panel-lines.ts`) prints this string and `widestMetaColumns` (`panel-frame-geometry.ts`)
+ * measures this same string, so the columns the text column gives up are the columns the tail occupies —
+ * which is what a theme whose `dim` adds visible columns used to break, cutting the time out of the tail.
+ */
+export function metaStamp(pin: ViewPin, dim: MetaDimmer): string {
+  return dim(` ${pinMeta(pin)}`);
+}
+
+/**
+ * The columns the drawn tails of `pins` own: `visibleWidth` of the very string `metaStamp` returns, with the
+ * escape bytes `stripSequences` refuses taken off first — `visibleWidth` counts a smuggled OSC pair as
+ * *free*, so measuring the raw stamp would reserve nothing for bytes the builder then throws away and the
+ * tail would be short. Escape-free stamps, which is every real theme, measure the same either way.
+ *
+ * Never less than `floor` (`META_COLUMNS`, `panel-frame-geometry.ts`): the reserve is what the text column
+ * gives up, and a view of small ids must cost the frame what it cost before ids could outgrow three digits.
+ * A frame whose ids are wider than that pays for them out of the text column — *the text yields, never the
+ * id* — and the reserve is measured across the whole view rather than per pin, so the layout cannot wrap a
+ * row at a width the builder then has to cut to fit a wider id beside it.
+ */
+export function widestStampColumns(
+  pins: readonly ViewPin[],
+  dim: MetaDimmer,
+  floor: number,
+): number {
+  let widest = floor;
+  for (const pin of pins) {
+    const width = visibleWidth(stripSequences(metaStamp(pin, dim)));
+    if (width > widest) widest = width;
+  }
+  return widest;
+}
+
+/**
+ * Columns the tail of a first row owns inside `inner`: the reserve, plus the separator `pinRow` puts before
+ * it, never more than the row less one column — a row with no text column is the case whose tail used to be
+ * cut away at column zero. The one owner of that clamp, so the wrap the layout sizes and the row the builder
+ * draws cannot each invent their own.
+ */
+export function tailReserve(metaColumns: number, inner: number, separatorColumns: number): number {
+  return Math.min(metaColumns + separatorColumns, Math.max(0, inner - 1));
+}
+
+/**
+ * The tail as it is drawn: `stamped` — the string `metaStamp` produced, which is the string the reserve was
+ * measured on — with the escape bytes refused, cut to its reserve and padded back out to exactly it. Padding
+ * rather than leaving a cut short is what keeps a row from stopping short of the columns the frame set aside
+ * for the tail, and taking the stamp as a parameter (rather than stamping here) is what makes the measured
+ * figure and the drawn one the same figure.
+ */
+export function drawnTail(
+  stamped: string,
+  metaColumns: number,
+  inner: number,
+  separator: number,
+): string {
+  const reserve = tailReserve(metaColumns, inner, separator);
+  return padPlain(truncateToWidth(stripSequences(stamped), reserve, ELLIPSIS), reserve);
+}

@@ -49,10 +49,13 @@ test("a zero text width falls back to one row rather than none", () => {
 
 test("rows are built for every pin in order and no pin is skipped", () => {
   const pins = [one(1, "a"), one(2, "bb"), one(3, "ccc")];
+  // The drawn tail, not the bare `#id HH:MM`: `panelPinRows` stamps `metaStamp`, and that string is both what
+  // the row prints and what the reserve measures (`panel-tail.ts`). `plainStyle.dim` is identity, so the only
+  // difference from the old expectation is the leading space the tail carries into its own columns.
   expect(panelAllRows(pins, 30, plainStyle).map((row) => row.meta)).toEqual([
-    `#1 ${localTime(NOW)}`,
-    `#2 ${localTime(NOW)}`,
-    `#3 ${localTime(NOW)}`,
+    ` #1 ${localTime(NOW)}`,
+    ` #2 ${localTime(NOW)}`,
+    ` #3 ${localTime(NOW)}`,
   ]);
 });
 

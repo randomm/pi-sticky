@@ -44,8 +44,9 @@ import {
   padPlain,
 } from "./panel-frame.ts";
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
-import { GUTTER_COLUMNS, panelContentRows, panelWindowOffset } from "./panel-rows.ts";
+import { panelContentRows, panelWindowOffset } from "./panel-rows.ts";
 import type { PanelLayout, PanelRow } from "./panel-rows.ts";
+import { GUTTER_COLUMNS, drawnTail, tailReserve } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
@@ -124,10 +125,11 @@ function fitLine(line: string, width: number): string {
  * The two halves are measured apart and joined at the end, which is the whole point of this function:
  * `fitLine` over the joined body spends the last columns of the row on its ellipsis and the tail is the last
  * thing on it, so an over-long text used to take the `#id` with it (`#100 …`) and a theme whose `dim` adds
- * *visible* bytes pushed the id past the gutter and had it truncated. The tail is therefore stripped, cut to
- * `metaColumns` + the separator and padded to exactly it — the policy a frame glyph is drawn under (`glyph`,
- * `panel-frame.ts`) — so its width is the columns the frame set aside and nothing else; `row.meta` is ASCII
- * (`#<id> HH:MM`), which leaves the theme's `dim` as the only width here that can misbehave. The text keeps
+ * *visible* bytes pushed the id past the gutter and had it truncated. The tail is `drawnTail` (`panel-tail.ts`)
+ * — `row.meta`, the very string `metaStamp` stamped and `widestMetaColumns` measured, stripped, cut to
+ * `metaColumns` + the separator and padded to exactly it, the policy a frame glyph is drawn under (`glyph`,
+ * `panel-frame.ts`): its width is the columns the frame set aside and nothing else, and the theme is applied
+ * to a tail exactly once, on the way in rather than by the drawer on the way out. The text keeps
  * the room the tail left, so a short row reads as it always did (text, tail, blanks) and a row whose text
  * overflowed is cut on the text's side: the text gives up columns, never the tail, and a wide id costs its
  * own columns rather than the id's seat. `metaColumns` is the reserve `widestMetaColumns` measured for the
@@ -144,14 +146,8 @@ function pinRow(
   if (row.meta === "") {
     return gutter(fitLine(selected ? style.selected(row.text) : row.text, inner), gutterAt);
   }
-  // One column for the text, whatever the ids on screen cost — a row with no text column is the case whose
-  // tail used to be cut away at column zero.
-  const reserve = Math.min(metaColumns + META_SEPARATOR_COLUMNS, Math.max(0, inner - 1));
-  const tail = padPlain(
-    truncateToWidth(stripSequences(style.dim(` ${row.meta}`)), reserve, ELLIPSIS),
-    reserve,
-  );
-  const body = `${fitLine(row.text, inner - reserve)}${tail}`;
+  const reserve = tailReserve(metaColumns, inner, META_SEPARATOR_COLUMNS);
+  const body = `${fitLine(row.text, inner - reserve)}${drawnTail(row.meta, metaColumns, inner, META_SEPARATOR_COLUMNS)}`;
   // The bar is applied to the joined line, as it was before the tail got its own columns: a bar that
   // stopped where the tail begins would draw a highlight with unpainted columns at its right end.
   return gutter(fitLine(selected ? style.selected(body) : body, inner), gutterAt);
@@ -252,7 +248,7 @@ export function buildPanelLines(
   // — the same call `panelLayout` made for the wrap, so the layout and the row agree). The old flat
   // `META_COLUMNS` was a promise the ids could break: past `#999` the tail no longer fit its reserve and
   // the row had to give its id up to close at the width the overlay was given.
-  const metaColumns = widestMetaColumns(content.pins);
+  const metaColumns = widestMetaColumns(content.pins, style.dim);
   const budget = panelContentRows(layout.height);
   const owned = layout.owned;
   // The window is cut from the table the height was counted from, so `min(budget, owned.length - start)`

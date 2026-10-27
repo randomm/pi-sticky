@@ -11,20 +11,24 @@
  *
  * The drawing of these rows — the gutters, the bar, the borders around them — is `panel-lines.ts`, and
  * `panelLayout` is the one place a frame's rows are built: the table it returns is what the builder draws
- * *and* what the frame's height is counted from, so a pin is wrapped once per frame and the columns the
- * gutters own (`GUTTER_COLUMNS`) are stated here for exactly that reason. The tail each first row carries
- * is stamped here too — `pinMeta` is the only place its format is written — and `widestMetaColumns`
- * (`panel-frame-geometry.ts`) *measures* that string for the reserve the text column gives up, without
- * spelling the format again.
+ * *and* what the frame's height is counted from, so a pin is wrapped once per frame. The tail each first row
+ * carries is stamped by `metaStamp` (`panel-tail.ts`) — the one string the row prints — and
+ * `widestMetaColumns` (`panel-frame-geometry.ts`) *measures* that very string for the reserve the text
+ * column gives up, so a theme whose `dim` adds columns is paid for by the layout that wrapped the row.
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { panelTextColumns, widestMetaColumns } from "./panel-frame-geometry.ts";
 import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
-import { formatLocalTime } from "./time.ts";
+/**
+ * The columns the two gutters own, and the undimmed tail's format. Both are owned by `panel-tail.ts` — the
+ * module that imports neither this file nor the geometry, which is what keeps the row table and the geometry
+ * from importing each other — and re-exported here so the callers that lay these rows out keep naming the
+ * module whose rows they lay out.
+ */
+export { GUTTER_COLUMNS, pinMeta } from "./panel-tail.ts";
 
-/** The columns the two gutters and their spaces own; the corners are added by `FRAME_COLUMNS` (`panel-frame-geometry.ts`). */
-export const GUTTER_COLUMNS = 4;
+import { GUTTER_COLUMNS, metaStamp } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
@@ -36,15 +40,6 @@ const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•
 export interface PanelRow {
   text: string;
   meta: string;
-}
-
-/**
- * The id/time tail of one pin's first row, as `panelPinRows` stamps it: the hash, the id, a space, the
- * local time. The one owner of that format — `widestMetaColumns` (`panel-frame-geometry.ts`) measures
- * exactly this string for the reserve the text column gives up, so the tail is spelled once.
- */
-export function pinMeta(pin: ViewPin): string {
-  return `#${pin.id} ${formatLocalTime(pin.createdAt)}`;
 }
 
 /**
@@ -67,7 +62,10 @@ export function panelContentRows(height: number): number {
  * warning under the bar.
  */
 export function panelPinRows(pin: ViewPin, textWidth: number, style: PanelStyle): PanelRow[] {
-  const meta = pinMeta(pin);
+  // The tail as the row prints it: the theme's `dim` over the space and `pinMeta`. The reserve is measured
+  // on this same stamp (`panel-frame-geometry.ts`), which is what keeps a `dim` that adds columns from
+  // taking the time off the end of the row.
+  const meta = metaStamp(pin, style.dim);
   const marker = style.marker(pin.level, MARKER[pin.level]);
   if (textWidth <= 0) return [{ text: ` ${marker} `, meta }];
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
@@ -190,7 +188,11 @@ export function panelLayout(
   selection: number,
   style: PanelStyle,
 ): PanelLayout {
-  const owned = panelRowOwners(pins, panelTextColumns(frameWidth, widestMetaColumns(pins)), style);
+  const owned = panelRowOwners(
+    pins,
+    panelTextColumns(frameWidth, widestMetaColumns(pins, style.dim)),
+    style,
+  );
   // As tall as the rows it draws, never past the terminal's half: `panelFrameRows` puts the two border
   // rows over `owned` and cuts the result to the ceiling, which is the only reason a frame is ever
   // shorter than its content (and the reason the window scrolls for it).

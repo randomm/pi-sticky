@@ -2,7 +2,7 @@
  * What a panel frame costs in columns, and the size below which the id column stops fitting.
  *
  * Before a pin sees a column the frame owns six: the two gutters and their spaces and the two corners —
- * `FRAME_COLUMNS`, the sum of `GUTTER_COLUMNS` (`panel-rows.ts`) and `CORNER_COLUMNS` (`panel-frame.ts`). The
+ * `FRAME_COLUMNS`, the sum of `GUTTER_COLUMNS` (`panel-tail.ts`) and `CORNER_COLUMNS` (`panel-frame.ts`). The
  * tail owns eleven more at the widest id the panel reserves room for, and `pinRow` puts a space between the
  * text and the tail. Those numbers used to be read at the two call
  * sites that needed them: the row table was sized at `frameWidth - 4 - 10` while the builder cut each
@@ -13,21 +13,25 @@
  * The tail's reserve is *not* a constant. Pin ids are never capped at 999 — `nextId` keeps counting and
  * `MAX_PIN_ID` (`bounds.ts`) is `Number.MAX_SAFE_INTEGER`, 20 digits long — so a flat eleven-column
  * reserve is a guarantee that quietly fails at `#1000`. `widestMetaColumns` measures the tails the view
- * actually carries, `panelPinRows` remains the one owner of the tail's *format*, and `META_COLUMNS` is
+ * actually carries — the *drawn* tails, the theme's `dim` included, because the row spends what it prints —
+ * `metaStamp` (`panel-tail.ts`) remains the one owner of the tail as it is drawn, and `META_COLUMNS` is
  * what is left of the old constant: the floor the reserve never goes below.
  *
  * The floor is here too, because the guarantee the text column is sized under — *a first row always has
  * room for its id and time* — is a statement about the narrowest frame the builder will close.
  * `MIN_COLUMNS_FOR_META` is that arithmetic, and the builder's floor is pinned to it
- * (`PANEL_MIN_FRAME_COLUMNS`, `panel-geometry.ts`) by `test/panel-id-wide.test.ts`, which also sweeps every
- * width from that floor to 80: every id to 999 in `test/panel-id-never-cut.test.ts`, and every id past it in
- * `test/panel-id-wide.test.ts`.
+ * (`PANEL_MIN_FRAME_COLUMNS`, `panel-geometry.ts`) by `test/panel-id-wide.test.ts`, which asserts the floor
+ * sits at or *above* it — never below, which is the case where the `#id` would draw in a frame too narrow for
+ * it — and sweeps every width from that floor to 80 with a theme whose `dim` adds columns, so the bound is
+ * stated in the columns the row really spends. Every id to 999 in `test/panel-id-never-cut.test.ts`, and
+ * every id past it in `test/panel-id-wide.test.ts`.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { CORNER_COLUMNS } from "./panel-frame.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "./panel-geometry.ts";
-import { GUTTER_COLUMNS, pinMeta } from "./panel-rows.ts";
+import { GUTTER_COLUMNS, pinMeta, widestStampColumns } from "./panel-tail.ts";
+import type { MetaDimmer } from "./panel-tail.ts";
 import { formatLocalTime } from "./time.ts";
 import type { ViewPin } from "./types.ts";
 
@@ -53,7 +57,7 @@ export const META_SEPARATOR_COLUMNS = 1;
 
 /**
  * The columns the frame takes off every width it is built at: the two gutters with their spaces and the two
- * corners. The sum of the two owners — `GUTTER_COLUMNS` is `panel-rows.ts`'s, `CORNER_COLUMNS` is
+ * corners. The sum of the two owners — `GUTTER_COLUMNS` is `panel-tail.ts`'s, `CORNER_COLUMNS` is
  * `panel-frame.ts`'s — so neither half can be edited on its own and leave this arithmetic behind.
  */
 export const FRAME_COLUMNS = GUTTER_COLUMNS + CORNER_COLUMNS;
@@ -77,28 +81,25 @@ export const META_COLUMNS = visibleWidth(pinMeta(RESERVED_PIN)) + META_SEPARATOR
  *
  * `PANEL_MIN_FRAME_COLUMNS` (the overlay's own `minWidth`) is pinned to this number by
  * `test/panel-id-wide.test.ts`: the builder's floor must sit at or above the width the reserved tail needs
- * beside a column of text, so a frame the overlay may hand over is always one the `#id` fits in. Moving
- * either number without the other is caught there rather than on the user's screen.
+ * beside a column of text (`>=`, which is what that test asserts — a floor *above* the arithmetic only asks
+ * for a wider frame than the tail needs), so a frame the overlay may hand over is always one the `#id` fits
+ * in. Moving either number without the other is caught there rather than on the user's screen.
  */
 export const MIN_COLUMNS_FOR_META = FRAME_COLUMNS + META_COLUMNS + META_SEPARATOR_COLUMNS + 1;
 
 /**
- * The columns the widest id/time tail in `pins` owns: `visibleWidth` of the very string `pinMeta` stamps, so
- * the tail's format stays in that one owner (`panel-rows.ts`) and this only measures it.
+ * The columns the widest *drawn* id/time tail in `pins` owns. `dim` is the theme's `dim`, the same member
+ * `pinRow` (`panel-lines.ts`) passes to `metaStamp` when it prints the tail, so the reserve is measured on
+ * the string the row actually occupies rather than on the undimmed one — a theme whose `dim` wraps its
+ * argument in visible bytes makes the tail wider than `pinMeta` alone, and measuring the undimmed string
+ * handed those columns to the text and cut the time. The stamping itself is `panel-tail.ts`'s; this only
+ * asks for the width, floored at `META_COLUMNS`.
  *
- * Never less than `META_COLUMNS`: the reserve is what the text column gives up, and a view of small ids must
- * cost the frame what it cost before ids could outgrow three digits. A frame whose ids are wider than that
- * pays for them out of the text column, which is the operator's rule — *the text yields, never the id* — and
- * the reserve is measured across the whole view rather than per pin, so the layout cannot wrap a row at a
+ * The reserve is measured across the whole view rather than per pin, so the layout cannot wrap a row at a
  * width the builder then has to cut to fit a wider id beside it.
  */
-export function widestMetaColumns(pins: readonly ViewPin[]): number {
-  let widest = META_COLUMNS;
-  for (const pin of pins) {
-    const width = visibleWidth(pinMeta(pin));
-    if (width > widest) widest = width;
-  }
-  return widest;
+export function widestMetaColumns(pins: readonly ViewPin[], dim: MetaDimmer): number {
+  return widestStampColumns(pins, dim, META_COLUMNS);
 }
 
 /**

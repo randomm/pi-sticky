@@ -28,6 +28,7 @@ import {
 } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
+import { metaStamp } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -53,8 +54,13 @@ function rowsOf(lines: string[]): string[] {
   return lines.slice(1, -1);
 }
 
-/** The meta a first row must carry, spelled the way `panelPinRows` stamps it. */
-const metaOf = (id: number): string => `#${id} ${localTime(NOW)}`;
+/**
+ * The meta a first row must carry, spelled the way `panelPinRows` stamps it: the leading space and the
+ * theme's `dim` included, because the row carries the *drawn* tail (`metaStamp`, `panel-tail.ts`) and the
+ * reserve is measured on that same string — a test that named the undimmed form here would be asserting a
+ * string no row ever draws.
+ */
+const metaOf = (id: number): string => metaStamp(at(id, ""), style.dim);
 
 test("every pin's first row carries its #id and time, uncut, at every width and every id", () => {
   // 30 → 80 covers the builder's own floor (`PANEL_MIN_FRAME_COLUMNS`) through the widest frame the
