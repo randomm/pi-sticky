@@ -37,6 +37,29 @@ function isC1Control(code: number): boolean {
   return code >= 0x80 && code <= 0x9f;
 }
 
+/**
+ * The six line-break shapes a terminal or a reader may end a line on, spelled from code points: LF,
+ * CR, NEL and the two U+202x separators, plus vertical tab and form feed — which the sanitizer maps
+ * away but a raw `now` copied verbatim into state reaches `renderList` with. TAB is deliberately not
+ * one of them: it aligns text, it does not break a line, and folding it would rewrite a benign value
+ * that every other pass leaves alone.
+ *
+ * A surface that promises its reader one line per record folds every one of these: folding only the
+ * `\n` the sanitizer leaves behind would borrow the guarantee from that pass's ordering rather than
+ * owning it, and a value that never went through it — a timestamp, a view built directly — would still
+ * be able to split a row.
+ */
+const BREAK_SHAPES = `${String.fromCodePoint(0x0a, 0x0b, 0x0c, 0x0d, 0x85, 0x2028, 0x2029)}`;
+
+/**
+ * Every run of line breaks in `text` replaced by a single space. Shared by the two surfaces that
+ * owe their reader exactly one line per record — the rail and the model-facing listing — so neither
+ * can be surprised by a break shape the other one missed.
+ */
+export function foldBreaks(text: string): string {
+  return text.replace(new RegExp(`[${BREAK_SHAPES}]+`, "g"), " ");
+}
+
 /** Is code one of the six introducers in their 8-bit form? */
 function is8BitIntroducer(code: number): boolean {
   return (

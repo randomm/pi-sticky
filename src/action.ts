@@ -12,6 +12,7 @@
  */
 import { MAX_PINS, MAX_TEXT_UNITS, isPositiveSafeInteger } from "./bounds.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
+import { foldBreaks, stripSequences } from "./escape.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isUid } from "./state-guards.ts";
 import type { PinLevel, PinSource } from "./types.ts";
@@ -176,11 +177,52 @@ export function uidOrUndefined(uid: unknown): string | undefined {
  * copies *verbatim* into state — `createdAt`, `updatedAt` and `removal.at` all take it — so an
  * unguarded `now: 12345` yields an ok result whose snapshot `isPinState` then rejects: the pins would
  * vanish on the next reload instead of the model reading a refusal. The length bound is the same
- * `MAX_TEXT_UNITS` the guard reads, so a bump moves both sides together.
+ * `MAX_TEXT_UNITS` the guard reads, so a bump moves both sides together. The bound is measured on the
+ * stripped value, since that is the one that lands in state: the strip can only shrink, so a stamp
+ * that a caller's `MAX_TEXT_UNITS` test accepted is never refused here for what the strip did to it.
+ *
+ * It is also the one state field that gets no text pass of its own, which is why it is stripped here:
+ * `stripSequences`, then every C0, DEL and C1 code unit, then the break shapes folded to one space —
+ * so the module's promise that a returned state carries no escape byte holds for a timestamp as well
+ * as for `text`, and no stamp copied verbatim into state can split a row of the model-facing listing
+ * (see `renderList`). Deliberately *not* `cleanPinText` — that pass also edge-trims, and an ISO stamp
+ * is not model prose: a caller's `" "`, `"not a date"` or a stamp carrying other punctuation keeps
+ * every character it had. A value that strips to `""` is accepted like `""` always was and draws
+ * `--:--`.
  */
 export function nowOrUndefined(now: unknown): string | undefined {
   if (typeof now !== "string") return undefined;
-  return now.length <= MAX_TEXT_UNITS ? now : undefined;
+  const stripped = stripControlBytes(now);
+  return stripped.length <= MAX_TEXT_UNITS ? stripped : undefined;
+}
+
+/**
+ * Escape sequences and the control code units that are not text, removed, and every line break folded
+ * to one space. The sequence pass runs first (it is the sanitizer's own scanner, so an unterminated
+ * OSC dies the same way here as there), then `foldBreaks` — the shapes a terminal ends a line on
+ * (LF, VT, FF, CR, U+0085, U+2028, U+2029) become one space — and only then the leftover controls:
+ * every remaining C0 code unit, DEL and all of C1.
+ *
+ * The fold runs *before* the control walk, not after it: the walk keeps only what it recognises as
+ * text, so a break handed to it afterwards would already be gone and the space that documents it
+ * would never be written.
+ *
+ * The fold is what makes the listing's one-row-per-pin promise hold for a stamp: `renderList`
+ * interpolates nothing for `createdAt`/`updatedAt`/`removal.at`, so a raw break in a `now` would
+ * reach the model as a line the extension never drew, which is the forgery class this fix exists to
+ * close. `formatLocalTime` is unaffected — it answers `--:--` for a stamp it cannot parse either way.
+ * Everything else is passed through by code unit, so a benign stamp is byte-identical on the way out.
+ */
+function stripControlBytes(text: string): string {
+  let out = "";
+  for (const char of foldBreaks(stripSequences(text))) {
+    const code = char.codePointAt(0) ?? 0;
+    // TAB survives — no tidying, no trimming — and so does everything printable; what is dropped is
+    // only the control code units that are neither text nor a break (the breaks are spaces by now).
+    if (code === 0x09) out += char;
+    else if (code >= 0x20 && code !== 0x7f && !(code >= 0x80 && code <= 0x9f)) out += char;
+  }
+  return out;
 }
 
 /** What the action claims its id is: a pin number, or absent when the model wrote something else. */

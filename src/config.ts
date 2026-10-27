@@ -3,7 +3,8 @@
  * nothing but the record it is given, so `index.ts` passes `process.env` once at
  * factory call and tests can call it with any record under a polluted process.env.
  *
- * Two disable guards: an explicit `PI_STICKY_DISABLE=1`, and any non-empty
+ * Two disable guards: an explicit `PI_STICKY_DISABLE` set to a truthy word (`1`, `true`, `yes` or
+ * `on`, any case, surrounding whitespace tolerated), and any non-empty
  * `PI_ENSEMBLE_ROLE`, which pi-rukas sets for every child (research-summary section 3:
  * `PI_ENSEMBLE_SUBAGENT_MODE` is set only for strict-mode children, so it must not
  * disable on its own).
@@ -41,8 +42,20 @@ function readInt(env: Record<string, string | undefined>, name: NumericVar): num
   return value >= bounds.min && value <= bounds.max ? value : bounds.fallback;
 }
 
+/**
+ * What counts as "off" for `PI_STICKY_DISABLE`. An operator who types `true`, `yes` or `on` meant to
+ * disable the extension, and silently staying enabled is the failure this set exists for; anything
+ * else (a typo, `"0"`, an empty value) leaves it on, so a mistyped variable never hides the panel.
+ */
+const DISABLE_VALUES = new Set(["1", "true", "yes", "on"]);
+
+function isDisabled(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  return DISABLE_VALUES.has(value.trim().toLowerCase());
+}
+
 export function readConfig(env: Record<string, string | undefined>): StickyConfig {
-  const disabled = env.PI_STICKY_DISABLE === "1" || (env.PI_ENSEMBLE_ROLE ?? "") !== "";
+  const disabled = isDisabled(env.PI_STICKY_DISABLE) || (env.PI_ENSEMBLE_ROLE ?? "") !== "";
   return {
     disabled,
     maxPins: readInt(env, "PI_STICKY_MAX_PINS"),

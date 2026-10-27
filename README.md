@@ -151,7 +151,7 @@ change.
 
 | Variable | Default | Allowed | Effect |
 | --- | --- | --- | --- |
-| `PI_STICKY_DISABLE` | unset | — | Only the literal `1` disables the extension. |
+| `PI_STICKY_DISABLE` | unset | `1`, `true`, `yes`, `on` | Disables the extension. Case-insensitive, spaces tolerated. |
 | `PI_STICKY_MAX_PINS` | `5` | 1–20 | How many pins the agent may show at a time. |
 | `PI_STICKY_MAX_CHARS` | `400` | 40–2000 | Character budget for one pin's text. |
 | `PI_STICKY_MAX_LINES` | `8` | 3–30 | Lines in the rail, header included. |

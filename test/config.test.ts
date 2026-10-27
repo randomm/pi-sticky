@@ -39,9 +39,25 @@ test("PI_STICKY_DISABLE=1 disables", () => {
   expect(readConfig({ PI_STICKY_DISABLE: "1" }).disabled).toBe(true);
 });
 
-test("any other PI_STICKY_DISABLE value does not disable", () => {
-  for (const value of ["", "0", "true", " 1"]) {
+test("any PI_STICKY_DISABLE that is not a truthy word or digit does not disable", () => {
+  // `1`, `true`, `yes` and `on` (any case, any surrounding whitespace) disable — see the next two
+  // cases. Everything else is a typo or an unset-looking value and leaves the extension on.
+  for (const value of ["", "0", "no", "nope", "yesterday", "false", "1x", "truely"]) {
     expect(readConfig({ PI_STICKY_DISABLE: value }).disabled).toBe(false);
+  }
+});
+
+test("PI_STICKY_DISABLE accepts the common truthy words in any case", () => {
+  // An operator who types `PI_STICKY_DISABLE=true` meant to disable it: silently staying enabled is
+  // the failure this widening exists for.
+  for (const value of ["1", "true", "TRUE", "Yes", "on", "ON"]) {
+    expect(readConfig({ PI_STICKY_DISABLE: value }).disabled).toBe(true);
+  }
+});
+
+test("PI_STICKY_DISABLE tolerates surrounding whitespace", () => {
+  for (const value of [" 1", " true ", "\tyes\n"]) {
+    expect(readConfig({ PI_STICKY_DISABLE: value }).disabled).toBe(true);
   }
 });
 
