@@ -15,16 +15,34 @@ import { expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { KEY, USER_TYPE } from "../src/types.ts";
-import { LATER, LATER_TIME, localTime, userAction } from "./fixtures.ts";
+import { LATER, LATER_TIME, localTime, pin as pinFixture, userAction } from "./fixtures.ts";
 import { userEntry } from "./fixtures.ts";
 import { call, createHarness, reply } from "./harness.ts";
-import { detailsOf, extension, pin, rows, userEntries } from "./integration-support.ts";
+import { detailsOf, pin, rows, userEntries } from "./integration-support.ts";
 import { pinEntry } from "./panel-lifecycle-fixture.ts";
 import { RecordingUi } from "./recording-ui.ts";
+import { replyTo } from "./reply-support.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
-/** What the model must receive for a `Decide X` pin answered with `yes`. */
-const REPLY_TEXT = 'Replying to pin #1 (info): "Decide X"\n\nyes';
+/**
+ * A fresh extension instance for one harness.
+ *
+ * `integration-support.ts` exports a single module-level instance for the files that never reload a
+ * session. This file reloads one, and pi's `session.reload()` tears the runner down and re-runs the
+ * factories it was handed: with an instance two harnesses share, the harness the `print` case builds
+ * afterwards ends up driving handlers whose closure belongs to a session that has been torn down, and its
+ * reply stops being rewritten at all. One instance per harness is what the extension's own rule — a
+ * context is a snapshot of one session — already says; the clock stays the shared `LATER` so the stamps
+ * stay assertable.
+ */
+const sticky = () => createStickyExtension(DEFAULT_CONFIG, () => LATER);
+
+/**
+ * What the model must receive for a `Decide X` pin answered with `yes`, spelled out rather than built:
+ * the code span around the pin text is the fix this file guards, so it is pinned by a literal here as well
+ * as by the golden string in `test/reply-support.ts`.
+ */
+const REPLY_TEXT = "Replying to pin #1 (info): `Decide X`\n\nyes";
 
 /** The text of the last user message of the most recent request, which is the message just submitted. */
 function lastUserText(h: Awaited<ReturnType<typeof createHarness>>): string {
@@ -43,7 +61,7 @@ function lastUserText(h: Awaited<ReturnType<typeof createHarness>>): string {
 
 /** Script one pin from the model and run a turn for it, leaving the session idle with pin #1 live. */
 async function pinned(...texts: string[]) {
-  const h = await createHarness({ factories: [extension] });
+  const h = await createHarness({ factories: [sticky()] });
   const steps = texts.map((text) => call("pin_for_user", { action: "pin", text }));
   h.script([...steps, reply("ok")]);
   await h.run("go");
@@ -185,7 +203,9 @@ test("a reply to a multi-line pin quotes one line and keeps the rest of the draf
     h.appendScript([reply("noted")]);
     await h.run("Re #1: the first one");
 
-    expect(lastUserText(h)).toBe('Replying to pin #1 (info): "first second"\n\nthe first one');
+    // Literal, not `replyTo(...)`: this is the case whose text the suite pins character for character,
+    // and a written-out expectation is what catches the shared helper drifting from the source.
+    expect(lastUserText(h)).toBe("Replying to pin #1 (info): `first second`\n\nthe first one");
   } finally {
     await h.dispose();
   }
@@ -199,7 +219,11 @@ test("a reply whose draft the panel made is rewritten like one typed", async () 
     h.appendScript([reply("noted")]);
     await h.run("Re #1: how about the blue one");
 
-    expect(lastUserText(h)).toBe('Replying to pin #1 (info): "Decide X"\n\nhow about the blue one');
+    // Built from the shared fixture for a pin of the same id, level and text this harness pinned — the
+    // `pin` of this file's scope is the harness's pin-a-session helper, not a pin value.
+    expect(lastUserText(h)).toBe(
+      replyTo({ ...pinFixture(1, "Decide X", "info") }, "how about the blue one"),
+    );
   } finally {
     await h.dispose();
   }
@@ -222,7 +246,7 @@ test("a plain message is neither rewritten nor recorded", async () => {
 test("print mode rewrites and records without notifying", async () => {
   // No uiContext is bound in print mode, so `hasUI` is false: the reply must still reach the model and
   // still be written down, and the warning branch must stay silent rather than throw.
-  const h = await createHarness({ factories: [extension], mode: "print" });
+  const h = await createHarness({ factories: [sticky()], mode: "print" });
   try {
     await pin(h, "Decide X");
     h.appendScript([reply("noted")]);
