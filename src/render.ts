@@ -17,7 +17,7 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { stripSequences } from "./escape.ts";
+import { foldBreaks, stripSequences } from "./escape.ts";
 
 import { formatLocalTime } from "./time.ts";
 
@@ -164,14 +164,24 @@ function repliedSuffix(pin: ViewPin): string {
 }
 
 /**
- * The model-facing listing in the docs/plan.md 6.2 format: a count line, then one ranked
+ * The model-facing listing in the docs/plan.md 6.2 format: a count line, then exactly one ranked
  * line per pin. Every pin of the view is listed, whatever the rail could fit.
+ *
+ * The pin's own text goes through `toOneLine` for the same reason the rail does, with a sharper
+ * stake: this string is what the model reads back in every tool result and in the post-compaction
+ * reminder, and `src/tool.ts`'s guidelines tell it to trust a line that reads like a pin row or
+ * like a user reply. A text carrying a break could otherwise print `#7 [warning] …` as a row the
+ * extension never made, or `Replying to pin #1: yes` as a reply the user never sent. Only the text
+ * is folded — `repliedSuffix` interpolates `formatLocalTime`, which is already ASCII `HH:MM` or
+ * `--:--`. The user's own `/pins` surface keeps its multi-line form (`renderPinsText`).
  */
 export function renderList(view: PinView, maxPins: number): string {
   const pins = orderPins(view.pins);
   const head = `Pinned for the user now (${pins.length} of ${maxPins}):`;
   if (pins.length === 0) return head;
-  const lines = pins.map((pin) => `#${pin.id} [${pin.level}] ${pin.text}${repliedSuffix(pin)}`);
+  const lines = pins.map(
+    (pin) => `#${pin.id} [${pin.level}] ${toOneLine(pin.text)}${repliedSuffix(pin)}`,
+  );
   return [head, ...lines].join("\n");
 }
 
@@ -202,19 +212,19 @@ export function renderPinsText(view: PinView): string {
 }
 
 /**
- * A pin's text as the rail can draw it: a rail row is exactly one terminal line, so every line
- * break the model put in the text becomes a single space (a run of them collapses to one). The
- * rail is the only surface with a line budget; `renderList` and `renderPinsText` keep the newlines.
+ * A pin's text as one line: every line break the model put in the text becomes a single space (a
+ * run of them collapses to one). Two surfaces need it — the rail, which has a line budget, and
+ * `renderList`, whose rows the model is told to trust (see its header). `renderPinsText` is the
+ * user's own surface and is the one that does not use it.
  *
- * The character class is wider than the `\n` the sanitizer leaves behind on purpose: the rail is
- * also called with views built directly (tests, and any future caller), and one terminal line per
- * row is the rail's own promise, not something it should have to borrow from the pass order of
- * another module.
+ * The fold itself is `foldBreaks` in escape.ts — the same one the listing applies to a stamp — so
+ * the two cannot disagree about what a break shape is. The character class is wider than the `\n`
+ * the sanitizer leaves behind on purpose: both surfaces are also called with views built directly
+ * (tests, and any future caller), and one line per row is their own promise, not something they
+ * should have to borrow from the pass order of another module.
  */
 export function toOneLine(text: string): string {
-  // LF, CR, U+0085, U+2028, U+2029 — the six break shapes, spelled from code points.
-  const breaks = `\n\r${String.fromCodePoint(0x85, 0x2028, 0x2029)}`;
-  return text.replace(new RegExp(`[${breaks}]+`, "g"), " ");
+  return foldBreaks(text);
 }
 
 function pinLine(pin: ViewPin, style: Style, formatTime: (iso: string) => string): string {

@@ -252,9 +252,14 @@ describe("renderRailLines", () => {
     }
   });
 
-  test("the listing and the plain /pins view keep their newlines", () => {
+  test("the listing folds its pin text while the plain /pins view keeps its newlines", () => {
+    // The model-facing listing is exactly one line per pin (the case itself lives in
+    // test/render-list-one-line.test.ts): a text with a break in it must not print a row the
+    // extension never made. The /pins view is the user's own surface and keeps the breaks.
     const pinned = view([pin(1, "a\n\n# fake header\nb")]);
-    expect(renderList(pinned, 5)).toInclude("a\n\n# fake header\nb");
+    expect(renderList(pinned, 5)).toBe(
+      "Pinned for the user now (1 of 5):\n#1 [info] a # fake header b",
+    );
     // The /pins view indents its continuation lines, so it keeps the breaks rather than the raw text.
     expect(renderPinsText(pinned)).toInclude("a\n   \n   # fake header\n   b");
   });

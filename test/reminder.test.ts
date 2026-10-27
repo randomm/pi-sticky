@@ -1,9 +1,14 @@
 /**
- * The post-compaction reminder. The interesting part is not the text — that is one line and is
- * asserted exactly — but the *lifetime of the flag*: set only by `session_compact`, delivered at
+ * The post-compaction reminder. The interesting part is not the text — that is asserted exactly —
+ * but the *lifetime of the flag*: set only by `session_compact`, delivered at
  * most once, and dropped when the session or the branch moves under it. Those are asserted on the
  * requests the faux model actually received, because that is the only place a `before_agent_start`
  * message is observable.
+ *
+ * The exact-text assertions are the golden fixture of this surface: `reminderText` is the
+ * header plus the model-facing `renderList`, so the line-count guarantee that stops a pin text
+ * forging a row or a user reply is pinned in `test/reminder-text-one-line.test.ts` rather than by
+ * growing one of these golden strings a second time.
  *
  * Compaction needs a file-backed session and a budget small enough that a turn falls before the
  * keep-recent cut (docs/spike-results.md); `h.summarizeWith` queues the canned summary pi's

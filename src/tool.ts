@@ -19,6 +19,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { isPositiveSafeInteger } from "./bounds.ts";
 import { type StickyDeps, copyState } from "./deps.ts";
 import { renderList } from "./render.ts";
 import { sanitizePinText } from "./sanitize.ts";
@@ -79,10 +80,16 @@ interface Ok {
 /**
  * The ids of an `unpin`: the batch the model sent, or the single `id` it sent instead. `id`
  * belongs to `update`, but `{action:"unpin", id:3}` means the same request.
+ *
+ * The bare `id` is wrapped only when it is a pin number at all, by the same test `idOrUndefined` and
+ * `normaliseIds` use. `typeof === "number"` was not enough: pi validates the arguments before
+ * `execute` sees them, and typebox's `Value.Convert` turns `true` into `1` for a `Type.Integer`, so
+ * `{action:"unpin", id:true}` would have quietly unpinned #1. Passing nothing instead lets the
+ * reducer answer with its own `id is required for action "unpin"` refusal.
  */
 function idsOf(body: ToolBody): unknown {
   if (body.ids !== undefined) return body.ids;
-  return typeof body.id === "number" ? [body.id] : undefined;
+  return isPositiveSafeInteger(body.id) ? [body.id] : undefined;
 }
 
 /** `Unpinned #1, #3. No pin #4.` — affected ascending, missing in the order the model asked. */

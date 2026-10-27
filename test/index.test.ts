@@ -72,6 +72,17 @@ test("PI_STICKY_DISABLE=1 registers nothing at all", () => {
   expect([...stub.handlers.keys()]).toEqual([]);
 });
 
+test("PI_STICKY_DISABLE=true registers nothing at all", () => {
+  // The common spelling an operator reaches for. Through `load`, so both disable variables are
+  // forced and the ambient pi-rukas role cannot decide the answer.
+  for (const value of ["true", "yes", "on", " 1 "]) {
+    const stub = load({ PI_STICKY_DISABLE: value });
+    expect(stub.tools).toEqual([]);
+    expect([...stub.commands.keys()]).toEqual([]);
+    expect([...stub.handlers.keys()]).toEqual([]);
+  }
+});
+
 test("a pi-rukas subagent (PI_ENSEMBLE_ROLE set) registers nothing at all", () => {
   const stub = load({ PI_ENSEMBLE_ROLE: "developer" });
   expect(stub.tools).toEqual([]);
