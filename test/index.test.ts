@@ -122,9 +122,5 @@ test("the configuration is read at factory call, so a later environment change c
   expect(stub.tools).toHaveLength(1);
   // The factory already read the environment; nothing re-reads it on the next event.
   process.env.PI_STICKY_DISABLE = "1";
-  try {
-    expect(stub.handlers.size).toBeGreaterThan(0);
-  } finally {
-    Reflect.deleteProperty(process.env, "PI_STICKY_DISABLE");
-  }
+  expect(stub.handlers.size).toBeGreaterThan(0);
 });
