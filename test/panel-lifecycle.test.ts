@@ -7,15 +7,19 @@
  * `RecordingUi.custom()` resolves a `done()` only when it is called in the same turn, so every
  * assertion here reads the *record* (`customCalls[i].result`), never an awaited value.
  *
- * `test/env-clear.ts` is imported for its side effect only: `boot` at module scope is a call to
- * `createStickyExtension` — one of the two calls that read `PI_ENSEMBLE_ROLE` — and an ambient
- * pi-rukas role would register nothing, so a panel assertion here would read an empty recorder.
+ * `test/env-clear.ts` is imported for its side effect only: it deletes `PI_ENSEMBLE_ROLE` at import
+ * time, before any test body runs. Both `boot` and the `createStickyExtension` calls below read that
+ * variable when they are *called*, so an ambient pi-rukas role would register nothing and a panel
+ * assertion here would read an empty recorder.
  */
 import { expect, test } from "bun:test";
 
+import "./env-clear.ts";
+
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
-import { KEY } from "../src/types.ts";
+import { FOCUS_KEY, TOGGLE_KEY } from "../src/panel-keys.ts";
+import { KEY, TOOL_NAME } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
 import {
   PINNED,
@@ -49,6 +53,16 @@ test("session_start opens one overlay with the panel's own options, and never a 
   stub.commands.get("pins")?.handler("hide", ctx);
   stub.commands.get("pins")?.handler("show", ctx);
   expect(ctx.recorder.customCount).toBe(1);
+});
+
+test("boot registers the tool, the commands and the shortcuts", async () => {
+  // The one assertion in this file that reads the registration itself rather than the recorder. A
+  // disabled extension registers nothing at all, so a run that got one would leave every other case here
+  // asserting against silence; `env-clear.ts` is what prevents that, and this is what notices if it stops.
+  const { stub } = await boot([]);
+  expect(stub.tools.map((tool) => tool.name)).toEqual([TOOL_NAME]);
+  expect([...stub.commands.keys()]).toEqual(["pins", "unpin"]);
+  expect([...stub.shortcuts.keys()]).toEqual([TOGGLE_KEY, FOCUS_KEY]);
 });
 
 test("no overlay is opened for a session that has nothing pinned", async () => {

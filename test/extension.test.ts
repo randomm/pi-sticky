@@ -11,10 +11,10 @@ import { DEFAULT_CONFIG, readConfig } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { KEY, TOOL_NAME, USER_TYPE } from "../src/types.ts";
 import { LATER, NOW } from "./fixtures.ts";
+import "./env-clear.ts";
 import { piContext } from "./pi-context.ts";
 import { RecordingUi } from "./recording-ui.ts";
 import { stubApi } from "./wiring-stubs.ts";
-import "./env-clear.ts";
 
 /** A branch entry holding a `pin_for_user` snapshot, in the shape pi stores it. */
 function pinEntry(

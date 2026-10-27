@@ -12,6 +12,8 @@ import { expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-refusals.ts";
+
 const ROOT = join(import.meta.dir, "..");
 const PLAN = "docs/plan.md";
 
@@ -109,4 +111,12 @@ test("the scan finds the citations it claims to guard", () => {
   for (const [file, number] of cited) {
     expect(citedSections(readFileSync(join(ROOT, file), "utf8")), file).toContain(number);
   }
+});
+
+test("README quotes the panel's refusals byte-for-byte", () => {
+  // The README is the operator-facing copy of what the panel says when it refuses, so the two strings
+  // have to be identical — a reworded constant and a stale README would otherwise drift silently.
+  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  expect(readme, "README quotes TOO_NARROW").toContain(TOO_NARROW);
+  expect(readme, "README quotes NOTHING_PINNED").toContain(NOTHING_PINNED);
 });

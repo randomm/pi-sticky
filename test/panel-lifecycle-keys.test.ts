@@ -19,6 +19,7 @@ import "./env-clear.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { FOCUS_KEY, TOGGLE_KEY } from "../src/panel-keys.ts";
+import { TOO_NARROW } from "../src/panel-refusals.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
 import { PINNED, boot } from "./panel-lifecycle-fixture.ts";
 import { stubApi } from "./wiring-stubs.ts";
@@ -128,9 +129,7 @@ test("a rebind does not widen what the destructive panel keys accept", async () 
   expect(stub.entries).toEqual([{ customType: "pi-sticky.ui", data: { v: 1, shown: false } }]);
   focus?.handler(ctx);
   expect(stub.entries.length).toBe(1);
-  expect(ctx.recorder.notifications).toEqual([
-    { message: "The pins panel needs at least 100 columns; use /pins.", type: "warning" },
-  ]);
+  expect(ctx.recorder.notifications).toEqual([{ message: TOO_NARROW, type: "warning" }]);
 });
 
 test("a configuration built by hand still registers what it was given", async () => {

@@ -29,8 +29,9 @@ import type { PanelStyle } from "./render.ts";
 import type { PinView, ViewPin } from "./types.ts";
 
 /**
- * What the overlay's component reads from the extension, and what it calls back into — the contract
- * `panel-overlay.ts` has to satisfy to build one, and the one a test of the drawing has to hand it.
+ * What the overlay's component reads from the extension, and what it calls back into.
+ *
+ * It is the contract `panel-overlay.ts` implements and the one the panel tests hand to the component.
  *
  * `unfocus` is the one member the component never calls *itself* — it releases its own overlay handle —
  * and the one the extension must still be told: a panel the user has left with `Escape` or `Enter`

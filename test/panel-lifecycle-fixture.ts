@@ -6,9 +6,10 @@
  * returns a chosen branch, a `custom()` recorder whose `done()` is observable, and the two branch
  * entry shapes the panel reads (`pin_for_user` snapshots and `pi-sticky.ui` toggles).
  *
- * `boot` at module scope is one of the two calls that read `PI_ENSEMBLE_ROLE`, so this fixture imports
- * `./env-clear.ts` first: an ambient pi-rukas role would register nothing, and every panel test that
- * boots through here would read an empty recorder and pass.
+ * `boot` reads the environment when it is *called* — it builds its extension from the config it is
+ * handed — so this fixture imports `./env-clear.ts`, which deletes the two disable variables at import
+ * time, before any test body runs: a fixture that ever read them from `process.env` would otherwise hand
+ * a disabled config to every panel test and leave each one reading an empty recorder and passing.
  */
 import "./env-clear.ts";
 
