@@ -24,8 +24,8 @@ import type { HostContext } from "./context.ts";
 import type { StickyDeps } from "./deps.ts";
 import type { PanelCommands } from "./panel-deps.ts";
 import type { PanelOwner } from "./panel.ts";
+import { applyAction } from "./reducer.ts";
 import { renderPinsText } from "./render.ts";
-import { applyAction } from "./state.ts";
 
 /** `/unpin all`, compared before the tokens are read as numbers. */
 const ALL = "all";

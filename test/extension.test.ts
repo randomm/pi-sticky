@@ -7,10 +7,11 @@
 import { expect, test } from "bun:test";
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import { DEFAULT_CONFIG } from "../src/config.ts";
+import { DEFAULT_CONFIG, readConfig } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { KEY, TOOL_NAME, USER_TYPE } from "../src/types.ts";
 import { LATER, NOW } from "./fixtures.ts";
+import "./env-clear.ts";
 import { piContext } from "./pi-context.ts";
 import { RecordingUi } from "./recording-ui.ts";
 import { stubApi } from "./wiring-stubs.ts";
@@ -61,6 +62,20 @@ function boot(entries: unknown[] = []) {
   stub.emit("session_start", { reason: "startup" }, ctx);
   return { stub, ctx };
 }
+
+test("the suite's ambient environment leaves the extension enabled", () => {
+  // M11. `test/env-clear.ts` deletes `PI_ENSEMBLE_ROLE` and `PI_STICKY_DISABLE` once per process, before
+  // any file's module-scope `createStickyExtension` runs. Without it, running the suite from inside a
+  // pi-rukas subagent — where `PI_ENSEMBLE_ROLE` is set — makes `readConfig` report the extension
+  // disabled, and a disabled extension registers nothing: every panel, tool and command assertion in the
+  // suite would then read an empty recorder and pass without testing anything. A green run that asserted
+  // nothing is the failure this pins, so the guard is asserted here rather than trusted.
+  expect(readConfig(process.env).disabled).toBe(false);
+  const { stub } = boot();
+  expect(stub.tools).toHaveLength(1);
+  expect([...stub.commands.keys()].sort()).toEqual(["pins", "unpin"]);
+  expect(stub.handlers.size).toBeGreaterThan(0);
+});
 
 test("a disabled config registers nothing at all", () => {
   const stub = stubApi();

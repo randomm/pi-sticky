@@ -2,6 +2,10 @@
  * The panel as the user sees it after a reply: the selected row carries the `↩ ` mark and the dim, the
  * bar still goes over it, and the whole thing is drawn by the session rather than by a hand-built view.
  *
+ * `test/env-clear.ts` is imported for its side effect only: it deletes the two variables that make
+ * `readConfig` report the extension disabled, so nothing in this file can be handed a config that
+ * registers nothing and leaves the assertions reading an empty recorder.
+ *
  * Two layers again. `panelPinRows` / `buildPanelLines` answers the drawing question directly, and the
  * exact-string assertions are what catch the trailing-to-leading migration (a `toContain("↩")` assertion
  * passes against both drawings, and the old one drew the mark at the end). The session-level case drives
@@ -11,10 +15,13 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import "./env-clear.ts";
+
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import { buildPanelLines, panelLayout, panelPinRows } from "../src/panel-lines.ts";
+import { buildPanelLines } from "../src/panel-lines.ts";
+import { panelLayout, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";

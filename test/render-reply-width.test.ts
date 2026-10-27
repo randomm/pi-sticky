@@ -16,12 +16,9 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import {
-  PANEL_MIN_FRAME_COLUMNS,
-  buildPanelLines,
-  panelLayout,
-  panelPinRows,
-} from "../src/panel-lines.ts";
+import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
+import { buildPanelLines } from "../src/panel-lines.ts";
+import { panelLayout, panelPinRows } from "../src/panel-rows.ts";
 import { plainStyle, renderRailLines } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";

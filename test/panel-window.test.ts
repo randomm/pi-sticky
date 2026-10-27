@@ -10,13 +10,8 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import {
-  HINT,
-  buildPanelLines,
-  panelAllRows,
-  panelLayout,
-  panelPinRows,
-} from "../src/panel-lines.ts";
+import { HINT, buildPanelLines } from "../src/panel-lines.ts";
+import { panelAllRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";

@@ -39,7 +39,7 @@ type PiFactoryParam = Parameters<ExtensionUIContext["custom"]>[0];
 type PiOptionsParam = Parameters<ExtensionUIContext["custom"]>[1];
 
 /** The component a `custom()` factory returns: pi's, plus the disposer pi calls inside its `close()`. */
-export type PanelCustomComponent = Component & { dispose?(): void };
+type PanelCustomComponent = Component & { dispose?(): void };
 
 /**
  * The factory the panel hands `custom()`: pi's own three leading parameters, plus the result.
@@ -65,7 +65,7 @@ export type PanelCustomFactory = (
 export type PanelCallOptions = NonNullable<PiOptionsParam>;
 
 /** What the panel resolves its host's `custom()` promise with when it closes the overlay. */
-export type PanelResult = string;
+type PanelResult = string;
 
 /**
  * The value the close path resolves the host's `done` with.

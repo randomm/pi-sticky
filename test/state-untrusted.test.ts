@@ -6,9 +6,11 @@
  */
 import { describe, expect, test } from "bun:test";
 
+import { applyAction } from "../src/reducer.ts";
 import { plainStyle, renderList, renderPinsText, renderRailLines } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
-import { EMPTY_STATE, applyAction, isPinState, reconstruct } from "../src/state.ts";
+import { isPinState } from "../src/state-guards.ts";
+import { EMPTY_STATE, reconstruct } from "../src/state.ts";
 import type { Pin, PinState, Removal } from "../src/types.ts";
 import {
   LATER,

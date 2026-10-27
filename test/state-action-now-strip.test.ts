@@ -15,8 +15,9 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { formatLocalTime } from "../src/render.ts";
-import { type ApplyLimits, applyAction, isPinState } from "../src/state.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
+import { isPinState } from "../src/state-guards.ts";
+import { formatLocalTime } from "../src/time.ts";
 import { NOW, pin, removal, state } from "./fixtures.ts";
 
 const limits = (maxPins = 5): ApplyLimits => ({ maxPins, newUid: () => crypto.randomUUID() });

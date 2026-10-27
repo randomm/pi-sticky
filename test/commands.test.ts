@@ -3,8 +3,14 @@
  * `ExtensionCommandContext` and a dismissal has to reach the session through `pi.appendEntry`
  * before any rebuild can see it. A hand-built context would let a command that only mutates memory
  * look correct — the whole point of a dismissal is that it is written down.
+ *
+ * `test/env-clear.ts` is imported for its side effect only: it deletes the two variables that make
+ * `readConfig` report the extension disabled, so the module-scope `extension` below can never be built
+ * from one and leave a command handler unregistered.
  */
 import { expect, test } from "bun:test";
+
+import "./env-clear.ts";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";

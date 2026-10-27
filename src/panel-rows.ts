@@ -18,9 +18,6 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
 
-export { BORDER_ROWS } from "./panel-height.ts";
-export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
-
 import { formatLocalTime } from "./time.ts";
 
 /** The columns the frame owns: one gutter and its space on each side, plus the two corners. */
@@ -95,7 +92,7 @@ export function panelAllRows(
 }
 
 /** One drawn row together with the *pin* that owns it, as the scroll window needs it. */
-export interface PanelOwned {
+interface PanelOwned {
   row: PanelRow;
   pin: number;
 }
@@ -104,7 +101,7 @@ export interface PanelOwned {
  * A pin's rows, in order, each tagged with the pin that owns it — the owner stamped on the row as it is
  * built, which is the only way the question stays answerable.
  */
-export function panelRowOwners(
+function panelRowOwners(
   pins: readonly ViewPin[],
   textWidth: number,
   style: PanelStyle,
@@ -121,7 +118,7 @@ export function panelRowOwners(
  * of the table: the window starts at the first row the builder attributed to that pin, so a pin that owns
  * several rows is scrolled as a whole rather than opening mid-entry.
  */
-export function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
+function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
   return index < 0 ? -1 : all.findIndex((entry) => entry.pin === index);
 }
 

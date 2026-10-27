@@ -24,7 +24,10 @@ import { REMINDER_TYPE } from "./types.ts";
 const HEADER =
   "Messages pinned for the user (they stay on the user's screen until removed; use pin_for_user to update or unpin):";
 
-/** The whole reminder: the header line and the model-facing listing under it. */
+/**
+ * The whole reminder: the header line and the model-facing listing under it. Exported because
+ * `test/reminder-text-one-line.test.ts` holds the one-line guarantee at the seam that builds the text.
+ */
 export function reminderText(view: ReturnType<StickyDeps["getView"]>, maxPins: number): string {
   return `${HEADER}\n${renderList(view, maxPins)}`;
 }

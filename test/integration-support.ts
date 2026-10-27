@@ -3,7 +3,14 @@
  * `integration-panel.test.ts`) and the command tests. Kept apart from `harness.ts` — which is the pi
  * construction and is not to be edited by these tests — so the scripts and reads specific to pins sit
  * in one place and the branch readers have a single definition to be right about.
+ *
+ * `extension` at module scope is one of the calls that read `PI_ENSEMBLE_ROLE`, so this file imports
+ * `./env-clear.ts` first: an ambient pi-rukas role would leave `createStickyExtension(DEFAULT_CONFIG, …)`
+ * registering nothing and every end-to-end assertion here would run against an extension that was never
+ * installed.
  */
+import "./env-clear.ts";
+
 import type { OverlayOptions } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";

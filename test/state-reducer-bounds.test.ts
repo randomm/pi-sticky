@@ -13,14 +13,11 @@
  */
 import { describe, expect, test } from "bun:test";
 
+import type { ActionInput } from "../src/action.ts";
 import { MAX_TEXT_UNITS } from "../src/bounds.ts";
-import {
-  type ActionInput,
-  type ApplyLimits,
-  EMPTY_STATE,
-  applyAction,
-  isPinState,
-} from "../src/state.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
+import { isPinState } from "../src/state-guards.ts";
+import { EMPTY_STATE } from "../src/state.ts";
 import { NOW, pin, removal, state, uidSource } from "./fixtures.ts";
 
 const limits = (newUid: () => string = () => crypto.randomUUID()): ApplyLimits => ({

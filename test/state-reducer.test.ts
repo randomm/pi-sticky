@@ -5,7 +5,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { type ApplyLimits, EMPTY_STATE, applyAction } from "../src/state.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
+import { EMPTY_STATE } from "../src/state.ts";
 import type { PinLevel } from "../src/types.ts";
 import { LATER, LATER_TIME, NOW, pin, removal, state, uidSource } from "./fixtures.ts";
 

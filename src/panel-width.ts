@@ -17,7 +17,7 @@
  */
 
 /** Why the terminal has no width yet: the two silences, which want opposite answers. */
-export type Unstated =
+type Unstated =
   /** A host that has never stated a width at all, so there is no frame to wait for. */
   | "never_asks"
   /** A host that does state widths, but has not been asked for this session's first frame yet. */

@@ -9,7 +9,8 @@ import { describe, expect, test } from "bun:test";
 
 import { REMOVAL_HISTORY } from "../src/bounds.ts";
 import { cleanPinText } from "../src/sanitize.ts";
-import { EMPTY_STATE, isPinState, reconstruct } from "../src/state.ts";
+import { isPinState } from "../src/state-guards.ts";
+import { EMPTY_STATE, reconstruct } from "../src/state.ts";
 import type { Pin, PinState, Removal } from "../src/types.ts";
 import {
   LATER,

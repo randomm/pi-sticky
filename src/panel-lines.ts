@@ -40,36 +40,12 @@ import {
   gutter,
   padPlain,
 } from "./panel-frame.ts";
-import { isPanelSize } from "./panel-geometry.ts";
-import {
-  GUTTER_COLUMNS,
-  META_RESERVE,
-  PANEL_MIN_FRAME_COLUMNS,
-  PANEL_MIN_FRAME_ROWS,
-  panelAllRows,
-  panelContentRows,
-  panelLayout,
-  panelPinRows,
-  panelWindowOffset,
-} from "./panel-rows.ts";
+import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
+import { GUTTER_COLUMNS, META_RESERVE, panelContentRows, panelWindowOffset } from "./panel-rows.ts";
 import type { PanelLayout, PanelRow } from "./panel-rows.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
-
-export {
-  BORDER_ROWS,
-  GUTTER_COLUMNS,
-  META_RESERVE,
-  panelAllRows,
-  panelContentRows,
-  panelLayout,
-  panelPinRows,
-  type PanelLayout,
-  type PanelRow,
-} from "./panel-rows.ts";
-
-export { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "./panel-geometry.ts";
 
 /** Line 1 of the panel, written into the top border. The rail's header carries ` · /pins`; here `/pins` is on the keyboard. */
 const HEADER = "📌 Pinned for you";

@@ -12,7 +12,8 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines, panelLayout } from "../src/panel-lines.ts";
+import { buildPanelLines } from "../src/panel-lines.ts";
+import { panelLayout } from "../src/panel-rows.ts";
 import { panelThemeStyle } from "../src/render.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";

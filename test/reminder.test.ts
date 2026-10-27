@@ -1,9 +1,8 @@
 /**
- * The post-compaction reminder. The interesting part is not the text — that is asserted exactly —
- * but the *lifetime of the flag*: set only by `session_compact`, delivered at
- * most once, and dropped when the session or the branch moves under it. Those are asserted on the
- * requests the faux model actually received, because that is the only place a `before_agent_start`
- * message is observable.
+ * The post-compaction reminder. The interesting part is not the text — that is asserted exactly — but
+ * the *lifetime of the flag*: set only by `session_compact`, delivered at most once, and dropped when the
+ * session or the branch moves under it. Asserted on the requests the faux model actually received, the
+ * only place a `before_agent_start` message is observable.
  *
  * The exact-text assertions are the golden fixture of this surface: `reminderText` is the
  * header plus the model-facing `renderList`, so the line-count guarantee that stops a pin text
@@ -12,11 +11,12 @@
  *
  * Compaction needs a file-backed session and a budget small enough that a turn falls before the
  * keep-recent cut (docs/spike-results.md); `h.summarizeWith` queues the canned summary pi's
- * summarizer consumes.
+ * summarizer consumes. `test/env-clear.ts` is imported for its side effect: it deletes the two variables
+ * that make `readConfig` report the extension disabled (see `env-clear-coverage.test.ts`).
  */
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-
+import "./env-clear.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { REMINDER_TYPE } from "../src/types.ts";

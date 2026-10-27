@@ -12,9 +12,11 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import type { ActionInput } from "../src/action.ts";
+import { type ApplyLimits, applyAction } from "../src/reducer.ts";
 import { plainStyle, renderList, renderRailLines } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
-import { type ActionInput, type ApplyLimits, EMPTY_STATE, applyAction } from "../src/state.ts";
+import { EMPTY_STATE } from "../src/state.ts";
 import type { PinLevel } from "../src/types.ts";
 import { NOW, pin, state, uidSource } from "./fixtures.ts";
 

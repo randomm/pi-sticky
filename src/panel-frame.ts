@@ -21,7 +21,7 @@ export const FRAME_TOP_LEFT = "╭";
 export const FRAME_TOP_RIGHT = "╮";
 export const FRAME_BOTTOM_LEFT = "╰";
 export const FRAME_BOTTOM_RIGHT = "╯";
-export const GUTTER = "│";
+const GUTTER = "│";
 export const RULE = "─";
 
 /** The columns the frame's two corners own; the gutters own `GUTTER_COLUMNS` (`panel-rows.ts`). */

@@ -15,8 +15,9 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
-import type { PanelLayout } from "../src/panel-lines.ts";
-import { buildPanelLines, panelLayout } from "../src/panel-lines.ts";
+import { buildPanelLines } from "../src/panel-lines.ts";
+import type { PanelLayout } from "../src/panel-rows.ts";
+import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";

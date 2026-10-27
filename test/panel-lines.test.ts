@@ -13,15 +13,9 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import {
-  HINT,
-  PANEL_MIN_FRAME_COLUMNS,
-  PANEL_MIN_FRAME_ROWS,
-  buildPanelLines,
-  panelContentRows,
-  panelLayout,
-  panelPinRows,
-} from "../src/panel-lines.ts";
+import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "../src/panel-geometry.ts";
+import { HINT, buildPanelLines } from "../src/panel-lines.ts";
+import { panelContentRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin } from "./fixtures.ts";

@@ -11,6 +11,8 @@
  */
 import { expect, test } from "bun:test";
 
+import "./env-clear.ts";
+
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { TOOL_NAME } from "../src/types.ts";
