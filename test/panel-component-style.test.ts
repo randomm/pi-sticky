@@ -3,9 +3,9 @@
  *
  * `PanelComponent.#styleOf()` consults the host's style, then the theme the component was handed, and only
  * then `NO_PANEL_COLOUR`. Every other component test hands its host a style that marks the bar or the frame
- * (`panel-component-host.ts`, `panel-component-frame.test.ts`), so the host of `panel-owner.test.ts`'s
- * `handHostStub()` — no style, and the component built with no theme — is the one caller in the suite that
- * reaches the fallback. Split out here because that file is the *owner*'s subject and at its cap.
+ * (`panel-component-host.ts`, `panel-component-frame.test.ts`), so the bare hand-built host below — no
+ * style, and the component built with no theme — is the one caller in the suite that reaches the
+ * fallback. Split out here because the owner's file is the *owner*'s subject.
  *
  * "It still renders" is not the promise worth making there: a last resort that painted the level marker,
  * the id/time tail or the bar would still render. So each of the six members is asserted where the drawer
@@ -22,11 +22,48 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { PanelComponent } from "../src/panel-component.ts";
 import { RULE } from "../src/panel-frame.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
+import type { PanelHost } from "../src/panel-host.ts";
 import { HINT } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS } from "../src/panel-rows.ts";
 import { NOW, localTime } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
-import { handHostStub } from "./panel-owner-host.ts";
+import { ONE } from "./panel-owner-wiring.ts";
+
+/**
+ * The host a caller outside `PanelOwner` builds: a view with one pin, and nothing else to give.
+ *
+ * `PanelOwner` hands its component the style it built from pi's theme, so a panel that has to colour
+ * itself is only reachable by a hand-built host — which is what this is. It lives here rather than in a
+ * helper file of its own because this is its only caller.
+ *
+ * Which members get a real answer and which are no-ops is the whole shape of this host: `getView` must
+ * answer, because every draw reads it, while `dismiss`, `startReply`, `unfocus` and `notify` belong to the
+ * key path — and this file presses no key. Those four are exercised where the dispatch itself is driven
+ * (`panel-component.test.ts`, over the recording host of `panel-component-host.ts`), so a copy of them
+ * here is only ever the shape `PanelHost` requires, never a behaviour this file asserts on.
+ *
+ * Deliberately bare. `style()` returns `undefined` and `replyHint()` the empty string: the component is
+ * meant to fall through both, to its own theme and then to `NO_PANEL_COLOUR`, which is the promise this
+ * file draws.
+ */
+function handHostStub(): PanelHost {
+  return {
+    getView: () => ONE,
+    // Nothing to give: the component must fall through to the theme it was handed, and past that to the
+    // identity style — which is the whole subject of the two tests below.
+    style: () => undefined,
+    // No focus key to advertise: this host is about colours, not the border's label.
+    replyHint: () => "",
+    // Drawn, because a component that would not draw has no frame to assert on; the invisible-panel case
+    // is driven through the real owner in `panel-lifecycle-toggles.test.ts`.
+    isVisible: () => true,
+    requestRender: () => {},
+    dismiss: () => {},
+    unfocus: () => {},
+    startReply: () => {},
+    notify: () => {},
+  };
+}
 
 /**
  * A panel over a host with no style and a component with no theme: `#styleOf()` falls through both.
