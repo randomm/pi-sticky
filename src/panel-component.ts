@@ -1,9 +1,9 @@
 /**
  * The component pi-tui draws inside the pins overlay, and the keys it answers.
  *
- * The pins are ranked on the way in (`RankedPins`, `panel-ranked.ts`) and this class is the only reader of
- * that order: the frame, the bar, the clamp, the scroll window and the two destructive keys all index the
- * same array, which is what makes the pin under the bar the pin `d` dismisses.
+ * The pins are ranked on the way in (`rankedPins`, held by `PanelMemory`, `panel-frame-cache.ts`) and this
+ * class is the only reader of that order: the frame, the bar, the clamp, the scroll window and the two
+ * destructive keys all index the same array, which is what makes the pin under the bar the pin `d` dismisses.
  *
  * The selection and the focus flag live here, not in the deps object: they are view state of one overlay
  * instance, and a redraw that read them back from a fresh component would lose the user's place. `update()`
@@ -219,8 +219,8 @@ export class PanelComponent implements Component {
 
   /**
    * The pins the panel draws, in the order it draws them. The ranking and its memo are
-   * `RankedPins` (`panel-ranked.ts`); the reason this component is the only reader of that order — the
-   * destructive keys index the very array the bar is drawn over — is stated there.
+   * `PanelMemory.orderOf` (`panel-frame-cache.ts`); the reason this component is the only reader of that
+   * order — the destructive keys index the very array the bar is drawn over — is stated there.
    */
   #ranked(): readonly ViewPin[] {
     return this.#memory.orderOf(this.#host.getView().pins);

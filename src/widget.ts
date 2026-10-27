@@ -73,7 +73,14 @@ export class RailComponent implements Component {
     this.#onDispose = onDispose;
   }
 
+  /** Whether this component has been drawn at least once since its last report. */
+  #onScreen = false;
+
   render(width: number): string[] {
+    // The one fact `dispose()` needs to be honest about: a component pi never drew is not a surface that
+    // went away. A host that replays a stored factory to reach the component it holds (as the recorder
+    // does) builds one of these, and its teardown would otherwise stop a hand the visible rail still needs.
+    this.#onScreen = true;
     if (this.#cachedLines !== undefined && this.#cachedWidth === width) return this.#cachedLines;
     const lines = renderRailLines(this.#view, width, {
       maxLines: this.#config.maxWidgetLines,
@@ -89,29 +96,34 @@ export class RailComponent implements Component {
   }
 
   /**
-   * Forget the cached rows and report the teardown.
+   * Forget the cached rows.
    *
-   * The invalidate is pi's own reason for the member; the report is this extension's. pi replaces a widget
-   * by disposing the one the key held and building the factory again, so this fires on every rail *install*
-   * as well as on a clear — which is why it reaches the extension through a callback that is safe to call
-   * repeatedly, rather than through anything that tears state down.
+   * pi's own reason for the member: it is what a host calls to make a component lay itself out again. It
+   * deliberately does *not* report the teardown — pi replaces a widget by disposing the component the key
+   * held and building the factory again, and a report here would put the extension's own redraw in the
+   * position of stopping the minute hand that asks for it. Only `dispose()` reports, and only once.
    */
   invalidate(): void {
     this.#cachedWidth = undefined;
     this.#cachedLines = undefined;
-    this.#onDispose?.();
   }
 
   /**
    * The rail is being torn down — pi is disposing the component this key held.
    *
    * The rail is the other surface a tick re-ages, and pi clears it on a reload and on `session_shutdown`
-   * without asking the extension: the report is how the extension learns its rail is gone, and the only
-   * thing it does with that is stop asking for it. Optional, because the rail is also built by tests that
-   * have no surfaces to keep time for.
+   * without asking the extension: the report is how the extension learns its rail is gone. It is *not*
+   * obeyed as a stop — the extension re-asks whether either surface is drawn, because the panel may still
+   * hold the pins. And it is made only by a component that drew: a host that rebuilds a stored factory to
+   * reach the component it holds (the recorder does exactly that) gets a fresh one that was never on
+   * screen, and a teardown report from it would stop the hand for a rail the user is still looking at.
+   * Optional, because the rail is also built by tests that have no surfaces to keep time for.
    */
   dispose(): void {
     this.invalidate();
+    if (!this.#onScreen) return;
+    this.#onScreen = false;
+    this.#onDispose?.();
   }
 }
 

@@ -97,6 +97,12 @@ export interface PanelWiring {
    * exists — the same shape as `redrawRail`, which is the other thing the owner cannot do for itself.
    */
   onDispose(): void;
+  /**
+   * Whether this session runs in pi's `rpc` mode, where the rail is a string array and there is no overlay
+   * to yield to it. Read at call time by the minute's hand, which has no context of its own: the mode
+   * belongs to the session on screen, not to the moment the wiring was built.
+   */
+  rpc(): boolean;
 }
 
 /**
@@ -137,6 +143,8 @@ export interface PanelWiringParts {
   redrawRail(): void;
   /** The panel's component was disposed; the extension stops the minute's redraw for it. */
   onDispose(): void;
+  /** Whether the session runs in `rpc` mode — see `PanelWiring.rpc`. */
+  rpc(): boolean;
 }
 
 /**
@@ -181,6 +189,7 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
     // receiver for the extension's `drawRail(live)` closure to be read against.
     redrawRail: () => parts.redrawRail(),
     onDispose: () => parts.onDispose(),
+    rpc: () => parts.rpc(),
   };
 }
 

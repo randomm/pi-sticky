@@ -44,7 +44,10 @@ export function wiring(
   const railKeys: string[] = [];
   /** The `recordPanelShown` calls, so a test can see which half of the setter pair ran. */
   const records: boolean[] = [];
-  const state = { view: opts.view ?? ONE, shown: opts.shown ?? true };
+  const state: { view: PinView; shown: boolean; rpc?: boolean } = {
+    view: opts.view ?? ONE,
+    shown: opts.shown ?? true,
+  };
   /**
    * The one place a `PanelDeps` is built for these files.
    *
@@ -87,6 +90,7 @@ export function wiring(
     terminal,
     themeStyle: () => panelStyle,
     onDispose: () => {},
+    rpc: () => state.rpc ?? false,
     redrawRail: () => {
       // Read at draw time: the record has to say what the rail was asked to install, not what the view
       // happens to hold when the test finally looks at it. One push per call is also what proves the

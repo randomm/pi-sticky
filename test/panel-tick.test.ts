@@ -11,7 +11,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { PanelTick, TICK_INTERVAL_MS } from "../src/panel-tick.ts";
+import { PanelTick, TICK_INTERVAL_MS, surfaceDrawn } from "../src/panel-tick.ts";
 import type { TickWiring } from "../src/panel-tick.ts";
 
 const T0 = "2026-10-25T10:37:13.000Z";
@@ -27,9 +27,10 @@ function hand(over: Partial<TickWiring> = {}): {
   let iso = T0;
   let frames = 0;
   const wiring: TickWiring = {
-    columns: () => 120,
-    shown: () => true,
     pinCount: () => 1,
+    // The owner's answer over both surfaces: the tests below move it rather than a width or a flag, because
+    // the hand asks the owner that installs the surfaces and never measures a terminal of its own.
+    panelDrawn: () => true,
     now: () => iso,
     redraw: () => {
       frames += 1;
@@ -85,19 +86,19 @@ test("a tick with nothing pinned asks for no frame", () => {
 });
 
 test("a tick with neither surface drawn asks for no frame", () => {
-  // The wide terminal means the rail has handed off to the panel (`!panelHasRoom` is false), and the user
-  // hid the panel, so nothing is drawn at all: a timer here would be a background repaint over a terminal
-  // showing neither surface. The narrow-and-hidden case is the rail's, and the next test covers it.
-  const h = hand({ shown: () => false });
+  // The owner says nothing is on the screen — a hidden panel at a wide terminal, or a session whose overlay
+  // was never published — so a timer here would be a background repaint over a terminal showing neither
+  // surface. Who is drawn, and why, is `PanelOwner`'s answer (`panel-tick-lifecycle.test.ts` drives it).
+  const h = hand({ panelDrawn: () => false });
   h.tick.tick();
   expect(h.frames()).toBe(0);
 });
 
-test("the rail alone keeps the hand running, flag or no flag", () => {
-  // The narrow terminal is the rail's, and the flag knows nothing about it: `panelIsVisible` is false and
-  // `panelHasRoom` is false, yet the pins are on screen. A tick that asked only the overlay would stop
-  // re-aging a surface the user is looking at.
-  const h = hand({ columns: () => 60 });
+test("the rail alone keeps the hand running", () => {
+  // The owner answers "drawn" when only the rail holds the pins — the narrow terminal, or a hidden panel
+  // the rail stands in for. A hand that asked only the overlay would stop re-aging a surface the user is
+  // looking at.
+  const h = hand();
   h.tick.tick();
   expect(h.frames()).toBe(1);
 });
@@ -128,4 +129,59 @@ test("start replaces the timer rather than adding a second one, and stop is safe
   h.tick.start();
   h.tick.stop();
   expect(() => h.tick.stop()).not.toThrow();
+});
+
+// ---------------------------------------------------------------------------
+// surfaceDrawn: the hand's condition, in the two orders it can be answered in.
+//
+// The function short-circuits on the panel, so a test that only ever sees a drawn panel never asks the
+// rail's half, and a test that only ever sees an empty screen never learns the panel's answer wins when
+// both would say yes. Both orders are the behaviour the extension depends on: `rpc` draws a rail with no
+// overlay, and a wide TUI session draws an overlay *and* keeps its guard installed.
+
+test("surfaceDrawn answers from the panel alone when the panel is drawn", () => {
+  let railAsked = 0;
+  expect(
+    surfaceDrawn({
+      panelVisible: () => true,
+      rpc: () => {
+        railAsked += 1;
+        return false;
+      },
+      pinCount: () => 1,
+    }),
+  ).toBe(true);
+  // The rail is never consulted once the overlay has the pins — and it must not be, because the two
+  // surfaces are mutually exclusive by the guard, and asking both would let a false rail win.
+  expect(railAsked).toBe(0);
+});
+
+test("surfaceDrawn asks the rail only once the panel has yielded the pins", () => {
+  // `panel` is a parameter as much as `rpc` and `pins`: `railDrawn` answers for the rail *the panel did not
+  // take*, so a fixture with the panel permanently hidden would report a rail in every mode, including the
+  // wide TUI one where the overlay has the pins and no rail was ever installed.
+  const asked: string[] = [];
+  const surfaces = (panel: boolean, rpc: boolean, pins: number) => ({
+    panelVisible: () => {
+      asked.push("panel");
+      return panel;
+    },
+    rpc: () => {
+      asked.push("rpc");
+      return rpc;
+    },
+    pinCount: () => {
+      asked.push("pins");
+      return pins;
+    },
+  });
+
+  // The rail is the panel's opposite: wherever the overlay does not have the pins, the rail does — that is
+  // the `drawPins` rule, and it is the reason the hand may not ask the panel alone.
+  expect(surfaceDrawn(surfaces(false, false, 1))).toBe(true);
+  // The overlay has them, so the rail stands down and the answer is the overlay's.
+  expect(surfaceDrawn(surfaces(true, false, 1))).toBe(true);
+  // No pins means neither surface draws anything, whatever the mode or the flag say: the count is asked
+  // before the mode, so a rail is never consulted for an empty view.
+  expect(surfaceDrawn(surfaces(false, true, 0))).toBe(false);
 });

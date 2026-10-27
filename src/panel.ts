@@ -32,6 +32,7 @@ import type { TerminalWidth } from "./panel-width.ts";
 import { judgeColumns, panelIsVisible } from "./panel-geometry.ts";
 import { RailGuard } from "./panel-rail.ts";
 import { refusalToShow } from "./panel-refusals.ts";
+import { ownerHasSurface } from "./panel-surfaces.ts";
 
 /**
  * The panel owner: one record, one open call, and the toggles the commands and shortcuts share. A
@@ -185,11 +186,8 @@ export class PanelOwner {
    * that decide independently who owns the pins is how pins end up drawn by neither.
    *
    * Reads the record, the flag and the view *now*, through the wiring — which is why the rail holds the
-   * owner rather than a function captured at open time: a toggle or a resize has to be visible in the
-   * answer without anything being rebuilt. The record is part of the question because `open()` declines
-   * to publish one in a mode with no overlay (`rpc`, `print`, `json`) or on a host with no `custom()`:
-   * an overlay that was never opened cannot own the pins, and a predicate that answered from the flag
-   * alone would tell the rail to stand down for it.
+   * owner rather than a function captured at open time. The record is part of the question because
+   * `open()` publishes none in a mode with no overlay: one that was never opened cannot own the pins.
    *
    * The one answer `#railConsider` caches against: whatever this returns is what the rail was last asked
    * to yield to — the same question, spelled in the key as the width, the flag and the view it reads.
@@ -198,6 +196,14 @@ export class PanelOwner {
     const deps = this.#wiring.deps;
     if (this.#record === undefined) return false;
     return panelIsVisible(this.#columns(), deps.isPanelShown(), deps.getView().pins.length);
+  }
+
+  /**
+   * Whether either surface this owner installs is on screen — the minute hand's one question, answered over
+   * the readers of `panel-surfaces.ts` so a verdict is *now*, never the frame the owner opened on.
+   */
+  isAnySurfaceVisible(): boolean {
+    return ownerHasSurface(this, this.#wiring);
   }
 
   /**

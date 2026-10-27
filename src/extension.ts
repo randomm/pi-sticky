@@ -78,21 +78,20 @@ export function createStickyExtension(
     const terminal = new TerminalWidth();
 
     /**
-     * The minute hand, owned by this instance and started by `session_start`. `createPanelTick`
-     * (`session-tick.ts`) builds the timer and the handle around it; the wiring it reads is built here from
-     * the live cells above rather than from their values — the rule the overlay follows too, because nothing
-     * that outlives a reload may be a value taken before it. A fresh tick at each session boundary, so one
-     * never carries a dead session's state into the session that replaced it.
+     * The minute hand: owned by this instance, started afresh at each session boundary so none carries a
+     * dead session's state into its successor. Its wiring reads the live cells, not their values, and both
+     * questions go to the owner that installs the surfaces — never a width `TerminalWidth` had to guess.
      */
+    const surfaceDrawn = (): boolean => panelRef.current?.isAnySurfaceVisible() ?? false;
     const tick = createPanelTick(
       {
-        columns: () => terminal.columns(),
-        shown: () => panelShown,
         pinCount: () => view.pins.length,
+        panelDrawn: surfaceDrawn,
         now: clock,
         redraw: () => redrawAll(live),
       },
       clock,
+      surfaceDrawn,
     );
 
     /**
@@ -108,7 +107,9 @@ export function createStickyExtension(
      * here could only be one the caller forgot to refresh.
      */
     function drawRail(ctx: ExtensionContext | undefined): void {
-      if (ctx) drawPins(ctx, view, config, panelRef.current, clock, () => tick.stop());
+      // The rail's teardown is reported, not obeyed: pi disposes the key's component every time it replaces
+      // the rail, so stopping the hand here would stop the minute on the tick that re-ages this rail.
+      if (ctx) drawPins(ctx, view, config, panelRef.current, clock, () => tick.surfaceGone());
     }
 
     /**
@@ -231,9 +232,10 @@ export function createStickyExtension(
         notify: (message, type) => live?.ui.notify(message, type),
         live: () => live,
         redrawRail: () => drawRail(live),
-        // The panel's surface is going away, so the minute's redraw stops asking it for a frame. The tick
-        // itself is stopped at the session boundaries; this is the boundary that is not a session's.
-        onDispose: () => tick.stop(),
+        // `rpc` installs a rail no overlay competes with, and the hand has to know that without a context.
+        rpc: () => live?.mode === "rpc",
+        // The panel's surface is going; the rail may still hold the pins, so the hand is re-asked.
+        onDispose: () => tick.surfaceGone(),
       }),
     );
 

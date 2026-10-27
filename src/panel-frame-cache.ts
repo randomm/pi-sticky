@@ -15,7 +15,7 @@
  * why `replyHint` is in it at all (the operator can rebind the focus key, and the resting border prints
  * what that key is called).
  */
-import { RankedPins } from "./panel-ranked.ts";
+import { rankedPins } from "./panel-ranked.ts";
 import type { ViewPin } from "./types.ts";
 
 /** The last frame the component drew, and everything the next one is compared against. */
@@ -62,17 +62,25 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
 }
 
 /**
- * What the component has memorised about the *order* it drew, alongside the frame.
+ * What the component has memorised: the last frame, and the order its rows were built in.
  *
- * The two are one invalidation because they are one fact: a frame is drawn from the ranked view, so a caller
- * that drops the frame without dropping the order can be handed a frame rebuilt from an order the view no
- * longer has. `RankedPins` is the order and this is where it is kept, which makes "the memorised state of one
- * panel" a single object with a single `invalidate()` rather than two fields that have to be cleared together
- * by a comment.
+ * The two are one object because they are one fact: a frame is drawn from the ranked view, so a caller that
+ * drops the frame without dropping the order can be handed rows rebuilt from an order the view no longer
+ * holds — the bar sitting on a pin the drawer never drew. `invalidate()` is therefore the only way either
+ * half goes away.
+ *
+ * The order is memoised on the array's *identity*, the same key the frame above already trusts:
+ * `commit`/`reconstruct` publish a fresh array for every change to the view and none without one. `render()`
+ * is what pi-tui calls, on its own schedule and far more often than a minute, and each of those asks wants
+ * the whole view ranked — so the memo is what keeps an unchanged view at one comparison instead of a sort.
+ * Both fields are written together and cleared together, which is why there is no "have I ever ranked?"
+ * guard to keep in step with the key: an empty order is the same answer as nothing ranked yet, and a key
+ * that matched always finds the order it was ranked with.
  */
 export class PanelMemory {
   #frame: PanelFrame | undefined;
-  #order = new RankedPins();
+  #source: readonly ViewPin[] | undefined;
+  #ranked: readonly ViewPin[] = [];
 
   /** The cached frame, if the last one still describes what the component would draw. */
   get frame(): PanelFrame | undefined {
@@ -83,14 +91,19 @@ export class PanelMemory {
     this.#frame = frame;
   }
 
-  /** The draw order of `pins`, memoised on the array it was ranked from. */
+  /** The draw order of `pins`, re-ranked only when `pins` is an array this memory has not seen. */
   orderOf(pins: readonly ViewPin[]): readonly ViewPin[] {
-    return this.#order.get(pins);
+    if (this.#source !== pins) {
+      this.#source = pins;
+      this.#ranked = rankedPins(pins);
+    }
+    return this.#ranked;
   }
 
   /** Forget both halves. Safe before anything has been drawn or ranked. */
   invalidate(): void {
     this.#frame = undefined;
-    this.#order.invalidate();
+    this.#source = undefined;
+    this.#ranked = [];
   }
 }

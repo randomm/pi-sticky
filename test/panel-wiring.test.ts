@@ -84,6 +84,7 @@ function panelWiring(parts: Partial<PanelWiringParts> = {}) {
       live: () => undefined,
       redrawRail: () => void rails.push(1),
       onDispose: () => {},
+      rpc: () => false,
       ...parts,
     }),
   };

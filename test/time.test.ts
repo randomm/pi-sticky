@@ -43,3 +43,20 @@ test("an age is read at the instant it is drawn at, and at no other", () => {
   expect(formatPinAge("not a date", NOW)).toBe("--");
   expect(formatPinAge("2026-10-23T12:00:01.000Z", "2026-10-23T11:00:00.000Z")).toBe("now");
 });
+
+test("each bucket turns at the boundary the panel promises, and only there", () => {
+  // The four buckets are four `elapsed <` comparisons over the same instant, and a bucket that turned one
+  // unit late or early would still draw *an* age — a panel where a 59-minute pin read `1h` looks alive. So
+  // each pair below is the last instant of one bucket and the first of the next, both named, not inferred:
+  // 59s is `now`, 60s is `1m`; 59m is `59m`, 60m is `1h`; 23h is `23h`, and 24h — the day the header calls
+  // "25h is 1d" — is `1d`, with 48h the second day the panel names.
+  const age = (ms: number): string =>
+    formatPinAge(new Date(Date.parse(NOW) - ms).toISOString(), NOW);
+  expect(age(59_000)).toBe("now");
+  expect(age(60_000)).toBe("1m");
+  expect(age(59 * 60_000)).toBe("59m");
+  expect(age(60 * 60_000)).toBe("1h");
+  expect(age(23 * 3_600_000)).toBe("23h");
+  expect(age(25 * 3_600_000)).toBe("1d");
+  expect(age(48 * 3_600_000)).toBe("2d");
+});

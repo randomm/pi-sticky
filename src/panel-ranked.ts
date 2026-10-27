@@ -1,5 +1,5 @@
 /**
- * The order the panel draws pins in, memoized on the view it was ranked from.
+ * The order the panel draws pins in.
  *
  * The panel and the rail rank identically — `orderPins`, warning before action before info, newest first
  * within a level — and the panel must draw the order it *acts on*: `dispatchPanelKey` (`panel-input.ts`)
@@ -8,40 +8,24 @@
  * the drawer rather than inside the drawer: a second reader of `getView().pins` gets insertion order, and
  * that is how `d` once came to dismiss the wrong pin.
  *
- * It is a module of its own rather than a private method because it is process state the moment it is a
- * module-level `let` — two panels over two views each invalidating the other's order — and a class makes
- * "one memo, one owner" the type rather than a comment. The component holds one; nothing else can.
+ * It was a memo once — keyed on the array's identity, held by one component. The key only ever hit on a
+ * caller that asked twice with the *same* array, and there is no such caller: `commit`/`reconstruct` publish
+ * a fresh array for every change to the view and none without one, so every real ask arrived with an
+ * array the memo had not seen. It was a branch no product path could enter, and the one test that entered
+ * it had to hand the memo its own output back. `orderPins` is a pure sort over a copy, so the memo bought
+ * nothing a fresh sort does not already give: the same array, the same order. This is that sort, named, in
+ * one place, with no state to keep coherent — and no owner to keep it coherent for.
  */
 import { orderPins } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
 /**
- * The ranked view of one component.
+ * The pins in draw order — `orderPins` over a copy, so the view's own array stays in insertion order.
  *
- * `get` is called per frame, per key and per clamp, so the memo is what keeps a view that has not moved
- * from costing a sort each time: `commit`/`reconstruct` publish a fresh array for every change and none
- * without one, and array identity is therefore a sound key.
+ * Called per frame, per key and per clamp. It is a sort each time, and the frames it costs are the ones
+ * the panel was going to draw anyway: the frame cache still holds the frame itself, so a key that changed
+ * nothing asks for no repaint and never reaches this.
  */
-export class RankedPins {
-  #source: readonly ViewPin[] | undefined;
-  #ranked: readonly ViewPin[] | undefined;
-
-  /** The pins in draw order — `orderPins` over a copy, so the view's own array stays in insertion order. */
-  get(pins: readonly ViewPin[]): readonly ViewPin[] {
-    if (this.#source !== pins || this.#ranked === undefined) {
-      this.#source = pins;
-      this.#ranked = orderPins(pins);
-    }
-    return this.#ranked;
-  }
-
-  /**
-   * Forget the memo. The component does not call it — a view that has not moved has not moved — and it
-   * exists for the one caller that replaces the view behind the component's back, which is a test host
-   * handing over a different `PinView` without publishing a new array.
-   */
-  invalidate(): void {
-    this.#source = undefined;
-    this.#ranked = undefined;
-  }
+export function rankedPins(pins: readonly ViewPin[]): readonly ViewPin[] {
+  return orderPins(pins);
 }

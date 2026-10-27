@@ -24,40 +24,53 @@ export interface SessionDraw {
   redraw(ctx: ExtensionContext | undefined): void;
   /** The owner, held in a cell because its wiring and the rail's draw are mutually recursive. */
   panel(): PanelOwner | undefined;
-  /** The minute hand, whose lifetime is the session's and whose restart is what these events end with. */
+  /** The minute hand, whose lifetime is the session's: these events give it, and the boundaries take it back. */
   tick: SessionTick;
 }
 
 /**
  * Re-read the session and draw both surfaces for it, then hand the minute hand to it.
  *
- * Called by `session_start`, `session_tree` and `turn_end`. The tick restart comes *last* because a timer
- * whose first tick landed before this frame had nothing to be late for: both surfaces have drawn by now, so
- * the minute hand's first comparison has something to be against. It restarts rather than starts because a
- * reload re-fires `session_start` over a session that already had a hand — the old one is stopped first,
- * and the new one carries no memory of the minute the other drew, which is what makes a branch change
- * (`session_tree`) not redraw the branch you came from on the schedule you left.
+ * Called by `session_start` and `session_tree` — the two events that open the overlay, and the only ones
+ * that build a hand. The tick restart comes *last*, after the open, because a timer whose first tick landed
+ * before this frame had nothing to be late for and a hand that asked about the panel before it was opened
+ * would be told nothing is drawn. It restarts rather than keeps because a reload re-fires `session_start`
+ * over a session that already had a hand — the old one is stopped first, and the new one carries no memory
+ * of the minute the other drew, which is what makes a branch change (`session_tree`) not redraw the branch
+ * you came from on the schedule you left.
  */
 export function drawSession(ctx: ExtensionContext, draw: SessionDraw): void {
-  settleSession(ctx, draw);
+  adoptAndDraw(ctx, draw);
   // The panel of the branch the user left is closed and a fresh one opened, so the overlay on screen is
   // always the one that belongs to the branch being drawn. `open()` closes the record it is replacing
   // itself, so nothing here has to close it first.
   draw.panel()?.open(ctx);
+  // The hand is the last move: it asks which surfaces are drawn, and until the overlay was opened the
+  // panel was not one of them.
+  draw.tick.restart(ctx.mode);
 }
 
 /**
- * Re-read the session, draw both surfaces, and hand the minute hand to it — without touching the overlay.
+ * Re-read the session and draw both surfaces, without touching the overlay or the hand.
  *
- * The half `session_start` and `session_tree` share, and the whole of `turn_end`: a turn's appends have
- * landed, so the branch is re-read, but which surface the user is looking at has not changed and reopening
- * it would hand the panel a fresh record every turn.
+ * The half every boundary shares: a turn's appends have landed, so the branch is re-read, but which surface
+ * the user is looking at has not changed and reopening it would hand the panel a fresh record every turn.
+ * `turn_end` is the whole of it; `drawSession` adds the open and the hand on top.
  */
 export function settleSession(ctx: ExtensionContext, draw: SessionDraw): void {
+  adoptAndDraw(ctx, draw);
+  // Nothing is asked of the hand here, on purpose. Every change to which surfaces are drawn reaches the
+  // hand through the redraw itself — the rail's install, the panel's open and close, the component's
+  // teardown each report to it — and a boundary that *also* re-decided would re-arm a hand the surface it
+  // just tore down had already asked to stop: `turn_end` lands after a dismissal that emptied the view,
+  // and a hand rebuilt there would wake once a minute over a screen that draws neither surface.
+}
+
+/** The two moves every session boundary makes in the same fixed order: adopt the context, then rebuild and draw. */
+function adoptAndDraw(ctx: ExtensionContext, draw: SessionDraw): void {
   draw.adopt(ctx);
   draw.rebuild(ctx);
   draw.redraw(ctx);
-  draw.tick.restart();
 }
 
 /**
