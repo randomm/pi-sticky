@@ -24,7 +24,9 @@ export const PANEL_MIN_COLUMNS = 100;
 
 /**
  * The smallest frame the builder will close, and so the smallest overlay pi may hand it: two border rows
- * over one row of pins, and a gutter and its space on each side of at least one column of text. Below
+ * over one row of pins, and a gutter and its space on each side of at least one column of text — which is
+ * `MIN_COLUMNS_FOR_META` (`panel-frame-geometry.ts`) spelled out as a literal, and the test that asserts
+ * the two numbers are equal is `test/panel-id-never-cut.test.ts`. Below
  * either bound the builder draws nothing rather than an open box, which is why these two numbers are
  * stated here with the overlay's own `minWidth` — `minWidth` *is* the columns bound, and pi-tui's
  * `OverlayOptions` has no `minHeight` to state the rows bound in, so the component is what keeps a frame

@@ -13,9 +13,10 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "../src/panel-geometry.ts";
 import { HINT, buildPanelLines } from "../src/panel-lines.ts";
-import { panelContentRows, panelPinRows } from "../src/panel-rows.ts";
+import { GUTTER_COLUMNS, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin } from "./fixtures.ts";
@@ -153,9 +154,13 @@ test("the frame closes at every size the builder draws at, with the header in th
 test("a pin row is one space inside each gutter, at the inner width", () => {
   const width = 60;
   const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), width, style);
-  // Byte-exact: content fitted to `width - 4` and padded out between the gutters, with the rule filling
-  // the top and bottom borders. Unfocused, so nothing is highlighted.
-  expect(lines[1]).toBe(`│ ${` • Decide X #1 ${localTime(NOW)}`.padEnd(width - FRAME_COLUMNS)} │`);
+  // Byte-exact: the text column, the `#id HH:MM` tail beside it, and the row's spare columns after them.
+  // Built from the pieces `pinRow` assembles rather than pasted — the text padded to the room the tail's
+  // reserve left (`panelTextColumns` over the frame), the tail padded to exactly that reserve — so the time
+  // comes from `localTime` and the reserve from the geometry, and neither can rot with the machine's clock.
+  const tail = ` #1 ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  const text = " • Decide X".padEnd(width - GUTTER_COLUMNS - tail.length);
+  expect(lines[1]).toBe(`│ ${text}${tail} │`);
   expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
   // The frame is as tall as its content, so the row after the pin is the bottom border: a panel with one
   // pin pads itself to nothing, which is what keeps the prompt visible beside it.

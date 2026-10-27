@@ -20,6 +20,7 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { PanelComponent } from "../src/panel-component.ts";
+import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
 import { RULE } from "../src/panel-frame.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import type { PanelHost } from "../src/panel-host.ts";
@@ -113,13 +114,12 @@ test("the identity style draws a closed, unpainted frame in both focus states", 
   expect(resting[1]?.startsWith("│  • ")).toBe(true);
   // `dim` owns the id/time tail, the resting frame's only use for it, and the tail must come back whole:
   // the byte-exact row is the assertion that nothing was put around it. Built from the pieces the drawer
-  // assembles — `gutter` (`panel-frame.ts`) wraps the row as `│ <inner> │` and `fitLine` pads the inner to
-  // the frame's width less the four columns the two gutters and their spaces own — rather than pasted, so
-  // the time comes from `localTime` and cannot rot with the machine's clock.
-  const inner = ` • Decide X #1 ${localTime(NOW)}`;
-  expect(resting[1]).toBe(
-    `│ ${inner}${" ".repeat(WIDTH - GUTTER_COLUMNS - visibleWidth(inner))} │`,
-  );
+  // assembles — `gutter` (`panel-frame.ts`) wraps the row as `│ <inner> │`, the text is padded to the room
+  // the tail's reserve left and the tail padded to exactly that reserve — rather than pasted, so the time
+  // comes from `localTime` and the reserve from the geometry, and neither can rot with the machine's clock.
+  const tail = ` #1 ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  const inner = " • Decide X".padEnd(WIDTH - GUTTER_COLUMNS - tail.length) + tail;
+  expect(resting[1]).toBe(`│ ${inner} │`);
 
   // `selected` is asked of the focused frame alone, and its answer must cost the bar nothing: a real theme
   // marks the selected row (`panelThemeStyle`'s `selectedBg`, or `inverse` where a theme gives that token

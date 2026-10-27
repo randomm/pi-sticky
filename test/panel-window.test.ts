@@ -72,7 +72,12 @@ test("the selected pin's row is drawn with the selected style, and only that row
   expect(lines.some((line) => line.includes("[ • Second") && inside(line).startsWith(" ["))).toBe(
     true,
   );
-  expect(lines.filter((line) => line.includes("[") && line.includes("]"))).toHaveLength(1);
+  // Exactly one row carries the bar. `]` cannot be the marker for that count: pi-tui wraps the ellipsis of
+  // every line it cuts in a reset whose bytes contain `]0m`, and at this width the frame's other row and both
+  // border labels are cut — so three lines close a bracket the panel never drew. The bar's *head* bracket is
+  // what identifies its row: `selected` is asked of the focused frame alone and puts it at the head of the
+  // inner columns, where no border label or cut can reach it.
+  expect(lines.filter((line) => inside(line).startsWith(" ["))).toHaveLength(1);
 });
 
 test("an unfocused panel highlights nothing", () => {
