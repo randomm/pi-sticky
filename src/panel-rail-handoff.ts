@@ -22,23 +22,12 @@ import { RailGuard } from "./panel-rail.ts";
 /**
  * The rail's install state, held for the owner that asks it to reconsider.
  *
- * One object rather than two fields on the owner because the two are one decision: a guard consulted without
- * the recorded minute (or a minute recorded against no guard) is the split this file exists to close.
+ * One closure rather than two fields on the owner because the two are one decision: a guard consulted without
+ * the recorded minute (or a minute recorded against no guard) is the split this file exists to close. Built
+ * by `createRailHandoff` rather than as a class because the only reader — `PanelOwner` — holds exactly one per
+ * owner, so a class here would declare a constructor no caller ever names while carrying the same two cells.
  */
-export class RailHandoff {
-  /** The install guard: the one cache between a frame that changed nothing and a redraw. */
-  readonly #guard = new RailGuard();
-  /**
-   * The minute the rail was last installed for.
-   *
-   * Recorded rather than read from the clock at decision time because the instant belongs to the draw that
-   * stamped the rows — the only caller that knows it is the extension's `drawRail`, through `drawn` below.
-   * Kept until the next draw rather than cleared after each: pi-tui asks the overlay's `visible()` on every
-   * render cycle, and a bucket that fell back to the wall clock each frame would reopen the key every minute
-   * a rail sat on screen.
-   */
-  #minute: number | undefined;
-
+export interface RailHandoff {
   /**
    * Report the minute the rail's rows were just stamped at, from the draw that stamped them.
    *
@@ -46,10 +35,7 @@ export class RailHandoff {
    * the instant on its way in — before `drawPins` runs, because `drawPins` is reached from inside this
    * object's own decision and a record written after it returns is a minute the deciding call never saw.
    */
-  drawn(iso: string): void {
-    this.#minute = ageBucket(iso);
-  }
-
+  drawn(iso: string): void;
   /**
    * Reconsider the rail. `open` is the caller's verdict on whether a panel is still open: `true` on a change
    * that may have moved the answer while the panel stayed (a frame, a toggle, a pin, a dismissal) — compare
@@ -64,18 +50,42 @@ export class RailHandoff {
    * then read one clock rather than two, which is the difference between a key that moves once a minute and
    * one that moves every frame.
    */
-  consider(wiring: PanelWiring, columns: number, open: boolean): void {
+  consider(wiring: PanelWiring, columns: number, open: boolean): void;
+}
+
+/** The rail's handoff of one owner: a guard of its own, and no minute recorded yet. */
+export function createRailHandoff(): RailHandoff {
+  /** The install guard: the one cache between a frame that changed nothing and a redraw. */
+  const guard = new RailGuard();
+  /**
+   * The minute the rail was last installed for.
+   *
+   * Recorded rather than read from the clock at decision time because the instant belongs to the draw that
+   * stamped the rows — the only caller that knows it is the extension's `drawRail`, through `drawn`. Kept
+   * until the next draw rather than cleared after each: pi-tui asks the overlay's `visible()` on every render
+   * cycle, and a bucket that fell back to the wall clock each frame would reopen the key every minute a rail
+   * sat on screen.
+   */
+  let minute: number | undefined;
+
+  function drawn(iso: string): void {
+    minute = ageBucket(iso);
+  }
+
+  function consider(wiring: PanelWiring, columns: number, open: boolean): void {
     // A lifecycle edge (`open === false`) forgets both halves this object holds, and does it before the guard
     // is asked: a frame that compared the rail against no installed answer while still holding the previous
     // minute would be one comparison away from installing nothing. They are one edge, so they go together —
     // two verbs here would be two calls the owner could get half of.
-    if (!open) this.#minute = undefined;
-    this.#guard.consider(
+    if (!open) minute = undefined;
+    guard.consider(
       wiring.deps,
       columns,
       wiring.redrawRail,
       open,
-      this.#minute ?? ageBucket(wiring.deps.now()),
+      minute ?? ageBucket(wiring.deps.now()),
     );
   }
+
+  return { drawn, consider };
 }

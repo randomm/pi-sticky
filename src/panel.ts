@@ -27,7 +27,7 @@ import { releasePanel } from "./panel-close.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelDeps, PanelWiring } from "./panel-deps.ts";
 import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
-import { RailHandoff } from "./panel-rail-handoff.ts";
+import { createRailHandoff } from "./panel-rail-handoff.ts";
 import type { TerminalWidth } from "./panel-width.ts";
 
 import { judgeColumns, panelIsVisible } from "./panel-geometry.ts";
@@ -43,7 +43,7 @@ export class PanelOwner {
   #record: PanelRecord | undefined;
   #tui: TUI | undefined;
   /** The rail's install state: the guard, and the minute its installed rows were aged at. */
-  readonly #rail = new RailHandoff();
+  readonly #rail = createRailHandoff();
   /**
    * Why the last close could not release its overlay, or `undefined` when it closed cleanly. Captured
    * rather than dropped: `close()` has no context to notify through, and the owner has just forgotten

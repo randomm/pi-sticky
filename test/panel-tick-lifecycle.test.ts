@@ -32,46 +32,31 @@ import {
   panelComponent,
 } from "./panel-lifecycle-fixture.ts";
 import { ONE } from "./panel-owner-wiring.ts";
+import type { TimerRecord } from "./panel-tick-watch.ts";
+import {
+  countingContext,
+  later,
+  liveTimers,
+  stopWatching,
+  watchTimers as watchTimersOn,
+} from "./panel-tick-watch.ts";
 import { createPlainTheme, createStubTui } from "./ui-stubs.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
-/** One interval this file has seen: the callback it was handed, and whether it was cleared. */
-interface TimerRecord {
-  fn: () => void;
-  ms: number;
-  cleared: boolean;
-}
-
-const realSetInterval = globalThis.setInterval;
-const realClearInterval = globalThis.clearInterval;
-
-/** The intervals started since the last `watchTimers()`. */
+// The watched scheduler, the live-handle reader and the counting recorder all live in `panel-tick-watch.ts`
+// with the rest of the fixtures this family shares; `timers` is the array the current watch captured.
 let timers: TimerRecord[] = [];
 
 function watchTimers(): void {
-  timers = [];
-  globalThis.setInterval = ((fn: () => void, ms: number) => {
-    const record: TimerRecord = { fn, ms, cleared: false };
-    timers.push(record);
-    // Deliberately never scheduled: a tick that fired during a test would ask for a frame the test is not
-    // measuring, and the subject here is the handle's lifetime, not what the callback does.
-    return record as unknown as ReturnType<typeof setInterval>;
-  }) as unknown as typeof setInterval;
-  globalThis.clearInterval = ((handle: ReturnType<typeof setInterval>) => {
-    const record = handle as unknown as TimerRecord;
-    if (record && typeof record === "object" && "ms" in record) record.cleared = true;
-  }) as unknown as typeof clearInterval;
+  timers = watchTimersOn();
 }
-
-afterEach(() => {
-  globalThis.setInterval = realSetInterval;
-  globalThis.clearInterval = realClearInterval;
-});
 
 /** Every interval started so far that has not been cleared — the ones a live session still owns. */
 function live(): TimerRecord[] {
-  return timers.filter((timer) => !timer.cleared);
+  return liveTimers(timers);
 }
+
+afterEach(stopWatching);
 
 /** A context in one of the no-UI modes, so a hand there would be a callback over an empty screen. */
 function modeContext(entries: readonly unknown[], mode: string) {
@@ -259,7 +244,7 @@ test("at 80 columns the tick's minute asks for a new rail, and a minute that did
   let clock = started;
   const stub = stubApi();
   createStickyExtension(DEFAULT_CONFIG, () => clock)(stub.api);
-  const ctx = contextWith(PINNED);
+  const ctx = countingContext(PINNED);
   stub.emit("session_start", { reason: "startup" }, ctx);
   await flush();
   frameWidth(ctx.recorder, 80);
@@ -273,18 +258,18 @@ test("at 80 columns the tick's minute asks for a new rail, and a minute that did
   if (!hand) throw new Error("no hand to fire");
   hand.fn();
   frameWidth(ctx.recorder, 80);
-  const written = () => ctx.recorder.widgetInstalls.get(KEY) ?? 0;
+  const written = () => ctx.recorder.written(KEY);
 
   // A minute that did not move is a comparison, not an install: pi-tui asks far more often than a minute, and
   // a rail that re-wrapped every pin on each ask would be the cost this guard exists to refuse.
-  clock = new Date(Date.parse(started) + 20_000).toISOString();
+  clock = later(started, 0, 20);
   const settled = written();
   hand.fn();
   expect(written()).toBe(settled);
 
   // Four minutes on, the age on the rail's rows has to change, so the frame is a different answer and the key
   // is written — and the same minute asked twice is still one write, not two.
-  clock = new Date(Date.parse(started) + 4 * 60_000).toISOString();
+  clock = later(started, 4);
   hand.fn();
   expect(written()).toBeGreaterThan(settled);
   const reaged = written();

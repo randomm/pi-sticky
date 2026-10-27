@@ -16,7 +16,7 @@ import { expect, test } from "bun:test";
 
 import { PanelComponent } from "../src/panel-component.ts";
 import { orderPins } from "../src/render.ts";
-import type { PinLevel, ViewPin } from "../src/types.ts";
+import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 import { createOverlayHandle } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
@@ -171,4 +171,28 @@ test("two components over two views each draw their own order, rendered interlea
   expect(b.c.render(60)).toBe(other);
   expect(a.c.pins.map((p) => p.id)).toEqual([2, 1]);
   expect(b.c.pins.map((p) => p.id)).toEqual([4, 3]);
+});
+
+test("the rank memo is dropped with the frame it belongs to, and re-ranked for a copy of the same view", () => {
+  // `PanelMemory` (`panel-frame-cache.ts`) holds the order and the frame as one fact, and both are keyed on
+  // the ranked array's *identity* — the thing `commit`/`reconstruct` publish fresh on every change and never
+  // without one. Reached here rather than by building a memory directly, because a hand-built one could be
+  // handed a view the component would never have drawn: this is its only reader, through its real members
+  // (`pins`, `render`, `invalidate`).
+  const h = host([at(1, "one", "info"), at(2, "two", "info")]);
+  const view: PinView = { pins: [...h.state.view.pins], removed: [] };
+  h.stub.getView = () => view;
+  const c = new PanelComponent(h.stub, h.tui);
+  const ranked = c.pins;
+  // The same array, asked twice, costs no sort — which is the whole reason the memo exists beside the frame.
+  expect(c.pins).toBe(ranked);
+  // A frame is memorised only by drawing, and the forget has to take the order with it.
+  c.render(60);
+  c.invalidate();
+  expect(c.pins).not.toBe(ranked);
+  // …and a copy of the very same view is a change too: a fresh array publishes a fresh order, newest first.
+  const copy = [...view.pins];
+  h.stub.getView = () => ({ ...view, pins: copy });
+  expect(c.pins.map((p) => p.id)).toEqual([2, 1]);
+  expect(c.pins).toBe(c.pins);
 });

@@ -35,6 +35,8 @@ export function host(pins: ViewPin[] = []) {
     // key; the default is "drawn", because the key tests are about the keys themselves.
     visible: true,
     renders: 0,
+    /** How many times the component told the host the interaction ended — see `stub.unfocus`. */
+    unfocusCalls: 0,
     dismissals: [] as number[],
     replies: [] as number[],
   };
@@ -48,8 +50,12 @@ export function host(pins: ViewPin[] = []) {
     requestRender: () => void state.renders++,
     dismiss: (id) => void state.dismissals.push(id),
     // The host's `unfocus` is only the notification that the interaction ended; the component moves the
-    // handle itself, which is what the handle-tracking test asserts.
-    unfocus: () => {},
+    // handle itself, which is what the handle-tracking test asserts. Counted, because the count is the only
+    // way a case can see that the round trip happened: `Escape`/`Enter` hand the pins back to the rail through
+    // this member and nothing else (`panel-input.ts`).
+    unfocus: () => {
+      state.unfocusCalls++;
+    },
     startReply: (id) => void state.replies.push(id),
     notify: () => {},
     // `#handleInput` asks this before it dispatches a key: a panel pi-tui is not drawing must not act on

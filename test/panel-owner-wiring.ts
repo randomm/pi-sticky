@@ -88,8 +88,11 @@ export function wiring(
     // The same reason: the component asks the host for the instant its ages are measured at, and a
     // hand-built deps that cannot answer one is an exception in the draw path rather than a stub.
     now: () => state.clock ?? NOW,
-    setPanelShown: (shown: boolean) => {
-      state.shown = shown;
+    // The one caller is `PanelOwner.focusFromShortcut`, which settles the flag to shown and records nothing;
+    // a `false` through this member is unrepresentable in the owner, so a branch for it here would be a
+    // closure no test can reach (that is the `panel-wiring.test.ts` setter-pair case's job, not this one's).
+    setPanelShown: () => {
+      state.shown = true;
     },
     recordPanelShown: (shown: boolean) => {
       // The recording `shown` below is the flag the owner answers from, and the `/pins` verbs are
