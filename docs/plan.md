@@ -1,6 +1,15 @@
-# pi-sticky: plan
+# pi-sticky: plan (historical working spec)
 
-> **For agentic workers:** Part 2 of this file is the implementation plan. Execute it task by task, normally by handing it to the pi-rukas work driver (one issue per task group, see "Execution"). Use the executing-plans skill inline only when no driver is available. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: historical.** This is the original working spec, kept for history. It is not the current
+> spec: where it disagrees with the code or with `docs/research-summary.md`, **those win**. The features
+> cut from v1 — the event-bus API (R10, Task 7), the file mirror (R12, Task 10) and the
+> `PI_STICKY_PLACEMENT` / `PI_STICKY_FILE` variables (the last two still listed in the config table at
+> 6.9) — are recorded in `docs/research-summary.md` section 4. The task checkboxes below were never
+> ticked and say nothing about what shipped. Do not file work against this file; section numbering is
+> kept because code and `docs/spike-results.md` cite it (6.2, 6.9, section 8), and `src/deps.ts`
+> refers to the `StickyDeps` block in the "File structure (historical)" section.
+
+> **For agentic workers:** Part 2 of this file is the original implementation plan, kept as history. It was executed by the pi-rukas work driver (one issue per task group). Use the executing-plans skill inline only when no driver is available. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the main pi agent pin short messages for the user. The messages stay on screen until the agent or the user removes them, so a user who checks a long run hours later sees them without scrolling back through the chat.
 
@@ -10,7 +19,7 @@
 
 **Spec:** Part 1 of this file. The owner asked for a single file, so the spec and the plan travel together.
 
-**Status:** draft for review, 2026-10-23. Written by Hermes (Claude) for Janni. The pi API facts below were checked against pi 1.3.0 as installed on halo (`/home/janni/.bun/install/global/node_modules/@earendil-works/pi-coding-agent`: `docs/`, `examples/`, `dist/core/extensions/types.d.ts`). The ecosystem scan read package READMEs only, not their source code. Six assumptions still need a runtime check; Task 1 checks them before anything else is built (section 8).
+**Status:** drafted 2026-10-23; historical (see the banner above). The pi API facts below were checked against the installed pi 1.3.0 sources (`@earendil-works/pi-coding-agent`: its `docs/`, `examples/` and `dist/`, read as an installed package — see AGENTS.md, "Context7 Protocol"). The ecosystem scan read package READMEs only, not their source code. Six assumptions were listed for a runtime check; all six are recorded as held in `docs/spike-results.md` (A1–A5 run in `test/spike.test.ts`; section 8).
 
 ---
 
@@ -37,10 +46,10 @@ Scan of the npm registry on 2026-10-23 (packages tagged `pi-package`, about 35 s
 
 ## 3. Use cases
 
-1. **Long interactive run.** Janni starts a task in the pi terminal UI and leaves. After 40 minutes the agent hits a design choice it cannot make alone. It pins "Decide: keep the old config format or migrate? I paused the migration step." and continues with other work. Two hours later Janni opens the terminal and sees the pin below the editor at once.
+1. **Long interactive run.** The user starts a task in the pi terminal UI and leaves. A while later the agent hits a design choice it cannot make alone. It pins "Decide: keep the old config format or migrate? I paused the migration step." and continues with other work. Two hours later the user opens the terminal and sees the pin below the editor at once.
 2. **pi-rukas PM session.** The pi-rukas PM (the main agent) drives several work cycles. A cycle parks with `needs-human-attention`. The PM, or pi-rukas itself through the event bus, pins "Cycle #553 needs you: intent gate parked on a stale path list". When the cycle resumes, the pin is removed.
 3. **Final result.** At the end of a long run the agent pins "Done: benchmark report in docs/bench/2026-10-23.md. Two models failed to load; see section 4." The user reads it, then types `/unpin 3`.
-4. **Headless run (phase 2).** A run without a terminal UI (print, JSON or a tehas worker) still records pins. With `PI_STICKY_FILE` set, the extension also writes them to a Markdown file that another tool (a Hermes cron job, a Telegram notifier) can watch.
+4. **Headless run (phase 2).** A run without a terminal UI (print, JSON or a headless worker) still records pins. With `PI_STICKY_FILE` set, the extension also writes them to a Markdown file that another tool (a scheduled job, a notifier) can watch.
 
 ## 4. Requirements
 
@@ -84,7 +93,7 @@ Widget key and status key: `pi-sticky`. Placement: `belowEditor` by default (see
 ### 6.2 The `pin_for_user` tool
 
 - `name: "pin_for_user"`, `label: "Pin for user"`.
-- `exposure: "model-only"`: declared to the model, not callable from codemode scripts. Pinning is an action toward the user, like asking a question. This also keeps every call a real transcript tool call, so its result `details` lands on the branch. Nested codemode calls leave no transcript entry (`docs/extensions.md`, Tools). Assumption A1 checks that the tool stays declared when codemode is active; Janni's `~/.pi/agent/settings.json` has `"defaultTools": ["+codemode"]`.
+- `exposure: "model-only"`: declared to the model, not callable from codemode scripts. Pinning is an action toward the user, like asking a question. This also keeps every call a real transcript tool call, so its result `details` lands on the branch. Nested codemode calls leave no transcript entry (`docs/extensions.md`, Tools). Assumption A1 checks that the tool stays declared when codemode is active; `~/.pi/agent/settings.json` has `"defaultTools": ["+codemode"]` on the machine this was developed on.
 - `executionMode: "sequential"`: two pin calls in one assistant message must not race on the same state.
 - Parameters (TypeBox; `StringEnum` from `@earendil-works/pi-ai`):
 
@@ -232,7 +241,7 @@ pi-rukas starts subagents with `pi --mode rpc --no-extensions` and then adds `--
 
 1. **Install as a pi package** (`pi install git:git@github.com:randomm/pi-sticky`). That writes the settings `packages` list, which pi-rukas does not forward, and `--no-extensions` disables configured extensions (`docs/cli.md`). A6 checks this. Do not symlink the repo into `~/.pi/agent/extensions/`.
 2. **Env guard.** `PI_ENSEMBLE_SUBAGENT_MODE=1` disables the extension. pi-rukas sets it for guarded children only (`extension/src/spawn-permission.ts`); trust-mode children do not get it, which is why guard 1 matters.
-3. **Follow-up in pi-rukas** (outside this repo): add `pin_for_user` to the excluded tools of every child role. See "Rollout".
+3. **Follow-up in pi-rukas** (outside this repo): add `pin_for_user` to the excluded tools of every child role.
 
 ### 6.11 File mirror (phase 2)
 
@@ -268,15 +277,16 @@ The write goes to `<path>.tmp-<pid>`, then a rename. The parent directory is cre
 | A3 | After `session.compact()`, `getBranch()` still returns the tool results before the compaction, and `session_compact` fires. | Also write each agent change as a custom entry. |
 | A4 | `navigateTree()` to an entry before a pin fires `session_tree`, and `getBranch()` no longer contains that pin's snapshot. | Rebuild on `session_tree` from `getEntries()` along the new leaf. |
 | A5 | A `before_agent_start` `message` from pi-sticky reaches the model when another extension returns `systemPrompt` in the same event. | Append the reminder to `event.systemPrompt` instead, PM mode included. |
-| A6 | `pi --no-extensions` does not load packages from the settings `packages` list. | Rely on guard 2, and file the pi-rukas follow-up as a blocker before installing on halo. |
+| A6 | `pi --no-extensions` does not load packages from the settings `packages` list. | Rely on guard 2, and file the pi-rukas follow-up as a blocker before installing anywhere. |
 
-## 9. Open questions for Janni
+## 9. Open questions (answered)
 
-The plan proceeds with the stated default unless Janni says otherwise.
+The operator answered these on 2026-10-25; `docs/research-summary.md` sections 2 and 4 record the
+outcomes and win where they disagree with the defaults below.
 
-1. **Where do you check runs?** In the pi terminal only, or also headless runs (tehas)? Default: terminal first. Build phase 2 (Task 10) only if headless matters.
-2. **Placement:** below the editor (default, D2) or above?
-3. **Publishing:** keep it a private git install, or publish to npm as `pi-sticky` later? Default: private until it has been used for two weeks.
+1. **Where do you check runs?** In the pi terminal only, or also headless runs? Default: terminal first. Build phase 2 (Task 10) only if headless matters. *Answered: terminal only; phase 2 (Task 10) was cut.*
+2. **Placement:** below the editor (default, D2) or above? *Answered: neither — a right-anchored overlay panel, with an above-editor rail on narrow terminals.*
+3. **Publishing:** keep it a private git install, or publish to npm as `pi-sticky` later? Default: private until it has been used for two weeks. *Answered: MIT open-source release; npm publishing stays a manual operator step.*
 
 ---
 
@@ -288,7 +298,7 @@ The plan proceeds with the stated default unless Janni says otherwise.
 - `package.json`: `"name": "pi-sticky"`, `"type": "module"`, `"keywords": ["pi-package"]`, `"pi": { "extensions": ["./src/index.ts"] }`.
 - Host packages `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`, `@earendil-works/pi-tui` and `typebox` are `peerDependencies` with `"*"`, and `devDependencies` pinned to `1.3.0`, `1.3.0`, `1.3.0` and `1.3.27`. No runtime `dependencies`.
 - Import `Type` from `typebox` and `StringEnum` from `@earendil-works/pi-ai`, as `examples/extensions/todo.ts` does.
-- Tests: `bun test` (bun 1.3.x on halo). Lint and types: `bun run check` = `biome check src test && tsc --noEmit`. Both must pass before every commit.
+- Tests: `bun test` (bun 1.3.x or newer). Lint and types: `bun run check` = `biome check src test && tsc --noEmit`. Both must pass before every commit.
 - **Tests never load the host's pi setup.** The SDK harness passes a fresh temp dir as `agentDir` and as `cwd` to `DefaultResourceLoader`; otherwise it would discover `~/.pi/agent/extensions` (pi-rukas included). No test calls a real model: tests use the faux provider from `@earendil-works/pi-ai` (`fauxProvider`, `fauxToolCall`, `fauxAssistantMessage`).
 - Names fixed by the spec: tool `pin_for_user`; commands `pins` and `unpin`; widget and status key `pi-sticky`; custom types `pi-sticky.state`, `pi-sticky.ui`, `pi-sticky.reminder`; bus channel `pi-sticky`.
 - Source files stay under 300 lines each. One responsibility per file.
@@ -304,65 +314,25 @@ These failure modes are implied by the spec but easy to miss. Each one has a tes
 4. **The user removes a pin while the agent is running, and the agent then updates it.** Expected: the error names the user removal; the pin does not come back. Tests in Tasks 3 and 6.
 5. **A damaged or foreign snapshot in the session file** (hand-edited JSON, a future `v: 2`, another tool's `details`). Expected: skipped without an exception; the last valid state is shown. Tests in Task 3.
 
-## File structure
+## File structure (historical)
 
-```text
-pi-sticky/
-├── package.json         manifest, scripts, peer and dev dependencies
-├── tsconfig.json        noEmit, strict, moduleResolution "bundler", allowImportingTsExtensions
-├── biome.json
-├── README.md            install, usage, configuration (Task 11)
-├── docs/plan.md         this file
-├── src/
-│   ├── index.ts         default export: readConfig(process.env), then createStickyExtension(config)
-│   ├── extension.ts     createStickyExtension(config): registers tool, commands, bus, events; owns the live state
-│   ├── types.ts         Pin, PinLevel, PinSource, PinState, Removal, StickyConfig, constants
-│   ├── config.ts        readConfig(env)
-│   ├── sanitize.ts      sanitizePinText(raw, maxChars)
-│   ├── state.ts         applyAction(...), reconstruct(...), EMPTY_STATE
-│   ├── render.ts        orderPins, renderPinLines, renderList, renderPinsText
-│   ├── widget.ts        drawPins(ctx, state, cfg, hidden): picks component, string[] or nothing per mode
-│   ├── tool.ts          createPinTool(deps): ToolDefinition for pin_for_user
-│   ├── commands.ts      registerCommands(pi, deps): /pins, /unpin
-│   ├── bus.ts           registerBus(pi, deps): pi-sticky channel
-│   ├── reminder.ts      compaction flag and before_agent_start message
-│   └── mirror.ts        phase 2 file mirror
-└── test/
-    ├── harness.ts       public surface: createHarness, script/run/branch/dispose, re-exports
-    ├── harness-build.ts  pi construction, private temp dir, idempotent disposeHarness
-    ├── harness-run.ts   run-failure detection (stopReason, tool errors) and error collection
-    ├── harness-session.ts  BuiltHarness shape handed between build and dispose
-    ├── harness-settle.ts  quiet-window wait for pi's fire-and-forget writes before rmSync
-    ├── harness-text.ts  messageText + the summarization-request marker
-    ├── recording-ui.ts  RecordingUi: setWidget/setStatus/notify/editor/custom recorder + renderWidget
-    ├── recorded-ui-types.ts  the recorder's own types, shared with tests without the recorder
-    ├── ui-context-for-pi.ts  own-property uiContext wrapper (pi spreads the bound context)
-    ├── ui-stubs.ts      stub TUI, theme and overlay handle for renderWidget and panel tests
-    ├── component-dispose.ts  dispose a recorded widget entry once, surviving a throwing factory
-    ├── file-size.test.ts  300-line cap on every TS file in src/ and test/
-    ├── index.test.ts      src/index.ts loads as an extension factory without throwing
-    ├── spike.test.ts    smoke test and A1–A5 (A6 verified in source, see research-summary)
-    ├── harness.test.ts  harness and RecordingUi behaviour
-    ├── recording-ui.test.ts  recorder teardown, stub-TUI render(), the exhaustive uiContext member map
-    ├── harness-errors.test.ts  faux-queue, extension-error and failing-tool-result runs
-    ├── harness-abort.test.ts  aborted mid-stream turn, the full stopReason matrix, run-slice authority
-    ├── harness-teardown.test.ts  session_shutdown, widget/custom disposal, temp-dir removal
-    ├── harness-lifecycle.test.ts  failed-build cleanup, in-flight dispose, torn-down run(), overlapping temp dirs
-    ├── harness-dispose.test.ts  private temp dir mode and dispose() idempotency
-    ├── harness-extra.test.ts  command-context actions, appendScript, messageText, stubs
-    └── <module>.test.ts one test file per src module
-```
+The file-by-file table that used to sit alongside this section listed files that were never created and
+omitted most of the ones that were, so it is gone: the jsdoc header of each module in `src/` is the
+authoritative description of that module. The same applies to the **Files:** lists in Part 2 — they name
+the modules as originally planned, not the modules that shipped.
 
-`extension.ts` holds the single mutable `state` and `hidden` values. Everything else receives them through a `deps` object:
+`StickyDeps` is reproduced below only as a historical record: the interface in `src/deps.ts` is the
+contract, and this one is what was written before the footer-status hide mode and the `pi-sticky.ui`
+entry were removed (docs/research-summary.md section 4). Do not treat it as a contract.
 
 ```ts
-interface StickyDeps {
+interface StickyDeps {              // historical — the interface in src/deps.ts is the contract
   config: StickyConfig;
   getState(): PinState;
   commit(next: PinState, via: "tool" | "entry", ctx?: ExtensionContext): void; // sets state; appends a pi-sticky.state entry when via === "entry"; redraws when ctx is given; mirrors
-  getHidden(): boolean;
-  setHidden(hidden: boolean, ctx: ExtensionContext): void;                    // appends pi-sticky.ui, redraws
-  now(): string;                                                              // ISO time; injectable in tests
+  getHidden(): boolean;             // removed: footer-status hide mode (research-summary §4)
+  setHidden(hidden: boolean, ctx: ExtensionContext): void;                    // removed: appends pi-sticky.ui (research-summary §4)
+  now(): string;                    // ISO time; injectable in tests
 }
 ```
 
@@ -591,7 +561,7 @@ interface StickyDeps {
 - Test: `test/tool.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2–4; `StickyDeps` (File structure section).
+- Consumes: Tasks 2–4; `StickyDeps` (historical; the live interface is `src/deps.ts`, and the block in the "File structure (historical)" section is the historical one).
 - Produces:
 
   ```ts
@@ -731,7 +701,7 @@ This task adds nothing new. It proves that the five Review Focus items hold end 
 - [ ] **Step 2: Run** `bun test test/review-focus.test.ts`. Expected: PASS. A failure means an earlier task has a bug: fix it in that task's module and add the missing unit test there.
 - [ ] **Step 3: Commit.** `git commit -am "test: end-to-end checks for the review focus list"`
 
-### Task 10 (phase 2, only if Janni wants headless support): File mirror
+### Task 10 (phase 2 — cut from v1): File mirror
 
 **Files:**
 - Create: `src/mirror.ts`
@@ -762,7 +732,7 @@ This task adds nothing new. It proves that the five Review Focus items hold end 
 - Create: `README.md`, `docs/acceptance/2026-MM-DD.md`
 
 - [ ] **Step 1: README.** Cover what it does (one paragraph), install (`pi install git:git@github.com:randomm/pi-sticky`, with the warning not to symlink into `~/.pi/agent/extensions/`, section 6.10), the tool for models, the commands, the bus API with a TypeScript example, configuration (the table from 6.9) and limits.
-- [ ] **Step 2: Manual acceptance in tmux on halo**, with a real model through the default provider. Ask Janni for a GPU slot first if the local llama-swap endpoint is in use. Run `tmux new -d -s sticky -x 100 -y 40 'pi -e ./src/index.ts'`, then ask the agent to pin three messages, one per level, and to update one. Check with `tmux capture-pane -p -t sticky` after each step:
+- [ ] **Step 2: Manual acceptance in tmux on a test machine**, with a real model through the default provider. Run `tmux new -d -s sticky -x 100 -y 40 'pi -e ./src/index.ts'`, then ask the agent to pin three messages, one per level, and to update one. Check with `tmux capture-pane -p -t sticky` after each step. **The maintained acceptance surface today is the README ("The panel", "The rail", "Replying"): run those checks.** The steps below are the original 2026-10-23 checklist, kept as written — steps 1 and 3 name surfaces (a below-editor widget, a footer-status hide mode) that were cut before release, and step 7's 40-column pane is a width, not the rail:
   1. the widget appears below the editor in the ordering of R4;
   2. after about 100 lines of other output, the widget is still in place;
   3. `/pins` overlay, `/pins hide`, `/pins show`, `/unpin 2`;
@@ -774,28 +744,3 @@ This task adds nothing new. It proves that the five Review Focus items hold end 
   Save the captures and a pass or fail line per check in `docs/acceptance/<date>.md`.
 - [ ] **Step 3: Commit and tag.** `git add -A && git commit -m "docs: README and acceptance record" && git tag v0.1.0`
 
----
-
-## Rollout
-
-1. Install on halo as a package (section 6.10). Use it for a week of real pi and pi-rukas runs. Note every pin that was noise or was missing, and tune the `promptGuidelines`.
-2. Follow-up issues in **pi-rukas** (filed through its plan driver, not part of this repo):
-   - **F1** Exclude `pin_for_user` from every child role (`excludeToolsFor`), so no subagent can see it however it is loaded.
-   - **F2** When a work cycle parks (`needs-human-attention`, exit 10 or 11) in an interactive session, emit `{ op: "upsert", key: "work:<N>", text: "Cycle #<N> needs you: <cap>", level: "action" }` on `pi-sticky`. Emit `remove` when the cycle resumes, merges or is aborted.
-   - **F3** One line in the PM doctrine: pin operator decisions and handoffs with `pin_for_user`.
-3. Decide on npm publishing (open question 3).
-
-## Execution
-
-Janni's standing workflow: code comes from the pi-rukas drivers; Hermes writes the spec and reviews.
-
-1. Janni reviews this plan and answers the three open questions, or accepts the defaults.
-2. Add an `AGENTS.md` to this repo before any `/work`: test and lint commands (`bun test`, `bun run check`), the 300-line file limit, "tests never load ~/.pi", and the merge policy. Merges are default-deny unless this file grants them.
-3. File issues through the pi-rukas plan driver, one per group. Each issue points to this file and names its tasks:
-   - **#A** Task 1 (spike). Must merge first, and its results may change later issues.
-   - **#B** Tasks 2–4 (pure modules).
-   - **#C** Tasks 5–6 (tool, widget, commands).
-   - **#D** Tasks 7–9 (bus, reminder, hardening).
-   - **#E** Task 10, only if wanted.
-   - **#F** Task 11. The manual acceptance needs a human at the terminal, or Hermes driving tmux.
-4. Run the work driver on #A alone, review the spike results, then run #B, #C and #D in sequence. They share interfaces, so they should not run in parallel.

@@ -4,8 +4,10 @@
  * members, so nothing but the extension holds mutable state and a test can build the same
  * object by hand.
  *
- * Deliberately *not* the `StickyDeps` of docs/plan.md: that one declares `commit(next, via, ctx)`
- * and `setHidden(hidden, ctx)`, both of which went away with the footer-status hide mode and the
+ * Deliberately *not* the `StickyDeps` of docs/plan.md — that block is historical, and *the interface
+ * here is authoritative for the shape of this object* (docs/plan.md is kept for history only). Its
+ * `StickyDeps` declares `commit(next, via, ctx)` and `setHidden(hidden, ctx)`, both of which went
+ * away with the footer-status hide mode and the
  * `pi-sticky.ui` entry (docs/research-summary.md section 4). There is no `via` because there is no
  * `pi-sticky.state` writer in this ticket: an agent change publishes its snapshot as the tool
  * result's `details` and a user change appends a `pi-sticky.user` entry, and both paths rebuild

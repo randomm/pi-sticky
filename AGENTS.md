@@ -6,8 +6,8 @@ This file is auto-loaded by pi when any agent works inside this repo. It sets th
 
 ## Specs: which document wins
 
-- `docs/plan.md` is the spec and implementation plan. `docs/research-summary.md` records later research findings and the operator's design decisions. **Where the two disagree, `docs/research-summary.md` wins**, until the plan is updated to match.
-- Every issue names the tasks or sections it implements. Do not build anything the issue and these two files do not ask for.
+- Authority order, highest first: **the code and the jsdoc header of each module** (the header is the authoritative description of that module), then **`docs/research-summary.md`** (the research findings and the operator's design decisions the code implements), then **`docs/plan.md`** — the original working spec, drafted before that research and **kept for history only**. Where the plan disagrees with either of the two above, it loses: do not tick or rewrite its task checkboxes, and do not renumber its sections — `src/` and `test/` cite plan sections 6.2, 6.9 and 8, `docs/spike-results.md` cites section 8, and `src/deps.ts` names the plan's "File structure (historical)" section only to say that the interface in `src/deps.ts` is the contract.
+- Every issue names the tasks or sections it implements. Do not build anything the issue and these documents do not ask for.
 
 ## Pre-push quality gates (blocking)
 
@@ -30,11 +30,17 @@ CI is for VERIFICATION, not DISCOVERY. Run `bun run check` (Biome, then `tsc --n
 - `ctx.ui.notify` is a transcript line that scrolls away, and the footer status can be restyled by other extensions. Neither is a persistent surface.
 - pi clears extension widgets and overlays on `/new`, `/reload` and resume. Rebuild state from the session and redraw on every `session_start` and `session_tree`. Never use a `ctx` or `pi` captured before a reload or session switch: it throws.
 - Branch-following state lives in the `pin_for_user` tool result `details` and in custom entries (`pi.appendEntry`). Never edit `systemPrompt` in `before_agent_start`: other extensions (pi-rukas) replace it and the last writer wins. Return a `message` instead.
-- Tool rules: `executionMode: "sequential"`; flat, primitive parameters. Throwing from `execute()` drops `details`.
+- Tool rules: `executionMode: "sequential"`; flat, primitive parameters. Refusals are **returned** with `isError: true` and `details`, not thrown — throwing from `execute()` drops `details`, which for `pin_for_user` is the only copy of the pins on the branch (research-summary §3).
 
 ## pi compatibility
 
-The exact `devDependencies` pins (pi packages `1.3.0`, `typebox` `1.3.27`) make `bun install --frozen-lockfile` reproducible. They are not a support claim: the extension runs inside whatever pi the user has installed. Last verified against pi **1.3.0** (2026-10-25). When bumping the pins, move all three pi packages together, re-read the pi changelog for changes to the extension API, widgets, overlays, keybindings and session events, and run the manual acceptance check from `docs/plan.md` again.
+The exact `devDependencies` pins (pi packages `1.3.0`, `typebox` `1.3.27`) make `bun install --frozen-lockfile` reproducible. They are not a support claim: the extension runs inside whatever pi the user has installed. Last verified against pi **1.3.0** (2026-10-25). When bumping the pins, move all three pi packages together, re-read the pi changelog for changes to the extension API, widgets, overlays, keybindings and session events, and
+run the manual acceptance checklist in the README ("The panel", "The rail", "Replying") again. In
+short: install the extension with `pi install` (never a symlink), start a session and ask the agent to
+pin a message, then check the right-hand panel at ≥ 100 columns and the rail below 100, focus the panel
+with the focus key, reply with `Re #<id>:`, and exercise `/pins`, `/unpin` and a `/reload` — the pins
+must survive all of it. (`docs/plan.md` Task 11 is the original 2026-10-23 checklist; steps 1 and 3
+name surfaces that were cut before release, so never run them.)
 
 ## Isolation from pi-rukas subagents
 
