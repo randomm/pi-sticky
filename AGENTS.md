@@ -6,8 +6,8 @@ This file is auto-loaded by pi when any agent works inside this repo. It sets th
 
 ## Specs: which document wins
 
-- `docs/research-summary.md` is the spec: the research findings and the operator's design decisions that the code implements. `docs/plan.md` is the **historical** working spec written before that research — where the two disagree, or where either disagrees with the code, **`docs/research-summary.md` and the code win**. The plan is kept for history only: do not tick or rewrite its task checkboxes, and do not renumber its sections — `src/` and `test/` cite plan sections 6.2, 6.9 and 8, `docs/spike-results.md` cites section 8, and `src/deps.ts` refers to the `StickyDeps` block in the plan's "File structure (historical)" section (the interface in `src/deps.ts` is the contract).
-- Every issue names the tasks or sections it implements. Do not build anything the issue and these two files do not ask for.
+- Authority order, highest first: **the code and the jsdoc header of each module** (the header is the authoritative description of that module), then **`docs/research-summary.md`** (the research findings and the operator's design decisions the code implements), then **`docs/plan.md`** — the original working spec, drafted before that research and **kept for history only**. Where the plan disagrees with either of the two above, it loses: do not tick or rewrite its task checkboxes, and do not renumber its sections — `src/` and `test/` cite plan sections 6.2, 6.9 and 8, `docs/spike-results.md` cites section 8, and `src/deps.ts` names the plan's "File structure (historical)" section only to say that the interface in `src/deps.ts` is the contract.
+- Every issue names the tasks or sections it implements. Do not build anything the issue and these documents do not ask for.
 
 ## Pre-push quality gates (blocking)
 
@@ -35,9 +35,12 @@ CI is for VERIFICATION, not DISCOVERY. Run `bun run check` (Biome, then `tsc --n
 ## pi compatibility
 
 The exact `devDependencies` pins (pi packages `1.3.0`, `typebox` `1.3.27`) make `bun install --frozen-lockfile` reproducible. They are not a support claim: the extension runs inside whatever pi the user has installed. Last verified against pi **1.3.0** (2026-10-25). When bumping the pins, move all three pi packages together, re-read the pi changelog for changes to the extension API, widgets, overlays, keybindings and session events, and
-run the manual acceptance checklist in the README ("The panel", "The rail", "Replying") again. The
-manual steps in `docs/plan.md` Task 11 are the original 2026-10-23 checklist, kept for reference: its
-steps 1 and 3 name surfaces that were cut before release, so do not run them.
+run the manual acceptance checklist in the README ("The panel", "The rail", "Replying") again. In
+short: install the extension with `pi install` (never a symlink), start a session and ask the agent to
+pin a message, then check the right-hand panel at ≥ 100 columns and the rail below 100, focus the panel
+with the focus key, reply with `Re #<id>:`, and exercise `/pins`, `/unpin` and a `/reload` — the pins
+must survive all of it. (`docs/plan.md` Task 11 is the original 2026-10-23 checklist; steps 1 and 3
+name surfaces that were cut before release, so never run them.)
 
 ## Isolation from pi-rukas subagents
 

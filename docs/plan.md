@@ -561,7 +561,7 @@ interface StickyDeps {              // historical — the interface in src/deps.
 - Test: `test/tool.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2–4; `StickyDeps` (the interface in `src/deps.ts` is the contract; the block in the "File structure (historical)" section is the historical one).
+- Consumes: Tasks 2–4; `StickyDeps` (historical; the live interface is `src/deps.ts`, and the block in the "File structure (historical)" section is the historical one).
 - Produces:
 
   ```ts
