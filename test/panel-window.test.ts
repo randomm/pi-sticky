@@ -10,11 +10,13 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { HINT, buildPanelLines } from "../src/panel-lines.ts";
-import { panelAllRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
+import { HINT } from "../src/panel-lines.ts";
+import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
+import { built } from "./panel-frame.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 const style: RenderPanelStyle = {
@@ -41,8 +43,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
 /** The frame's own width: the gutters and their spaces, which the builder takes off every drawn row. */
 const FRAME_COLUMNS = 4;
 
-/** The id/time tail the row builder reserves before the text column. */
-const META_RESERVE = 10;
+/** What `panelLayout` reserves for the id/time tail before the text column — the product's number, not a copy. */
+const META_RESERVE = META_COLUMNS + META_SEPARATOR_COLUMNS;
 
 /** The hint is long; the widths that assert on it must be long enough to draw it whole. */
 const HINT_WIDTH = 60;
@@ -60,20 +62,9 @@ function inside(line: string): string {
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
 type PanelContent = ReturnType<typeof content>;
 
-/**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
- * is `TERMINAL_ROWS` tall, and the builder is handed both — no caller can size one frame and draw another.
- * A test that wants a short *window* asks for a short terminal, which is the only thing that sizes a
- * frame now.
- */
-function built(
-  c: PanelContent,
-  width: number,
-  s: RenderPanelStyle,
-  rows = TERMINAL_ROWS,
-): string[] {
-  return buildPanelLines(c, width, s, panelLayout(c.pins, width, rows, c.selection, s));
-}
+// `built` is `panel-frame.ts`'s: one `panelLayout` pass at `width` and the builder handed that table, so
+// no test sizes one frame and draws another. A test that wants a short *window* asks for a short terminal,
+// which is the only thing that sizes a frame now.
 
 test("the selected pin's row is drawn with the selected style, and only that row", () => {
   const pins = [one(1, "First"), one(2, "Second")];

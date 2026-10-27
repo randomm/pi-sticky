@@ -12,13 +12,12 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
-import { BEL, ESC, HOSTILE, ST, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
+import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
 
 const plain: RenderPanelStyle = {
   header: (s) => s,
@@ -43,14 +42,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
 type PanelContent = ReturnType<typeof content>;
 
-/**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
- * which is the rows the pins own over the two borders (cut to `TERMINAL_ROWS`' half), and the builder is
- * handed both — no caller can size one frame and draw another.
- */
-function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
-  return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
-}
+// `built` is `panel-frame.ts`'s: one `panelLayout` pass at `width` — the rows the pins own over the two
+// borders, cut to `TERMINAL_ROWS`' half — and the builder handed that very table.
 
 /** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
 const MIN_FRAME_WIDTH = 30;

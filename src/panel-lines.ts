@@ -41,7 +41,7 @@ import {
   padPlain,
 } from "./panel-frame.ts";
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
-import { GUTTER_COLUMNS, META_RESERVE, panelContentRows, panelWindowOffset } from "./panel-rows.ts";
+import { GUTTER_COLUMNS, panelContentRows, panelWindowOffset } from "./panel-rows.ts";
 import type { PanelLayout, PanelRow } from "./panel-rows.ts";
 
 import type { PanelStyle } from "./render.ts";
@@ -72,12 +72,18 @@ function frameIsOneColumn(frame: (text: string) => string): boolean {
   return frameGlyphs().every((glyphText) => visibleWidth(frame(glyphText)) === 1);
 }
 
-/** What the builder draws. `pins` is already in ranked order — the panel never re-sorts. */
+/** What the builder draws. `pins` is in the order the component ranked them (`panel-ranking.ts`). */
 export interface PanelContent {
   pins: readonly ViewPin[];
   /** Selected *pin* index, not row index: a pin that wraps owns several rows. */
   selection: number;
   focused: boolean;
+  /**
+   * What the bottom border says while the panel is *not* focused — `ctrl+alt+p to reply`, built by the
+   * component from the configured focus key (`panel-hint.ts`). `""` is no label at all: the border is
+   * then nothing but rule, which is what an operator who turned the focus key `off` sees.
+   */
+  replyHint?: string;
 }
 
 /**
@@ -207,9 +213,10 @@ export function buildPanelLines(
   // corners must measure one column whatever the theme, or a colouring that pi-tui counts as zero-width
   // would leave a row short and the chat showing through it.
   const gutterAt = (text: string) => glyph(frame, text);
-  // The gutters own four columns, so every pin is laid out at the inner width — and laid out *once*
-  // for the whole frame: the offset and the selected pin's own start row both come out of the one table
-  // the caller sized the frame with.
+  // The gutters own four columns — the corners are drawn outside the row, so they are not taken off it —
+  // which is the same subtraction `panelTextColumns` makes before it reserves the id/time tail. Every pin
+  // is therefore laid out *once* for the whole frame: the offset and the selected pin's own start row both
+  // come out of the one table the caller sized the frame with.
   const inner = width - GUTTER_COLUMNS;
   const budget = panelContentRows(layout.height);
   const owned = layout.owned;
@@ -240,10 +247,13 @@ export function buildPanelLines(
     lines.push(pinRow(row, inner, style, selected, gutterAt));
   }
   // The hint is drawn only while focused: an unfocused panel advertising keys it cannot receive would
-  // be a lie, and it has nowhere else to be written — the bottom border is the frame's own.
+  // be a lie, and it has nowhere else to be written — the bottom border is the frame's own. What the
+  // unfocused frame says instead is the caller's `replyHint` — the focus key that gets the user *into*
+  // those keys — drawn through the same `dim` the focused hint uses and the same cut a label too long
+  // for the border takes; no label at all when the caller has none to give.
   lines.push(
     borderLine(
-      content.focused ? HINT : "",
+      content.focused ? HINT : (content.replyHint ?? ""),
       style.dim,
       FRAME_BOTTOM_LEFT,
       FRAME_BOTTOM_RIGHT,

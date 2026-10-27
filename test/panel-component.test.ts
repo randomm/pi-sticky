@@ -135,11 +135,15 @@ test("Escape hands focus back and evokes nothing else", () => {
 
 test("d dismisses the selected pin through the host, and an empty selection dismisses nothing", () => {
   const { c, state } = component(pins("One", "Two"));
+  // The pins are drawn ranked — same level, same reply state, newest id first — so index 0 is `Two`, and
+  // the bar's index is the *ranked* list's (`panel-ranking.ts`). Before that, `d` here dismissed the pin
+  // the user was not looking at.
   c.handleInput("d");
-  expect(state.dismissals).toEqual([1]);
+  expect(state.dismissals).toEqual([2]);
+  // The remaining pin is `One`; a second `d` (after the bar moves) answers it.
   c.handleInput("j");
   c.handleInput("D");
-  expect(state.dismissals).toEqual([1, 2]);
+  expect(state.dismissals).toEqual([2, 1]);
 });
 
 /**
@@ -194,9 +198,10 @@ test("after a dismissal the selection is clamped to the pins that are left", () 
 test("Enter asks for a reply on the selected pin and lets go of the focus", () => {
   const { c, handle, state } = component(pins("One", "Two"));
   c.focus();
+  // Ranked: index 0 is `Two`, so one move down lands on `One` — the pin the reply names.
   c.handleInput("j");
   c.handleInput("\r");
-  expect(state.replies).toEqual([2]);
+  expect(state.replies).toEqual([1]);
   expect([c.isFocused(), handle.isFocused()]).toEqual([false, false]);
 });
 

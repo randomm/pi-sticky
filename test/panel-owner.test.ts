@@ -14,7 +14,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { PANEL_CLOSED } from "../src/panel-call.ts";
 import { PANEL_NOT_RELEASED, releasePanel } from "../src/panel-close.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import type { PanelHost } from "../src/panel-component.ts";
+import type { PanelHost } from "../src/panel-host.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
@@ -31,6 +31,8 @@ function handHostStub(): PanelHost {
   return {
     getView: () => ONE,
     style: () => undefined,
+    // No focus key to advertise: this host is about colours and the handle, not the border's label.
+    replyHint: () => "",
     requestRender: () => {},
     dismiss: () => {},
     unfocus: () => {},

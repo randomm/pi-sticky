@@ -12,12 +12,11 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout } from "../src/panel-rows.ts";
 import { panelThemeStyle } from "../src/render.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
+import { built as builtFrame } from "./panel-frame.ts";
 
 const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin => ({
   ...pin(id, text, "info", extra),
@@ -31,13 +30,10 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
 });
 
 /**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
- * and the builder is handed both — no caller can size one frame and draw another.
- */
-/**
- * A terminal tall enough for the frame a test wants: the frame is as tall as its pins until `panelLayout`
- * cuts it at the terminal's half, so a test that asks for `height` rows needs a terminal of at least
- * `2 × height` rows. The pins of these tests are one row each, so two rows of frame is three.
+ * The frame drawn exactly as the component draws it — `panel-frame.ts`'s `built`, with the terminal named
+ * rather than assumed: the frame is as tall as its pins until `panelLayout` cuts it at the terminal's
+ * half, so a test that asks for `height` rows passes a terminal of at least `2 × height` rows. The pins
+ * of these tests are one row each, so two rows of frame is three.
  */
 function built(
   c: ReturnType<typeof content>,
@@ -45,12 +41,7 @@ function built(
   height: number,
   styleOf: ReturnType<typeof panelThemeStyle> | RenderPanelStyle,
 ): string[] {
-  return buildPanelLines(
-    c,
-    width,
-    styleOf,
-    panelLayout(c.pins, width, height * 2, c.selection, styleOf),
-  );
+  return builtFrame(c, width, styleOf, height * 2);
 }
 
 /** A theme that records the tokens it was asked for and colours nothing, so a call is the evidence. */

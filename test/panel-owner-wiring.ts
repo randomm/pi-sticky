@@ -1,3 +1,4 @@
+import type { PanelDeps } from "../src/panel-deps.ts";
 /**
  * The hand-built wiring both owner-level test files share: a `PanelOwner` with nothing behind its deps
  * but what the owner itself reads, and the two decisions a test wants to watch — what the rail was
@@ -7,8 +8,7 @@
  * opens is one the extension opened and every `custom()` promise is one its recorder settles. Here the
  * host can fail.
  */
-import { NO_PANEL_COLOUR } from "../src/panel-component.ts";
-import type { PanelDeps } from "../src/panel-deps.ts";
+import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PanelStyle } from "../src/render.ts";

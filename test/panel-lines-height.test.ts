@@ -16,10 +16,11 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
 import { buildPanelLines } from "../src/panel-lines.ts";
-import type { PanelLayout } from "../src/panel-rows.ts";
 import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
+import type { DrawnFrame } from "./panel-frame.ts";
+import { built, framed } from "./panel-frame.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 /** Identity colours, so a drawn row is compared to what was asked for and not to a theme's bytes. */
@@ -52,11 +53,23 @@ function pinsOf(count: number): ViewPin[] {
   return Array.from({ length: count }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
 }
 
-function drawn(count: number, width: number, terminalRows: number | undefined): string[] {
-  const pins = pinsOf(count);
-  const layout = panelLayout(pins, width, terminalRows, 0, style);
-  const lines = buildPanelLines({ pins, selection: 0, focused: true }, width, style, layout);
-  return [String(layout.height), ...lines];
+/** The wrapped row table and the frame height, at the width/terminal these tests draw at. */
+function frameRows(count: number, terminalRows: number | undefined) {
+  return panelLayout(pinsOf(count), 40, terminalRows, 0, style);
+}
+
+/** The frame and the height it was counted at, from one `panel-frame.ts` pass at one width/terminal. */
+function drawn(count: number, width: number, terminalRows: number | undefined): DrawnFrame {
+  // One call, one width, one terminal: `framed` is the component's own pair — the table `panelLayout`
+  // built and the lines cut from *that* table — so the height asserted on is the one the drawing came
+  // from and not a second pass that could disagree with it. A terminal that cannot be asked is the
+  // shared default, not a `0`, which would be a terminal with no rows at all.
+  return framed(
+    { pins: pinsOf(count), selection: 0, focused: true },
+    width,
+    style,
+    terminalRows ?? TERMINAL_ROWS,
+  );
 }
 
 test("the builder draws exactly the height the layout counted, at every terminal and pin count", () => {
@@ -64,8 +77,9 @@ test("the builder draws exactly the height the layout counted, at every terminal
   // (how a single pin still fills the frame rather than leaving the chat showing beside it).
   for (const terminalRows of [3, 5, 6, 7, 8, 12, 24, 40, 200, 400, undefined]) {
     for (const count of [1, 2, 3, 5, 12, 60, 300]) {
-      const [height, ...lines] = drawn(count, 40, terminalRows) as [string, ...string[]];
-      const counted = Number(height);
+      const { lines, layout } = drawn(count, 40, terminalRows);
+      const counted = layout.height;
+      const drawnHeight = layout.height;
       // A terminal with no room for both borders is refused outright: the layout says two rows and the
       // builder answers an open box with nothing at all.
       const closable = counted >= 3;
@@ -74,12 +88,23 @@ test("the builder draws exactly the height the layout counted, at every terminal
       if (typeof terminalRows === "number") {
         expect(lines.length).toBeLessThanOrEqual(terminalRows);
       }
-      // The frame is as tall as its content and never past the terminal's half: the rows the pins own,
-      // over the two borders, cut to the ceiling (or the fallback's, for a terminal that cannot be asked).
-      const rows = typeof terminalRows === "number" ? terminalRows : 24;
+      // One height, one owner: the number the builder drew to is the number *the same* layout pass
+      // counted — `framed` returns the pair from a single call — which is the promise this file exists
+      // for: a frame counted from one table and drawn from another cannot get through here.
+      expect(counted).toBe(drawnHeight);
+      // ...and the height is the frame's own promise: as tall as the rows of that table, never past the
+      // terminal's half, never under the two borders it needs to be a closed box. The rows are the
+      // *wrapped table's*, not the pin count — the id/time tail owns its columns now, so a pin whose text
+      // will not fit the narrowed text column owns a second row, which is what makes 12 pins 14 rows at
+      // this width and 60 pins 62.
+      const table = frameRows(count, terminalRows ?? TERMINAL_ROWS).owned.length;
       expect(counted).toBe(
-        Math.max(BORDER_ROWS, Math.min(count + BORDER_ROWS, Math.floor(rows / 2))),
+        Math.max(
+          BORDER_ROWS,
+          Math.min(table + BORDER_ROWS, panelMaxRows(terminalRows ?? TERMINAL_ROWS)),
+        ),
       );
+      if (typeof terminalRows === "number") expect(counted).toBeLessThanOrEqual(terminalRows);
     }
   }
 });
@@ -89,37 +114,26 @@ test("one pin is three rows where three hundred are the ceiling", () => {
   // rows and drawn with one, or the other way round. Now the frame follows the content until the ceiling
   // catches it — so one pin is a border, a pin and a border, and a long list is exactly half the terminal
   // with the window scrolling the rest.
-  expect(drawn(1, 40, 40).length - 1).toBe(3);
+  expect(drawn(1, 40, 40).lines).toHaveLength(3);
   for (const terminalRows of [12, 24, 40]) {
     const many = drawn(300, 40, terminalRows);
-    expect(many.length - 1).toBe(terminalRows / 2);
+    expect(many.lines).toHaveLength(terminalRows / 2);
     // Every one of them drawn, whatever the count: the promise the sweep above makes per case, stated for
     // the two frames the old `height` parameter could disagree about.
-    expect(many.length - 1).toBe(Number(many[0]));
-    expect(drawn(2, 40, terminalRows).length - 1).toBe(4);
+    expect(many.lines).toHaveLength(many.layout.height);
+    expect(drawn(2, 40, terminalRows).lines).toHaveLength(4);
   }
 });
-
-/** The layout a test draws directly, when it wants to name a height the layout would have counted. */
-function layoutOf(count: number, selection: number, terminalRows: number): PanelLayout {
-  const pins = Array.from({ length: count }, (_unused, i) => one(i + 1, `Pin ${i + 1}`));
-  return panelLayout(pins, 40, terminalRows, selection, style);
-}
 
 test("a panel is only as tall as its pins and never past half the terminal", () => {
   // The operator requirement: a one-line pin in a 40-row terminal is exactly three rows (border, pin,
   // border) — no blank rows of padding — and 50 of them are cut to the ceiling, which is what the window
   // scrolls. Five pins are their own five rows over the two borders.
-  expect(drawn(1, 40, 40).length - 1).toBe(3);
-  expect(drawn(5, 40, 40).length - 1).toBe(7);
-  expect(drawn(50, 40, 40).length - 1).toBe(20);
+  expect(drawn(1, 40, 40).lines).toHaveLength(3);
+  expect(drawn(5, 40, 40).lines).toHaveLength(7);
+  expect(drawn(50, 40, 40).lines).toHaveLength(20);
   // The window keeps the *selected* pin on screen at the ceiling rather than dropping rows off the bottom.
-  const scrolled = buildPanelLines(
-    { pins: pinsOf(50), selection: 49, focused: true },
-    40,
-    style,
-    layoutOf(50, 49, 40),
-  );
+  const scrolled = built({ pins: pinsOf(50), selection: 49, focused: true }, 40, style, 40);
   expect(scrolled).toHaveLength(20);
   expect(scrolled[0]).toContain("📌 Pinned for you (50)");
   expect(scrolled.at(-1)).toContain("Enter reply");
@@ -128,13 +142,7 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
   // A terminal whose half cannot hold both borders is no frame at all: `panelMaxRows` says two rows, the
   // frame's floor says three, and the builder answers an open box with nothing.
   expect(panelMaxRows(5)).toBe(2);
-  expect(drawn(1, 40, 5)).toEqual([String(BORDER_ROWS)]);
-  expect(
-    buildPanelLines(
-      { pins: [one(1, "x")], selection: 0, focused: false },
-      40,
-      style,
-      layoutOf(1, 0, 5),
-    ),
-  ).toEqual([]);
+  expect(drawn(1, 40, 5).layout.height).toBe(BORDER_ROWS);
+  expect(drawn(1, 40, 5).lines).toEqual([]);
+  expect(built({ pins: [one(1, "x")], selection: 0, focused: false }, 40, style, 5)).toEqual([]);
 });

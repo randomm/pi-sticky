@@ -20,14 +20,13 @@ import "./env-clear.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
 import { boot, panelComponent, pinEntry } from "./panel-lifecycle-fixture.ts";
 import { replyTo } from "./reply-support.ts";
 import { stubApi } from "./wiring-stubs.ts";
@@ -58,13 +57,7 @@ const frame = (
   selection: number,
   focused: boolean,
   width = 40,
-): string[] =>
-  buildPanelLines(
-    { pins, selection, focused },
-    width,
-    style,
-    panelLayout(pins, width, TERMINAL_ROWS, selection, style),
-  );
+): string[] => built({ pins, selection, focused }, width, style);
 
 describe("the replied row of the panel", () => {
   test("opens the text column with the mark and carries no trailing one", () => {
@@ -94,12 +87,7 @@ describe("the replied row of the panel", () => {
       },
     };
     const pins = [repliedPin(1, "Decide X")];
-    buildPanelLines(
-      { pins, selection: 0, focused: false },
-      40,
-      dimStyle,
-      panelLayout(pins, 40, TERMINAL_ROWS, 0, dimStyle),
-    );
+    built({ pins, selection: 0, focused: false }, 40, dimStyle);
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
 

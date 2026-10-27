@@ -8,12 +8,11 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelAllRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin, view } from "./fixtures.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
 
 const plainStyle: RenderPanelStyle = {
   header: (s) => s,
@@ -57,12 +56,7 @@ test("rows are built for every pin in order and no pin is skipped", () => {
 
 test("the view a test builds with fixtures.ts draws like any other", () => {
   const pins = view([pin(1, "Decide X", "action")]).pins;
-  const lines = buildPanelLines(
-    content(pins, 0, true),
-    40,
-    plainStyle,
-    panelLayout(pins, 40, TERMINAL_ROWS, 0, plainStyle),
-  );
+  const lines = built(content(pins, 0, true), 40, plainStyle);
   expect(lines[0]).toContain("📌 Pinned for you (1)");
   expect(lines[1]).toContain("?");
   expect(lines[1]).toContain("Decide X");

@@ -9,17 +9,17 @@
  * behind it would show through the gap.
  *
  * As the component draws it: `panelLayout` owns the row table *and* the frame height, and the builder is
- * handed both (`built` below), so no test sizes one frame and draws another.
+ * handed both (`built`, from `panel-frame.ts`), so no test sizes one frame and draws another.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { HINT, buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout } from "../src/panel-rows.ts";
+import { HINT } from "../src/panel-lines.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
-import { TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
+import { offenders } from "./panel-hostile.ts";
 
 const style: RenderPanelStyle = {
   header: (s) => s,
@@ -43,14 +43,6 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
 
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
 type PanelContent = ReturnType<typeof content>;
-
-/**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
- * is `TERMINAL_ROWS` tall, and the builder is handed both — no caller can size one frame and draw another.
- */
-function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
-  return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
-}
 
 /** A frame the given width, with one pin, in whichever focus state the caller asked for. */
 function frameOf(width: number, focused = false): string[] {

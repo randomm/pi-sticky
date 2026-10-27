@@ -17,14 +17,14 @@ import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { panelPinRows } from "../src/panel-rows.ts";
 import { plainStyle, renderRailLines } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, NOW_TIME, pin } from "./fixtures.ts";
-import { HOSTILE, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
+import { HOSTILE, offenders } from "./panel-hostile.ts";
 
 const replied = (id: number, text: string): ViewPin => ({
   ...pin(id, text, "info", { createdAt: NOW }),
@@ -139,12 +139,7 @@ describe("a replied panel row", () => {
     // make impossible — so the sweep starts where a frame closes rather than at one column.
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
       const pins = [replied(1, "Decide X")];
-      const lines = buildPanelLines(
-        { pins, selection: 0, focused: false },
-        width,
-        plainPanel,
-        panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
-      );
+      const lines = built({ pins, selection: 0, focused: false }, width, plainPanel);
       // The one-pin panel is three rows — border, pin, border — at every width the frame closes at.
       expect(lines).toHaveLength(3);
       expectUniformWidth(lines, width);
@@ -157,12 +152,7 @@ describe("a replied panel row", () => {
   test("a selected replied row keeps the bar, the mark and the width", () => {
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
       const pins = [replied(1, "Decide X")];
-      const lines = buildPanelLines(
-        { pins, selection: 0, focused: true },
-        width,
-        plainPanel,
-        panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
-      );
+      const lines = built({ pins, selection: 0, focused: true }, width, plainPanel);
       expectUniformWidth(lines, width);
       const row = lines[1] ?? "";
       expect(row).toInclude("[");
@@ -175,12 +165,7 @@ describe("a replied panel row", () => {
     for (const focused of [false, true]) {
       for (const width of [12, 20, 33]) {
         const pins: ViewPin[] = [{ ...replied(1, cleanPinText(HOSTILE)), level: "warning" }];
-        const lines = buildPanelLines(
-          { pins, selection: 0, focused },
-          width,
-          plainPanel,
-          panelLayout(pins, width, TERMINAL_ROWS, 0, plainPanel),
-        );
+        const lines = built({ pins, selection: 0, focused }, width, plainPanel);
         expectUniformWidth(lines, width);
         for (const line of lines) expect(offenders(line)).toEqual([]);
       }
