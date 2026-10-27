@@ -23,6 +23,10 @@ function load(env: Record<string, string | undefined>): ReturnType<typeof stubAp
     "PI_STICKY_MAX_PINS",
     "PI_STICKY_MAX_CHARS",
     "PI_STICKY_MAX_LINES",
+    // The two shortcut variables, so the ambient environment of whoever runs the suite cannot decide
+    // which ids get registered — and so a case below can set one and read the result off `stub`.
+    "PI_STICKY_TOGGLE_KEY",
+    "PI_STICKY_FOCUS_KEY",
   ];
   const saved: [string, string | undefined][] = keys.map((key) => [key, process.env[key]]);
   const effective: Record<string, string | undefined> = {
@@ -97,6 +101,20 @@ test("any non-empty PI_ENSEMBLE_ROLE disables it, whatever the role", () => {
     const stub = load({ PI_ENSEMBLE_ROLE: role });
     expect(stub.tools).toEqual([]);
   }
+});
+
+test("PI_STICKY_TOGGLE_KEY / PI_STICKY_FOCUS_KEY decide the registered ids end to end", () => {
+  // The only case that proves the whole chain — environment, `readConfig`, the factory, `registerShortcut`
+  // — because every other test builds a `StickyConfig` by hand and never reads the environment. Through
+  // `load`, so the two disable variables stay forced either way.
+  const stub = load({ PI_STICKY_TOGGLE_KEY: "alt+j", PI_STICKY_FOCUS_KEY: "off" });
+  expect([...stub.shortcuts.keys()]).toEqual(["alt+j"]);
+  // Unset on both sides gives the documented defaults back.
+  expect([...load({}).shortcuts.keys()].sort()).toEqual(["ctrl+alt+p", "ctrl+alt+t"]);
+  // A value that is not an id registers the default, never the junk itself.
+  const junk = load({ PI_STICKY_TOGGLE_KEY: "not a key" });
+  expect(junk.shortcuts.has("not a key")).toBe(false);
+  expect([...junk.shortcuts.keys()].sort()).toEqual(["ctrl+alt+p", "ctrl+alt+t"]);
 });
 
 test("the configuration is read at factory call, so a later environment change cannot disable it", () => {

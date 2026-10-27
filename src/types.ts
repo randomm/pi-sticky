@@ -7,7 +7,13 @@
  * because those are read from all session entries and must survive branch edits.
  * `PinView` is what every renderer draws: the visible pins plus the removals, so the
  * rail can dim a replied pin and the tool can name a user removal.
+ *
+ * The one import is `KeyId`, and it is a *type*: pi's `registerShortcut` is typed against pi-tui's own
+ * union, and `StickyConfig` carries resolved ids in that type rather than re-deriving a grammar. No
+ * runtime value is taken from pi here, so this module still imports nothing at run time.
  */
+
+import type { KeyId } from "@earendil-works/pi-tui";
 
 /** How much attention a pin asks for. */
 export type PinLevel = "info" | "action" | "warning";
@@ -65,12 +71,21 @@ export interface UIShown {
   shown: boolean;
 }
 
-/** Effective configuration from the environment (see docs/plan.md 6.9). */
+/**
+ * Effective configuration from the environment (see docs/plan.md 6.9 for the four numeric/disable
+ * variables; the two shortcut ids are the operator decision that closed research-summary's open
+ * "exact shortcut keys" gap). They are *resolved* ids: a value the parser refused has already been
+ * replaced by its default, so nothing downstream validates them again. An id the operator turned off is
+ * spelled `null`, never `undefined` — `off` and "unset" are different answers and the type keeps them
+ * apart — and a hand-built configuration leaves both members out entirely.
+ */
 export interface StickyConfig {
   disabled: boolean;
   maxPins: number;
   maxChars: number;
   maxWidgetLines: number;
+  toggleKey?: KeyId | null;
+  focusKey?: KeyId | null;
 }
 
 /** Widget and status key. */

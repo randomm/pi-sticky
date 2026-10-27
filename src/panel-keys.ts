@@ -13,13 +13,17 @@
  * ends a CSI only on the final bytes `m/G/K/H/J`, so an `ESC [ 1 ; 3 d` is not a `d` press today — and if
  * that set ever widens, every such payload still fails the test here and reaches nothing. Movement keys,
  * which cannot destroy anything, keep going through `matchesKey` alone so they still answer Kitty forms.
+ *
+ * The two ids below are the defaults only: the grammar an operator's rebind has to pass and the
+ * registration itself live in `panel-shortcuts.ts`. They are stated here, next to the panel's other
+ * keystrokes, and `config.ts` imports them for its fallbacks so neither default is spelled twice.
  */
 import { matchesKey } from "@earendil-works/pi-tui";
 import type { KeyId } from "@earendil-works/pi-tui";
 
-/** The two shortcuts the extension registers, spelled once. */
-export const TOGGLE_KEY = "ctrl+alt+t";
-export const FOCUS_KEY = "ctrl+alt+p";
+/** The two shortcuts the extension registers when the operator has rebound neither, spelled once. */
+export const TOGGLE_KEY: KeyId = "ctrl+alt+t";
+export const FOCUS_KEY: KeyId = "ctrl+alt+p";
 
 /** A single ASCII letter and nothing else — the only shape a destructive key press may take. */
 const BARE = /^[a-zA-Z]$/;
