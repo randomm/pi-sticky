@@ -1,31 +1,28 @@
 # pi-sticky
 
-pi-sticky is a pi extension that lets the main agent keep a short message on the user's screen until
-it is resolved. The agent calls the `pin_for_user` tool;
-the pin then stays visible — in a right-hand panel, or in a compact rail above the editor when there
-is no room for the panel — until the agent unpins it or the user dismisses it. The user can reply to
-a specific pin from the main editor, and the reply reaches the model with the pin quoted as context.
-Pins are for decisions the agent needs, blockers, risks and final results — not for progress
-updates.
+**pi-sticky keeps a short message from the agent on the user's screen until it is resolved.**
+
+pi-sticky is a pi extension: the main agent calls the `pin_for_user` tool, and the pin stays
+visible — in a panel at the top right, or in a compact rail above the editor when there is no room for
+it — until the agent unpins it or the user dismisses it. The user can reply to a specific pin from the
+main editor, and the reply reaches the model with the pin quoted as context. Pins are for decisions
+the agent needs, blockers, risks and final results — not for progress updates.
 
 ## Install
-
-Install from a local clone:
-
-```sh
-pi install /path/to/pi-sticky
-```
-
-pi loads the extension from that path and does not copy it, so restart pi to pick up changes.
-
-Install from the git source:
 
 ```sh
 pi install git:github.com/randomm/pi-sticky
 ```
 
-This repository is currently `"private": true` and is not published to npm, so a git install needs a
-machine that can already authenticate to GitHub.
+Or from a local clone:
+
+```sh
+pi install /path/to/pi-sticky
+```
+
+pi loads the extension from that path and does not copy it, so restart pi to pick up changes. There
+is no build step — the extension is TypeScript loaded through pi's jiti loader — and it requires bun
+`>=1.2.20`.
 
 To see what is installed, remove an extension, or update one:
 
@@ -37,39 +34,32 @@ pi update git:github.com/randomm/pi-sticky   # one package
 ```
 
 Bare `pi update` updates pi itself, not this extension. A clone installed by path is updated with
-`git pull` in the clone, then a pi restart — pi loads that path and never copies it.
+`git pull` in the clone, then a pi restart.
 
 Install with `pi install` only. Never symlink or copy this repository into
 `~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
 isolation).
 
-Requires bun `>=1.2.20`. The extension is TypeScript loaded through pi's jiti loader — there is no
-build step. It was last verified against pi 1.3.0.
+## Why
 
-## Using it
+Agentic runs take hours, and the message the user actually needs — "which provider should I keep?",
+"CI is red on the branch you asked for", "the migration is done, here is the backup path" — ends up
+somewhere in a long transcript, scrolled far up, and possibly summarised away by compaction. A pin
+does not scroll: it sits beside the conversation until someone deals with it, and the user can answer
+it in place. After a compaction the model has lost the pins from its context while the user still
+sees them, so the next run gets a hidden reminder of what is pinned.
 
-### What the agent does
-
-The agent pins through one tool, `pin_for_user`, with four actions — `pin`, `update`, `unpin`,
-`list` — and three attention levels: `info` (the default), `action` and `warning`. Pins are numbered
-from 1. The agent can show at most `PI_STICKY_MAX_PINS` pins at a time, and every pin's text is
-sanitized and cut to `PI_STICKY_MAX_CHARS` characters before it is stored (the tool result says so
-when it had to cut).
-
-A pin's text comes from a model, so it is treated as untrusted. Before a pin reaches state, the
-screen or the model again, pi-sticky strips escape sequences (including unterminated ones), control
-characters, DEL, bidi controls and stray invisible format characters, drops lone surrogates, caps
-combining marks per grapheme, and truncates by grapheme. No OSC 8 hyperlink is ever drawn from pin
-text. A pin never runs anything: only the user acts on it.
-
-After the transcript is compacted the model has lost the pins from its context while the user still
-sees them, so the next run gets a one-time hidden reminder of what is pinned.
+## What you see
 
 ### The panel
 
-At 100 columns or wider the pins are drawn in a right-anchored overlay: 33% of the terminal width
-with a 30-column floor, full height, non-capturing — it covers the right third of the transcript
-instead of reflowing it. Open it with `ctrl+alt+t` or `/pins show`, and focus it with `ctrl+alt+p`.
+At 100 columns or wider the pins are drawn in an overlay anchored at the **top right**: about a third
+of the terminal width (33%) with a 30-column floor, and **only as tall as its content** — two rows of
+border over the wrapped pin rows, capped at half the terminal, so a one-pin panel is three rows tall —
+border, pin, border — and the prompt stays visible beside it. It is non-capturing: it covers part of the transcript instead of
+reflowing it, and it never takes input away from the editor — you focus it with a key. Open it with
+`ctrl+alt+t` or `/pins show`, and focus it with `ctrl+alt+p`.
+
 Once focused:
 
 - `↑`/`↓` or `j`/`k` move the selection bar.
@@ -80,9 +70,10 @@ Once focused:
   `/tree` and a reload.
 - `Esc` returns to the editor. The panel stays open.
 
-When the agent pins something while the panel is hidden, the panel shows itself once. A pin the user
-has replied to stays on screen until the agent unpins it or the user dismisses it, marked as
-described under Replying.
+When the agent pins something while the panel is hidden, the panel shows itself once. Your own
+show/hide choice is recorded on the session and read back on the next `session_start`, so it survives
+a `/reload` or a resume. A pin the user has replied to stays on screen until the agent unpins it or
+the user dismisses it, marked as described under Replying to a pin.
 
 If there is no room for the panel — under 100 columns, or nothing pinned — `/pins show` and
 `ctrl+alt+t` notify `The pins panel needs at least 100 columns; use /pins.` or `Nothing is pinned.`
@@ -102,7 +93,7 @@ One line per pin, in ranked order: a marker for the attention level (`!` warning
 info), the id, the local time, and the text (one line). When the pins do not all fit, the last row
 reads `+<n> more · /pins`. `PI_STICKY_MAX_LINES` is the whole budget, header included.
 
-### Replying
+### Replying to a pin
 
 Start a message with `Re #<id>:` — typed by hand or put there by `Enter` in the panel — and pi-sticky
 rewrites it before the model sees it:
@@ -122,27 +113,34 @@ depends on the surface: the rail and the panel dim the whole row and open its te
 `↩ `, while `/pins` and the `pin_for_user` tool result have no colour and say
 `(replied by the user at HH:MM)` after the text instead.
 
-## Keys and commands
+## Keys
 
-| Input | Effect |
+| Key | Effect |
 | --- | --- |
-| `ctrl+alt+t` | Toggle the panel. Rebind with `PI_STICKY_TOGGLE_KEY`. |
-| `ctrl+alt+p` | Focus the panel, showing it if it was hidden. Rebind with `PI_STICKY_FOCUS_KEY`. |
+| `ctrl+alt+t` | Toggle the panel. Rebind with `PI_STICKY_TOGGLE_KEY`, disable with `off`. |
+| `ctrl+alt+p` | Focus the panel, showing it if it was hidden. Rebind with `PI_STICKY_FOCUS_KEY`, disable with `off`. |
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
 | `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |
 | `d` | Dismiss the selected pin. |
 | `Esc` | Back to the editor; the panel stays open. |
+
+The in-panel keys work while the panel holds focus. The two shortcuts are global and reach the panel
+even when it is hidden; turn one off with `off` and that way in is gone, so `/pins show` and
+`/pins hide` become the only way to the panel. Commands, which work from the editor with no focus:
+
+| Command | Effect |
+| --- | --- |
 | `/pins` | List every pin in full as text. |
 | `/pins show` | Open the panel. |
 | `/pins hide` | Close the panel. |
 | `/unpin <id> [<id> ...]` | Remove pins by id. |
 | `/unpin all` | Remove every pin. |
 
-The keys work while the panel holds focus. `/pins` with an argument that is neither `show` nor `hide`
-is the plain-text listing, not an error. `/unpin` with no arguments notifies `Nothing to unpin.`; a
-token that is not a number or `all` notifies `Nothing to unpin: expected pin ids or "all".`; an id
-that matches nothing notifies `No pin #<id>` and the rest of the batch still applies.
+`/pins` with an argument that is neither `show` nor `hide` is the plain-text listing, not an error.
+`/unpin` with no arguments notifies `Nothing to unpin.`; a token that is not a number or `all`
+notifies `Nothing to unpin: expected pin ids or "all".`; an id that matches nothing notifies
+`No pin #<id>` and the rest of the batch still applies.
 
 ## Configuration
 
@@ -158,21 +156,20 @@ change.
 | `PI_STICKY_TOGGLE_KEY` | `ctrl+alt+t` | a pi key id, or `off` | The shortcut that toggles the panel. |
 | `PI_STICKY_FOCUS_KEY` | `ctrl+alt+p` | a pi key id, or `off` | The shortcut that focuses the panel. |
 
-A value outside its range, or one that is not a run of ASCII digits, falls back to the default.
-`PI_STICKY_MAX_LINES` is clamped to 10 in RPC mode, because pi caps a string widget there.
+A numeric value outside its range, or one that is not a run of ASCII digits, falls back to the
+default. `PI_STICKY_MAX_LINES` is clamped to 10 in RPC mode, because pi caps a string widget there. The
+numeric bounds above live in `src/config.ts`; the rules for the two shortcuts live in
+`src/panel-shortcuts.ts`.
 
-A shortcut value is a pi key id: one or more of `ctrl`, `alt`, `shift` and `super` joined by `+`, then a
-single key name — `alt+j`, `ctrl+shift+f`, `ctrl+alt+pageUp` — in any case, with the modifiers in any
-order. A key with no modifier is refused, and so is anything pi does not recognise; either way the
-default is used. The two ids may not be the same: if they collide, whichever one still holds its own
-default keeps it and the other falls back. The special value `off` removes that shortcut entirely — with
-both `off` the panel is reachable only through `/pins show` and `/pins hide`. Rebinding matters because pi
-resolves a clash between extension shortcuts silently, last registration wins, and the default focus key
-`ctrl+alt+p` is the one pi's own plan-mode example extension registers: point `PI_STICKY_FOCUS_KEY` at a
-free combination and restart pi to take the panel's focus back.
-
-`PI_ENSEMBLE_ROLE`, set to any non-empty value, also disables the extension. pi-rukas sets it for
-every subagent, so no subagent loads pi-sticky.
+A shortcut value is a pi key id: one or more of `ctrl`, `alt`, `shift` and `super` joined by `+`, then
+a single key name — `alt+j`, `ctrl+shift+f`, `ctrl+alt+pageUp` — in any case, with the modifiers in
+any order. A key with no modifier is refused, and so is anything pi does not recognise; either way the
+default is used. The special value `off` removes that shortcut entirely. The two ids may not be the
+same: if they collide, whichever one still holds its own default keeps it and the other falls back.
+Rebinding matters because pi resolves a clash between extension shortcuts silently — last
+registration wins — and the default focus key `ctrl+alt+p` is the one pi's own plan-mode example
+extension registers: point `PI_STICKY_FOCUS_KEY` at a free combination and restart pi to take the
+panel's focus back.
 
 ## Modes
 
@@ -182,21 +179,47 @@ every subagent, so no subagent loads pi-sticky.
 | `rpc` | The rail as plain text (no colours), 100 columns wide, at most 10 lines. No panel: RPC has no overlays, focus or key input. |
 | `print`, `json` | No UI. The tool still works, and the state travels in the tool result's `details`. |
 
-## Disabling and isolation
+## Security model
 
-Set `PI_STICKY_DISABLE=1`, or run with `PI_ENSEMBLE_ROLE` set, and the extension registers nothing at
-all: no tool, no command, no keybinding, no event handler. `PI_ENSEMBLE_SUBAGENT_MODE` is not a
-guard — it is set only for some subagents, so relying on it would let others load the extension.
+Pin text is model output and is treated as untrusted. Before a pin reaches state, the screen or the
+model again it passes through the sanitizer, which strips terminal escape sequences (including
+unterminated ones), control characters, DEL, bidi controls and stray invisible format characters,
+drops lone surrogates, caps combining marks per grapheme, and truncates by grapheme. No OSC 8
+hyperlink is ever drawn from pin text, and every drawn line is measured and cut by display width. The
+full list of guarantees is the jsdoc header of `src/sanitize.ts`.
 
-That is the reason for the install rule above. pi-rukas forwards everything in
-`~/.pi/agent/extensions/` to its subagents, so a copied or symlinked clone would be loaded by
-children that must not load it. `pi install`, plus the `PI_ENSEMBLE_ROLE` guard, is the supported
-setup.
+A pin never runs anything: pi-sticky registers no command or shortcut that acts on pin content, and
+only the user acts on a pin. The listing the model sees is one line per pin (`#<id> [<level>] <text>`,
+plus a replied suffix) — nothing a pin says is followed. See [SECURITY.md](SECURITY.md) for the threat
+model and how to report a vulnerability.
 
-## Development
+## Disabling and subagent isolation
+
+Set `PI_STICKY_DISABLE=1`, or run with `PI_ENSEMBLE_ROLE` set to any non-empty value, and the
+extension registers nothing at all: no tool, no command, no keybinding, no event handler.
+`PI_ENSEMBLE_SUBAGENT_MODE` is not a guard — it is set only for some subagents, so relying on it would
+let others load the extension.
+
+`PI_ENSEMBLE_ROLE` is what pi-rukas sets for every child, so no pi-rukas subagent loads pi-sticky. It
+is also the reason for the install rule above: pi-rukas forwards everything in
+`~/.pi/agent/extensions/` to its subagents, so a copied or symlinked clone would be loaded by children
+that must not load it. `pi install`, plus the `PI_ENSEMBLE_ROLE` guard, is the supported setup.
+
+## Compatibility
+
+Last verified against pi **1.3.0** (2026-10-25). The exact `devDependencies` pins make
+`bun install --frozen-lockfile` reproducible; they are not a support claim — the extension runs inside
+whatever pi you have installed. Requires bun `>=1.2.20`.
+
+Manual acceptance lives in the three sections above — **"The panel"**, **"The rail"** and
+**"Replying to a pin"**: at ≥ 100 columns check the panel, below 100 check the rail, focus it with the
+focus key, reply with `Re #<id>:`, exercise `/pins` and `/unpin`, and check that the pins survive
+`/reload`.
+
+## Development and contributing
 
 ```sh
-bun install
+bun install --frozen-lockfile
 bun run check
 bun test
 ```
@@ -205,3 +228,11 @@ bun test
 coverage gate: 80% line and function coverage, from `bunfig.toml`. Tests never touch your real pi
 setup — no test reads `~/.pi`, your settings, your extensions or your credentials, and none calls a
 real model.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) lists the commands and the rules that bite; [AGENTS.md](AGENTS.md)
+is the authoritative rulebook for the repo. Report security problems through
+[SECURITY.md](SECURITY.md), not a public issue.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).

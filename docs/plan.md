@@ -6,8 +6,7 @@
 > `PI_STICKY_PLACEMENT` / `PI_STICKY_FILE` variables (the last two still listed in the config table at
 > 6.9) — are recorded in `docs/research-summary.md` section 4. The task checkboxes below were never
 > ticked and say nothing about what shipped. Do not file work against this file; section numbering is
-> kept because code and `docs/spike-results.md` cite it (6.2, 6.9, section 8), and `src/deps.ts`
-> refers to the `StickyDeps` block in the "File structure (historical)" section.
+> kept because code and `docs/spike-results.md` cite it (6.2, 6.9, section 8), and the "File structure (historical)" section reproduces the historical `StickyDeps` block that `src/deps.ts` contrasts itself with.
 
 > **For agentic workers:** Part 2 of this file is the original implementation plan, kept as history. It was executed by the pi-rukas work driver (one issue per task group). Use the executing-plans skill inline only when no driver is available. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -19,7 +18,7 @@
 
 **Spec:** Part 1 of this file. The owner asked for a single file, so the spec and the plan travel together.
 
-**Status:** drafted 2026-10-23; historical (see the banner above). The pi API facts below were checked against the installed pi 1.3.0 sources (`@earendil-works/pi-coding-agent`: its `docs/`, `examples/` and `dist/`, read as an installed package — see AGENTS.md, "Context7 Protocol"). The ecosystem scan read package READMEs only, not their source code. Six assumptions were listed for a runtime check; all six are recorded as held in `docs/spike-results.md` (A1–A5 run in `test/spike.test.ts`; section 8).
+**Status:** drafted 2026-10-23; historical (see the banner above). The pi API facts below were checked against the installed pi 1.3.0 sources (`@earendil-works/pi-coding-agent`: its `docs/`, `examples/` and `dist/`, read as an installed package — see AGENTS.md, "Context7 Protocol"). The ecosystem scan read package READMEs only, not their source code. Six assumptions were listed for a runtime check; A1–A5 were tested and are recorded as held in `docs/spike-results.md` (they run in `test/spike.test.ts`; section 8). A6 was verified only by reading the pi 1.3.0 source and running `pi` — no test for it is in the suite.
 
 ---
 
@@ -322,16 +321,19 @@ authoritative description of that module. The same applies to the **Files:** lis
 the modules as originally planned, not the modules that shipped.
 
 `StickyDeps` is reproduced below only as a historical record: the interface in `src/deps.ts` is the
-contract, and this one is what was written before the footer-status hide mode and the `pi-sticky.ui`
-entry were removed (docs/research-summary.md section 4). Do not treat it as a contract.
+contract, and this one was written before the footer-status hide mode was removed
+(docs/research-summary.md section 4). The `pi-sticky.ui` entry itself is **still live** — it no longer
+records a collapsed/expanded widget preference but the user's panel-visibility choice, `{ v: 1, shown }`
+(`src/extension.ts`, read back by `latestUIShown` in `src/session-entries.ts`). Do not treat it as a
+contract.
 
 ```ts
 interface StickyDeps {              // historical — the interface in src/deps.ts is the contract
   config: StickyConfig;
   getState(): PinState;
   commit(next: PinState, via: "tool" | "entry", ctx?: ExtensionContext): void; // sets state; appends a pi-sticky.state entry when via === "entry"; redraws when ctx is given; mirrors
-  getHidden(): boolean;             // removed: footer-status hide mode (research-summary §4)
-  setHidden(hidden: boolean, ctx: ExtensionContext): void;                    // removed: appends pi-sticky.ui (research-summary §4)
+  getHidden(): boolean;             // removed: the footer-status hide mode read it (research-summary §4)
+  setHidden(hidden: boolean, ctx: ExtensionContext): void;                    // removed: the hide mode wrote pi-sticky.ui here (research-summary §4); the entry itself is live and now records { v, shown }
   now(): string;                    // ISO time; injectable in tests
 }
 ```
@@ -732,7 +734,7 @@ This task adds nothing new. It proves that the five Review Focus items hold end 
 - Create: `README.md`, `docs/acceptance/2026-MM-DD.md`
 
 - [ ] **Step 1: README.** Cover what it does (one paragraph), install (`pi install git:git@github.com:randomm/pi-sticky`, with the warning not to symlink into `~/.pi/agent/extensions/`, section 6.10), the tool for models, the commands, the bus API with a TypeScript example, configuration (the table from 6.9) and limits.
-- [ ] **Step 2: Manual acceptance in tmux on a test machine**, with a real model through the default provider. Run `tmux new -d -s sticky -x 100 -y 40 'pi -e ./src/index.ts'`, then ask the agent to pin three messages, one per level, and to update one. Check with `tmux capture-pane -p -t sticky` after each step. **The maintained acceptance surface today is the README ("The panel", "The rail", "Replying"): run those checks.** The steps below are the original 2026-10-23 checklist, kept as written — steps 1 and 3 name surfaces (a below-editor widget, a footer-status hide mode) that were cut before release, and step 7's 40-column pane is a width, not the rail:
+- [ ] **Step 2: Manual acceptance in tmux on a test machine**, with a real model through the default provider. Run `tmux new -d -s sticky -x 100 -y 40 'pi -e ./src/index.ts'`, then ask the agent to pin three messages, one per level, and to update one. Check with `tmux capture-pane -p -t sticky` after each step. **The maintained acceptance surface today is the README ("The panel", "The rail", "Replying to a pin"): run those checks, including that the pins survive `/reload`.** The steps below are the original 2026-10-23 checklist, kept as written — steps 1 and 3 name surfaces (a below-editor widget, a footer-status hide mode) that were cut before release, and step 7's 40-column pane is a width, not the rail:
   1. the widget appears below the editor in the ordering of R4;
   2. after about 100 lines of other output, the widget is still in place;
   3. `/pins` overlay, `/pins hide`, `/pins show`, `/unpin 2`;
