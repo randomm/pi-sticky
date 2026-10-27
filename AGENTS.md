@@ -6,7 +6,7 @@ This file is auto-loaded by pi when any agent works inside this repo. It sets th
 
 ## Specs: which document wins
 
-- `docs/plan.md` is the spec and implementation plan. `docs/research-summary.md` records later research findings and the operator's design decisions. **Where the two disagree, `docs/research-summary.md` wins**, until the plan is updated to match.
+- `docs/research-summary.md` is the spec: the research findings and the operator's design decisions that the code implements. `docs/plan.md` is the **historical** working spec written before that research — where the two disagree, or where either disagrees with the code, **`docs/research-summary.md` and the code win**. The plan is kept for history only: do not tick or rewrite its task checkboxes, and do not renumber its sections — `src/` and `test/` cite plan sections 6.2, 6.9 and 8, and `docs/spike-results.md` cites section 8.
 - Every issue names the tasks or sections it implements. Do not build anything the issue and these two files do not ask for.
 
 ## Pre-push quality gates (blocking)
@@ -34,7 +34,8 @@ CI is for VERIFICATION, not DISCOVERY. Run `bun run check` (Biome, then `tsc --n
 
 ## pi compatibility
 
-The exact `devDependencies` pins (pi packages `1.3.0`, `typebox` `1.3.27`) make `bun install --frozen-lockfile` reproducible. They are not a support claim: the extension runs inside whatever pi the user has installed. Last verified against pi **1.3.0** (2026-10-25). When bumping the pins, move all three pi packages together, re-read the pi changelog for changes to the extension API, widgets, overlays, keybindings and session events, and run the manual acceptance check from `docs/plan.md` again.
+The exact `devDependencies` pins (pi packages `1.3.0`, `typebox` `1.3.27`) make `bun install --frozen-lockfile` reproducible. They are not a support claim: the extension runs inside whatever pi the user has installed. Last verified against pi **1.3.0** (2026-10-25). When bumping the pins, move all three pi packages together, re-read the pi changelog for changes to the extension API, widgets, overlays, keybindings and session events, and run the manual acceptance check listed in `docs/plan.md` Task 11 again (that checklist is the
+original one — run it against the surfaces the README documents today: panel, rail and reply).
 
 ## Isolation from pi-rukas subagents
 

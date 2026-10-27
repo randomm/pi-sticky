@@ -1,8 +1,11 @@
 # pi-sticky: research summary and design decisions
 
-Date: 2026-10-25. Companion to `docs/plan.md`. Where this file and the plan disagree, **this file wins**; the plan must be updated before tickets are filed.
+Date: 2026-10-25. This file is the spec; `docs/plan.md` is the historical working spec it replaced.
+Where this file and the plan disagree, **this file wins**.
 
-Sources: eight research runs, artifacts in `outputs/research-*.md` (each with a `.provenance.md` sidecar). All pi facts are from pi 1.3.0 at `/usr/lib/node_modules/@earendil-works/pi-coding-agent` (same version as the plan's floor; pi 1.4.0 exists since 2026-10-21 and adds nothing pin-related).
+Sources: eight research runs. All pi facts are from the installed pi 1.3.0 sources at
+`@earendil-works/pi-coding-agent` (same version as the plan's floor; pi 1.4.0 exists since 2026-10-21
+and adds nothing pin-related).
 
 ## 1. Purpose (owner restatement)
 
@@ -23,7 +26,9 @@ The main agent posts messages for the user. The user is often away for a long ti
 | U9 | Scope | **Drop** the event-bus API (R10) and the file mirror (R12) from v1. |
 | U10 | Tree navigation | **User actions stick** session-wide (dismiss, replied). Agent pins follow the branch. |
 
-Still open: publishing (plan open question 3); exact shortcut keys; ticket cut (see section 6).
+Settled since this table was written: publishing is an MIT open-source release, with npm publishing
+left as a manual operator step; the shortcuts are `ctrl+alt+t` (toggle) and `ctrl+alt+p` (focus);
+and the ticket cut is the one in section 6.
 
 ## 3. Findings that change the plan
 
@@ -52,7 +57,7 @@ Still open: publishing (plan open question 3); exact shortcut keys; ticket cut (
 - Rollout F1 trap: adding `pin_for_user` to `ROLE_TOOL_EXCLUDES` for developer/ops would reclassify them as read-only (`dispatch.ts`, `work-driver-cap-checkpoint.ts`). F1 needs a separate exclusion list.
 - F2 (pin parked cycles) has no seam in pi-rukas and is moot in v1 (U9).
 - The work driver ignores issue type; a "spike, stop and report" ticket does not fit `/work`.
-- `pi install git:git@github.com:...` may clone over HTTPS; check on halo.
+- `pi install git:git@github.com:...` may clone over HTTPS; verify on a test machine before relying on it.
 
 ### Wiring the extension (Task 5/6/8, verified in-session under bun 1.4.3)
 - **`commit` before `redraw`, and `redraw` must not rebuild.** pi appends a tool result only *after* `execute` returns. A redraw that rebuilt from `ctx.sessionManager.getBranch()` therefore read a branch without the pin it was asked to draw and put the rail back to the previous state — visibly, on the second `pin` of one assistant message. The tool commits the new state, then the redraw draws the live view; `rebuild` runs only on `session_start` and `session_tree`, where the branch is already current. A user dismissal is the opposite case: `pi.appendEntry` has written by then, so the command path *does* rebuild.
@@ -104,16 +109,15 @@ Prompt injection: pins are agent-authored; label them as such, and a pin never e
 - **Removed from plan:** toast (R-6.2), footer-status hide mode, bus API (R10, Task 7 bus part), file mirror (R12, Task 10), the "100 columns" assumption, guard 2 env var, A5 fallback.
 - **New:** panel component, focus shortcut, reply marker plus hidden context, replied state, auto-show on new pin, narrow-terminal fallback.
 
-## 5. Spikes still needed (runtime, on halo in tmux)
+## 5. Spikes (settled)
 
-1. A non-capturing `ctx.ui.custom` overlay kept open for a whole session: survives streaming, other dialogs, pi-rukas overlays, resize; re-opened after `/new` and `/reload`; `focus`/`unfocus` and `setHidden` behave.
-2. Reply attribution: on submit with a `Re #<id>:` marker, the hidden pin context lands in the same model request as the reply (`input` transform vs `sendMessage` `nextTurn`).
-3. Shortcut keys free in pi, pi-rukas and inside pickers.
-4. 📌 width in tmux on the real terminal.
+The four runtime spikes this section used to call for are done, and `docs/spike-results.md` records what
+was measured: the session-long non-capturing overlay, reply attribution with the `Re #<id>:` marker and
+the shortcut keys were all settled in development and shipped (U1–U3 above, and the README), and the 📌
+width was confirmed in manual acceptance. `test/spike.test.ts` keeps the plan-§8 assumption checks
+(A1–A5) running in the suite.
 
-Spike 1 is the go/no-go for U1. If it fails, fall back to the above-editor rail plus an on-demand overlay.
-
-## 6. Suggested ticket cut (to confirm)
+## 6. Suggested ticket cut (adopted)
 
 - **#A** Scaffold + test harness with the fixes above + passing fact tests (no stop-and-report). Spikes 1–4 done by hand and recorded in `docs/spike-results.md`.
 - **#B** Pure modules: types, config (`PI_ENSEMBLE_ROLE` guard), sanitizer (with section 3 additions), state (uid, session-wide user actions), renderer.
