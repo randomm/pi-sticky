@@ -60,6 +60,16 @@ border, pin, border — and the prompt stays visible beside it. It is non-captur
 reflowing it, and it never takes input away from the editor — you focus it with a key. Open it with
 `ctrl+alt+t` or `/pins show`, and focus it with `ctrl+alt+p`.
 
+Pins are drawn in **ranked order**, the same order the rail and `/pins` use: `warning` first, then
+`action`, then `info`; within a level, unreplied pins before replied ones; newest id first. The selection
+bar, the scroll window, `d` and `Enter` all follow that order, so the pin the bar sits on is the pin those
+keys act on. Every pin's first row keeps its `#<id>` and its local time in full — when the text will not
+fit, the text is what wraps or is cut, never the id.
+
+While the panel is **not** focused its bottom border reads `ctrl+alt+p to reply`, so the way in is
+visible from the editor: press the focus key, move the bar, press `Enter`. The label names whatever you
+configured as the focus key, and when `PI_STICKY_FOCUS_KEY` is `off` the border carries no label at all.
+
 Once focused:
 
 - `↑`/`↓` or `j`/`k` move the selection bar.
@@ -118,7 +128,7 @@ depends on the surface: the rail and the panel dim the whole row and open its te
 | Key | Effect |
 | --- | --- |
 | `ctrl+alt+t` | Toggle the panel. Rebind with `PI_STICKY_TOGGLE_KEY`, disable with `off`. |
-| `ctrl+alt+p` | Focus the panel, showing it if it was hidden. Rebind with `PI_STICKY_FOCUS_KEY`, disable with `off`. |
+| `ctrl+alt+p` | Focus the panel, showing it if it was hidden. While the panel is unfocused its bottom border reads `ctrl+alt+p to reply`; with `off` there is no such label. Rebind with `PI_STICKY_FOCUS_KEY`, disable with `off`. |
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
 | `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |

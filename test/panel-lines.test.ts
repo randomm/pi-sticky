@@ -13,13 +13,14 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "../src/panel-geometry.ts";
 import { HINT, buildPanelLines } from "../src/panel-lines.ts";
-import { panelContentRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { GUTTER_COLUMNS, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin } from "./fixtures.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
 
 /** Identity colours, so a drawn line can be compared to what was asked for. */
 const style: RenderPanelStyle = {
@@ -44,6 +45,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
 
 /** What the builder draws: the ordered pins, the selected pin index, and whether the panel has focus. */
@@ -69,15 +72,11 @@ function frameOf(width: number, focused = false): string[] {
 }
 
 /**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
- * is `TERMINAL_ROWS` tall, and the builder is handed both — a caller cannot size one frame, draw another,
- * or draw a number of rows that disagrees with the table it was handed beside them.
+ * The frame drawn exactly as the component draws it — `built`, from `panel-frame.ts`, which is the one
+ * place a test pairs `panelLayout`'s table with the builder that draws it. A test that wants more rows
+ * than the default terminal allows asks for a taller terminal, which is the only other thing that sizes
+ * a frame.
  */
-function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
-  // The frame is as tall as the rows it draws — two borders over one row of pins — and a test that wants
-  // more rows than that asks for a taller terminal, which is the only other thing that sizes a frame.
-  return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
-}
 
 /** A line's columns with the frame's glyphs taken back off, so row shapes read plainly. */
 function inside(line: string): string {
@@ -116,7 +115,10 @@ test("a focused panel puts the hint in the bottom border and costs the pins no r
   expectUniformWidth(focused, HINT_WIDTH);
 });
 
-test("an unfocused panel draws no hint, and its bottom border is all rule", () => {
+test("an unfocused panel draws no keys hint, and its bottom border is all rule", () => {
+  // The promise that survives the resting frame gaining a label: the *focused* hint — the keys the panel
+  // cannot answer from here — never appears while unfocused. What the bottom border carries instead, and
+  // what it carries when there is no focus key to name, are `panel-reply-hint.test.ts`.
   const lines = built(content([one(1, "x")]), 40, style);
   expect(lines.some((line) => line.includes(HINT))).toBe(false);
   expect(lines.at(-1)).toBe(`╰${"─".repeat(38)}╯`);
@@ -152,9 +154,13 @@ test("the frame closes at every size the builder draws at, with the header in th
 test("a pin row is one space inside each gutter, at the inner width", () => {
   const width = 60;
   const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), width, style);
-  // Byte-exact: content fitted to `width - 4` and padded out between the gutters, with the rule filling
-  // the top and bottom borders. Unfocused, so nothing is highlighted.
-  expect(lines[1]).toBe(`│ ${` • Decide X #1 ${localTime(NOW)}`.padEnd(width - FRAME_COLUMNS)} │`);
+  // Byte-exact: the text column, the `#id HH:MM` tail beside it, and the row's spare columns after them.
+  // Built from the pieces `pinRow` assembles rather than pasted — the text padded to the room the tail's
+  // reserve left (`panelTextColumns` over the frame), the tail padded to exactly that reserve — so the time
+  // comes from `localTime` and the reserve from the geometry, and neither can rot with the machine's clock.
+  const tail = ` #1 ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  const text = " • Decide X".padEnd(width - GUTTER_COLUMNS - tail.length);
+  expect(lines[1]).toBe(`│ ${text}${tail} │`);
   expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
   // The frame is as tall as its content, so the row after the pin is the bottom border: a panel with one
   // pin pads itself to nothing, which is what keeps the prompt visible beside it.
@@ -204,15 +210,20 @@ test("a 33-column panel — what 33% of a 100-column terminal resolves to — st
   expect(lines[0]).toContain("📌 Pinned for you (1)");
 });
 
-test("a word wider than the frame is cut with an ellipsis, not drawn past the gutter", () => {
+test("a word wider than the frame is cut, not drawn past the gutter, and its id still reads", () => {
+  // The word is 30 columns and the text column this width allows is 12, so the word cannot be drawn
+  // whole: the wrap cuts it and the tail keeps the room the layout reserved for it. What the old
+  // arithmetic produced at this width was `#1 …` — the *id* lost to the cut — so the promise this
+  // width pins is that the `#id` survives the cut instead.
   const lines = built(content([one(1, "supercalifragilisticexpialidocious")]), 30, style);
   expectUniformWidth(lines, 30);
-  expect(
-    inside(lines[1] as string)
-      .trimEnd()
-      .endsWith(" "),
-  ).toBe(false);
-  expect(lines[1]).toContain("…");
+  const row = inside(lines[1] as string).trimEnd();
+  expect(row.endsWith(" ")).toBe(false);
+  expect(row).toContain("#1");
+  expect(row).toContain(localTime(NOW));
+  // ...and the row is still cut: the text column gave up width rather than pushing a character past the
+  // gutter the frame owns.
+  expect(row).not.toContain("supercalifragilisticexpialidocious");
 });
 
 test("a text that carries a newline becomes two rows under the text column", () => {
@@ -240,14 +251,7 @@ test("a terminal with no room for both borders draws nothing, because one border
   // whatever row table it was handed beside the height.
   const pins = [one(1, "x")];
   for (const terminalRows of [1, 2, 4, 5]) {
-    expect(
-      buildPanelLines(
-        content(pins, 0, false),
-        40,
-        style,
-        panelLayout(pins, 40, terminalRows, 0, style),
-      ),
-    ).toEqual([]);
+    expect(built(content(pins, 0, false), 40, style, terminalRows)).toEqual([]);
   }
   // ...and the same holds for a height a caller hands the geometry check directly, because a row table
   // cannot rescue a size the frame cannot close at.

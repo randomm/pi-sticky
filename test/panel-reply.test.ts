@@ -20,14 +20,14 @@ import "./env-clear.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
+import { GUTTER_COLUMNS, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
 import { boot, panelComponent, pinEntry } from "./panel-lifecycle-fixture.ts";
 import { replyTo } from "./reply-support.ts";
 import { stubApi } from "./wiring-stubs.ts";
@@ -58,22 +58,27 @@ const frame = (
   selection: number,
   focused: boolean,
   width = 40,
-): string[] =>
-  buildPanelLines(
-    { pins, selection, focused },
-    width,
-    style,
-    panelLayout(pins, width, TERMINAL_ROWS, selection, style),
-  );
+): string[] => built({ pins, selection, focused, replyHint: "" }, width, style);
+
+/**
+ * The one row a pin of `text` draws in a frame of `width`: gutter, text padded to the room the tail's
+ * reserve leaves, tail padded to exactly the reserve, gutter. Spelled from `META_COLUMNS` rather than
+ * pasted, so it says the same thing the drawer does about how wide a `#id HH:MM` may be.
+ */
+function row(id: number, text: string, width: number): string {
+  const tail = ` #${id} ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  return `│ ${text.padEnd(width - GUTTER_COLUMNS - tail.length)}${tail} │`;
+}
 
 describe("the replied row of the panel", () => {
   test("opens the text column with the mark and carries no trailing one", () => {
     const lines = frame([repliedPin(1, "Decide X")], 0, false);
     // Exact string: the mark moved from the end of the row to the front of the text column, and an
     // assertion that accepted either form would pass against the drawing this ticket replaced. The panel
-    // draws the text column and pads it, then the dim `#id HH:MM` tail follows it — all of it between the
-    // frame's gutters, one space inside each.
-    expect(lines[1]).toBe(`${`│  • ↩ Decide X #1 ${localTime(NOW)}`.padEnd(39)}│`);
+    // draws the text column padded to the room the tail's reserve left, then the dim `#id HH:MM` tail padded
+    // to exactly that reserve — all of it between the frame's gutters, one space inside each (`row` below is
+    // built from `META_COLUMNS`, not pasted, so a wider id or another `TZ` moves the assertion with it).
+    expect(lines[1]).toBe(row(1, " • ↩ Decide X", 40));
     expect(lines[1] ?? "").not.toMatch(/↩\s*$/);
   });
 
@@ -81,7 +86,7 @@ describe("the replied row of the panel", () => {
     // The pair the two assertions above turn on: the mark is the only difference, so the row's shape —
     // marker, id, time, two spaces, text — is not something the replied case invented.
     const unreplied = frame([pin(1, "Decide X", "info", { createdAt: NOW })], 0, false);
-    expect(unreplied[1]).toBe(`${`│  • Decide X #1 ${localTime(NOW)}`.padEnd(39)}│`);
+    expect(unreplied[1]).toBe(row(1, " • Decide X", 40));
   });
 
   test("the dim is asked for over the whole text column, mark included", () => {
@@ -94,12 +99,7 @@ describe("the replied row of the panel", () => {
       },
     };
     const pins = [repliedPin(1, "Decide X")];
-    buildPanelLines(
-      { pins, selection: 0, focused: false },
-      40,
-      dimStyle,
-      panelLayout(pins, 40, TERMINAL_ROWS, 0, dimStyle),
-    );
+    built({ pins, selection: 0, focused: false, replyHint: "" }, 40, dimStyle);
     expect(dimmed.some((s) => s.includes("↩ Decide X"))).toBe(true);
   });
 

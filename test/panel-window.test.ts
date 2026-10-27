@@ -10,12 +10,13 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { HINT, buildPanelLines } from "../src/panel-lines.ts";
-import { panelAllRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
+import { HINT } from "../src/panel-lines.ts";
+import { GUTTER_COLUMNS, panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
 
 const style: RenderPanelStyle = {
   header: (s) => s,
@@ -36,13 +37,12 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
 
-/** The frame's own width: the gutters and their spaces, which the builder takes off every drawn row. */
-const FRAME_COLUMNS = 4;
-
-/** The id/time tail the row builder reserves before the text column. */
-const META_RESERVE = 10;
+/** What `panelLayout` reserves for the id/time tail before the text column — the product's number, not a copy. */
+const META_RESERVE = META_COLUMNS + META_SEPARATOR_COLUMNS;
 
 /** The hint is long; the widths that assert on it must be long enough to draw it whole. */
 const HINT_WIDTH = 60;
@@ -60,20 +60,9 @@ function inside(line: string): string {
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
 type PanelContent = ReturnType<typeof content>;
 
-/**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height it
- * is `TERMINAL_ROWS` tall, and the builder is handed both — no caller can size one frame and draw another.
- * A test that wants a short *window* asks for a short terminal, which is the only thing that sizes a
- * frame now.
- */
-function built(
-  c: PanelContent,
-  width: number,
-  s: RenderPanelStyle,
-  rows = TERMINAL_ROWS,
-): string[] {
-  return buildPanelLines(c, width, s, panelLayout(c.pins, width, rows, c.selection, s));
-}
+// `built` is `panel-frame.ts`'s: one `panelLayout` pass at `width` and the builder handed that table, so
+// no test sizes one frame and draws another. A test that wants a short *window* asks for a short terminal,
+// which is the only thing that sizes a frame now.
 
 test("the selected pin's row is drawn with the selected style, and only that row", () => {
   const pins = [one(1, "First"), one(2, "Second")];
@@ -83,7 +72,12 @@ test("the selected pin's row is drawn with the selected style, and only that row
   expect(lines.some((line) => line.includes("[ • Second") && inside(line).startsWith(" ["))).toBe(
     true,
   );
-  expect(lines.filter((line) => line.includes("[") && line.includes("]"))).toHaveLength(1);
+  // Exactly one row carries the bar. `]` cannot be the marker for that count: pi-tui wraps the ellipsis of
+  // every line it cuts in a reset whose bytes contain `]0m`, and at this width the frame's other row and both
+  // border labels are cut — so three lines close a bracket the panel never drew. The bar's *head* bracket is
+  // what identifies its row: `selected` is asked of the focused frame alone and puts it at the head of the
+  // inner columns, where no border label or cut can reach it.
+  expect(lines.filter((line) => inside(line).startsWith(" ["))).toHaveLength(1);
 });
 
 test("an unfocused panel highlights nothing", () => {
@@ -115,9 +109,9 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
   // The long pin is the *selected* one: a window only scrolls for a selection it can address, so the
   // entry it must scroll as a whole is the one the bar is on.
   const pins = [one(1, "first"), one(2, "b".repeat(80))];
-  // The frame is four columns and the id/time tail ten, so a 44-column frame lays pins out at 30.
+  // The gutters own four columns and the id/time tail ten, so a 44-column frame lays pins out at 30.
   const width = 44;
-  const inner = width - FRAME_COLUMNS;
+  const inner = width - GUTTER_COLUMNS;
   const all = panelAllRows(pins, inner - META_RESERVE, plainStyle);
   const wrapped = panelPinRows(pins[1] as ViewPin, inner - META_RESERVE, plainStyle).length;
   const lines = built(content(pins, 1, false), width, style, 6);

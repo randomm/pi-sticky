@@ -12,7 +12,7 @@
  */
 import type { TUI } from "@earendil-works/pi-tui";
 
-import type { PanelHost } from "../src/panel-component.ts";
+import type { PanelHost } from "../src/panel-host.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
@@ -42,6 +42,9 @@ export function host(pins: ViewPin[] = []) {
   const stub: PanelHost = {
     getView: () => state.view,
     style: () => style,
+    // The resting border's label, as the extension's host builds it from the configured focus key; a test
+    // that cares about the label replaces this, the way it replaces `style`.
+    replyHint: () => "",
     requestRender: () => void state.renders++,
     dismiss: (id) => void state.dismissals.push(id),
     // The host's `unfocus` is only the notification that the interaction ended; the component moves the

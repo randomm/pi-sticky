@@ -24,7 +24,7 @@ export const FRAME_BOTTOM_RIGHT = "╯";
 const GUTTER = "│";
 export const RULE = "─";
 
-/** The columns the frame's two corners own; the gutters own `GUTTER_COLUMNS` (`panel-rows.ts`). */
+/** The columns the frame's two corners own; the gutters own `GUTTER_COLUMNS` (`panel-tail.ts`). */
 export const CORNER_COLUMNS = 2;
 
 /**

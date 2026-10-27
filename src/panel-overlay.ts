@@ -10,10 +10,11 @@
 import type { TUI } from "@earendil-works/pi-tui";
 
 import type { PanelCallOptions, PanelCustomFactory, PanelRecord } from "./panel-call.ts";
-import type { PanelHost } from "./panel-component.ts";
 import { PanelComponent } from "./panel-component.ts";
 import type { PanelWiring } from "./panel-deps.ts";
 import { PANEL_OVERLAY_OPTIONS } from "./panel-geometry.ts";
+import { replyHint } from "./panel-hint.ts";
+import type { PanelHost } from "./panel-host.ts";
 
 /**
  * The factory pi-tui calls to build the overlay's component.
@@ -55,6 +56,9 @@ export function panelFactory(
     const style = wiring.themeStyle(theme);
     const host: PanelHost = {
       getView: () => deps.getView(),
+      // The resting frame's one word to the user, from the configuration the extension read once: the
+      // drawer takes no config, so the label is built here and handed down as content.
+      replyHint: () => replyHint(deps.config),
       // `undefined`, not the colourless style: that leaves the component to colour itself from the theme
       // pi handed the factory — the only colouring a host with no style of its own can offer.
       style: () => style,

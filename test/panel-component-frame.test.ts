@@ -50,8 +50,10 @@ test("a view swap without an update() rebuilds the frame at the same width", () 
   const { c, view } = staleFrameComponent(pins("One", "Two", "Dismissed"));
   // Focused, because the bar is the only thing that says which row the component thinks is selected —
   // the plain style colours nothing, so an unfocused panel hands back identical lines whatever the bar.
+  // The bar is indexed into the *ranked* list (newest id first among equal pins), so `select(0)` is the
+  // last-pinned pin — the one this test removes.
   c.focus();
-  c.select(2);
+  c.select(0);
   // The bar sits inside the gutters, so the drawn row opens with the gutter, its space, and then the bar.
   expect(c.render(44).join("\n")).toContain("│ [ • Dismissed");
   // The view swapped under a panel nobody sent `update()` for — a rebuild that published a fresh array
@@ -62,9 +64,9 @@ test("a view swap without an update() rebuilds the frame at the same width", () 
   const text = c.render(44).join("\n");
   expect(text).not.toContain("Dismissed");
   // ...and the bar the component was holding past the end of the new view does not survive the redraw:
-  // it lands on the last row that does exist.
+  // it lands on the last row that does exist — index 0 of the two-pin ranked list, which is the newest id.
   expect(text).toContain("│ [ • Two");
-  expect(c.selection).toBe(1);
+  expect(c.selection).toBe(0);
   // A frame request that changed nothing still costs nothing: the cache keeps its fast path.
   const cached = c.render(44);
   expect(c.render(44)).toBe(cached);

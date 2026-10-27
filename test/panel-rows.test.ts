@@ -8,12 +8,11 @@
  */
 import { expect, test } from "bun:test";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelAllRows, panelLayout, panelPinRows } from "../src/panel-rows.ts";
+import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, localTime, pin, view } from "./fixtures.ts";
-import { TERMINAL_ROWS } from "./panel-hostile.ts";
+import { built } from "./panel-frame.ts";
 
 const plainStyle: RenderPanelStyle = {
   header: (s) => s,
@@ -33,6 +32,8 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
 
 test("an empty pin text still owns a row, so the bar has something to sit on", () => {
@@ -48,21 +49,19 @@ test("a zero text width falls back to one row rather than none", () => {
 
 test("rows are built for every pin in order and no pin is skipped", () => {
   const pins = [one(1, "a"), one(2, "bb"), one(3, "ccc")];
+  // The drawn tail, not the bare `#id HH:MM`: `panelPinRows` stamps `metaStamp`, and that string is both what
+  // the row prints and what the reserve measures (`panel-tail.ts`). `plainStyle.dim` is identity, so the only
+  // difference from the old expectation is the leading space the tail carries into its own columns.
   expect(panelAllRows(pins, 30, plainStyle).map((row) => row.meta)).toEqual([
-    `#1 ${localTime(NOW)}`,
-    `#2 ${localTime(NOW)}`,
-    `#3 ${localTime(NOW)}`,
+    ` #1 ${localTime(NOW)}`,
+    ` #2 ${localTime(NOW)}`,
+    ` #3 ${localTime(NOW)}`,
   ]);
 });
 
 test("the view a test builds with fixtures.ts draws like any other", () => {
   const pins = view([pin(1, "Decide X", "action")]).pins;
-  const lines = buildPanelLines(
-    content(pins, 0, true),
-    40,
-    plainStyle,
-    panelLayout(pins, 40, TERMINAL_ROWS, 0, plainStyle),
-  );
+  const lines = built(content(pins, 0, true), 40, plainStyle);
   expect(lines[0]).toContain("📌 Pinned for you (1)");
   expect(lines[1]).toContain("?");
   expect(lines[1]).toContain("Decide X");

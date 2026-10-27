@@ -11,26 +11,30 @@
  *
  * The drawing of these rows — the gutters, the bar, the borders around them — is `panel-lines.ts`, and
  * `panelLayout` is the one place a frame's rows are built: the table it returns is what the builder draws
- * *and* what the frame's height is counted from, so a pin is wrapped once per frame and the columns the
- * gutters own (`GUTTER_COLUMNS`) are stated here for exactly that reason.
+ * *and* what the frame's height is counted from, so a pin is wrapped once per frame. The tail each first row
+ * carries is stamped by `metaStamp` (`panel-tail.ts`) — the one string the row prints — and
+ * `widestMetaColumns` (`panel-frame-geometry.ts`) *measures* that very string for the reserve the text
+ * column gives up, so a theme whose `dim` adds columns is paid for by the layout that wrapped the row.
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import { panelTextColumns, widestMetaColumns } from "./panel-frame-geometry.ts";
 import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
+/**
+ * The columns the two gutters own, and the undimmed tail's format. Both are owned by `panel-tail.ts` — the
+ * module that imports neither this file nor the geometry, which is what keeps the row table and the geometry
+ * from importing each other — and re-exported here so the callers that lay these rows out keep naming the
+ * module whose rows they lay out.
+ */
+export { GUTTER_COLUMNS, pinMeta } from "./panel-tail.ts";
 
-import { formatLocalTime } from "./time.ts";
-
-/** The columns the frame owns: one gutter and its space on each side, plus the two corners. */
-export const GUTTER_COLUMNS = 4;
+import { GUTTER_COLUMNS, metaStamp } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
 
 /** The character drawn in front of a pin; the rail quotes the same three. */
 const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
-
-/** How wide the ` #id HH:MM` tail is allowed to be before the text loses room to a whole column. */
-export const META_RESERVE = 10;
 
 /** One drawn row of the panel: the pin's text column and its id/time tail. */
 export interface PanelRow {
@@ -58,7 +62,10 @@ export function panelContentRows(height: number): number {
  * warning under the bar.
  */
 export function panelPinRows(pin: ViewPin, textWidth: number, style: PanelStyle): PanelRow[] {
-  const meta = `#${pin.id} ${formatLocalTime(pin.createdAt)}`;
+  // The tail as the row prints it: the theme's `dim` over the space and `pinMeta`. The reserve is measured
+  // on this same stamp (`panel-frame-geometry.ts`), which is what keeps a `dim` that adds columns from
+  // taking the time off the end of the row.
+  const meta = metaStamp(pin, style.dim);
   const marker = style.marker(pin.level, MARKER[pin.level]);
   if (textWidth <= 0) return [{ text: ` ${marker} `, meta }];
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
@@ -154,10 +161,16 @@ export interface PanelLayout {
 }
 
 /**
- * The row table of one frame, wrapped *once* per pin at the text column
- * (`frameWidth - GUTTER_COLUMNS - META_RESERVE`) — the table `buildPanelLines` draws and the height is
- * counted from, which is what makes a frame as tall as its rows and keeps a resize from sizing the box
- * at a width it is not drawn at. The builder pads each row out to the inner width when it draws it.
+ * The row table of one frame, wrapped *once* per pin at the text column `panelTextColumns` computes for
+ * `frameWidth` — the table `buildPanelLines` draws and the height is counted from, which is what makes a
+ * frame as tall as its rows and keeps a resize from sizing the box at a width it is not drawn at. The
+ * builder pads each row out to the inner width when it draws it.
+ *
+ * The text column is what gives up width, never the id/time tail: the wrap is sized so a first row still
+ * has a column of text to draw *and* room for `#<id> HH:MM` beside it, because a row whose text column is
+ * zero collapses to a blank line `pinRow` draws without its tail — which is how a `#id` used to disappear
+ * on a narrow panel. See `panel-frame-geometry.ts` for the arithmetic and `test/panel-id-never-cut.test.ts`
+ * for the sweep that pins it.
  *
  * This is the *only* owner of a frame's height: `height` is the row count the frame draws, counted from
  * `owned` and the terminal the caller was given (`tui.terminal.rows`, or `undefined` when none can be
@@ -175,8 +188,11 @@ export function panelLayout(
   selection: number,
   style: PanelStyle,
 ): PanelLayout {
-  const textWidth = Math.max(1, frameWidth - GUTTER_COLUMNS - META_RESERVE);
-  const owned = panelRowOwners(pins, textWidth, style);
+  const owned = panelRowOwners(
+    pins,
+    panelTextColumns(frameWidth, widestMetaColumns(pins, style.dim)),
+    style,
+  );
   // As tall as the rows it draws, never past the terminal's half: `panelFrameRows` puts the two border
   // rows over `owned` and cuts the result to the ceiling, which is the only reason a frame is ever
   // shorter than its content (and the reason the window scrolls for it).

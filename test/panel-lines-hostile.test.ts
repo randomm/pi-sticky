@@ -12,13 +12,13 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { buildPanelLines } from "../src/panel-lines.ts";
-import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
-import { BEL, ESC, HOSTILE, ST, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
+import { NOW, localTime } from "./fixtures.ts";
+import { built } from "./panel-frame.ts";
+import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
 
 const plain: RenderPanelStyle = {
   header: (s) => s,
@@ -34,23 +34,37 @@ const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin =>
   ...extra,
 });
 
+/**
+ * The resting frame's pin row drawn by a theme whose `dim` *wraps* rather than colours, at the narrowest
+ * width the frame closes at. Two columns of the tail here belong to the theme — `<d:t>` and its closing
+ * bracket are drawn, not counted away — so this is the row an undimmed reserve measurement got wrong: it
+ * charged the frame for `#1 12:00` and drew `<d:t> #1 12:00`, and the time was the column budget's casualty.
+ */
+test("a dim that adds columns is charged to the text, not to the id/time tail", () => {
+  const wrapping: RenderPanelStyle = { ...plain, dim: (s) => `<${s}>` };
+  const width = MIN_FRAME_WIDTH;
+  const lines = built(content([one(1, "x")]), width, wrapping);
+  expectUniformWidth(lines, width);
+  const row = lines.slice(1, -1)[0] ?? "";
+  // The tail carries the theme's own bytes and stays whole to the end of the time: `< x >`, not `< x …`.
+  expect(row).toContain(`< #1 ${localTime(NOW)}>`);
+  // And the columns the wrapper cost came out of the text column, which is the only place they can come from.
+  expect(row.indexOf("x")).toBeLessThan(row.indexOf("< #1"));
+});
+
 const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   pins,
   selection,
   focused,
+  // Required by `PanelContent`; these cases are about the rows, not the resting label.
+  replyHint: "",
 });
 
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
 type PanelContent = ReturnType<typeof content>;
 
-/**
- * The frame drawn exactly as the component draws it: `panelLayout` owns the row table *and* the height,
- * which is the rows the pins own over the two borders (cut to `TERMINAL_ROWS`' half), and the builder is
- * handed both — no caller can size one frame and draw another.
- */
-function built(c: PanelContent, width: number, s: RenderPanelStyle): string[] {
-  return buildPanelLines(c, width, s, panelLayout(c.pins, width, TERMINAL_ROWS, c.selection, s));
-}
+// `built` is `panel-frame.ts`'s: one `panelLayout` pass at `width` — the rows the pins own over the two
+// borders, cut to `TERMINAL_ROWS`' half — and the builder handed that very table.
 
 /** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
 const MIN_FRAME_WIDTH = 30;
@@ -66,7 +80,7 @@ test("a themed panel draws through all six colours", () => {
   const painted: RenderPanelStyle = {
     header: (s: string) => `<h:t>${s}`,
     marker: (_level: unknown, s: string) => `<m:t>${s}`,
-    dim: (s: string) => `<d:t>${s}`,
+    dim: (s: string) => `<d:t>${s}</d:t>`,
     selected: (s: string) => `<s:t>${s}`,
     // SGR-shaped, because that is what a theme does: colour a glyph. A wrapper that put visible
     // characters around one would ask for a frame wider than the overlay, and the builder's answer to
@@ -75,14 +89,25 @@ test("a themed panel draws through all six colours", () => {
     borderFocused: (s: string) => `\u{1b}[1m${s}`,
   };
   const focused = built(content([one(1, "Decide X")], 0, true), 40, painted);
-  const resting = built(content([one(1, "Decide X")], 0, false), 40, painted);
   expect(focused[0]).toContain("<h:t>");
   expect(focused[1]).toContain("<m:t>");
   expect(focused[1]).toContain("<s:t>");
-  // The dim is the id/time tail of the pin row, which is the row that carries the marker: the frame pads
-  // out to the terminal's half now, so the pin is found by what it draws rather than by a row number a
-  // blank row of padding could shift.
-  expect(focused.find((line) => line.includes("<m:t>"))).toContain("<d:t>");
+  // ...and the *resting* row's tail is whole. This theme's `dim` wraps — its tag is drawn, not counted away —
+  // so the tail it stamps is sixteen columns wider than the `#<id> HH:MM` an undimmed measurement saw. A
+  // reserve sized on the undimmed string handed those columns to the text and cut the time, drawing
+  // `<d:t> #1 12:0…</d:t>`. The tail is stamped once and measured once now, so the row that has room for it
+  // shows it complete — opening tag, id, time, closing tag — and the text is what gave way.
+  // The focused row of the same theme is not that row: `<s:t>` puts its own six visible columns in front of a
+  // line the frame already sized without them, so at 40 columns the whole line is cut by `fitLine` whatever
+  // the tail's reserve was, and asserting an uncut tail there would be asserting the bar is free.
+  const resting = built(content([one(1, "Decide X")], 0, false), 40, painted);
+  const tailRow = resting.find((line) => line.includes("<d:t>"));
+  expect(tailRow).toContain("<d:t> #1 ");
+  expect(tailRow).toContain(`${localTime(NOW)}</d:t>`);
+  expect(tailRow?.slice(tailRow?.indexOf("<d:t>") ?? 0)).not.toContain("…");
+  // The text paid for the wrapper: it is cut, and it is cut *before* the tail begins.
+  expect(tailRow).toContain("Decide…");
+  expect((tailRow ?? "").indexOf("…")).toBeLessThan((tailRow ?? "").indexOf("<d:t>"));
   // The frame is drawn through the style's `border`/`borderFocused` members, which is what lets the theme
   // own the frame's colour: the recording-theme test in `panel-lines.test.ts` is what pins which token is
   // asked for, and the uniform-width sweeps what proves the bytes a theme adds cost no columns. The
