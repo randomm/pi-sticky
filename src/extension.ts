@@ -36,6 +36,7 @@ import { hasUnseenPins } from "./panel-autoshow.ts";
 import { createPanelWiring } from "./panel-deps.ts";
 import { initialShown } from "./panel-deps.ts";
 import { FOCUS_KEY, TOGGLE_KEY } from "./panel-keys.ts";
+import { registerPanelShortcuts } from "./panel-shortcuts.ts";
 import { TerminalWidth } from "./panel-width.ts";
 import { PanelOwner } from "./panel.ts";
 import { registerReminder } from "./reminder.ts";
@@ -234,15 +235,13 @@ export function createStickyExtension(
     registerReminder(pi, deps);
     registerReply(pi, deps);
 
-    pi.registerShortcut(TOGGLE_KEY, {
-      description: "Show or hide the pins panel",
-      handler: (ctx) => {
+    // The panel's two shortcuts, straight from the configuration: `registerPanelShortcuts` skips an id
+    // the operator turned off, and reads the two descriptions that pi's `/hotkeys` column shows.
+    registerPanelShortcuts(pi, config, {
+      onToggle: (ctx) => {
         panelRef.current?.toggle(ctx);
       },
-    });
-    pi.registerShortcut(FOCUS_KEY, {
-      description: "Focus the pins panel",
-      handler: (ctx) => {
+      onFocus: (ctx) => {
         panelRef.current?.focusFromShortcut(ctx);
       },
     });

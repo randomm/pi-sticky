@@ -15,6 +15,7 @@ import { KeybindingsManager as TuiKeybindingsManager } from "@earendil-works/pi-
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import type { PanelComponent } from "../src/panel-component.ts";
+import type { StickyConfig } from "../src/types.ts";
 import { TOOL_NAME, UI_TYPE } from "../src/types.ts";
 
 import { LATER } from "./fixtures.ts";
@@ -205,14 +206,22 @@ export interface Booted {
   ctx: PanelContext;
 }
 
-/** Boot the extension and start a session over these entries, with the panel's factory settled. */
+/**
+ * Boot the extension and start a session over these entries, with the panel's factory settled.
+ *
+ * `config` is the one way a lifecycle test reaches the configuration: pass the two shortcut ids to move
+ * what gets registered, or leave it out and get `DEFAULT_CONFIG`. The assertions that read the result
+ * (`stub.shortcuts`, `stub.fireShortcut`) are `stubApi`'s, so a rebind is observable here rather than
+ * only through the environment — `test/panel-lifecycle-keys.test.ts` is where that is exercised.
+ */
 export async function boot(
   entries: readonly unknown[] = [],
   columns?: number,
   hooks: { onDone?: HostDone } = {},
+  config: StickyConfig = DEFAULT_CONFIG,
 ): Promise<Booted> {
   const stub = stubApi();
-  createStickyExtension(DEFAULT_CONFIG, () => LATER)(stub.api);
+  createStickyExtension(config, () => LATER)(stub.api);
   const ctx = contextWith(entries);
   // A test that wants to watch the close — a host `done` that throws, say — replaces the callback this
   // host hands the factory, and this is the only place it reaches the host.

@@ -126,8 +126,8 @@ depends on the surface: the rail and the panel dim the whole row and open its te
 
 | Input | Effect |
 | --- | --- |
-| `ctrl+alt+t` | Toggle the panel. |
-| `ctrl+alt+p` | Focus the panel, showing it if it was hidden. |
+| `ctrl+alt+t` | Toggle the panel. Rebind with `PI_STICKY_TOGGLE_KEY`. |
+| `ctrl+alt+p` | Focus the panel, showing it if it was hidden. Rebind with `PI_STICKY_FOCUS_KEY`. |
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
 | `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |
@@ -155,9 +155,21 @@ change.
 | `PI_STICKY_MAX_PINS` | `5` | 1–20 | How many pins the agent may show at a time. |
 | `PI_STICKY_MAX_CHARS` | `400` | 40–2000 | Character budget for one pin's text. |
 | `PI_STICKY_MAX_LINES` | `8` | 3–30 | Lines in the rail, header included. |
+| `PI_STICKY_TOGGLE_KEY` | `ctrl+alt+t` | a pi key id, or `off` | The shortcut that toggles the panel. |
+| `PI_STICKY_FOCUS_KEY` | `ctrl+alt+p` | a pi key id, or `off` | The shortcut that focuses the panel. |
 
 A value outside its range, or one that is not a run of ASCII digits, falls back to the default.
 `PI_STICKY_MAX_LINES` is clamped to 10 in RPC mode, because pi caps a string widget there.
+
+A shortcut value is a pi key id: one or more of `ctrl`, `alt`, `shift` and `super` joined by `+`, then a
+single key name — `alt+j`, `ctrl+shift+f`, `ctrl+alt+pageUp` — in any case, with the modifiers in any
+order. A key with no modifier is refused, and so is anything pi does not recognise; either way the
+default is used. The two ids may not be the same: if they collide, whichever one still holds its own
+default keeps it and the other falls back. The special value `off` removes that shortcut entirely — with
+both `off` the panel is reachable only through `/pins show` and `/pins hide`. Rebinding matters because pi
+resolves a clash between extension shortcuts silently, last registration wins, and the default focus key
+`ctrl+alt+p` is the one pi's own plan-mode example extension registers: point `PI_STICKY_FOCUS_KEY` at a
+free combination and restart pi to take the panel's focus back.
 
 `PI_ENSEMBLE_ROLE`, set to any non-empty value, also disables the extension. pi-rukas sets it for
 every subagent, so no subagent loads pi-sticky.

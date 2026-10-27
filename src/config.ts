@@ -8,14 +8,25 @@
  * `PI_ENSEMBLE_ROLE`, which pi-rukas sets for every child (research-summary section 3:
  * `PI_ENSEMBLE_SUBAGENT_MODE` is set only for strict-mode children, so it must not
  * disable on its own).
+ *
+ * The two shortcut variables are validated by `resolvePanelKeys` rather than here: the grammar, the
+ * `off` value and the rule for a pair that collide are the panel keyboard's business, and this module
+ * just hands each raw value over and keeps what comes back. A shortcut the operator turned off comes
+ * back as `null` and an unset one as nothing at all, so `readConfig({})` and `DEFAULT_CONFIG` are equal
+ * in both directions and a test can compare the two without spelling either default.
  */
+import { FOCUS_KEY, TOGGLE_KEY } from "./panel-keys.ts";
+import { resolvePanelKeys } from "./panel-shortcuts.ts";
 import type { StickyConfig } from "./types.ts";
 
+/** The defaults every numeric variable falls back to, and the two ids every rebind falls back to. */
 export const DEFAULT_CONFIG: StickyConfig = {
   disabled: false,
   maxPins: 5,
   maxChars: 400,
   maxWidgetLines: 8,
+  toggleKey: TOGGLE_KEY,
+  focusKey: FOCUS_KEY,
 };
 
 /** Inclusive bounds for each numeric variable, with the default it falls back to. */
@@ -56,10 +67,15 @@ function isDisabled(value: string | undefined): boolean {
 
 export function readConfig(env: Record<string, string | undefined>): StickyConfig {
   const disabled = isDisabled(env.PI_STICKY_DISABLE) || (env.PI_ENSEMBLE_ROLE ?? "") !== "";
+  const keys = resolvePanelKeys(env.PI_STICKY_TOGGLE_KEY, env.PI_STICKY_FOCUS_KEY);
   return {
     disabled,
     maxPins: readInt(env, "PI_STICKY_MAX_PINS"),
     maxChars: readInt(env, "PI_STICKY_MAX_CHARS"),
     maxWidgetLines: readInt(env, "PI_STICKY_MAX_LINES"),
+    // `null` (the operator turned it off) is kept and `undefined` (unset) is omitted, so the member is
+    // absent exactly when the variable was absent and `toEqual(DEFAULT_CONFIG)` stays true for `{}`.
+    ...(keys.toggleKey === undefined ? {} : { toggleKey: keys.toggleKey }),
+    ...(keys.focusKey === undefined ? {} : { focusKey: keys.focusKey }),
   };
 }
