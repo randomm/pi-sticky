@@ -1,13 +1,23 @@
 {
   "name": "pi-sticky",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "pi extension: the agent pins messages for the user; they stay on screen until resolved, and the user can reply to them.",
   "type": "module",
-  "keywords": ["pi-package"],
+  "license": "Apache-2.0",
+  "author": "Janni Turunen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/randomm/pi-sticky.git"
+  },
+  "homepage": "https://github.com/randomm/pi-sticky#readme",
+  "bugs": {
+    "url": "https://github.com/randomm/pi-sticky/issues"
+  },
+  "keywords": ["pi-package", "pi", "pi-extension", "pi-coding-agent"],
   "pi": {
     "extensions": ["./src/index.ts"]
   },
+  "files": ["src", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "test": "bun test",
     "check": "biome check src test && tsc --noEmit",
