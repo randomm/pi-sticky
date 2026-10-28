@@ -16,8 +16,10 @@
  *   are the same frame, and the frame that is built still ages every row at one named instant.
  * - The bar is re-clamped *before* the layout runs, so a redraw that found the view swapped under a stale
  *   selection cannot draw a bar past the end of the list it just rebuilt. The clamp is written back through
- *   the state's own setter (`PanelFrameState`), so the component cannot be left holding an index its own
- *   frame did not draw — the keys index the bar, and a bar past the end silently dismisses nothing.
+ *   the state's own setter (`PanelFrameState`) whenever it actually moved, so the component cannot be left
+ *   holding an index its own frame did not draw — the keys index the bar, and a bar past the end silently
+ *   dismisses nothing. A clamp that did not move the bar writes nothing: the setter drops the frame with the
+ *   write, and dropping the frame the hit is about to return would pay a layout for a byte that did not move.
  *
  * `frameOf` is exported because `update()`'s candidate (`panel-component-frame.ts`) is spelled by it too:
  * one builder for both the memorised frame and the frame it is compared against is what keeps the two entry
@@ -100,16 +102,18 @@ export function drawFrame(
   const key = frameKey(host);
   const selection = clampSelection(state.selection, draw.sections.flat.length);
   const focused = state.focused;
-  // The clamp is a write like any other, through the setter that drops the frame with it: the component
-  // must not keep a bar its own rows did not draw, since the keys index the bar and not the frame.
-  if (selection !== state.selection) state.setSelection(selection);
   const candidate = frameOf([], draw, key, focused, selection);
   const cached = memory.frame;
   // The width is compared here and not in `sameFrame` because it is the one thing a candidate cannot name:
   // `update()` must ignore it (a redraw is not a resize), while this caller knows the width it was asked for.
   if (cached && sameFrame(cached, candidate) && cached.width === draw.width) return cached.lines;
-  // A pinned candidate is built before its rows, so the comparison cannot be skipped: the layout runs
-  // whenever the key says the panel moved, and the peek's three rows cost the peek what they always cost.
+  // Past the hit there is no way back, so the clamp is a write like any other — through the setter that
+  // drops the frame with it, and only when the bar actually moved. The component must not keep a selection
+  // its own rows did not draw, since the keys index the bar and not the frame; a hit needs no write because
+  // the cached lines were themselves built at the clamped index.
+  if (selection !== state.selection) state.setSelection(selection);
+  // The candidate is built before its rows, so the comparison cannot be skipped: the layout runs whenever
+  // the key says the panel moved, and the peek's three rows cost the peek what they always cost.
   const lines =
     key.mode === "peek"
       ? buildPeekLines(
@@ -144,12 +148,10 @@ export function frameOf(
 
 /**
  * Read the host's contributions once — the label, the mode and the age instant — so the key and the rows
- * cannot name two different instants.
- *
- * `ageAt` is handed the host's member *bound* rather than detached: `PanelHost.ageNow` is optional, and a
- * clock a test host built from its own state (`ageNow: () => this.clock()`) reads that state through `this`.
+ * cannot name two different instants. Both cache entry points ask for this key: `update()`'s candidate
+ * (`panel-component-frame.ts`) must read the host the same way or the two halves of the key can drift.
  */
-function frameKey(host: PanelHost): FrameKey {
+export function frameKey(host: PanelHost): FrameKey {
   const clock = host.ageNow;
   const ageNow = ageAt(clock === undefined ? undefined : () => clock());
   return { replyHint: host.replyHint(), mode: host.mode(), ageNow, ageKey: ageBucket(ageNow) };
@@ -175,11 +177,16 @@ function openFrame(draw: PanelDraw, key: FrameKey, selection: number, focused: b
 }
 
 /**
- * The bar kept inside the list that exists — the clamp spelled once for both entry points.
+ * The bar kept inside the list that exists — the clamp spelled once, for all three entry points.
  *
  * `render()` needs it before the layout (a redraw that found the view swapped under a stale selection must
  * not draw a bar past the end) and `update()` before the comparison (a redraw of a view that shrank has to
- * see the bar it is about to move). Two copies in two files is the drift this rule exists to prevent.
+ * see the bar it is about to move). It moves an index at or past the end onto the last row that exists — the
+ * floor `Math.max` is for, since an empty list has no last row — and leaves every other number alone, which
+ * is what main did: a value below zero or not a whole number is not this clamp's to answer, and `select()`
+ * is the entry point that does (it refuses a non-integer by answering the top row).
+ *
+ * Three copies in three files is the drift this rule exists to prevent.
  */
 export function clampSelection(selection: number, count: number): number {
   return selection >= count ? Math.max(0, count - 1) : selection;

@@ -17,12 +17,12 @@
  * The age is the odd member of the key: the *minute* rather than the instant, because pi-tui asks for frames
  * far more often than the ages on screen can move, and a key of raw instants misses every time. The instant
  * is read in the same breath as the bucket, so a candidate's minute and the rows' ages cannot come from two
- * reads of one clock.
+ * reads of one clock — and the read itself is `frameKey` (`panel-frame-draw.ts`), the same one `render()`
+ * asks for, so the key cannot drift in the half that is not the frame's field list.
  */
-import { ageAt, ageBucket } from "./panel-age.ts";
 import type { PanelFrame } from "./panel-frame-cache.ts";
-import type { FrameKey, PanelDraw } from "./panel-frame-draw.ts";
-import { frameOf } from "./panel-frame-draw.ts";
+import { frameKey, frameOf } from "./panel-frame-draw.ts";
+import type { PanelDraw } from "./panel-frame-draw.ts";
 import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
 import type { PanelSections } from "./panel-sections.ts";
@@ -50,7 +50,7 @@ export function frameCandidate(
   selection: number,
   host: PanelHost,
 ): PanelFrame {
-  return frameOf([], candidateDraw(pins), candidateKey(host), focused, selection);
+  return frameOf([], candidateDraw(pins), frameKey(host), focused, selection);
 }
 
 /** The candidate's stand-in for "what one frame is drawn from": the drawn order, and nothing drawn at. */
@@ -61,10 +61,4 @@ function candidateDraw(pins: readonly ViewPin[]): PanelDraw {
     style: NO_PANEL_COLOUR,
     terminalRows: undefined,
   };
-}
-
-/** The candidate's host reads, each taken once: the label, the mode, and the age instant its bucket is cut from. */
-function candidateKey(host: PanelHost): FrameKey {
-  const ageNow = ageAt(host.ageNow);
-  return { replyHint: host.replyHint(), mode: host.mode(), ageNow, ageKey: ageBucket(ageNow) };
 }

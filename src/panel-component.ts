@@ -161,12 +161,15 @@ export class PanelComponent implements Component {
    *
    * The clamp is only meaningful for a whole row number: `Math.min`/`Math.max` both propagate `NaN`, so
    * a non-integer in would leave a selection that matches no row and silently draws no bar at all. A
-   * value that is not an integer is answered with the top row, which is the one row that always exists.
+   * value that is not an integer is answered with the top row, which is the one row that always exists — and
+   * a whole one that is off the end goes through the same `clampSelection` as the two frame entry points,
+   * floored at zero by `Math.max` because the shared clamp answers an index below zero with itself: main
+   * answered this entry point with the top row, and `panel-input.ts` cannot index a negative one.
    */
   select(index: number): void {
-    const last = this.#drawn().length - 1;
+    const pins = this.#drawn();
     const row = Number.isInteger(index) ? index : 0;
-    this.#state.setSelection(Math.max(0, Math.min(row, last)));
+    this.#state.setSelection(Math.max(0, clampSelection(row, pins.length)));
     this.#host.requestRender();
   }
 
