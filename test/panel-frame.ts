@@ -1,5 +1,3 @@
-import type { PanelLayout } from "../src/panel-frame-layout.ts";
-import { panelLayoutSections } from "../src/panel-frame-layout.ts";
 /**
  * The one way a test draws a panel frame.
  *
@@ -12,7 +10,7 @@ import { panelLayoutSections } from "../src/panel-frame-layout.ts";
  *
  * `built` is the pair in one call, with the terminal named rather than assumed. A test that wants a short
  * *window* asks for a short terminal — that is the only thing that sizes a frame now — and a test that
- * wants to assert on the table itself asks for the layout with `framed`'s sibling call below.
+ * wants the table and the lines together takes `framed` — the one pair a frame is ever drawn from.
  *
  * These helpers take **the view's own pins**, the way every panel test has always written them, and put the
  * frame through the same order the component puts it through: `drawnFrame` sections them first, the way
@@ -22,11 +20,12 @@ import { panelLayoutSections } from "../src/panel-frame-layout.ts";
  * for a selection that names another, and every bar and window assertion in the suite would be reading a
  * frame no component draws.
  */
+import type { PanelLayout } from "../src/panel-frame-layout.ts";
+import { panelLayoutSections } from "../src/panel-frame-layout.ts";
 import { buildPanelLines } from "../src/panel-lines.ts";
 import type { PanelContent } from "../src/panel-lines.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle } from "../src/render.ts";
-import type { ViewPin } from "../src/types.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 /** One frame's worth of drawing: the lines the builder returned and the table the height came from. */
@@ -61,16 +60,6 @@ function drawnFrame(
   // list the table's owners were numbered over — which is the whole promise the bar rests on.
   const drawn: PanelContent = { ...content, pins: sections.flat };
   return { lines: buildPanelLines(drawn, width, style, layout), layout };
-}
-
-/** The row table and the frame's height, as the component builds them for a width and a terminal. */
-export function frameLayout(
-  content: PanelContent,
-  width: number,
-  style: PanelStyle,
-  terminalRows = TERMINAL_ROWS,
-): PanelLayout {
-  return drawnFrame(content, width, style, terminalRows).layout;
 }
 
 /**

@@ -21,7 +21,11 @@ const TITLE = "📌 Pinned";
 /** The separator between the opening and a count, and between two counts. */
 const SEPARATOR = " · ";
 
-/** The word each level's count is written with; `info` has no noun of its own and is spelled `more`. */
+/**
+ * The word each level's count is written with. `warning` is a noun and inflects; `needs you` is a phrase and
+ * does not; `info` has no noun of its own at all, so it borrows `more` — and only once a segment precedes it,
+ * which is what `MORE` marks and what `bare` below spells.
+ */
 const NOUNS: Record<SectionKind, string> = {
   warning: "warning",
   action: "needs you",
@@ -32,24 +36,26 @@ const NOUNS: Record<SectionKind, string> = {
  * The noun of each level that takes an `s` when there is more than one of it.
  *
  * `needs you` is a phrase, not a noun, and does not inflect: twelve of them are still `12 needs you`, and
- * `12 needs yous` reads as a string a person did not write. `more` does not inflect either, and is kept out
- * of `plural` for the same reason — its count is printed bare beside the word.
+ * `12 needs yous` reads as a string a person did not write. `info` is `false` because its count never reaches
+ * `plural` at all — `frameTitle` spells that one itself, since its shape depends on the segments before it.
  */
 const INFLECTS: Record<SectionKind, boolean> = { warning: true, action: false, info: false };
 
-/** The noun `info` is spelled with, which is what marks the one count that takes no noun. */
+/** The noun `info` borrows when a segment precedes it, and which marks the one count that can stand without a noun. */
 const MORE = NOUNS.info;
 
 /**
  * The panel's frame title for `sections`, which must be the drawn order (`panelSections`'s `order`).
  *
- * One segment per non-empty section, in the order the frame draws them: `<n> warning` / `<n> warnings`,
- * `<n> needs you`, and the facts as `<n> more`. A view of facts alone still reads `📌 Pinned · 3 more` — the
- * same spelling as the facts in a mixed view, so the frame says the one thing about its facts whatever else
- * hangs over them, and the count never changes shape between a panel that gained a warning and one that did
- * not (operator resolution 3 fixes the words per level, not their presence in a particular view). An empty
- * view has no counts to print and titles `📌 Pinned`, which the frame never draws anyway: the builder answers
- * a view with no pins with no rows at all.
+ * One segment per non-empty section, in the order the frame draws them, and the count's spelling follows the
+ * segment's *position* (operator resolution 3): `<n> warning` / `<n> warnings` and `<n> needs you` wherever
+ * they fall, and the facts as `<n> more` only once a segment already precedes them — `📌 Pinned · 1 needs you
+ * · 11 more`. Facts alone carry no earlier segment to hang `more` on, so their count stands bare: the frame
+ * of a panel of three facts and nothing else reads `📌 Pinned · 3`, not `📌 Pinned · 3 more`. The bare form is
+ * what the spec's third example names, and it is the difference between a count that answers "how many" and
+ * one that answers "how many more" — a question only a frame already showing counts of something else poses.
+ * An empty view has no counts to print and titles `📌 Pinned`, which the frame never draws anyway: the builder
+ * answers a view with no pins with no rows at all.
  */
 export function frameTitle(sections: readonly PanelSection[]): string {
   const segments: string[] = [];
@@ -57,7 +63,16 @@ export function frameTitle(sections: readonly PanelSection[]): string {
     const count = section.pins.length;
     if (count === 0) continue;
     const noun = NOUNS[section.kind];
-    segments.push(noun === MORE ? `${count} ${MORE}` : plural(count, noun, INFLECTS[section.kind]));
+    // The spelling follows the section's level and the segments already built — never an index into `sections`,
+    // which would name a position in the caller's array rather than the counts the title has actually printed.
+    if (noun === MORE) {
+      // Facts borrow `more` when a segment already precedes them, and stand as a bare count when none does.
+      // The test is on `segments`, not on `section.kind === "info"` alone: `plural` would hand back `3 more`
+      // for the bare case too, since `more` does not inflect, so the borrowing has to be spelled here.
+      segments.push(segments.length > 0 ? `${count} ${MORE}` : `${count}`);
+    } else {
+      segments.push(plural(count, noun, INFLECTS[section.kind]));
+    }
   }
   return segments.length === 0 ? TITLE : `${TITLE}${SEPARATOR}${segments.join(SEPARATOR)}`;
 }

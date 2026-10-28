@@ -102,7 +102,7 @@ test("scrolling follows the selected pin and never moves the header or the hint"
   // hint stay where they are and only the pins between them move.
   const lines = built(content(pins, 5, true), HINT_WIDTH, style, 8);
   // The header is the top border and the hint the bottom one, so a scrolled window can move neither.
-  expect(lines[0]).toContain("📌 Pinned · 6 more");
+  expect(lines[0]).toContain("📌 Pinned · 6");
   expect(lines.at(-1)).toContain(HINT);
   // Six pins draw newest id first, so the last selection is the *oldest* pin, `Pin 1`, and the window the
   // keys scrolled to opens on it: what has scrolled away is the newest.

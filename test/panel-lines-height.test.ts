@@ -139,7 +139,7 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
     40,
   );
   expect(scrolled).toHaveLength(20);
-  expect(scrolled[0]).toContain("📌 Pinned · 50 more");
+  expect(scrolled[0]).toContain("📌 Pinned · 50");
   expect(scrolled.at(-1)).toContain("Enter reply");
   // Fifty info pins draw newest id first, so the last selection — 49 — is the *oldest* pin, `Pin 1`, and the
   // window the keys scrolled to opens on it. What has scrolled out of the frame is the newest.

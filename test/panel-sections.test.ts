@@ -51,6 +51,21 @@ test("a section keeps unreplied pins before replied ones (resolution 5)", () => 
   expect(ids(actions?.pins ?? [])).toEqual([2, 6]);
 });
 
+test("a section of nothing but replied pins still forms (resolution 5)", () => {
+  // U5 keeps a replied pin visible until the agent unpins it or the user dismisses it, so a level whose every
+  // pin has been answered is still a level the user sees — it gets its heading, its count and its slots. A
+  // section builder that filtered replied pins out of the grouping would drop the whole section here, and
+  // with it the frame's `1 needs you`, which is the count the twelve-pin session came to read.
+  const repliedOnly = [levelPin(1, "a", "action", true), levelPin(2, "b", "action", true)];
+  const sections = panelSections([...repliedOnly, levelPin(3, "c", "info")]);
+  expect(sections.order.map((section) => section.kind)).toEqual(["action", "info"]);
+  expect(sections.order.map((section) => section.pins.length)).toEqual([2, 1]);
+  expect(hasMultipleSections(sections.order)).toBe(true);
+  // Both replied actions are addressable: their indices are 0 and 1 of the flattened list, so `d` and `Enter`
+  // reach them exactly as they reach an unreplied pin.
+  expect(ids(sections.flat)).toEqual([2, 1, 3]);
+});
+
 test("flat is order flattened, so the selection indexes the rows the frame draws", () => {
   const sections = panelSections(mixedView());
   const rebuilt: number[] = [];

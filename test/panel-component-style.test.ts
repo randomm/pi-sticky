@@ -118,7 +118,7 @@ test("the identity style draws a closed, unpainted frame in both focus states", 
   // `header` owns the top border's label and `marker` the row's level glyph — both drawn by the resting
   // frame — and each answers with the very text it was handed, so a fallback cannot invent an emphasis for
   // a panel whose theme was never asked.
-  expect(resting[0]).toContain("📌 Pinned · 1 more");
+  expect(resting[0]).toContain("📌 Pinned · 1");
   expect(resting[1]?.startsWith("│  • ")).toBe(true);
   // `dim` owns the pin's tail, the resting frame's only use for it, and the tail must come back whole: the
   // byte-exact row is the assertion that nothing was put around it. Built from the pieces the drawer

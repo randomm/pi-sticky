@@ -100,6 +100,33 @@ test("a same-level, same-state tie is broken by the newest id first", () => {
   expect(drawnIds(c.render(60))).toEqual([8, 7]);
 });
 
+test("d and Enter act on the pin under the bar across sections, never on a heading", () => {
+  // The criterion the two coordinate spaces make sharp: the selection is an index into the *section-flattened*
+  // list, while the frame's rows also carry the heading rows between the sections. A `d` that read the view's
+  // own array, or that counted rows rather than pins, would dismiss the pin the user was not looking at — or
+  // the heading above it. Here the section order is warning 3, action 2, then the two facts newest first,
+  // so two moves down from the top stands the bar on fact 4, and one move stands it on the action.
+  const view = [
+    at(1, "fact", "info"),
+    at(2, "decide", "action"),
+    at(3, "danger", "warning"),
+    at(4, "note", "info"),
+  ];
+  const { c, state } = panel(view);
+  expect(drawnIds(c.render(60))).toEqual([3, 2, 4, 1]);
+  c.handleInput("j");
+  c.handleInput("j");
+  expect(c.selection).toBe(2);
+  c.handleInput("d");
+  expect(state.dismissals).toEqual([4]);
+  const enter = panel(view);
+  enter.c.handleInput("j");
+  enter.c.handleInput("\r");
+  // One move down is the action pin, and `Enter` answers *that* pin while handing the focus back.
+  expect(enter.state.replies).toEqual([2]);
+  expect(enter.c.isFocused()).toBe(false);
+});
+
 test("the panel's order is orderPins' order, on a view that mixes all of it", () => {
   const pins = [
     at(1, "old info", "info"),

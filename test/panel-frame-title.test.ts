@@ -12,7 +12,21 @@ import { expect, test } from "bun:test";
 
 import { frameTitle } from "../src/panel-frame-title.ts";
 import { panelSections } from "../src/panel-sections.ts";
+import type { PanelStyle } from "../src/render.ts";
+import type { ViewPin } from "../src/types.ts";
+import { LATER } from "./fixtures.ts";
+import { built } from "./panel-frame.ts";
 import { infoView, levelPin, mixedView } from "./panel-sections-fixture.ts";
+
+/** Identity colours: the border is read for its text, not its theme bytes. */
+const style: PanelStyle = {
+  header: (s) => s,
+  marker: (_level, s) => s,
+  dim: (s) => s,
+  selected: (s) => s,
+  border: (s) => s,
+  borderFocused: (s) => s,
+};
 
 const titleOf = (pins: Parameters<typeof panelSections>[0]) =>
   frameTitle(panelSections(pins).order);
@@ -33,15 +47,40 @@ test("the nouns pluralise with their counts", () => {
   expect(titleOf([levelPin(1, "a", "action"), levelPin(2, "b", "action")])).toBe(
     "📌 Pinned · 2 needs you",
   );
+  // Singular for one, and only for one: `1 warnings` is the spelling the operator ruled out, and the one
+  // an off-by-one in the pluraliser produces.
+  expect(titleOf([levelPin(1, "a", "warning")])).toBe("📌 Pinned · 1 warning");
+  expect(titleOf([levelPin(1, "a", "warning"), levelPin(2, "b", "warning")])).not.toContain(
+    "1 warning",
+  );
 });
 
-test("facts alone keep the same spelling they have in a mixed view", () => {
-  // The facts are spelled `more` whatever else the view holds, so a panel that gained its first warning does
-  // not also rename the facts under it: the count's shape follows the level, never the view around it. This
-  // is the spelling the panel's own frame tests have drawn with, and the one the rail's `(n)` header never
-  // had to agree with (resolution 6).
-  expect(titleOf(infoView(3))).toBe("📌 Pinned · 3 more");
-  expect(titleOf(infoView(1))).toBe("📌 Pinned · 1 more");
+test("the three title strings the issue names, drawn in a frame (resolution 3)", () => {
+  // The spec spells three frames verbatim and the unit tests above build each segment separately, so the
+  // whole string is asserted here as the top border carries it — through the component's own drawing path
+  // (`built`, which sections the pins the way `PanelComponent` does) rather than through `frameTitle` alone:
+  // the title a user reads is the one that survives `borderLine`.
+  const twelve = [levelPin(2, "approve", "action"), ...infoView(11)];
+  const frame = (pins: ViewPin[]) =>
+    built({ pins, selection: 0, focused: false, replyHint: "", ageNow: LATER }, 60, style)[0];
+  expect(frame(twelve)).toContain("📌 Pinned · 1 needs you · 11 more");
+  expect(
+    frame([levelPin(1, "a", "warning"), levelPin(2, "b", "warning"), levelPin(3, "c", "action")]),
+  ).toContain("📌 Pinned · 2 warnings · 1 needs you");
+  // Info alone with no earlier segment: the count is printed bare, with no `more` after it.
+  expect(frame(infoView(3))).toContain("📌 Pinned · 3");
+  expect(frame(infoView(3))).not.toContain("more");
+});
+
+test("facts alone are a bare count; facts after another level are spelled `more`", () => {
+  // The spelling follows the segment's *position*, not its level: the same three facts read `3` on a panel of
+  // nothing but facts and `3 more` the moment a warning or an action appears over them (resolution 3). The
+  // rail's `(n)` header is a different string owned by `render.ts` and never had to agree with either.
+  expect(titleOf(infoView(3))).toBe("📌 Pinned · 3");
+  expect(titleOf(infoView(1))).toBe("📌 Pinned · 1");
+  expect(titleOf([levelPin(1, "a", "warning"), ...infoView(3)])).toBe(
+    "📌 Pinned · 1 warning · 3 more",
+  );
 });
 
 test("facts spelled `more` once an earlier segment exists", () => {
