@@ -87,7 +87,7 @@ export function panelFactory(
       // The panel's one notify line, through the extension: the component has no context of its own and
       // the live one belongs to the session that drew it.
       notify: (message, type) => deps.notify(message, type),
-      startReply: (id) => deps.startReply(id),
+      startReply: (id, answer) => deps.startReply(id, answer),
     };
     const component = new PanelComponent(host, tui, theme);
     record.component = component;

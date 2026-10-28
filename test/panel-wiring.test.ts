@@ -132,6 +132,30 @@ test("startReply replaces a marker the draft already carries and keeps the rest 
   expect(host.calls.set).toBe("Re #4: keep this draft");
 });
 
+test("startReply puts a chosen option after the marker and keeps the rest of the draft", () => {
+  // The one merge rule, `replyMarker` in `src/reply.ts`, with the option text after the marker it produced:
+  // the digit key is not allowed a second copy of the rule, so this is also the assertion that the marker
+  // still *replaces* one the draft carries rather than stacking in front of it.
+  const host = editorHost({ text: "how about the blue one" });
+  const { wiring } = panelWiring({ live: livesAs(host.live) });
+  wiring.deps.startReply(3, "Passed on");
+  expect(host.calls.set).toBe("Re #3: Passed on how about the blue one");
+
+  const carried = editorHost({ text: "Re #9: keep this draft" });
+  const answered = panelWiring({ live: livesAs(carried.live) });
+  answered.wiring.deps.startReply(4, "Not yet");
+  expect(carried.calls.set).toBe("Re #4: Not yet keep this draft");
+});
+
+test("startReply puts a chosen option after the marker for a multi-digit id too", () => {
+  // From id 10 up `replyMarker`'s marker is longer than a single digit's, so a fixed split point would cut
+  // it in half and press the option hard against the user's surviving words.
+  const host = editorHost({ text: "keep this" });
+  const { wiring } = panelWiring({ live: livesAs(host.live) });
+  wiring.deps.startReply(12, "Passed on");
+  expect(host.calls.set).toBe("Re #12: Passed on keep this");
+});
+
 test("a host with no editor to write to is a reply that does nothing, not a throw", () => {
   // `print` and `json` have no UI at all and rpc has no editor; `startReply` is reached from a key, so
   // the answer has to be silence rather than an `extension_error` out of the terminal's input path.

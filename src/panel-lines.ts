@@ -42,6 +42,7 @@ import {
   padPlain,
 } from "./panel-frame.ts";
 import { isPanelFrameSize } from "./panel-geometry.ts";
+import { focusedHint } from "./panel-option-hint.ts";
 import { drawOptionRow } from "./panel-options-row.ts";
 import { panelContentRows } from "./panel-rows.ts";
 import { isOptionRow } from "./panel-rows.ts";
@@ -207,10 +208,11 @@ export function buildPanelLines(
   // be a lie, and it has nowhere else to be written — the bottom border is the frame's own. What the
   // unfocused frame says instead is the caller's `replyHint` — the focus key that gets the user *into*
   // those keys — drawn through the same `dim` the focused hint uses and the same cut a label too long
-  // for the border takes; no label at all when the caller has none to give.
+  // for the border takes; no label at all when the caller has none to give. While focused, the label
+  // names the option keys too when the pin under the bar has options (`panel-option-hint.ts`).
   lines.push(
     borderLine(
-      content.focused ? HINT : content.replyHint,
+      content.focused ? focusedHint(content.pins, content.selection, true) : content.replyHint,
       style.dim,
       FRAME_BOTTOM_LEFT,
       FRAME_BOTTOM_RIGHT,

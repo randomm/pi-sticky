@@ -50,8 +50,13 @@ export interface PanelDeps extends StickyDeps {
   recordPanelShown(shown: boolean): void;
   /** `/unpin`'s path: `applyAction` as the user, one entry per affected id, then redraw. */
   dismiss(id: number): void;
-  /** Hand focus back to the main editor with `Re #<id>: ` at the front of its draft. */
-  startReply(id: number): void;
+  /**
+   * Hand focus back to the main editor with `Re #<id>: ` at the front of its draft.
+   *
+   * `answer` is the text of the option the user chose by digit (`panel-keys.ts`): when it is given it goes
+   * straight after the marker, so the draft opens `Re #<id>: <answer> ` and the user still presses Enter.
+   */
+  startReply(id: number, answer?: string): void;
   /**
    * Tell the user one line, through the live session's ui. The panel has no context of its own, and a
    * key whose host call threw has nowhere else to say so — pi-tui calls the component's input handler
@@ -162,7 +167,7 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
     recordPanelShown: parts.recordPanelShown,
     dismiss: parts.dismiss,
     notify: (message, type) => parts.notify(message, type),
-    startReply: (id) => {
+    startReply: (id, answer) => {
       // Guarded like every other host-facing path, and *inside* the try: reading `hasUI`/`mode` off a
       // context whose session is gone is itself a throw, and pi-tui calls the panel's input dispatch
       // without a try/catch of its own, so anything that escaped here would surface as an
@@ -172,8 +177,19 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
         const ui = live?.hasUI && live.mode === "tui" ? live.ui : undefined;
         if (!ui) return;
         // Offset 0 of the raw buffer; submitting the reply is the draft's job, not this one. The
-        // merge rule itself is `replyMarker`, so there is one copy of it.
-        ui.setEditorText(replyMarker(ui.getEditorText(), id));
+        // merge rule itself is `replyMarker`, so there is one copy of it — and the chosen option is
+        // inserted after that marker rather than merged by a second rule of this file's own, which is
+        // why the answer goes into the space the marker leaves open instead of onto the draft's own text.
+        // The room the marker leaves is counted off the marker itself: `replyMarker` writes the id in
+        // decimal, so a two-digit id makes it longer, and slicing at a counted-off width would cut it in
+        // half and press the option against the user's own words.
+        const marker = replyMarker("", id);
+        const draft = replyMarker(ui.getEditorText(), id);
+        ui.setEditorText(
+          answer === undefined
+            ? draft
+            : `${draft.slice(0, marker.length)}${answer} ${draft.slice(marker.length)}`,
+        );
       } catch {
         parts.live()?.ui.notify("Could not start a reply from the panel.", "warning");
       }

@@ -99,11 +99,42 @@ test("a resting border that has a different label to print is a frame change", (
   expect(sameFrame(frame({ replyHint: "ctrl+f to focus" }), frame())).toBe(false);
 });
 
+test("the option keys a focused border prints need no field of the key, because the pins and the bar are in it", () => {
+  // The focused border names `1–N answer` for the pin under the bar (`panel-option-hint.ts`), so the label
+  // the frame draws depends on the selected pin's `options`. A key that carried its own field for that label
+  // would be a key that trusted one field to move with two others; what it does instead is name the drawn
+  // array's *identity* and the bar, and those two are exactly the inputs the label is read from. Asserted
+  // three ways: a bar that moved is a miss (so the digits cannot go stale under a bar that moved off the
+  // optioned pin), a view republished with options is a miss (so a border that advertised none gets redrawn),
+  // and the same array at the same bar is a hit even though the border's text is a composed string the key
+  // never names — the fast path the composition must not cost.
+  const bare = [pin(1, "One", "info")];
+  const optioned = [pin(1, "One", "info", { options: ["Passed on", "Not yet"] })];
+  expect(
+    sameFrame(frame({ pins: optioned, selection: 0 }), frame({ pins: optioned, selection: 1 })),
+  ).toBe(false);
+  expect(sameFrame(frame({ pins: bare }), frame({ pins: optioned }))).toBe(false);
+  expect(sameFrame(frame({ pins: optioned }), frame({ pins: bare }))).toBe(false);
+  expect(sameFrame(frame({ pins: optioned }), frame({ pins: optioned }))).toBe(true);
+});
+
 test("a bucket the ages were drawn at is the only time the key compares", () => {
   expect(sameFrame(frame({ ageNow: 29_725_801 }), frame())).toBe(false);
   // …and a request inside the same minute is a hit, which is the whole reason this is a bucket: pi-tui asks
   // for frames far more often than a minute, and an age cannot move between two of those asks.
   expect(sameFrame(frame(), frame({ ageNow: 29_725_800 }))).toBe(true);
+});
+
+test("a one-pin view — where the bar cannot move — still misses when its pin gains options", () => {
+  // The state the option hint is drawn in most often: one pin, so the bar is fixed and the only thing that
+  // can change the digits the border names is a republished view. The key's fast path cannot lean on the bar
+  // here, because there is no bar movement to lean on.
+  const bare = [pin(1, "One", "info")];
+  const optioned = [pin(1, "One", "info", { options: ["Passed on", "Not yet"] })];
+  expect(sameFrame(frame({ pins: bare, selection: 0 }), frame({ pins: bare }))).toBe(true);
+  expect(
+    sameFrame(frame({ pins: bare, selection: 0 }), frame({ pins: optioned, selection: 0 })),
+  ).toBe(false);
 });
 
 test("the drawn lines and the width are not part of the key", () => {

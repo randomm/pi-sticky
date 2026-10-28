@@ -38,7 +38,9 @@ import { stubApi } from "./wiring-stubs.ts";
 import type { StubApi } from "./wiring-stubs.ts";
 
 /** A branch entry holding a `pin_for_user` snapshot with these pins. */
-export function pinEntry(pins: { id: number; uid: string; text: string }[]): unknown {
+export function pinEntry(
+  pins: { id: number; uid: string; text: string; options?: string[] }[],
+): unknown {
   return {
     type: "message",
     message: {
@@ -79,6 +81,14 @@ export const TWO_PINNED: readonly unknown[] = [
     { id: 1, uid: "aaaa1111", text: "Decide X" },
     { id: 2, uid: "bbbb2222", text: "Watch out" },
   ]),
+];
+
+/**
+ * One pin that offers options — the shape the digit keys answer, and the one the frame's hint names keys
+ * for. Two entries, the fewest a pin may carry (`MIN_OPTIONS`, `pin-fields.ts`).
+ */
+export const OPTIONED: readonly unknown[] = [
+  pinEntry([{ id: 1, uid: "aaaa1111", text: "Decide X", options: ["Passed on", "Not yet"] }]),
 ];
 
 /** The lifecycle test's context: pi's shape for `ui`, plus the recorder it writes through. */

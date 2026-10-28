@@ -41,6 +41,11 @@ export function host(pins: ViewPin[] = []) {
     dismissals: [] as number[],
     replies: [] as number[],
     /**
+     * What `startReply` was asked to put after the marker, in call order — `undefined` for a plain Enter.
+     * Separate from `replies` so a case can tell the two keys apart rather than count one list twice.
+     */
+    answers: [] as (undefined | string)[],
+    /**
      * The state the host reports, or `undefined` for "no state cell" — which the component and the key
      * dispatcher both read as the open panel. Absent by default because every pre-peek component test draws
      * the open frame; a case that wants the peek sets it.
@@ -63,7 +68,10 @@ export function host(pins: ViewPin[] = []) {
     unfocus: () => {
       state.unfocusCalls++;
     },
-    startReply: (id) => void state.replies.push(id),
+    startReply: (id, answer) => {
+      state.replies.push(id);
+      state.answers.push(answer);
+    },
     notify: () => {},
     // `#handleInput` asks this before it dispatches a key: a panel pi-tui is not drawing must not act on
     // one. The default is "drawn", because the key tests are about the keys themselves.
@@ -78,3 +86,9 @@ export function host(pins: ViewPin[] = []) {
 
 export const pins = (...texts: string[]): ViewPin[] =>
   texts.map((text, i) => ({ ...pin(i + 1, text, "info", { createdAt: NOW }) }));
+
+/** One pin with options — the shape the option keys answer, and the shape the hint names keys for. */
+export const withOptions = (id: number, text: string, options: string[]): ViewPin => ({
+  ...pin(id, text, "info", { createdAt: NOW }),
+  options,
+});

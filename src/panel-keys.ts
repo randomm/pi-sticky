@@ -6,9 +6,10 @@
  * keys and the assertions that refuse hostile input all quote these, so a rebind is one edit rather than
  * a hunt through four files.
  *
- * `d` records a dismissal that persists on the session and `Enter` rewrites the user's editor draft, so
- * recognition of both is gated on a single bare code unit *before* pi-tui's `matchesKey` is consulted.
- * Without that gate the safety of a keystroke that changes session state would rest on how strictly
+ * `d` records a dismissal that persists on the session, `Enter` rewrites the user's editor draft and a
+ * digit rewrites it too — with one of the selected pin's options — so recognition of all three is gated on a
+ * single bare code unit *before* pi-tui's `matchesKey` is consulted. Without that gate the safety of a
+ * keystroke that changes session state would rest on how strictly
  * `matchesKey`/`ansiCodeLength` recognise the escape sequence in front of the letter: pi-tui currently
  * ends a CSI only on the final bytes `m/G/K/H/J`, so an `ESC [ 1 ; 3 d` is not a `d` press today — and if
  * that set ever widens, every such payload still fails the test here and reaches nothing. Movement keys,
@@ -21,21 +22,39 @@
 import { matchesKey } from "@earendil-works/pi-tui";
 import type { KeyId } from "@earendil-works/pi-tui";
 
+import { MAX_OPTIONS } from "./pin-fields.ts";
+
 /** The two shortcuts the extension registers when the operator has rebound neither, spelled once. */
 export const TOGGLE_KEY: KeyId = "ctrl+alt+t";
 export const FOCUS_KEY: KeyId = "ctrl+alt+p";
 
-/** A single ASCII letter and nothing else — the only shape a destructive key press may take. */
-const BARE = /^[a-zA-Z]$/;
+/** A single ASCII letter or digit, and nothing else — the only shape a destructive key press may take. */
+const BARE = /^[a-zA-Z0-9]$/;
 
 /** One bare code unit that is neither an escape nor a control: the only input a destructive key reads. */
-function isBarePress(data: string, letter: string): boolean {
-  return data.length === 1 && BARE.test(data) && data.toLowerCase() === letter;
+function isBarePress(data: string, key: string): boolean {
+  return data.length === 1 && BARE.test(data) && data.toLowerCase() === key;
 }
 
 /** A press of `d` or `D`: one bare letter, whatever case the terminal sent. */
 export function isDismissKey(data: string): boolean {
   return isBarePress(data, "d");
+}
+
+/**
+ * Which of the panel's option keys `data` is: `1` to `MAX_OPTIONS` (`pin-fields.ts`) answered as the option
+ * of that position, `undefined` for anything else — `0`, a digit past the list a pin may carry, a letter and
+ * every multi-unit payload.
+ *
+ * The digits are bounded by what a pin can store rather than by the keycap glyphs the row draws, so the keys
+ * and the row cannot disagree about which positions exist. `0` is unassigned and inert like an out-of-range
+ * digit — never coerced to an option by a falsy test on the string, which `"0"` would pass.
+ */
+export function optionKeyPressed(data: string): number | undefined {
+  for (let digit = 1; digit <= MAX_OPTIONS; digit++) {
+    if (isBarePress(data, String(digit))) return digit;
+  }
+  return undefined;
 }
 
 /**

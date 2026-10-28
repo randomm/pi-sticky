@@ -8,7 +8,10 @@
  * Three siblings cover what would otherwise crowd this file: `panel-lines-hostile.test.ts` draws the same
  * frame with hostile pins and a theme that smuggles escape sequences in, `panel-rows.test.ts` covers the
  * row table the window is cut from, `panel-lines-height.test.ts` pins that the builder draws exactly the
- * height the layout counted, and `panel-frame-theme.test.ts` pins which theme token the frame asks for.
+ * height the layout counted, `panel-frame-theme.test.ts` pins which theme token the frame asks for, and
+ * `panel-lines-option-hint.test.ts` draws these same frames over a pin that carries `options`, so the keys
+ * the focused border adds for them are measured where the frame's own promises are. All five draw through
+ * `built` (`panel-frame.ts`), which is where a test pairs the row table with the builder.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
