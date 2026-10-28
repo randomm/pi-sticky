@@ -11,8 +11,8 @@
  * One cell with both halves in it, rather than two flags the caller has to keep in step: they move together
  * or not at all. An "earned open" that outlived the demote would reopen the panel on the next redraw, and a
  * flag cleared while the panel still read it would leave the user looking at an open panel nothing remembers
- * opening. `mode()` is the only read and `settle`/`autoOpen`/`demote` the only writes, so the pair cannot be
- * moved half-way.
+ * opening. `mode()` is the only read and `settle`/`autoOpen`/`afterUnfocus`/`reset` the only writes, so the
+ * pair cannot be moved half-way.
  *
  * What the state is asked for:
  *
@@ -21,8 +21,10 @@
  *   a terminal too narrow for a frame) — operator resolution 3 of pins v2-4.
  * - `PanelComponent` reads the same mode and draws the peek (`panel-peek.ts`) or the open frame.
  * - The auto-open rule (operator resolution 2): an action or warning pin opens the panel fully and it
- *   *stays* open across redraws, further pins and agent turns, until the user's next interaction — the next
- *   submitted message, or a focus the user took and then left. Both endings are `demote`.
+ *   *stays* open across redraws, further pins and agent turns, until the user leaves it — Esc, Enter from a
+ *   key, or a keystroke into a panel that is not open. `afterUnfocus` is the only ending, because it is the
+ *   only event that reports an interaction the *user* ended; `settle` states why every other writer must
+ *   leave an earned open standing.
  * - `PI_STICKY_PANEL=open` means peek never happens (`restingMode` in `panel-resting.ts`, the one read of the
  *   resolved value).
  */
@@ -106,69 +108,12 @@ export interface PanelModeState {
   /** The mode the panel is in, read *now*. */
   mode(): PanelMode;
   /**
-   * Settle the cell from the user's own verb: shown, or hidden.
+   * Settle the *screen* to what the caller says it is: shown, or hidden.
    *
-   * The one writer of the record, and the one thing that ends an open the user did not ask for. An auto-show
-   * does not come here: it reaches `autoOpen`, which leaves the record alone. The resting mode is not a
-   * parameter either, because it is the configuration's.
-   *
-   * `recorded` is for the caller restating the *screen* rather than speaking for the user — the rebuild,
-   * which can see what is drawn and cannot see it in the entries. `false` settles the screen without moving
-   * the record, which is what keeps a transient auto-open from becoming the user's preference.
-   */
-  settle(shown: boolean, recorded?: boolean): void;
-  /**
-   * Open the panel fully for a pin that asked for attention, from whatever state it was in — hidden
-   * included, which is what the auto-show needs and what the rail then stands down for.
-   */
-  autoOpen(): void;
-  /**
-   * The interaction the user had with the panel is over: an open they did not ask for ends, and the panel
-   * goes back to what they chose.
-   *
-   * The single ending (operator resolution 2 of pins v2-4), reported by the component when the focus ends —
-   * Escape, Enter-from-a-key, a keystroke into a peek. There is deliberately no "submitted a message" ending
-   * beside it: pi's `input` event also fires for a command line the command layer swallows without it ever
-   * reaching the model, so a submit-based ending would make `/pins hide` end an open on the way to doing
-   * something else entirely. Leaving the panel the user focused is the interaction that says they read it.
-   */
-  afterUnfocus(): void;
-  /** Forget the session's transience, keeping the resting mode — the reset a fresh session gets. */
-  reset(): void;
-}
-
-/**
- * The mode cell of one extension instance, and the reads the rest of the panel makes of it.
- *
- * Three cells, because there are three questions and only two of them the session can answer: `chosen`, what
- * the user's verbs said (the `pi-sticky.ui` entry's subject, and what a demote restores); `shown`, what is on
- * screen; and `earned`, whether the screen is there because a pin asked. `mode()` is the only read of the
- * three and `settle`/`autoOpen`/`afterUnfocus`/`reset` the only writes, so no caller can move one on its own
- * and leave a peek that is also an open, or an open nothing is drawing.
- *
- * The recording contract U8 established and U11 leaves intact is kept by the split between `chosen` and
- * `shown`: the auto-show moves the screen and never the record, so it appends nothing and the user's choice
- * survives it.
- */
-export interface PanelModeState {
-  /** Whether the panel is on screen — what the user's verbs chose, or what an auto-show put there. */
-  shown(): boolean;
-  /**
-   * Whether the *record* has the panel shown, ignoring whatever an auto-show put on the screen.
-   *
-   * The rebuild's question: the session file records the user's verbs and nothing else, so this is the only
-   * half the entries can be read for. Comparing them against `shown()` instead would let one transient
-   * auto-open make every later rebuild ignore the user's hide.
-   */
-  recorded(): boolean;
-  /** The mode the panel is in, read *now*. */
-  mode(): PanelMode;
-  /**
-   * Settle the cell from the user's own verb: shown, or hidden.
-   *
-   * The one writer of the record, and the one thing that ends an open the user did not ask for. An auto-show
-   * does not come here: it reaches `autoOpen`, which leaves the record alone. The resting mode is not a
-   * parameter either, because it is the configuration's.
+   * Reached by every user verb, every rebuild and every redraw, which is why it keeps an earned open standing
+   * rather than clearing it — see the implementation. An auto-show does not come here at all: it reaches
+   * `autoOpen`, which leaves the record alone. The resting mode is not a parameter either, because it is the
+   * configuration's.
    *
    * `recorded` is for the caller restating the *screen* rather than speaking for the user — the rebuild,
    * which can see what is drawn and cannot see it in the entries. `false` settles the screen without moving
@@ -184,11 +129,10 @@ export interface PanelModeState {
    * The interaction the user had with the panel is over: an open they did not ask for ends, and the panel
    * goes back to what they chose.
    *
-   * The single ending (operator resolution 2 of pins v2-4), reported by the component when the focus ends —
-   * Escape, Enter-from-a-key, a keystroke into a peek. There is deliberately no "submitted a message" ending
-   * beside it: pi's `input` event also fires for a command line the command layer swallows without it ever
-   * reaching the model, so a submit-based ending would make `/pins hide` end an open on the way to doing
-   * something else entirely. Leaving the panel the user focused is the interaction that says they read it.
+   * The *only* ending (operator resolution 2 of pins v2-4), reported by the component when the focus ends —
+   * Escape, Enter-from-a-key, a keystroke into a peek. Leaving a panel the user focused is the one event that
+   * says they read the pin, and the one event of its kind the extension is ever told about: every other write
+   * of this cell is a redraw, a rebuild or a command line whose text never reached the model.
    */
   afterUnfocus(): void;
   /** Forget the session's transience, keeping the resting mode — the reset a fresh session gets. */
@@ -279,7 +223,13 @@ export function createPanelMode(config: PanelRestingSource | undefined): PanelMo
       // too, and it does not: an auto-show that followed a hide must not teach the cell that the user asked
       // for a shown panel.
       if (recorded !== false) chosen = next;
-      screen(next, false);
+      // The earned open is *kept*. `settle` is reached on every redraw, every rebuild and every command line,
+      // and operator resolution 2 requires an open to persist across all three; `screen(next, false)` here
+      // would fold a panel the user has not read yet back into the peek the moment anything asked the cell a
+      // question — a `/pins show`, a `session_tree`, a submitted message. Hiding is the exception: a hidden
+      // panel that still drew an open frame is not a state, and `settle(false)` is the one move that is never
+      // a redraw re-asking the last one. Ending an open the user *read* is `afterUnfocus`'s alone.
+      screen(next, next && earned);
     },
     autoOpen() {
       // Deliberately not `settle`: the auto-show is the model speaking, and the model does not get to

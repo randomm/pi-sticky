@@ -34,7 +34,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { stripSequences } from "./escape.ts";
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
-import { panelFrameTitle } from "./panel-frame-title.ts";
+import { frameTitle } from "./panel-frame-title.ts";
 import {
   ELLIPSIS,
   FRAME_BOTTOM_LEFT,
@@ -154,7 +154,7 @@ export function buildPeekLines(content: PeekContent, width: number, style: Panel
   const metaColumns = widestMetaColumns(pins, style.dim, content.ageNow);
   return [
     borderLine(
-      panelFrameTitle(content.sections.order),
+      frameTitle(content.sections.order),
       style.header,
       FRAME_TOP_LEFT,
       FRAME_TOP_RIGHT,

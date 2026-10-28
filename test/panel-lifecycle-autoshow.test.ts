@@ -11,7 +11,8 @@
  * nothing, so the user's own hide is still the record when the open ends.
  *
  * Driven through `stubApi` (see `panel-lifecycle-fixture.ts`); the same paths on a live session are in
- * `integration-panel.test.ts`.
+ * `integration-panel.test.ts`. The persistence half of U11 — an open outliving every redraw, pin and agent turn — is
+ * `panel-lifecycle-autoshow`'s own first case below, since no user interaction is what ends it.
  */
 import { expect, test } from "bun:test";
 
@@ -68,7 +69,50 @@ test("an info pin leaves a hidden panel hidden and the rail drawing it (U11)", a
   expect(ctx.recorder.widgets.has(KEY)).toBe(true);
 });
 
-test("a warning pin auto-shows too, and the open ends at the user's next message", async () => {
+test("the open a pin earned persists across a redraw, a further pin and an agent turn (U11)", async () => {
+  // Operator resolution 2 of pins v2-4, in one test: the earned open is not the frame of one draw. It
+  // survives the redraw a command's listing causes, the rebuild a turn ending runs, a second pin landing on
+  // top of it, and a plain submitted message — every one of which reaches the cell through some writer
+  // other than the user's next interaction. Each of those moves used to fold the panel back into the peek on
+  // the spot, which is the failure this case is the regression for.
+  const booted = await boot([], 120);
+  const { stub, ctx, panel: cell } = booted;
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  const tool = toolOf(stub);
+  await tool.execute(
+    "c1",
+    { action: "pin", text: "Deploy is blocked", level: "warning" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  expect(cell.mode()).toBe("open");
+
+  // A redraw driven by a command listing: the cell is settled from the session, which cannot see the screen.
+  await stub.commands.get("pins")?.handler("show", ctx);
+  expect(cell.mode()).toBe("open");
+  // The turn ends, so the branch is re-read and every entry of it reconciled.
+  stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, ctx);
+  expect(cell.mode()).toBe("open");
+  // A further pin — which the spec also names — arrives while the first is still on screen.
+  await tool.execute(
+    "c2",
+    { action: "pin", text: "And the migration", level: "info" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  expect(cell.mode()).toBe("open");
+  // A message the user submits that is not a reply: pi dispatches `input`, the extension redraws, and the
+  // open is still the open. (A reply submission is the same move with a marker in front of it.)
+  stub.emit("input", { type: "input", text: "what else", source: "interactive" }, ctx);
+  expect(cell.mode()).toBe("open");
+  // The rail stayed stood down throughout, which is the user-visible half: the pins never went back to it
+  // while the panel was open.
+  expect(ctx.recorder.widgets.has(KEY)).toBe(false);
+});
+
+test("a warning pin auto-shows too, and the open ends when the user leaves the panel", async () => {
   const booted = await boot([], 120);
   const { stub, ctx, panel: cell } = booted;
   await stub.commands.get("pins")?.handler("hide", ctx);

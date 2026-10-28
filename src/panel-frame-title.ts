@@ -55,7 +55,7 @@ const INFLECTS: Record<SectionKind, boolean> = { warning: true, action: false, i
  * An empty view has no counts to print and titles `📌 Pinned`, which the frame never draws anyway: the builder
  * answers a view with no pins with no rows at all.
  */
-export function panelFrameTitle(sections: readonly PanelSection[]): string {
+export function frameTitle(sections: readonly PanelSection[]): string {
   const segments: string[] = [];
   for (const section of sections) {
     const count = section.pins.length;
@@ -76,12 +76,3 @@ export function panelFrameTitle(sections: readonly PanelSection[]): string {
 function plural(count: number, noun: string, inflects: boolean): string {
   return count === 1 || !inflects ? `${count} ${noun}` : `${count} ${noun}s`;
 }
-
-/**
- * The name this rule had before the peek, kept as an alias so the tests that name it keep naming it.
- *
- * Not a second implementation and not a deprecation the code still needs: `buildPanelLines` and
- * `buildPeekLines` both call `panelFrameTitle`, and an alias whose only reader is a test file is the cheap
- * way to make a rename a one-file change rather than a two-file one. New readers call the real name.
- */
-export const frameTitle = panelFrameTitle;

@@ -31,7 +31,7 @@ import { stripSequences } from "./escape.ts";
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
 import type { PanelLayout } from "./panel-frame-layout.ts";
-import { panelFrameTitle } from "./panel-frame-title.ts";
+import { frameTitle } from "./panel-frame-title.ts";
 import {
   ELLIPSIS,
   FRAME_BOTTOM_LEFT,
@@ -238,9 +238,7 @@ export function buildPanelLines(
   // result means the selected pin is scrolled above the window and matches no row drawn.
   const bar = layout.start - offset;
 
-  // The peek draws the same title from the same sections (`panel-peek.ts`), so the string is read through
-  // one function rather than spelled at each of the two frames that carry it.
-  const title = panelFrameTitle(content.sections);
+  const title = frameTitle(content.sections);
   const lines: string[] = [
     borderLine(title, style.header, FRAME_TOP_LEFT, FRAME_TOP_RIGHT, width, frame),
   ];
