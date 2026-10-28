@@ -16,8 +16,12 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
+import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
+import { createOverlayHandle } from "./harness.ts";
+import { host } from "./panel-component-host.ts";
 import { built, framed } from "./panel-frame.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 
@@ -43,6 +47,23 @@ function contentRows(lines: string[]): string[] {
 
 const frameOf = (pins: Parameters<typeof built>[0]["pins"], selection = 0, focused = true) =>
   built({ pins, selection, focused, replyHint: "", ageNow: LATER }, WIDTH, style);
+
+/**
+ * A real focused component over `pins`, drawn at `WIDTH`: the only way to see the order the *component*
+ * draws, since its `PanelMemory` is what feeds the layout and the keys. The bar style is installed on the
+ * host rather than passed to `render` — the component resolves its colours from the host, once.
+ */
+function componentRows(pins: ViewPin[], selection: number): string[] {
+  const h = host(pins);
+  h.stub.style = () => style;
+  const c = new PanelComponent(h.stub, h.tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  c.focus();
+  c.select(selection);
+  return contentRows(c.render(WIDTH));
+}
 
 test("a mixed view draws a heading above each level, in the drawn order", () => {
   const rows = contentRows(frameOf(mixedView()));
@@ -105,6 +126,25 @@ test("the bar can never be drawn on a heading, whatever the selection", () => {
   // A selection past the end draws no bar at all rather than one on whatever row lands there.
   const past = contentRows(frameOf(view, 99)).filter((row) => row.includes("["));
   expect(past).toHaveLength(0);
+});
+
+test("a replied-before-unreplied view draws the unanswered pin's row under the bar", () => {
+  // The same divergence seen at the frame: the bar is addressed by *pin* index into the drawn list, so if the
+  // fast path accepts an answered pin above an unanswered one the row under the bar belongs to the wrong pin —
+  // and `d`/`Enter`, which index that very list, act on the pin the user was not looking at.
+  //
+  // Drawn through the component's own path — `PanelMemory.sectionsOf` and the `flat` it memorises — rather
+  // than through the test helper, because the fast path the bug lived in is only ever handed the memorised
+  // array: a helper that sections the view itself cannot show an accepted order diverging from `orderPins`.
+  //
+  // Both pins are facts, so one section, and the drawn order is the ranking's: the unreplied pin leads its
+  // answered twin whatever their ids. Selection 0 is therefore the pin still asking — the one that used to
+  // sink below the bar whenever the guard accepted a view whose newer pin had been answered first.
+  const view = [levelPin(5, "answered note", "info", true), levelPin(4, "new note", "info")];
+  const barRows = componentRows(view, 0).filter((row) => row.includes("["));
+  expect(barRows).toHaveLength(1);
+  expect(barRows[0]).toContain("new note");
+  expect(barRows[0]).toContain("#4");
 });
 
 test("an unfocused panel draws headings and no bar", () => {

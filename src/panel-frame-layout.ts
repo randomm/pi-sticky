@@ -153,7 +153,14 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  * `panelSections(pins).flat`, never into the caller's array, and the heading rows a multi-section view gains
  * sit between the sections without shifting an index — a heading owns no slot. A caller that built the
  * sections first (`PanelComponent`, through `PanelMemory`) hands over that very `flat`, and the table built
- * from it is the same table, because a section of already-ranked pins is those pins in the order they came.
+ * from it is the same table, because a section of already-drawn pins is those pins in the order they came —
+ * `panelSections` accepts such a list only after checking it against every key `orderPins` sorts by, so the
+ * order it hands back is one that sort would leave alone.
+ *
+ * `panelLayout` below is the entry point for a caller that has *no* sections yet — it builds them here, so the
+ * table is still derived in exactly one place. Every caller that also draws a frame already has the sections
+ * (`PanelComponent`, and the test helpers) and goes to `panelLayoutSections` instead, so its title and its
+ * rows are grouped once.
  *
  * The text column is what gives up width, never the id/age tail: the wrap is sized so a first row still has
  * a column of text to draw *and* room for its tail beside it, because a row whose text column is zero
@@ -174,6 +181,10 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  * the prompt stays visible beside it while a list of a thousand pins stops at half the terminal and scrolls.
  * A heading is a row like any other for the purposes of the half-height cap: two sections over a short
  * terminal scroll their headings with their pins rather than pushing the frame past the ceiling.
+ *
+ * The entry point for a caller holding no sections yet — the tests that exercise the height in isolation, and
+ * any future caller with no frame title to agree with. Every caller that *draws* a frame has the sections
+ * already and goes to `panelLayoutSections`, so its counts and its rows are grouped once.
  */
 export function panelLayout(
   pins: readonly ViewPin[],

@@ -37,7 +37,6 @@ import type { PanelHost } from "./panel-host.ts";
 import { containKey } from "./panel-input.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
-import { panelSections } from "./panel-sections.ts";
 import type { PanelSections } from "./panel-sections.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";

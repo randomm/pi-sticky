@@ -11,6 +11,7 @@
 import { expect, test } from "bun:test";
 
 import { hasMultipleSections, panelSections, sectionOf } from "../src/panel-sections.ts";
+import { orderPins } from "../src/render.ts";
 import { infoView, levelPin, mixedView } from "./panel-sections-fixture.ts";
 
 const kinds = (pins: Parameters<typeof panelSections>[0]) =>
@@ -104,6 +105,32 @@ test("sectioning a list that is already drawn leaves it exactly as it was", () =
   expect(twice.order.map((section) => ids(section.pins))).toEqual(
     once.order.map((section) => ids(section.pins)),
   );
+});
+
+test("the guard accepts only an order orderPins would leave alone, reply state included", () => {
+  // The case the fast path used to wave through: `viewFrom` stamps `repliedAt` onto an array still in
+  // creation order, so when the *newer* of two same-level pins is answered first the view arrives as
+  // `[5 replied, 4 unreplied]` — ids descending, so a guard that read only levels and ids called that
+  // "already drawn" and the panel put the answered pin above the one awaiting a decision, against what the
+  // rail, `/pins` and the model listing showed. The guard must check every key `orderPins` compares, so the
+  // accepted array and the sorted array are the same array.
+  const repliedNewerFirst = [levelPin(5, "a", "info", true), levelPin(4, "b", "info")];
+  expect(ids(panelSections(repliedNewerFirst).flat)).toEqual(ids(orderPins(repliedNewerFirst)));
+  expect(ids(panelSections(repliedNewerFirst).flat)).toEqual([4, 5]);
+  // The same shape one level up, where getting it wrong hides an unanswered decision.
+  const actions = [levelPin(7, "a", "action", true), levelPin(6, "b", "action")];
+  expect(ids(panelSections(actions).flat)).toEqual(ids(orderPins(actions)));
+  expect(ids(panelSections(actions).flat)).toEqual([6, 7]);
+  // A whole view of them, in the order the session hands pins over: creation order with the newer pin of
+  // each level answered. Every level must come out `orderPins`' way, unreplied first.
+  const mixed = [
+    levelPin(7, "w2", "warning", true),
+    levelPin(6, "w1", "warning"),
+    levelPin(5, "i2", "info", true),
+    levelPin(4, "i1", "info"),
+  ];
+  expect(ids(panelSections(mixed).flat)).toEqual(ids(orderPins(mixed)));
+  expect(ids(panelSections(mixed).flat)).toEqual([6, 7, 4, 5]);
 });
 
 test("sectionOf names the section a pin draws in, and nothing for a pin the view lacks", () => {

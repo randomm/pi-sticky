@@ -52,7 +52,11 @@ export function headingRow(section: PanelSection): HeadingRow {
   return { mark, label: heading.slice(mark.length + 1) };
 }
 
-/** The heading of `kind`, spelled once for whoever asks — the rail and `/pins` never do (resolution 6). */
+/** The heading of `kind`, spelled once for whoever asks — the rail and `/pins` never do (resolution 6).
+ *
+ * Reserved for the group-section API (v2-6), which needs a heading for a section the table does not yet build;
+ * nothing in the drawn frame reads it today — `headingRow` is what the layout asks for.
+ */
 export function headingText(kind: SectionKind): string {
   return HEADINGS[kind];
 }

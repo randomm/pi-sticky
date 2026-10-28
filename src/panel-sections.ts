@@ -63,30 +63,21 @@ function bestOf(section: PanelSection): ViewPin | undefined {
 /**
  * Whether `pins` is already in the order the panel draws — the order `panelSections` itself produces.
  *
- * The check is exact and cheap: the levels must not go backwards, so the view is still split into the same
- * sections, and within each run the pins must keep descending ids, which is what `orderPins` answers for a
- * set with no reply state to separate them. `PanelComponent` hands the layout the `flat` it memorised on
- * every frame, and a function that sorted that list again would re-rank *within* each level — pinning every
- * warning above every action above every fact — and quietly undo the section ordering the same call had just
- * asked for. Sections are not a relabelling of the ranking: a section is a grouping the ranking alone cannot
- * express, so a second ranking is not a no-op and must be detected rather than trusted away.
+ * The check reads one adjacent pair at a time, and it must read *every key* `orderPins` sorts by: a level
+ * must never step *backwards* toward `info`, so the view still splits into the same sections, and inside one
+ * run of equal levels an unreplied pin must never sit after a replied one, nor a lower id before a higher
+ * one — those are the two comparisons `orderPins` (`render.ts`) makes below its level rank, so a pair that
+ * breaks either is a pair that sort would move. Checking the levels and the ids but not the reply stamp was
+ * the bug: `viewFrom` (`state.ts`) stamps `repliedAt` onto an array still in creation order, so a view whose
+ * *newer* pin was answered first reads `[5 replied, 4 unreplied]` — descending ids, and a guard that looked
+ * only at the ids waved it through. The panel then drew the answered pin above the one awaiting a decision
+ * while the rail, `/pins` and the model listing showed the other way round, and `d`/`Enter` — which index
+ * this very array — acted on the pin the bar was not on.
  *
- * A view in insertion order never passes this unless it already reads in drawn order, and then sorting it
- * changes nothing — so the guard costs nothing it does not already guarantee.
- */
-/**
- * Whether `pins` is already in the order the panel draws — the order `panelSections` itself produces.
- *
- * The check is exact and cheap, reading one adjacent pair at a time: a level must never step *backwards*
- * toward `info`, so the view still splits into the same sections, and inside one run of equal levels the ids
- * must keep falling — `orderPins` answers a same-level, same-reply-state tie with the **highest** id first,
- * so a pair that rises is the pair that sort would move. `PanelComponent` hands the layout the `flat` it
- * memorised on every frame, and a function that sorted that list again would re-rank *within* each level —
- * pinning every warning above every action above every fact — and quietly undo the section ordering the same
- * call had just asked for. Sections are not a relabelling of the ranking: a section is a grouping the ranking
- * alone cannot express, so a second ranking is not a no-op and must be detected rather than trusted away.
- *
- * A view in insertion order passes this only when it already reads in drawn order, and then sorting it
+ * `PanelComponent` hands the layout the `flat` it memorised on every frame, and a function that sorted that
+ * list again would re-rank *within* each level and quietly undo the section ordering the same call asked for;
+ * sections are not a relabelling of the ranking, so the second ranking must be detected rather than trusted
+ * away. A view in insertion order passes this only when it already reads in drawn order, and then sorting it
  * changes nothing — so the guard never accepts an order it has not just checked, and costs nothing it does
  * not already guarantee.
  */
@@ -95,7 +86,12 @@ function alreadyDrawn(pins: readonly ViewPin[]): boolean {
     const previous = pins[i - 1] as ViewPin;
     const current = pins[i] as ViewPin;
     if (LEVEL_ORDER[previous.level] > LEVEL_ORDER[current.level]) return false;
-    if (previous.level === current.level && previous.id < current.id) return false;
+    if (previous.level !== current.level) continue;
+    // The same key `orderPins` compares: unreplied before replied, and only within one reply state the ids.
+    const previousReplied = previous.repliedAt === undefined ? 0 : 1;
+    const currentReplied = current.repliedAt === undefined ? 0 : 1;
+    if (previousReplied > currentReplied) return false;
+    if (previousReplied === currentReplied && previous.id < current.id) return false;
   }
   return true;
 }
@@ -129,8 +125,10 @@ export function panelSections(pins: readonly ViewPin[]): PanelSections {
     pins: sectionPins,
   }));
   order.sort(compareSections);
+  // One push per pin rather than `push(...section.pins)`: a spread hands the section's pins as arguments,
+  // and the argument list runs out of stack long before the row table does.
   const flat: ViewPin[] = [];
-  for (const section of order) flat.push(...section.pins);
+  for (const section of order) for (const pin of section.pins) flat.push(pin);
   return { order, flat };
 }
 
@@ -154,6 +152,9 @@ function compareSections(a: PanelSection, b: PanelSection): number {
  * wrong section as soon as two views in one process held the same id (a resumed branch beside a fresh one).
  * The section the bar is addressed by and the section the drawer paints have to be the same object, and
  * they are because both came out of one call with one array.
+ *
+ * Reserved for the group-section API (v2-6) — nothing in the drawn frame addresses a section by pin today,
+ * because the layout walks `order` and the keys index `flat`.
  */
 export function sectionOf(order: readonly PanelSection[], pin: ViewPin): SectionIndex | undefined {
   const index = order.findIndex((section) => section.pins.includes(pin));

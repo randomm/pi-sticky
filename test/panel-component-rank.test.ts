@@ -38,6 +38,11 @@ const at = (id: number, text: string, level: PinLevel, extra = {}): ViewPin => (
   ...pin(id, text, level, { createdAt: NOW, ...extra }),
 });
 
+/** The ids `orderPins` would draw `view` in — what the rail, `/pins` and the model listing all show. */
+function idsOf(view: ViewPin[]): number[] {
+  return orderPins(view).map((entry) => entry.id);
+}
+
 /** A component over a recorded host, focused, with a handle already released so its own flag rules. */
 function panel(pins: ViewPin[]) {
   const h = host(pins);
@@ -125,6 +130,26 @@ test("d and Enter act on the pin under the bar across sections, never on a headi
   // One move down is the action pin, and `Enter` answers *that* pin while handing the focus back.
   expect(enter.state.replies).toEqual([2]);
   expect(enter.c.isFocused()).toBe(false);
+});
+
+test("the panel draws a replied-before-unreplied view in the rail's order", () => {
+  // The divergence the frame's own header promises cannot happen: the panel and the rail are "coloured
+  // alike", so they must also be *ordered* alike, and both surfaces read `orderPins`. When the newer of two
+  // same-level pins is answered first the view arrives in creation order with the reply stamp on the higher
+  // id — the shape `panelSections`' fast path used to accept verbatim, putting the answered fact above the
+  // unanswered one while the rail led with the unanswered. `d` indexes the drawn array, so the row the bar
+  // sat on was not the row the rail called first.
+  const view = [
+    at(4, "new note", "info"),
+    at(5, "answered note", "info", { repliedAt: NOW }),
+    at(2, "new alert", "warning"),
+    at(3, "answered alert", "warning", { repliedAt: NOW }),
+  ];
+  const { c } = panel(view);
+  expect(drawnIds(c.render(60))).toEqual(idsOf(view));
+  // Within the warning section the unreplied pin leads its answered twin, so `d` from the bottom of the
+  // warnings dismisses the one still asking — the pin the rail calls first, and not the higher id.
+  expect(drawnIds(c.render(60))).toEqual([2, 3, 4, 5]);
 });
 
 test("the panel's order is orderPins' order, on a view that mixes all of it", () => {

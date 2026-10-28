@@ -61,8 +61,9 @@ export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
  * The title names how many pins need a decision, how many are warnings and how many merely inform, and the
  * only thing that can answer those questions is the same grouping the headings are drawn from — so the title
  * is computed here rather than carried on `PanelContent`, and the frame cannot show counts that disagree with
- * the sections under it. `content.pins` already arrives in the drawn order, and `panelSections` leaves an
- * already-drawn list alone, so this is a grouping of the frame's own rows and not a second ranking of them.
+ * the sections under it. `content.pins` already arrives in the drawn order, and `panelSections` accepts such
+ * a list only after checking it against every key `orderPins` sorts by — level, reply state, then id — so
+ * this is a grouping of the frame's own rows and not a second ranking of them.
  */
 function titleSections(pins: readonly ViewPin[]): readonly PanelSection[] {
   return panelSections(pins).order;
