@@ -153,16 +153,18 @@ test("untrusted text reaches the rail without controls, and the raw text is neve
   }
 });
 
-test("the tool teaches the model when to pin, and to update rather than duplicate", async () => {
+test("the tool declares a two-bullet prompt that points at the skill", async () => {
   const h = await createHarness({ factories: [extension] });
   try {
     await pin(h, "Decide X");
     const content = JSON.stringify(h.requests[0]);
+    // The policy itself lives in skills/sticky-basics/SKILL.md; what the tool must still carry, for a
+    // session where no skill was loaded at all, is the one bullet that keeps a pin a pin and the
+    // pointer that gets the model to the rest.
     for (const guideline of [
-      "Use pin_for_user when the user must see something after a long run",
-      "Do not pin progress updates or routine status",
-      "Update an existing pin instead of adding a new one on the same topic",
-      "make each pin understandable on its own",
+      "Pin only what the user must see after a long run",
+      "Never a progress update.",
+      "For detailed use, load the sticky-basics skill.",
     ]) {
       expect(content).toContain(guideline);
     }

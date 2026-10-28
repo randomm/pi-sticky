@@ -156,17 +156,16 @@ test("an unknown id quotes the listing too", async () => {
   expect(text(result)).toBe("No pin #7.\nPinned for the user now (1 of 5):\n#1 [info] Real pin");
 });
 
-test("the guidelines teach the model what a reply is, and add exactly one bullet", () => {
-  // The reply flow tells the model nothing except through this list: a message the user sent as
-  // `Re #1: yes` arrives rewritten, and the one bullet is what connects that text to the pin it answers.
-  // Asserted as a count as well as a substring — a second bullet about replies would be a guideline the
-  // ticket does not authorise.
-  const guidelines = createPinTool(harnessDeps()).promptGuidelines ?? [];
-  expect(guidelines).toHaveLength(5);
-  expect(guidelines[4]).toBe(
-    'When the user replies to a pin (their message starts with "Replying to pin #N"), act on the reply, then update or unpin that pin.',
-  );
-  // The four that were there before are still there, in order.
-  expect(guidelines[0]).toStartWith("Use pin_for_user when the user must see something");
-  expect(guidelines[3]).toStartWith("The user may read a pin hours later");
+test("the declaration carries a one-line purpose and the pointer to sticky-basics, and nothing else", () => {
+  // With the policy moved into skills/sticky-basics/SKILL.md, the tool's own prompt is what the model
+  // has in a session where no skill was loaded, so it must stay usable on its own: two bullets, the
+  // purpose and the pointer. Asserted as a count as well as a substring — a third bullet is policy the
+  // ticket moved out of here, and every bullet costs tokens in every request.
+  const tool = createPinTool(harnessDeps());
+  const guidelines = tool.promptGuidelines ?? [];
+  expect(guidelines).toHaveLength(2);
+  expect(guidelines[0]).toStartWith("Pin only what the user must see after a long run");
+  expect(guidelines[1]).toBe("For detailed use, load the sticky-basics skill.");
+  expect(typeof tool.promptSnippet).toBe("string");
+  expect(tool.promptSnippet ?? "").toStartWith("pin_for_user:");
 });
