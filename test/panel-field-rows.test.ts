@@ -22,7 +22,8 @@
 import { expect, test } from "bun:test";
 
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
-import { panelPinRows } from "../src/panel-rows.ts";
+import { drawOptionRow } from "../src/panel-options-row.ts";
+import { isOptionRow, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -62,6 +63,32 @@ test("the reserved options row is the blank the drawer fills, and it carries no 
   expect(reserved?.text).toBe(" ");
   // No id, no age: the pin's first row carries the tail, so the options row cannot be mistaken for a pin.
   expect(reserved?.tail).toBe("");
+});
+
+test("the row table and the drawer read pin.options the same way, so a reserved row is a drawn row", () => {
+  // The two readers of one field, pinned against each other. The table decides how many rows a pin owns — the
+  // window scrolls, the bar sits and the keys index that count — and the drawer fills the row it reserved. If
+  // they disagree about what `options` is, the user gets a counted row of padding that names no option, or (in
+  // the shape this replaces) a table that reserved a row from `options.length` while the drawer answered it
+  // blank after filtering every entry out. One rule, read once: absent or empty owns no row, a list owns one.
+  const cases: readonly (readonly [unknown, number])[] = [
+    [undefined, 1],
+    [[], 1],
+    [["a"], 2],
+    [["a", "b", "c", "d"], 2],
+  ];
+  for (const [options, expected] of cases) {
+    const view = { ...levelPin(1, "one line", "info"), options } as ViewPin;
+    const rows = panelPinRows(view, 40, style);
+    expect(rows).toHaveLength(expected);
+    // The reserved row is the last one the pin owns, tagged for the drawer, and the drawer fills it with the
+    // entries whose digits name their positions — never a counted row the drawer had nothing to say about.
+    const reserved = rows[rows.length - 1];
+    expect(reserved === undefined ? null : isOptionRow(reserved)).toBe(expected === 2);
+    const filled = drawOptionRow(view, 40, style).trimEnd();
+    if (expected === 2) expect(filled).toContain("\u23281 ");
+    else expect(filled).toBe("");
+  }
 });
 
 test("a compact pin owns exactly one text row however long its text is", () => {

@@ -45,9 +45,9 @@ const pin = (
   extra: Partial<Pick<ViewPin, "group" | "options" | "compact">> = {},
 ): ViewPin => ({ ...levelPin(id, `pin ${id}`, level), ...extra });
 
-const frameOf = (pins: ViewPin[], selection = 0) =>
+const frameOf = (pins: ViewPin[], selection = 0, width = WIDTH) =>
   contentRows(
-    built({ pins, selection, focused: true, replyHint: "", ageNow: LATER }, WIDTH, style),
+    built({ pins, selection, focused: true, replyHint: "", ageNow: LATER }, width, style),
   );
 
 /** The frame's title — its first line — for `pins`. */
@@ -152,6 +152,25 @@ test("the options row is one row of its pin, and the bar still lands on the pin"
   ).layout.owned;
   // The options row is *owned* by the pin, which is what makes the window, the bar and the keys agree.
   expect(unowned[2]?.pin).toBe(0);
+});
+
+test("the keycap digits the frame draws are the positions in the pin's option list", () => {
+  // The row table (`optionRows`, `panel-rows.ts`) and the drawer (`drawOptionRow`) read the same field and
+  // must agree about it: the user answers a pin by typing the digit beside a label, so a table that reserved
+  // a row the drawer answered differently — or a drawer that renumbered the entries it kept — sends the answer
+  // to an option the user never saw. The frame is drawn narrow enough to drop the last two entries, which is
+  // the case a renumbering would show.
+  const options = ["a", "a label much too wide for this frame", "c", "d"];
+  // One pin, so the frame is its row and the options row beneath it — no section heading above them.
+  const drawn = frameOf([pin(1, "info", { options })], 0, 56)[1] ?? "";
+  expect(drawn).toContain("\u23281 a");
+  expect(drawn).toContain("\u23282 a label much too wide for this frame");
+  expect(drawn).not.toContain("\u23283");
+  // And in order: the digit before each label is that label's 1-based position, never the count of the labels
+  // that happened to fit before it.
+  options.forEach((label, index) => {
+    expect(drawn.includes(`\u2328${index + 1} ${label}`)).toBe(index < 2);
+  });
 });
 
 test("a pin with no options has no options row", () => {

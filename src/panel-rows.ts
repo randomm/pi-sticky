@@ -170,7 +170,10 @@ export function panelPinRows(
  * The options row `pin` owns: one when it has options and they can be named, none when it has none.
  *
  * The single place the count is decided, so the degenerate frame and the wrapped one cannot disagree about
- * how many rows a pin with options owns.
+ * how many rows a pin with options owns. Read the way `drawOptionRow` reads the same field — `undefined` is
+ * the key being absent and the entries are strings, because both writers of a `Pin` validate the list
+ * (`cleanField` in `pin-fields.ts`, `isPinState` in `state-guards.ts`): a test that the table reserves a row
+ * and the drawer answers it blank is a row the window counts for nothing.
  */
 function optionRows(pin: ViewPin): PanelRow[] {
   return pin.options !== undefined && pin.options.length > 0 ? [optionRow()] : [];

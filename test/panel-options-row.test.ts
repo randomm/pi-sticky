@@ -10,6 +10,11 @@
  *    up the options it cannot name rather than naming them badly.
  * 3. **Nothing drawn for a pin that has no options.** The row is reserved only for pins that have them; a
  *    pin without options must not gain a row of keycaps.
+ * 4. **The digit names the position.** Entry *N* of the list is drawn as `⌨N`, always — the user answers a
+ *    pin by typing its number, so a row that renumbered the entries it kept (or skipped one) would send the
+ *    answer to an option the user never saw. `pin.options` is `string[]` precisely because both writers
+ *    validate it (`pin-fields.ts`, `state-guards.ts`), and the row table reserves its row from the same read
+ *    (`optionRows`, `panel-rows.ts`).
  */
 import { describe, expect, test } from "bun:test";
 
@@ -87,6 +92,48 @@ describe("the options row", () => {
     const drawn = row({ options: ["a\nb", "c"] });
     expect(drawn).not.toContain("\n");
     expect(drawn).toContain("1 a b");
+  });
+
+  test("the keycap digit names the position in the list, whatever the labels cost", () => {
+    // The regression this pins: numbering the *kept* entries instead of the positions. A row that renumbered
+    // would tell the user to press 2 for what it drew first, and the answer would go to another option.
+    const options = ["Passed on", "Not yet", "Escalated", "Deferred"];
+    // Every entry drawn: one digit per position, in order, and each digit sits directly before its own label.
+    const wide = row({ options }, 80);
+    options.forEach((label, index) => {
+      expect(wide).toContain(`\u2328${index + 1} ${label}`);
+    });
+    // Entries dropped from the end keep the digits they were given, so a row of the first two still reads 1, 2.
+    // 39 is the widest row of two and 40 the narrowest of three. `⌨1 Passed on   ⌨2 Not yet   ⌨3 Escalated`
+    // costs 42 columns, so a drawer that numbered the entries it *kept* would answer 40 with `…⌨2 Not yet`
+    // and this line is what refuses it.
+    expect(row({ options }, 39).trimEnd()).toBe("\u23281 Passed on   \u23282 Not yet");
+    expect(row({ options }, 40).trimEnd()).toBe(
+      "\u23281 Passed on   \u23282 Not yet   \u23283 Escalated",
+    );
+    // A label whose cost differs from its neighbour's must not move anyone's digit. These are the two widths
+    // around the third entry — 48 is the widest row of the first two, 49 the narrowest that names all three —
+    // chosen so that a drawer numbering the *kept* entries rather than the positions could not pass them:
+    // renumbered, the two-entry row below would read `⌨1 x   ⌨2 a label…` *and* the three-entry one would end
+    // `⌨3 c`, so only one numbering satisfies both.
+    const lopsided = ["x", "a label too wide for this column", "c"];
+    expect(row({ options: lopsided }, 48).trimEnd()).toBe(
+      "\u23281 x   \u23282 a label too wide for this column",
+    );
+    expect(row({ options: lopsided }, 49).trimEnd()).toBe(
+      "\u23281 x   \u23282 a label too wide for this column   \u23283 c",
+    );
+    // The regression the old defensive `typeof label !== "string" → continue` was: a rejected entry dropped
+    // from the list while the digit still came from the loop position, so the one surviving choice told the
+    // user to press 3 (the reviewer measured `options: [1, "ok"]` drawing `⌨3 ok`). Trusting the validated
+    // type is what makes digit *N* mean `options[N-1]`, and `test/panel-field-rows.test.ts` pins that the row
+    // table reserves a row from the very same read of the field.
+    const holes = ["first", "second", "third"];
+    expect(row({ options: holes }, 28).trimEnd()).toBe("\u23281 first   \u23282 second");
+    expect(row({ options: holes }, 30).trimEnd()).toBe("\u23281 first   \u23282 second");
+    expect(row({ options: holes }, 31).trimEnd()).toBe(
+      "\u23281 first   \u23282 second   \u23283 third",
+    );
   });
 
   test("the keycap and the label are asked of the frame's own two style verbs", () => {

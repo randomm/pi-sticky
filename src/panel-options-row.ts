@@ -24,9 +24,13 @@
  *   The column it measures against is the frame's **full inner width**, not the text column the pins' rows
  *   wrap at — the row carries no tail, so it pays for no id/age reserve (`panel-lines.ts` hands it over).
  *
- * The labels are untrusted: they arrive through `cleanField` (`pin-fields.ts`), which sanitizes, folds and
- * bounds each one before it is stored, and the row is measured and drawn on what the frame's escape policy
- * leaves — so no sequence a label carried is drawn or paid for, whatever the theme did to it around that.
+ * The labels are untrusted, and they are dealt with where they are stored rather than here: `cleanField`
+ * (`pin-fields.ts`) sanitizes, folds and bounds each one and refuses the pin outright when an entry will not
+ * store, and `isPinState` (`state-guards.ts`) refuses a snapshot whose list is anything else — so the entries
+ * this row measures and draws are strings, and **the digit it prints names the position in the list**: entry
+ * *N* is `pin.options[N-1]`, the answer the user types. The row is measured and drawn on what the frame's
+ * escape policy leaves, so no sequence a label carried is drawn or paid for, whatever the theme did to it
+ * around that.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 
@@ -52,15 +56,19 @@ const SEPARATOR = "   ";
  * The colours are applied to the parts that survive, so a theme's bytes never reach a dropped entry.
  */
 export function drawOptionRow(pin: ViewPin, textWidth: number, style: PanelStyle): string {
-  // Read defensively rather than on the type: the row is drawn from a view that may be built directly, and a
-  // list that is not an array of strings is one the drawer cannot name — the honest answer is no row, not a
-  // throw that takes the frame down with it.
-  const options = Array.isArray(pin.options) ? pin.options : [];
-  if (options.length === 0 || textWidth <= 0) return "";
+  // Read on the type, exactly as the row table does (`optionRows`, `panel-rows.ts`): the two readers of this
+  // one field must agree about what a list is, or the table reserves a row this drawer answers blank and the
+  // digit on a kept entry stops naming the option the user would type. `pin.options` is `string[] | undefined`
+  // because both writers of a `Pin` validate the list — `cleanField` (`pin-fields.ts`) refuses a pin whose
+  // options are not 2–4 non-empty strings and `isPinState` (`state-guards.ts`) refuses a snapshot that claims
+  // otherwise, which is also the whole path a session file takes (`session-entries.ts` re-cleans every entry
+  // and hands the copy back only once the guard has vouched for it). So the entries below are strings, their
+  // index is their answer, and a non-list is a broken invariant rather than an input this row trades on.
+  const options = pin.options;
+  if (options === undefined || options.length === 0 || textWidth <= 0) return "";
   const kept: string[] = [];
   let width = 0;
   for (const [index, label] of options.entries()) {
-    if (typeof label !== "string") continue;
     // Measured on the form the terminal will actually occupy — every escape the entry carries stripped, the
     // keycap and digit included. `visibleWidth` charges an escape pi-tui does not recognise as printable (an
     // unterminated OSC, a lone introducer) columns it never draws, so budgeting on the raw entry would keep
