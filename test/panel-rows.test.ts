@@ -14,6 +14,16 @@ import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, pin, view } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 const plainStyle: RenderPanelStyle = {
   header: (s) => s,
@@ -27,15 +37,6 @@ const plainStyle: RenderPanelStyle = {
 const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin => ({
   ...pin(id, text, "info", extra),
   ...extra,
-});
-
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
 });
 
 test("an empty pin text still owns a row, so the bar has something to sit on", () => {
@@ -65,7 +66,9 @@ test("rows are built for every pin in order and no pin is skipped", () => {
 test("the view a test builds with fixtures.ts draws like any other", () => {
   const pins = view([pin(1, "Decide X", "action")]).pins;
   const lines = built(content(pins, 0, true), 40, plainStyle);
-  expect(lines[0]).toContain("📌 Pinned for you (1)");
+  // One action pin, so the title names the level rather than a bare count: `needs you` is what an action
+  // costs the user, and it is the whole reason the counts replaced the old `(1)`.
+  expect(lines[0]).toContain("📌 Pinned · 1 needs you");
   expect(lines[1]).toContain("?");
   expect(lines[1]).toContain("Decide X");
 });

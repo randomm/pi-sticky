@@ -107,14 +107,19 @@ describe("the replied row of the panel", () => {
   test("a selected replied row keeps the bar across the dimmed row", () => {
     const lines = frame(
       [repliedPin(1, "Decide X"), pin(2, "Other", "info", { createdAt: NOW })],
-      0,
+      1,
       true,
     );
-    const row = lines[1] ?? "";
+    // Both pins are info, so they share one section, and the draw order is the ranking's: an unreplied pin
+    // comes before a replied one whatever their ids, so `Other` owns row 1 and the *replied* pin row 2 —
+    // which is the row selection 1 addresses. The bar is asserted on the row that ranking puts it on, and
+    // the replied row is the second one: a bar addressed by table position instead of pin would have landed
+    // on `Other`, the row the fixture's own array order suggests.
+    const row = lines[2] ?? "";
     expect(row).toInclude("[");
     expect(row).toInclude("↩ Decide X");
     expect(visibleWidth(row)).toBe(40);
-    // Only the selected row is bar-drawn, and the replied one is not the last.
+    // Only the selected row is bar-drawn, and it is the replied pin's row rather than the newest one.
     expect(lines.filter((line) => line.includes("["))).toHaveLength(1);
   });
 

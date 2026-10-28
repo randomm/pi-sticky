@@ -21,6 +21,7 @@ import { expect, test } from "bun:test";
 /** The modules whose import order used to matter, each reachable on its own as the first thing loaded. */
 const COLD_MODULES = [
   "src/panel-rows.ts",
+  "src/panel-frame-layout.ts",
   "src/panel-frame-geometry.ts",
   "src/panel-lines.ts",
   "src/panel-tail.ts",
@@ -49,7 +50,15 @@ async function cold(modulePath: string): Promise<{ code: number; out: string; er
  */
 function COLD_PROBE(modulePath: string, target: string): string {
   if (modulePath.endsWith("panel-rows.ts")) {
-    return `import("${target}").then((m)=>{if(m.GUTTER_COLUMNS!==4||typeof m.panelLayout!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+    // The row table's own bindings: the gutter count both the layout and the builder subtract, and the one
+    // function that turns a pin into rows. The frame's table moved out to `panel-frame-layout.ts` and is
+    // probed there — this module is the row, not the frame.
+    return `import("${target}").then((m)=>{if(m.GUTTER_COLUMNS!==4||typeof m.panelPinRows!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-frame-layout.ts")) {
+    // The frame's table: the one place a frame's rows are built and its height counted, cold so a section
+    // module pulled into that graph cannot leave a constant read before its own module finished.
+    return `import("${target}").then((m)=>{if(typeof m.panelLayoutSections!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   if (modulePath.endsWith("panel-frame-geometry.ts")) {
     return `import("${target}").then((m)=>{if(!(m.FRAME_COLUMNS>0)||!(m.META_COLUMNS>0))throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;

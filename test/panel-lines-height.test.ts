@@ -3,7 +3,7 @@
  *
  * `buildPanelLines` used to take a `height` of its own alongside the row table, so a caller could size
  * one frame and draw another: the box and the rows it was built from could disagree by any number of
- * rows. The height is now `panelLayout`'s alone and the builder draws it, which leaves one promise to
+ * rows. The height is now `panelLayoutSections`'s alone and the builder draws it, which leaves one promise to
  * pin — the length of the output *is* `layout.height` — and it is pinned across the sweep that used to
  * be able to break it: a tall terminal and a short one, one pin and three hundred.
  *
@@ -14,13 +14,14 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { panelLayoutSections } from "../src/panel-frame-layout.ts";
 import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
-import { panelLayout } from "../src/panel-rows.ts";
+import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
 import type { DrawnFrame } from "./panel-frame.ts";
-import { built, framed } from "./panel-frame.ts";
+import { built, content, framed } from "./panel-frame.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";
 
 /** Identity colours, so a drawn row is compared to what was asked for and not to a theme's bytes. */
@@ -55,21 +56,18 @@ function pinsOf(count: number): ViewPin[] {
 
 /** The wrapped row table and the frame height, at the width/terminal these tests draw at. */
 function frameRows(count: number, terminalRows: number | undefined) {
-  return panelLayout(pinsOf(count), 40, terminalRows, 0, style);
+  // Sectioned here the way `framed` sections them below: the table this answers with is the table the frame
+  // was drawn from, so the row count compared against `layout.height` is one pass's own answer.
+  return panelLayoutSections(panelSections(pinsOf(count)), 40, terminalRows, 0, style, LATER);
 }
 
 /** The frame and the height it was counted at, from one `panel-frame.ts` pass at one width/terminal. */
 function drawn(count: number, width: number, terminalRows: number | undefined): DrawnFrame {
-  // One call, one width, one terminal: `framed` is the component's own pair — the table `panelLayout`
-  // built and the lines cut from *that* table — so the height asserted on is the one the drawing came
-  // from and not a second pass that could disagree with it. A terminal that cannot be asked is the
-  // shared default, not a `0`, which would be a terminal with no rows at all.
-  return framed(
-    { pins: pinsOf(count), selection: 0, focused: true, replyHint: "", ageNow: LATER },
-    width,
-    style,
-    terminalRows ?? TERMINAL_ROWS,
-  );
+  // One call, one width, one terminal: `framed` is the component's own pair — the table
+  // `panelLayoutSections` built and the lines cut from *that* table — so the height asserted on is the one
+  // the drawing came from and not a second pass that could disagree with it. A terminal that cannot be asked
+  // is the shared default, not a `0`, which would be a terminal with no rows at all.
+  return framed(content(pinsOf(count), 0, true), width, style, terminalRows ?? TERMINAL_ROWS);
 }
 
 test("the builder draws exactly the height the layout counted, at every terminal and pin count", () => {
@@ -78,10 +76,10 @@ test("the builder draws exactly the height the layout counted, at every terminal
   for (const terminalRows of [3, 5, 6, 7, 8, 12, 24, 40, 200, 400, undefined]) {
     for (const count of [1, 2, 3, 5, 12, 60, 300]) {
       const { lines, layout } = drawn(count, 40, terminalRows);
-      // One height, one owner: `framed` returns the lines and the table from a *single* `panelLayout`
-      // pass, so the number the builder drew to is the number that same pass counted — which is the
-      // promise this file exists for: a frame counted from one table and drawn from another cannot get
-      // through here.
+      // One height, one owner: `framed` returns the lines and the table from a *single*
+      // `panelLayoutSections` pass, so the number the builder drew to is the number that same pass counted
+      // — which is the promise this file exists for: a frame counted from one table and drawn from another
+      // cannot get through here.
       const counted = layout.height;
       // A terminal with no room for both borders is refused outright: the layout says two rows and the
       // builder answers an open box with nothing at all.
@@ -139,10 +137,12 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
     40,
   );
   expect(scrolled).toHaveLength(20);
-  expect(scrolled[0]).toContain("📌 Pinned for you (50)");
+  expect(scrolled[0]).toContain("📌 Pinned · 50");
   expect(scrolled.at(-1)).toContain("Enter reply");
-  expect(scrolled.some((line) => line.includes("Pin 50 "))).toBe(true);
-  expect(scrolled.some((line) => line.includes("Pin 1 "))).toBe(false);
+  // Fifty info pins draw newest id first, so the last selection — 49 — is the *oldest* pin, `Pin 1`, and the
+  // window the keys scrolled to opens on it. What has scrolled out of the frame is the newest.
+  expect(scrolled.some((line) => line.includes("Pin 1 "))).toBe(true);
+  expect(scrolled.some((line) => line.includes("Pin 50 "))).toBe(false);
   // A terminal whose half cannot hold both borders is no frame at all: `panelMaxRows` says two rows, the
   // frame's floor says three, and the builder answers an open box with nothing.
   expect(panelMaxRows(5)).toBe(2);

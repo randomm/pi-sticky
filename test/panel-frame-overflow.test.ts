@@ -8,7 +8,7 @@
  * nothing at all: an open frame is worse than no frame, because the panel is flush right and the chat
  * behind it would show through the gap.
  *
- * As the component draws it: `panelLayout` owns the row table *and* the frame height, and the builder is
+ * As the component draws it: `panelLayoutSections` owns the row table *and* the frame height, and the builder is
  * handed both (`built`, from `panel-frame.ts`), so no test sizes one frame and draws another.
  */
 import { expect, test } from "bun:test";
@@ -20,6 +20,16 @@ import type { ViewPin } from "../src/types.ts";
 import { LATER, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 import { offenders } from "./panel-hostile.ts";
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 const style: RenderPanelStyle = {
   header: (s) => s,
@@ -34,18 +44,6 @@ const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin =>
   ...pin(id, text, "info", extra),
   ...extra,
 });
-
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
-});
-
-/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
-type PanelContent = ReturnType<typeof content>;
 
 /** A frame the given width, with one pin, in whichever focus state the caller asked for. */
 function frameOf(width: number, focused = false): string[] {
@@ -83,7 +81,7 @@ test("a header or hint too long for the frame is cut with an ellipsis and the co
     MIN_FRAME_WIDTH,
     style,
   );
-  expect(many[0]).toContain("📌 Pinned for you (9)");
+  expect(many[0]).toContain("📌 Pinned · 9");
   expectUniformWidth(many, MIN_FRAME_WIDTH);
   expect(many[0]?.startsWith("╭")).toBe(true);
   expect(many[0]?.endsWith("╮")).toBe(true);

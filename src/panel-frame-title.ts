@@ -1,0 +1,78 @@
+/**
+ * The frame title of the panel: `📌 Pinned` and one count per level the view holds.
+ *
+ * Two header authorities exist in this codebase and only one of them moved for pins v2-3: `render.ts`'s
+ * `HEADER` spells the rail's and `/pins`' header (`📌 Pinned for you (n)`) and stays exactly as it is
+ * (operator resolution 6), while this module owns the *frame's* title alone. Keeping the two in separate
+ * files is what lets a test read the panel's title without importing the rail's, and what keeps a change
+ * to one from silently repainting the other.
+ *
+ * The title counts the view rather than naming it, because the count is the thing the user could not read
+ * off the old one: `📌 Pinned for you (12)` said twelve and said nothing about which of the twelve asked
+ * for a decision. `📌 Pinned · 1 needs you · 11 more` names the one, and the counts come from the sections
+ * the frame was laid out on — the `order` `panelLayoutSections` was handed and hands back — rather than from
+ * a second pass over the pins, so the number beside the frame's opening is the number of rows under the
+ * heading it names.
+ */
+import type { PanelSection, SectionKind } from "./panel-sections.ts";
+
+/** The frame title's opening, before its first count. */
+const TITLE = "📌 Pinned";
+
+/** The separator between the opening and a count, and between two counts. */
+const SEPARATOR = " · ";
+
+/**
+ * The word each level's count is written with. `warning` is a noun and inflects; `needs you` is a phrase and
+ * does not; `info` has no noun of its own at all — it is spelled `more` once a segment precedes it and stands
+ * as a bare count when none does, which is the branch `frameTitle` takes for it.
+ */
+const NOUNS: Record<SectionKind, string> = {
+  warning: "warning",
+  action: "needs you",
+  info: "more",
+};
+
+/**
+ * Whether the noun of each level takes an `s` when there is more than one of it.
+ *
+ * `needs you` is a phrase, not a noun, and does not inflect: twelve of them are still `12 needs you`, and
+ * `12 needs yous` reads as a string a person did not write. `info` is `false` because its count never reaches
+ * `plural` at all — `frameTitle` spells that one itself, since its shape depends on the segments before it.
+ */
+const INFLECTS: Record<SectionKind, boolean> = { warning: true, action: false, info: false };
+
+/**
+ * The panel's frame title for `sections`, which must be the drawn order (`panelSections`'s `order`).
+ *
+ * One segment per section, in the order the frame draws them, and the count's spelling follows the segment's
+ * *position* (operator resolution 3): `<n> warning` / `<n> warnings` and `<n> needs you` wherever they fall,
+ * and the facts as `<n> more` only once a segment already precedes them — `📌 Pinned · 1 needs you · 11 more`.
+ * Facts alone carry no earlier segment to hang `more` on, so their count stands bare: the frame of a panel of
+ * three facts and nothing else reads `📌 Pinned · 3`, not `📌 Pinned · 3 more`. The bare form is what the
+ * spec's third example names, and it is the difference between a count that answers "how many" and one that
+ * answers "how many more" — a question only a frame already showing counts of something else poses.
+ * An empty view has no counts to print and titles `📌 Pinned`, which the frame never draws anyway: the builder
+ * answers a view with no pins with no rows at all.
+ */
+export function frameTitle(sections: readonly PanelSection[]): string {
+  const segments: string[] = [];
+  for (const section of sections) {
+    const count = section.pins.length;
+    // The test is on the section's kind and the segments already built, never on an index into `sections`
+    // (which would name a position in the caller's array rather than the counts the title has printed) and
+    // never on the noun string: `plural` would hand back `3 more` for the bare case too, since `more` does
+    // not inflect, so the borrowing has to be spelled here.
+    if (section.kind === "info") {
+      segments.push(segments.length > 0 ? `${count} ${NOUNS.info}` : `${count}`);
+    } else {
+      segments.push(plural(count, NOUNS[section.kind], INFLECTS[section.kind]));
+    }
+  }
+  return segments.length === 0 ? TITLE : `${TITLE}${SEPARATOR}${segments.join(SEPARATOR)}`;
+}
+
+/** `<n> <noun>`, with the noun carrying an `s` when there is more than one of it and the noun inflects. */
+function plural(count: number, noun: string, inflects: boolean): string {
+  return count === 1 || !inflects ? `${count} ${noun}` : `${count} ${noun}s`;
+}

@@ -1,6 +1,6 @@
 /**
  * The rows of the pins panel's content window, as a pure function: how many rows the window gets inside
- * a frame, what each pin contributes to it, and where the window starts for a selection.
+ * a frame, and what one pin contributes to it.
  *
  * A pin is drawn as one or more rows — the first carries the id and the local time, the rest are
  * continuation lines under the text column — and the panel scrolls by *pin*, not by row, so this module
@@ -9,17 +9,18 @@
  * empty and two pins can draw byte-identical rows, so neither question can be answered by scanning the
  * output.
  *
- * The drawing of these rows — the gutters, the bar, the borders around them — is `panel-lines.ts`, and
- * `panelLayout` is the one place a frame's rows are built: the table it returns is what the builder draws
- * *and* what the frame's height is counted from, so a pin is wrapped once per frame. The tail each first row
- * carries is stamped by `metaStamp` (`panel-tail.ts`) — the one string the row prints — and
- * `widestMetaColumns` (`panel-frame-geometry.ts`) *measures* that very string for the reserve the text
- * column gives up, so a theme whose `dim` adds columns is paid for by the layout that wrapped the row.
+ * Which rows a *frame* holds — the sections in drawn order, the heading over each of them, the window's
+ * start for a selection and the height that all of it comes to — is `panelLayoutSections`, and that is
+ * `panel-frame-layout.ts`. This file is the row: what a pin's text turns into at a given width, and nothing
+ * about the box around it. The tail each first row carries is stamped by `metaStamp` (`panel-tail.ts`) — the
+ * one string the row prints — and `widestMetaColumns` (`panel-frame-geometry.ts`) *measures* that very string
+ * for the reserve the text column gives up, so a theme whose `dim` adds columns is paid for by the layout
+ * that wrapped the row.
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { panelTextColumns, widestMetaColumns } from "./panel-frame-geometry.ts";
-import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
+import { widestMetaColumns } from "./panel-frame-geometry.ts";
+import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
 /**
@@ -123,12 +124,16 @@ export function panelPinRows(
 }
 
 /**
- * Rows of every pin, in order, flattened: the window the scroll offset moves.
+ * Rows of every pin in `pins`, which must be the panel's *drawn* order (`panelSections`'s `flat`),
+ * flattened: the rows a frame's window is cut from.
  *
  * Rows are grouped by pin, not identified by it, so a row of its own is not enough to say which pin it
  * belongs to — two pins can produce byte-identical rows, and a pin that wraps produces several that
  * differ only in their empty `meta`. The count each pin owns is therefore taken from the pin itself
  * rather than inferred by scanning the table.
+ *
+ * Callers hand this the order the panel draws, not the order the view was pinned in: the component reads
+ * `panelSections` once and every surface of one frame — rows, bar, keys — walks that one array.
  */
 export function panelAllRows(
   pins: readonly ViewPin[],
@@ -142,45 +147,11 @@ export function panelAllRows(
   return rows;
 }
 
-/** One drawn row together with the *pin* that owns it, as the scroll window needs it. */
-interface PanelOwned {
-  row: PanelRow;
-  pin: number;
-}
-
 /**
- * A pin's rows, in order, each tagged with the pin that owns it — the owner stamped on the row as it is
- * built, which is the only way the question stays answerable.
- */
-function panelRowOwners(
-  pins: readonly ViewPin[],
-  textWidth: number,
-  style: PanelStyle,
-  now: string,
-  metaColumns: number,
-): PanelOwned[] {
-  const owned: PanelOwned[] = [];
-  for (const [index, pin] of pins.entries()) {
-    for (const row of panelPinRows(pin, textWidth, style, now, metaColumns))
-      owned.push({ row, pin: index });
-  }
-  return owned;
-}
-
-/**
- * First row of the pin at `index`, or -1 when there is no such pin, from the owner stamped on each row
- * of the table: the window starts at the first row the builder attributed to that pin, so a pin that owns
- * several rows is scrolled as a whole rather than opening mid-entry.
- */
-function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
-  return index < 0 ? -1 : all.findIndex((entry) => entry.pin === index);
-}
-
-/**
- * The window's start for a selection, given every row of every pin in order and the start of the
+ * The window's start for a selection, given every row of the table in order and the start of the
  * selected pin: never past the end of the table, so the last pin is always on screen.
  *
- * `buildPanelLines` goes through this with the table and the start `panelLayout` built, so drawing a
+ * `buildPanelLines` goes through this with the table and the start `panelLayoutSections` built, so drawing a
  * window of the pins costs one wrap of each pin rather than three.
  */
 export function panelWindowOffset(
@@ -193,69 +164,4 @@ export function panelWindowOffset(
   if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
   if (start < 0) return total - contentRows;
   return Math.min(start, total - contentRows);
-}
-
-/**
- * One frame's rows: the table, the row the selection starts at, and the rows the frame needs.
- *
- * Returned by `panelLayout`, the one place the pins are wrapped for a frame, so the builder draws the
- * very rows the height was counted from.
- */
-export interface PanelLayout {
-  owned: PanelOwned[];
-  start: number;
-  height: number;
-}
-
-/**
- * The row table of one frame, wrapped *once* per pin at the text column `panelTextColumns` computes for
- * `frameWidth` — the table `buildPanelLines` draws and the height is counted from, which is what makes a
- * frame as tall as its rows and keeps a resize from sizing the box at a width it is not drawn at. The
- * builder pads each row out to the inner width when it draws it.
- *
- * The text column is what gives up width, never the id/age tail: the wrap is sized so a first row still
- * has a column of text to draw *and* room for its tail beside it, because a row whose text column is
- * zero collapses to a blank line `pinRow` draws without its tail — which is how a `#id` used to disappear
- * on a narrow panel. See `panel-frame-geometry.ts` for the arithmetic and `test/panel-id-never-cut.test.ts`
- * for the sweep that pins it.
- *
- * `now` is the instant every age in the table is measured against; the component passes the extension's
- * clock so a minute's passage re-ages the frame.
- *
- * This is the *only* owner of a frame's height: `height` is the row count the frame draws, counted from
- * `owned` and the terminal the caller was given (`tui.terminal.rows`, or `undefined` when none can be
- * asked, which `panelMaxRows` answers with its fallback). `buildPanelLines` draws the `height` it is
- * handed and builds no table of its own, so a caller cannot ask for one frame and draw another.
- *
- * The height is `owned.length` — the wrapped rows the table actually holds — over the frame's own border
- * rows, cut to the ceiling (`panelFrameRows`), so a one-pin panel is three rows and the prompt stays
- * visible beside it while a list of a thousand pins stops at half the terminal and scrolls.
- */
-export function panelLayout(
-  pins: readonly ViewPin[],
-  frameWidth: number,
-  terminalRows: number | undefined,
-  selection: number,
-  style: PanelStyle,
-  now: string = atOnce(),
-): PanelLayout {
-  // The reserve is measured once, before the wrap, and handed to the rows: the same figure decides how many
-  // text columns the pins get and whether a pin's `#<id> <age>` fits beside its id. Measuring it twice, or
-  // letting the rows measure their own, is how a frame came to charge the text for one tail and draw another.
-  const metaColumns = widestMetaColumns(pins, style.dim, now);
-  const owned = panelRowOwners(
-    pins,
-    panelTextColumns(frameWidth, metaColumns),
-    style,
-    now,
-    metaColumns,
-  );
-  // As tall as the rows it draws, never past the terminal's half: `panelFrameRows` puts the two border
-  // rows over `owned` and cuts the result to the ceiling, which is the only reason a frame is ever
-  // shorter than its content (and the reason the window scrolls for it).
-  return {
-    owned,
-    start: panelRowStartOf(owned, selection),
-    height: panelFrameRows(owned.length, terminalRows),
-  };
 }

@@ -23,18 +23,20 @@ const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin =>
   ...extra,
 });
 
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
-});
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 /**
  * The frame drawn exactly as the component draws it — `panel-frame.ts`'s `built`, with the terminal named
- * rather than assumed: the frame is as tall as its pins until `panelLayout` cuts it at the terminal's
+ * rather than assumed: the frame is as tall as its pins until `panelLayoutSections` cuts it at the terminal's
  * half, so a test that asks for `height` rows passes a terminal of at least `2 × height` rows. The pins
  * of these tests are one row each, so two rows of frame is three.
  */

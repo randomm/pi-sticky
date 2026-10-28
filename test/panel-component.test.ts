@@ -43,7 +43,7 @@ function component(pins: ViewPin[], tui?: TUI) {
 
 test("render draws the header, the pins and — while focused — the hint", () => {
   const { c } = component(pins("Decide X", "Watch out"));
-  expect(c.render(40)[0]).toContain("📌 Pinned for you (2)");
+  expect(c.render(40)[0]).toContain("📌 Pinned · 2");
   expect(c.render(40).some((line) => line.includes("Watch out"))).toBe(true);
   // The hint lives in the bottom border, which is drawn at the full width: a frame narrower than the
   // hint cuts it, so the whole hint only appears at a width that has room for it beside the corners.
@@ -139,7 +139,7 @@ test("Escape hands focus back and evokes nothing else", () => {
 test("d dismisses the selected pin through the host, and an empty selection dismisses nothing", () => {
   const { c, state } = component(pins("One", "Two"));
   // The pins are drawn ranked — same level, same reply state, newest id first — so index 0 is `Two`, and
-  // the bar's index is the *ranked* list's (`PanelComponent.#ranked`). Before that, `d` here dismissed the pin
+  // the bar's index is the *drawn* list's (`PanelMemory.sectionsOf(...).flat`). Before that, `d` here dismissed the pin
   // the user was not looking at.
   c.handleInput("d");
   expect(state.dismissals).toEqual([2]);

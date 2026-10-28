@@ -10,12 +10,13 @@
  *
  * The rule the key obeys: every member is something the drawn bytes depend on, and nothing is in it that
  * the drawn bytes do not. That is why `ageNow` is a minute bucket and not an instant (pi-tui asks more
- * often than a minute, and an age changes no faster), why `pins` is the ranked array's *identity* and not
- * its contents (`commit`/`reconstruct` publish a fresh array for every change and none without one), and
+ * often than a minute, and an age changes no faster), why `pins` is the drawn-order array's *identity* and
+ * not its contents (`commit`/`reconstruct` publish a fresh array for every change and none without one), and
  * why `replyHint` is in it at all (the operator can rebind the focus key, and the resting border prints
  * what that key is called).
  */
-import { rankedPins } from "./panel-ranked.ts";
+import { panelSections } from "./panel-sections.ts";
+import type { PanelSections } from "./panel-sections.ts";
 import type { ViewPin } from "./types.ts";
 
 /** The last frame the component drew, and everything the next one is compared against. */
@@ -24,9 +25,11 @@ export interface PanelFrame {
   lines: string[];
   /** The width the lines were laid out at — the frame's height comes from the same pass, so it is implied. */
   width: number;
-  /** The ranked pins the rows were built from, by identity. */
+  /** The pins in the panel's drawn order, by identity — the array `PanelMemory.sectionsOf` built for the
+   * view, and the one the rows, the bar and the keys all index. */
   pins: readonly ViewPin[];
-  /** The selected *pin* index, so moving the bar repaints and a redraw that does not, does not. */
+  /** The selected pin's index in the panel's drawn order (`PanelSections.flat`), so moving the bar repaints
+   * and a redraw that does not, does not. A section heading owns no index, so this is never a heading. */
   selection: number;
   /** Focus decides the bar, the hint and which border colour is asked for. */
   focused: boolean;
@@ -62,25 +65,25 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
 }
 
 /**
- * What the component has memorised: the last frame, and the order its rows were built in.
+ * What the component has memorised: the last frame, and the drawn order its rows were built in.
  *
- * The two are one object because they are one fact: a frame is drawn from the ranked view, so a caller that
- * drops the frame without dropping the order can be handed rows rebuilt from an order the view no longer
- * holds — the bar sitting on a pin the drawer never drew. `invalidate()` is therefore the only way either
- * half goes away.
+ * The two are one object because they are one fact: a frame is drawn from the sectioned view, so a caller
+ * that drops the frame without dropping the order can be handed rows rebuilt from an order the view no
+ * longer holds — the bar sitting on a pin the drawer never drew. `invalidate()` is therefore the only way
+ * either half goes away.
  *
  * The order is memoised on the array's *identity*, the same key the frame above already trusts:
  * `commit`/`reconstruct` publish a fresh array for every change to the view and none without one. `render()`
  * is what pi-tui calls, on its own schedule and far more often than a minute, and each of those asks wants
- * the whole view ranked — so the memo is what keeps an unchanged view at one comparison instead of a sort.
- * Both fields are written together and cleared together, which is why there is no "have I ever ranked?"
- * guard to keep in step with the key: an empty order is the same answer as nothing ranked yet, and a key
- * that matched always finds the order it was ranked with.
+ * the whole view sectioned, flattened and ranked — so the memo is what keeps an unchanged view at one
+ * comparison instead of a sort. Both fields are written together and cleared together, which is why there is
+ * no "have I ever ordered?" guard to keep in step with the key: an empty order is the same answer as nothing
+ * ordered yet, and a key that matched always finds the order it was built with.
  */
 export class PanelMemory {
   #frame: PanelFrame | undefined;
   #source: readonly ViewPin[] | undefined;
-  #ranked: readonly ViewPin[] = [];
+  #sections: PanelSections = { order: [], flat: [] };
 
   /** The cached frame, if the last one still describes what the component would draw. */
   get frame(): PanelFrame | undefined {
@@ -91,19 +94,23 @@ export class PanelMemory {
     this.#frame = frame;
   }
 
-  /** The draw order of `pins`, re-ranked only when `pins` is an array this memory has not seen. */
-  orderOf(pins: readonly ViewPin[]): readonly ViewPin[] {
+  /**
+   * The sections and flattened drawn order of `pins`, rebuilt only when `pins` is an array this memory has
+   * not seen. The single source of the panel's drawn order: the frame, the bar, the scroll window and the
+   * two destructive keys all index the `flat` this returns.
+   */
+  sectionsOf(pins: readonly ViewPin[]): PanelSections {
     if (this.#source !== pins) {
       this.#source = pins;
-      this.#ranked = rankedPins(pins);
+      this.#sections = panelSections(pins);
     }
-    return this.#ranked;
+    return this.#sections;
   }
 
-  /** Forget both halves. Safe before anything has been drawn or ranked. */
+  /** Forget both halves. Safe before anything has been drawn or ordered. */
   invalidate(): void {
     this.#frame = undefined;
     this.#source = undefined;
-    this.#ranked = [];
+    this.#sections = { order: [], flat: [] };
   }
 }
