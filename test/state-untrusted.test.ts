@@ -110,6 +110,55 @@ describe("reconstruct sanitizes untrusted entry text", () => {
     for (const text of drawn(hostile)) expect(offenders(text)).toEqual([]);
   });
 
+  test("a snapshot's group and options cannot carry escapes into state or the view", () => {
+    // The same promise pin text makes, for the three fields pins v2-5 added: a session file shapes
+    // them, a rebuild cleans them, and no surface draws them yet — so the assert is on the state and
+    // the view rather than on a rendered row.
+    const polluted: PinState = {
+      v: 1,
+      pins: [
+        {
+          ...pin(1, "a", "warning"),
+          group: HOSTILE,
+          options: [`${ESC}[2Jyes`, `${cp(0x202e)}no`, `${cp(0xdc00)}maybe`],
+          compact: true,
+        },
+      ],
+      nextId: 10,
+      removed: [],
+    };
+    for (const entry of [customEntry(polluted), toolResultEntry(polluted)]) {
+      const result = reconstruct([entry], []);
+      expect(result.state.pins[0]?.group).toBe(cleanPinText(HOSTILE));
+      expect(result.state.pins[0]?.options).toEqual(["yes", "no", "maybe"]);
+      expect(result.view.pins[0]?.group).toBe(cleanPinText(HOSTILE));
+      expect(offenders(result.state.pins[0]?.group ?? "x")).toEqual([]);
+      for (const option of result.state.pins[0]?.options ?? []) {
+        expect(offenders(option)).toEqual([]);
+      }
+      expect(result.state.pins[0]?.compact).toBe(true);
+    }
+  });
+
+  test("a combining-mark flood in a group is capped, not carried, by read-back", () => {
+    // Six marks on one base, past what the sanitizer keeps: the rebuild answers with the four it caps
+    // to, which is the same pass pin text goes through and the reason a hostile file cannot widen a
+    // future row past what the surface can measure.
+    const flood = `e${cp(0x301, 0x301, 0x301, 0x301, 0x301, 0x301)}`;
+    const result = reconstruct(
+      [
+        customEntry({
+          ...EMPTY_STATE,
+          pins: [{ ...pin(1, "a", "info", { group: flood }) }],
+          nextId: 2,
+        }),
+      ],
+      [],
+    );
+    expect(result.state.pins[0]?.group).toBe(cleanPinText(flood));
+    expect((result.state.pins[0]?.group ?? "").length).toBeLessThan(flood.length);
+  });
+
   test("a removal timestamp carrying escapes cannot reach the model either", () => {
     // The removal timestamp is drawn by the user-removal error, so it is cleaned as well.
     const polluted: PinState = {
@@ -242,55 +291,5 @@ describe("reconstruct returns copies", () => {
     expect(result.state).not.toBe(EMPTY_STATE);
     result.state.pins.push(pin(1, "injected"));
     expect(EMPTY_STATE.pins).toEqual([]);
-  });
-});
-
-describe("applyAction unpin reports the ids it could not find", () => {
-  const two = state([pin(1, "a"), pin(2, "b")], 3);
-
-  test("a mix of known and unknown ids is ok with affected and missing split", () => {
-    const result = applyAction(
-      two,
-      { op: "unpin", ids: [1, 9], source: "agent", now: NOW },
-      { maxPins: 5, newUid: uidSource() },
-    );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.affected).toEqual([1]);
-    expect(result.missing).toEqual([9]);
-    expect(result.state.pins.map((p) => p.id)).toEqual([2]);
-  });
-
-  test("every id known gives an empty missing", () => {
-    const result = applyAction(
-      two,
-      { op: "unpin", ids: [1, 2], source: "agent", now: NOW },
-      { maxPins: 5, newUid: uidSource() },
-    );
-    expect(result.ok && result.affected).toEqual([1, 2]);
-    expect(result.ok && result.missing).toEqual([]);
-  });
-
-  test("ids: all finds everything, so nothing is missing", () => {
-    const result = applyAction(
-      two,
-      { op: "unpin", ids: "all", source: "agent", now: NOW },
-      { maxPins: 5, newUid: uidSource() },
-    );
-    expect(result.ok && result.affected).toEqual([1, 2]);
-    expect(result.ok && result.missing).toEqual([]);
-  });
-
-  test("an unpin that matches nothing is still refused rather than reported as ok", () => {
-    const result = applyAction(
-      two,
-      { op: "unpin", ids: [8, 9], source: "agent", now: NOW },
-      { maxPins: 5, newUid: uidSource() },
-    );
-    // The all-unknown batch is a mistake the model has to hear about, not a successful no-op, so
-    // `missing` only rides along on an ok result.
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toBe("No pin #8.");
   });
 });

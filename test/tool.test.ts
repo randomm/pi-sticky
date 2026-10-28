@@ -112,6 +112,19 @@ test("details is a fresh copy, never the frozen empty state", async () => {
   expect(() => result.details.pins.push(pin(9, "mutated"))).not.toThrow();
 });
 
+test("details does not share the state's option list", async () => {
+  // `options` is the only field a pin holds by reference, so a `details` that shared it would let a
+  // caller that sorted or cut the list it publishes change the live state's pin as well.
+  const h = harness();
+  await h.call({ action: "pin", text: "Decide X", options: ["yes", "no"] });
+  const result = await h.call({ action: "list" });
+  const published = result.details.pins[0]?.options;
+  if (!published) throw new Error("the published pin lost its options");
+  published.push("maybe");
+  published[0] = "mutated";
+  expect(h.deps.getState().pins[0]?.options).toEqual(["yes", "no"]);
+});
+
 test("a refusal is returned with isError and keeps the current pins in details", async () => {
   const h = harness();
   await h.call({ action: "pin", text: "Keep me" });

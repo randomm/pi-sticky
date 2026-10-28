@@ -24,7 +24,11 @@ export type PinLevel = "info" | "action" | "warning";
 /** Who made the change: the model through the tool, or the user through a command. */
 export type PinSource = "agent" | "user";
 
-/** A pinned message. Text is already sanitized. */
+/**
+ * A pinned message. Text is already sanitized, and so are `group` and every `options` entry when
+ * they are present. All three are *data*: nothing draws them yet, and `compact` in particular is
+ * stored uninterpreted — it has no bearing on the compact rail (`render.ts`).
+ */
 export interface Pin {
   id: number;
   uid: string;
@@ -33,6 +37,12 @@ export interface Pin {
   source: PinSource;
   createdAt: string;
   updatedAt: string;
+  /** Section name a pin belongs to; exact string equality is what groups pins together. */
+  group?: string;
+  /** The actions the user may take on the pin, as short labels, in the order the model gave them. */
+  options?: string[];
+  /** A flag for a later surface to read; no surface reads it yet. */
+  compact?: boolean;
 }
 
 /** A pin that has been removed, kept so an update can name who removed it. */

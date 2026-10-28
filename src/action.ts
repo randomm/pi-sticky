@@ -13,6 +13,7 @@
 import { MAX_PINS, MAX_TEXT_UNITS, isPositiveSafeInteger } from "./bounds.ts";
 import { DEFAULT_CONFIG } from "./config.ts";
 import { foldBreaks, stripSequences } from "./escape.ts";
+import type { PinFields } from "./pin-fields.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isUid } from "./state-guards.ts";
 import type { PinLevel, PinSource } from "./types.ts";
@@ -35,11 +36,19 @@ export interface ApplyLimits {
 /**
  * The narrowed shape of one op, as it looks *after* the checks in this file have run. `ActionInput`
  * is what a caller hands `applyAction`; this is what the three ops in reducer-ops.ts are given, and
- * the compiler only believes the fields are what they claim because the checks above said so.
+ * the compiler only believes the fields are what they claim because the checks above said so. The
+ * three optional fields arrive already cleaned and bounded by pin-fields.ts.
  */
 export type Action =
-  | { op: "pin"; text: string; level: PinLevel; source: PinSource; now: string }
-  | { op: "update"; id: number; text?: string; level?: PinLevel; source: PinSource; now: string }
+  | ({ op: "pin"; text: string; level: PinLevel; source: PinSource; now: string } & PinFields)
+  | ({
+      op: "update";
+      id: number;
+      text?: string;
+      level?: PinLevel;
+      source: PinSource;
+      now: string;
+    } & PinFields)
   | { op: "unpin"; ids: number[] | "all"; source: PinSource; now: string };
 
 /**
@@ -72,6 +81,9 @@ export interface ActionInput {
   id?: unknown;
   ids?: unknown;
   now?: unknown;
+  group?: unknown;
+  options?: unknown;
+  compact?: unknown;
 }
 
 /**
@@ -118,6 +130,15 @@ export function badSource(): ApplyResult {
  */
 export function tooManyIds(): ApplyResult {
   return { ok: false, error: `Too many ids: at most ${MAX_PINS} pins can be unpinned at once.` };
+}
+
+/**
+ * The refusal for an `update` that offered nothing to change. All five changeable fields count, so a
+ * call that only re-groups a pin is a valid update; a field that arrived but cleans to nothing is not
+ * an offer, which is why the caller hands this the values it kept rather than the raw body.
+ */
+export function updateNeedsChange(): ApplyResult {
+  return { ok: false, error: "update needs text, level, group, options or compact" };
 }
 
 /**

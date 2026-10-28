@@ -93,11 +93,34 @@ describe("applyAction update", () => {
     expect(result.ok && result.state.pins[0]?.level).toBe("warning");
   });
 
-  test("an update with neither text nor level is refused", () => {
+  test("an update with nothing to change is refused", () => {
     const result = applyAction(one, { op: "update", id: 1, source: "agent", now: LATER }, limits());
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe("update needs text or level");
+    expect(result.error).toBe("update needs text, level, group, options or compact");
+  });
+
+  test("an update that changes only group, options or compact is an update", () => {
+    // The three fields pins v2-5 added count as a change on their own: a model that only re-files a
+    // pin under a section heading is doing real work, and the refusal above is what it used to get.
+    for (const fields of [
+      { group: "Backlog" },
+      { options: ["yes", "no"] },
+      { compact: true },
+      { group: "" },
+      { options: [] },
+      { compact: false },
+    ]) {
+      const result = applyAction(
+        one,
+        { op: "update", id: 1, source: "agent", now: LATER, ...fields },
+        limits(),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.pins[0]?.updatedAt).toBe(LATER);
+      expect(result.state.pins[0]?.text).toBe("original");
+    }
   });
 
   test("an unknown id reports no pin with that number", () => {
@@ -202,5 +225,39 @@ describe("applyAction unpin", () => {
     // prepended whole and cut from the front: the five that fall off are the highest ids.
     expect(result.ok && result.state.removed[0]?.id).toBe(1);
     expect(result.ok && result.state.removed[19]?.id).toBe(20);
+  });
+});
+
+describe("applyAction owns every array it stores", () => {
+  test("mutating the action's options array after the call cannot change the stored pin", () => {
+    // The published snapshot is the only copy of the pins on the branch, so no array inside it may be
+    // the one the caller still holds: `acceptedFields` copies the list a `pin` stores and `mergeFields`
+    // copies the one an `update` carries forward, so neither the action nor the previous snapshot can be
+    // reached through it. A session read-back re-copies and cannot catch this aliasing.
+    const sent = ["yes", "no"];
+    const pinned = applyAction(
+      EMPTY_STATE,
+      { op: "pin", text: "t", level: "info", source: "agent", now: NOW, options: sent },
+      limits(),
+    );
+    expect(pinned.ok).toBe(true);
+    if (!pinned.ok) return;
+    expect(pinned.state.pins[0]?.options).not.toBe(sent);
+
+    sent[0] = "mutated";
+    sent.push("and another");
+    expect(pinned.state.pins[0]?.options).toEqual(["yes", "no"]);
+
+    // A later update that names none of the three fields carries the old list forward; the copy it
+    // stores is the new pin's own, not the array of the snapshot the previous call published.
+    const renamed = applyAction(
+      pinned.state,
+      { op: "update", id: 1, source: "agent", now: LATER, text: "later" },
+      limits(),
+    );
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.state.pins[0]?.options).toEqual(["yes", "no"]);
+    expect(renamed.state.pins[0]?.options).not.toBe(pinned.state.pins[0]?.options);
   });
 });

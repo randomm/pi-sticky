@@ -9,6 +9,7 @@
  * snapshot is what the tool publishes and what a later rebuild compares against.
  */
 import { MAX_PIN_ID, REMOVAL_HISTORY } from "./bounds.ts";
+import { type PinFields, acceptedFields } from "./pin-fields.ts";
 import { formatLocalTime } from "./time.ts";
 import type { Pin, PinLevel, PinSource, PinState, Removal } from "./types.ts";
 
@@ -64,7 +65,7 @@ function findDuplicate(state: PinState, text: string, level: PinLevel): Pin | un
  */
 export function pinOp(
   state: PinState,
-  action: { text: string; level: PinLevel; source: PinSource; now: string },
+  action: { text: string; level: PinLevel; source: PinSource; now: string } & PinFields,
   uid: string,
   limits: PinLimits,
 ) {
@@ -93,6 +94,7 @@ export function pinOp(
     source: action.source,
     createdAt: action.now,
     updatedAt: action.now,
+    ...acceptedFields(action),
   };
   return {
     ok: true as const,
@@ -107,23 +109,22 @@ export function pinOp(
   };
 }
 
-/** Text or level, whichever the action sent; `createdAt` and the id never move. */
+/**
+ * Text, level and the three optional fields, whichever the action sent; `createdAt` and the id never
+ * move. An omitted field keeps the value the pin already had, and a cleared one — `group: ""` or
+ * `options: []` — drops the key, so a snapshot never holds an empty group or an empty option list.
+ */
 export function updateOp(
   state: PinState,
   id: number,
-  action: { text?: string; level?: PinLevel; now: string },
+  action: { text?: string; level?: PinLevel; now: string } & PinFields,
 ) {
   const pin = state.pins.find((candidate) => candidate.id === id);
   if (!pin) {
     const byUser = removedByUser(state, id);
     return byUser ? userRemoved(id, byUser.at) : notFound(id);
   }
-  const updated: Pin = {
-    ...pin,
-    text: action.text ?? pin.text,
-    level: action.level ?? pin.level,
-    updatedAt: action.now,
-  };
+  const updated = mergeFields(pin, action);
   return {
     ok: true as const,
     state: {
@@ -134,6 +135,40 @@ export function updateOp(
     },
     affected: [pin.id],
     missing: [],
+  };
+}
+
+/**
+ * The pin an update stores: the fields the action set, the fields it did not name as the pin already
+ * had them, and the fields it cleared as no field at all. The last case cannot be a value — `""`, `[]`
+ * and `undefined` are all shapes `isPinState` refuses, and a snapshot it refuses is skipped by the next
+ * rebuild, which loses every pin rather than one — so the three keys are rebuilt from a list of the ones
+ * that survive, which is also why none of them is written through a spread of the pin.
+ */
+function mergeFields(
+  pin: Pin,
+  action: { text?: string; level?: PinLevel; now: string } & PinFields,
+): Pin {
+  const applied = acceptedFields(action);
+  const keptCompact = applied.compact ?? pin.compact;
+  const group = action.group === "" ? undefined : (applied.group ?? pin.group);
+  const options =
+    action.options !== undefined && action.options.length === 0
+      ? undefined
+      : (applied.options ?? (pin.options === undefined ? undefined : [...pin.options]));
+  const fields: PinFields = {};
+  if (group !== undefined) fields.group = group;
+  if (options !== undefined) fields.options = options;
+  if (keptCompact !== undefined) fields.compact = keptCompact;
+  // `...base` rather than `...pin`: spreading the pin itself would answer the three keys it already
+  // carried and put a cleared one straight back, ahead of everything below it.
+  const { group: _clearedGroup, options: _clearedOptions, compact: _clearedCompact, ...base } = pin;
+  return {
+    ...base,
+    ...fields,
+    text: action.text ?? pin.text,
+    level: action.level ?? pin.level,
+    updatedAt: action.now,
   };
 }
 

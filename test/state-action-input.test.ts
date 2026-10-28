@@ -12,6 +12,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
+import { MAX_FIELD_GRAPHEMES } from "../src/pin-fields.ts";
 import { type ApplyLimits, applyAction } from "../src/reducer.ts";
 import { isPinState } from "../src/state-guards.ts";
 import { EMPTY_STATE } from "../src/state.ts";
@@ -21,6 +22,15 @@ const limits = (maxPins = 5): ApplyLimits => ({ maxPins, newUid: uidSource() });
 
 const two = state([pin(1, "a"), pin(2, "b")], 3);
 const one = state([pin(1, "original", "info")], 2);
+
+/**
+ * Twenty-four ZWJ families carrying six skin-tone modifiers each: 24 graphemes — the budget's ceiling —
+ * and thousands of UTF-16 units, because the sanitizer's mark cap leaves an emoji cluster's joiners and
+ * modifiers uncapped. The shape that made the write path's grapheme budget and the guard's unit bound
+ * disagree.
+ */
+const WIDE_CLUSTER = `\u{1F468}\u200D\u{1F469}\u200D\u{1F467}${"\u{1F3FB}".repeat(6)}`;
+const WIDE = WIDE_CLUSTER.repeat(MAX_FIELD_GRAPHEMES);
 
 describe("applyAction refuses a pin with nothing to pin", () => {
   const pinWith = (text: unknown) =>
@@ -168,7 +178,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
     );
     expect(textless.ok).toBe(false);
     if (textless.ok) return;
-    expect(textless.error).toBe("update needs text or level");
+    expect(textless.error).toBe("update needs text, level, group, options or compact");
 
     const levelled = applyAction(
       one,
@@ -208,6 +218,13 @@ describe("applyAction refuses an update whose fields are not what they claim", (
       { op: "pin", text: "now-t", level: "info", source: "agent", now: "" },
       { op: "update", id: 2, now: "not a date at all", source: "agent", level: "warning" },
       { op: "unpin", ids: [2], source: "user", now: " " },
+      // A field inside the grapheme budget whose UTF-16 length is not: 24 clusters of the shape above
+      // are 24 graphemes and thousands of units, and when the write path bounded only graphemes an ok
+      // result carried a snapshot `isPinState` refused — which the next rebuild skips, dropping every pin
+      // on the branch rather than the one bad field. The unit bound is the guard's own number, so what
+      // gets this far is a value the guard measures as in-bounds.
+      { op: "pin", text: "wide", level: "info", source: "agent", now: NOW, group: WIDE },
+      { op: "update", id: 1, source: "agent", now: LATER, options: [WIDE, "b"] },
     ];
     for (const action of accepted) {
       // A state whose nextId does not outrank its removal ids is not a state a rebuild could have
@@ -219,5 +236,48 @@ describe("applyAction refuses an update whose fields are not what they claim", (
       if (!result.ok) return;
       expect(isPinState(result.state)).toBe(true);
     }
+  });
+
+  test("a pin whose options list is longer than the guard allows is refused, not published", () => {
+    // Five clean entries were the CRITICAL: `cleanOptionsOrUndefined` tested only the lower bound, so
+    // the reducer answered ok and handed the tool a snapshot `isPinState` refuses — which `reconstruct`
+    // skips, so every pin the call published disappeared on the next rebuild. Refused here, and the
+    // refused shape is the one the guard refuses, so the two sides cannot drift again.
+    const five = ["a", "b", "c", "d", "e"];
+    const start = state([pin(1, "a"), pin(2, "b")], 3);
+    const pinned = applyAction(
+      EMPTY_STATE,
+      { op: "pin", text: "t", level: "info", source: "agent", now: NOW, options: five },
+      limits(),
+    );
+    expect(pinned).toEqual({
+      ok: false,
+      error: "options must be a list of 2 to 4 strings",
+    });
+    expect(isPinState(state([{ ...pin(1, "a"), options: [...five] }], 2))).toBe(false);
+    const updated = applyAction(
+      start,
+      { op: "update", id: 1, source: "agent", now: LATER, options: five },
+      limits(),
+    );
+    expect(updated).toEqual({ ok: false, error: "options must be a list of 2 to 4 strings" });
+  });
+
+  test("a hand-built options list with an extra own key is refused, as the guard reads it", () => {
+    // `updateOp` copies the pin's array by reference, so a list the writer accepted and the guard
+    // refuses would be republished by a later plain update and poison the whole snapshot. Only a
+    // non-tool caller can build one — pi's validator rejects a non-integer index — so the check is
+    // asserted at the reducer too, where the state is made.
+    const extraKey = Object.assign(["a", "b"], { zz: "z" }) as unknown as string[];
+    const start = state([pin(1, "a")], 2);
+    const refused = applyAction(
+      start,
+      { op: "update", id: 1, source: "agent", now: LATER, options: extraKey },
+      limits(),
+    );
+    expect(refused).toEqual({ ok: false, error: "options must be a list of 2 to 4 strings" });
+    // And the guard really does refuse what the writer refused — otherwise the two sides only look
+    // agreed because neither of them looked at the key.
+    expect(isPinState(state([{ ...pin(1, "a"), options: extraKey }], 2))).toBe(false);
   });
 });

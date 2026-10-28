@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { HostContext } from "../src/context.ts";
 import { initialShown } from "../src/panel-deps.ts";
+import { MAX_FIELD_UNITS } from "../src/pin-fields.ts";
 import { latestUIShown } from "../src/session-entries.ts";
 import { isPinState, isUIShown, isUserAction } from "../src/state-guards.ts";
 import { EMPTY_STATE, reconstruct } from "../src/state.ts";
@@ -23,7 +24,7 @@ function context(entries: readonly unknown[]): HostContext {
     hasUI: true,
   } as unknown as HostContext;
 }
-import type { Pin, PinLevel, Removal } from "../src/types.ts";
+import type { Pin, PinLevel, PinState, Removal } from "../src/types.ts";
 import {
   LATER,
   NOW,
@@ -59,6 +60,13 @@ function sparseRemovals(n: number): Removal[] {
   for (let i = 0; i < n; i++) removed[i] = removal(i + 1);
   delete removed[Math.floor(n / 2)];
   return removed;
+}
+
+/** A sparse array: length 2, an element at index 0 and a hole at index 1. */
+function sparseOptions(): unknown {
+  const holes = new Array<string>(2);
+  holes[0] = "a";
+  return holes;
 }
 
 describe("isPinState", () => {
@@ -145,6 +153,66 @@ describe("isPinState", () => {
     expect(isPinState(state([pin(1, "a")], 2, [{ ...removal(1), at: "t".repeat(8001) }]))).toBe(
       false,
     );
+  });
+
+  test("accepts pins with the optional fields and pins without them", () => {
+    // The three fields pins v2-5 added are optional in both directions: a snapshot whose pins carry
+    // none of them is the shape every earlier session file has, and one that carries them is valid.
+    expect(
+      isPinState(
+        state([{ ...pin(1, "a"), group: "Backlog", options: ["yes", "no"], compact: true }], 2),
+      ),
+    ).toBe(true);
+    expect(isPinState(state([pin(1, "a")], 2))).toBe(true);
+    expect(isPinState(state([{ ...pin(1, "a"), compact: false }], 2))).toBe(true);
+  });
+
+  test("rejects an optional field of the wrong type or outside its bound", () => {
+    // Measured in UTF-16 units, like every other string here: the guard asks "could this be a
+    // snapshot", and graphemes belong to the sanitizer's segmentation, not to a session file.
+    // The values here are what a hostile session file can write, so they arrive as `unknown` and go in
+    // through the cast that says so: the guard under test reads a snapshot nobody validated, and a
+    // typed literal would have had to be one of the shapes the type already allows.
+    const field = (fields: Record<string, unknown>): PinState =>
+      state([{ ...pin(1, "a"), ...fields }], 2);
+    for (const group of [5, "", null, {}, [], "g".repeat(MAX_FIELD_UNITS + 1)]) {
+      expect(isPinState(field({ group })), JSON.stringify(group)).toBe(false);
+    }
+    expect(isPinState(field({ group: "g".repeat(MAX_FIELD_UNITS) }))).toBe(true);
+    for (const options of [
+      null,
+      "a,b",
+      [],
+      ["a"],
+      ["a", "b", "c", "d", "e"],
+      ["a", 5],
+      ["a", ""],
+      // A sparse array of length 2 with no element at index 1: `Array(2)` holes are what a JSON
+      // round-trip cannot produce but a hand-written session file can.
+      sparseOptions(),
+      ["a", "o".repeat(MAX_FIELD_UNITS + 1)],
+    ]) {
+      expect(isPinState(field({ options })), JSON.stringify(options)).toBe(false);
+    }
+    for (const compact of [null, "true", 1, 0, {}]) {
+      expect(isPinState(field({ compact })), JSON.stringify(compact)).toBe(false);
+    }
+  });
+
+  test("a snapshot whose pins carry none of the three fields rebuilds unchanged", () => {
+    // The back-compat criterion, stated so it can fail: `v` is 1 before and after pins v2-5, so the
+    // guard cannot tell a pre-v2 snapshot from a current one and the test that matters is that a pin
+    // with no `group`, `options` or `compact` key reaches the state and the view with no new keys and
+    // the same values the fixtures give it.
+    const before = state([pin(1, "a"), pin(2, "b")], 4, [removal(3)]);
+    expect(isPinState(before)).toBe(true);
+    const result = reconstruct([customEntry(before)], []);
+    expect(result.state).toEqual(before);
+    expect(result.state.pins.map((kept) => Object.keys(kept).sort())).toEqual([
+      ["createdAt", "id", "level", "source", "text", "uid", "updatedAt"],
+      ["createdAt", "id", "level", "source", "text", "uid", "updatedAt"],
+    ]);
+    expect(result.view.pins.map((kept) => kept.text)).toEqual(["a", "b"]);
   });
 
   test("rejects a uid that is not a safe opaque address", () => {

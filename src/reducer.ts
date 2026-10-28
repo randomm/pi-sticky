@@ -17,7 +17,9 @@
  * `text` is the one field the reducer does not merely check but *rewrites*: it is handed to the ops
  * already run through `cleanPinText`, so a state this function returns never carries an escape byte
  * whatever its caller did. The tool (Task 5) still applies the grapheme budget with `sanitizePinText`
- * first, and cleaning twice is idempotent — the passes here only bound shape, never width.
+ * first, and cleaning twice is idempotent — the passes here only bound shape, never width. `group`
+ * and each `options` entry are rewritten the same way, and bounded outright rather than cut, by the
+ * shared checks in pin-fields.ts, which the tool runs too: neither layer trusts the other.
  */
 import {
   type ActionInput,
@@ -40,7 +42,9 @@ import {
   uidOrUndefined,
   uidSourceOrUndefined,
   unknownOp,
+  updateNeedsChange,
 } from "./action.ts";
+import { checkPinFields, offersChange } from "./pin-fields.ts";
 import { pinOp, unpinOp, updateOp } from "./reducer-ops.ts";
 import type { PinState } from "./types.ts";
 
@@ -74,6 +78,8 @@ export function applyAction(
       if (text === undefined) return missingText();
       if (!isLevel(action.level)) return badLevel();
       if (!isSource(action.source)) return badSource();
+      const fields = checkPinFields(action);
+      if (!fields.ok) return { ok: false, error: fields.error };
       // The uid is minted here rather than in `pinOp` so a source that hands back something the
       // guard's UID pattern refuses (a fixture, a future caller's own generator), or one a pin or a
       // removal already holds, is a refusal instead of an ok result carrying a snapshot no rebuild
@@ -94,9 +100,12 @@ export function applyAction(
       if (minted === undefined) return badUid();
       if (state.pins.some((pin) => pin.uid === minted)) return badUid();
       if (state.removed.some((removal) => removal.uid === minted)) return badUid();
-      return pinOp(state, { text, level: action.level, source: action.source, now }, minted, {
-        maxPins,
-      });
+      return pinOp(
+        state,
+        { text, level: action.level, source: action.source, now, ...fields.fields },
+        minted,
+        { maxPins },
+      );
     }
     case "update": {
       // The id is checked before the lookup: a `1.5` or a `null` is not a pin number, and reporting
@@ -104,8 +113,14 @@ export function applyAction(
       const id = idOrUndefined(action.id);
       if (id === undefined) return missingId("update");
       const text = cleanTextOrUndefined(action.text);
-      if (text === undefined && action.level === undefined) {
-        return { ok: false, error: "update needs text or level" };
+      // An `update` may clear a field by sending its empty shape, which a `pin` may not: the flag is
+      // what tells the two readings of `group: ""` apart. The "nothing to change" refusal tests the
+      // body for an offer rather than the cleaned fields, because a clear cleans to nothing and is
+      // still the change the model asked for.
+      const fields = checkPinFields(action, true);
+      if (!fields.ok) return { ok: false, error: fields.error };
+      if (text === undefined && action.level === undefined && !offersChange(action)) {
+        return updateNeedsChange();
       }
       if (action.level !== undefined && !isLevel(action.level)) return badLevel();
       if (!isSource(action.source)) return badSource();
@@ -113,6 +128,7 @@ export function applyAction(
         text,
         level: action.level,
         now,
+        ...fields.fields,
       });
     }
     case "unpin": {
