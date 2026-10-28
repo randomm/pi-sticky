@@ -91,6 +91,12 @@ export function wiring(
   /** The `recordPanelShown` calls, so a test can see that the owner's verbs reached the deps. */
   const records: boolean[] = [];
   /**
+   * Whether the next guard-driven install throws. `redrawRail` is the callback `RailGuard.consider` runs
+   * detached and cannot report on (`panel-rail.ts`), so this is the seam a test fails to see what a refresh
+   * does when the extension's own rail draw dies — `panel-rail.test.ts` is the case that does.
+   */
+  const failing: { once: boolean } = { once: false };
+  /**
    * The user's recorded choice, as the verbs left it. A test reads it; it does not write it — the screen
    * moves through `hide`, `show`/`toggle` or `focusFromShortcut`, the same verbs the extension exposes,
    * so nothing can leave the flag and the cell disagreeing about what is drawn.
@@ -147,6 +153,10 @@ export function wiring(
     onDispose: () => {},
     rpc: () => screen.rpc ?? false,
     redrawRail: () => {
+      if (failing.once) {
+        failing.once = false;
+        throw new Error("rail host is gone");
+      }
       // The term the guard keyed on, read at draw time through the holder `claimOwnership` writes: normally
       // the owner's own `isVisible()`, and during a substitution whatever the test claimed the guard was
       // handed. Filled only on an install the guard really decided to make, which is what makes it a record
@@ -188,5 +198,9 @@ export function wiring(
     },
     /** The surfaces' one cell, for a test that asks the panel what frame it is drawing. */
     panelMode: () => cell,
+    /** Make the next guard-driven rail install throw once, the way a host whose ui has gone would. */
+    failNextRailDraw: () => {
+      failing.once = true;
+    },
   };
 }

@@ -1,13 +1,17 @@
-import type { PanelMode } from "./panel-mode.ts";
 /**
- * What a `PanelComponent` has memorised, in one place.
+ * The frame's shape and the one change test, kept together because the comparison is the whole risk.
  *
  * The component draws on pi-tui's schedule, which asks for a frame far more often than anything the user
- * can see has changed. The answer is to keep the last frame and compare — and the comparison is the whole
- * risk: a cache that misses repaints the panel for nothing, and a cache that hits draws a stale panel. Both
- * failure modes live in the *shape of the key*, so the shape is stated here as one type with one doc, and
- * the change test beside it, rather than as five bare fields on the component where the only thing saying
- * they belong together is the compiler.
+ * can see has changed. The answer is to keep the last frame and compare — and both failure modes live in the
+ * *shape of the key*: a cache that misses repaints the panel for nothing, and a cache that hits draws a stale
+ * panel. So the shape is stated here as one type with one doc, and the change test beside it, rather than as
+ * five bare fields on the component where the only thing saying they belong together is the compiler.
+ *
+ * There is **one** way to build a frame and **one** way to compare two: `frameOf`
+ * (`panel-frame-draw.ts`) spells both the memorised frame and the candidate `update()` compares against, and
+ * `sameFrame` below answers both entry points of the cache. That is what the module header of
+ * `panel-frame-draw.ts` calls the correctness of the cache — two callers, one field list — and it is a
+ * compiler-level guarantee now rather than a prose rule two hand-written field lists can drift away from.
  *
  * The rule the key obeys: every member is something the drawn bytes depend on, and nothing is in it that
  * the drawn bytes do not. That is why `ageNow` is a minute bucket and not an instant (pi-tui asks more
@@ -16,9 +20,19 @@ import type { PanelMode } from "./panel-mode.ts";
  * why `replyHint` is in it at all (the operator can rebind the focus key, and the resting border prints
  * what that key is called).
  */
+import type { PanelMode } from "./panel-mode.ts";
 import { panelSections } from "./panel-sections.ts";
 import type { PanelSections } from "./panel-sections.ts";
 import type { ViewPin } from "./types.ts";
+
+/**
+ * The frame half of `PanelMemory`, as the state that moves the bar or the flag needs it.
+ *
+ * The setters of `panel-component-state.ts` owe exactly this drop and no more: they move a byte of the
+ * frame, not the order the frame was laid out in, so they are handed the frame's door rather than the whole
+ * memory (`PanelMemory.invalidateFrame`).
+ */
+export type InvalidatesFrame = () => void;
 
 /** The last frame the component drew, and everything the next one is compared against. */
 export interface PanelFrame {
@@ -59,9 +73,12 @@ export interface PanelFrame {
  * Whether the cached `frame` is the frame the component would draw right now.
  *
  * `pins` are compared by identity and everything else by value; `candidate` is a frame-shaped read of the
- * component's current state, built by `frameCandidate` (`panel-component-frame.ts`), so the two frames are
- * compared field by field rather than by five positional arguments that can be passed in the wrong order. `width` and `lines`
- * are not compared: a candidate names neither, and both follow from the fields that are.
+ * component's current state, built by `frameOf` (`panel-frame-draw.ts`) — the same builder that spells the
+ * memorised frame — so the two frames are compared field by field rather than by five positional arguments
+ * that can be passed in the wrong order. `width` and `lines` are not compared: a candidate names neither,
+ * and both follow from the fields that are. The one caller that *knows* the width it was asked for —
+ * `render()`, through `drawFrame` — compares it itself, because a resize is a different frame while a
+ * redraw is not.
  */
 export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame): boolean {
   return (
@@ -116,6 +133,17 @@ export class PanelMemory {
       this.#sections = panelSections(pins);
     }
     return this.#sections;
+  }
+
+  /**
+   * Drop the memorised frame alone, keeping the memoised order.
+   *
+   * The door the state's setters are handed. A bar or a focus move changes the frame and nothing about the
+   * sectioning, so it costs a redraw and not a re-sort; the field doc above explains why the two halves
+   * still clear *together* for every caller that has a view to forget, which is `invalidate()`.
+   */
+  invalidateFrame(): void {
+    this.#frame = undefined;
   }
 
   /** Forget both halves. Safe before anything has been drawn or ordered. */
