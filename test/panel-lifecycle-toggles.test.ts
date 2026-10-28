@@ -133,7 +133,7 @@ test("ctrl+alt+p leaves the panel open, not resting as a peek (spec 3.6)", async
   expect(ctx.recorder.widgets.has(KEY)).toBe(false);
 
   // The open the key earned is the transient kind: leaving the panel takes it back to the resting frame
-  // (`afterUnfocus`, reached by Escape and by a keystroke into a peek), and the record the user's `/pins hide`
+  // (`endEarnedOpen`, reached by Escape and by a keystroke into a peek), and the record the user's `/pins hide`
   // wrote is untouched throughout — `stub.entries` stayed empty above for the same reason. The *other* end,
   // the user's next submitted message, is `test/panel-lifecycle-autoshow.test.ts`'s "the user's next
   // submitted message ends the open a pin earned": both are endings of one earned open, and the panel has to

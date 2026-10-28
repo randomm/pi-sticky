@@ -108,7 +108,7 @@ test("a commit which showed nothing claims nothing", () => {
 test("an info pin leaves a hidden panel hidden (U11) and still answers the commit", () => {
   const ledger = createCommitLedger();
   const cell = hidden();
-  ledger.note(undefined, [pin(1, "info")]);
+  ledger.note([], [pin(1, "info")]);
   // The narrowing that supersedes U8's "any new pin": `info` is not something the user must act on, so a
   // chatty model cannot decide when the transcript gets covered. "No, these levels do not ask" is still an
   // answer, and the commit is spent by it.
@@ -130,7 +130,7 @@ test("one commit answers the draws of its own window, and no later one", () => {
   // not hold — pi has not written the result yet. A draw of that window is still the commit's own: the rail
   // reconsidering, the minute ticking or the frame being resized must not cost the user the auto-show the
   // commit earned, and a draw which re-opened the panel here would be a second showing of one commit.
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
   ledger.autoShow(cell, view(pin(1, "action")));
   expect(cell.mode()).toBe("open");
 
@@ -138,7 +138,7 @@ test("one commit answers the draws of its own window, and no later one", () => {
   // the commit is over and every later draw of the same view is an ordinary one — a command's listing, a
   // tick, a resize — which draws what the cell says and asks nothing of the panel.
   ledger.landed();
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
   ledger.autoShow(cell, view(pin(1, "action")));
   expect(cell.mode()).toBe("hidden");
   ledger.autoShow(cell, view(pin(1, "action")));

@@ -8,8 +8,8 @@ import { railStamp } from "./panel-geometry.ts";
  * reinstalling on every overlay frame re-wraps every pin to draw the strip that is already there. The owner
  * asks this object whether to draw — and tells it to forget the answer when it opens or closes a panel — and
  * it answers from the exact terms `PanelOwner.isVisible()` and `drawPins` read to make that call: the width,
- * the user's flag, what the view draws, and the minute the ages in that view are drawn at. So the cache
- * cannot hold an answer the predicate has moved away from.
+ * what the mode cell says about the panel, what the view draws, and the minute the ages in that view are
+ * drawn at. So the cache cannot hold an answer the predicate has moved away from.
  *
  * The view is in the key by *what it draws* rather than by reference (`railStamp`, in
  * `panel-geometry.ts`): `RailComponent` snapshots the view it was built with, so a same-count change to

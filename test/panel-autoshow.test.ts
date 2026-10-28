@@ -53,11 +53,11 @@ test("a commit that touched no pin opens nothing", () => {
   expect(cell.mode()).toBe("hidden");
 });
 
-test("no affected ids means no commit, whatever the view holds", () => {
-  // `undefined` is a caller that never had the reducer's answer. It is read as "nothing was touched", which
-  // is the answer that leaves the panel alone rather than the one that covers the transcript.
+test("an empty affected list means no commit, whatever the view holds", () => {
+  // An empty list is the answer the reducer gives for a commit that touched nothing: read as "nothing was
+  // touched", which is the answer that leaves the panel alone rather than the one that covers the transcript.
   const cell = hidden();
-  expect(autoShowForCommits(cell, [pin(1, "warning")], undefined)).toBe(false);
+  expect(autoShowForCommits(cell, [pin(1, "warning")], [])).toBe(false);
   expect(cell.mode()).toBe("hidden");
 });
 

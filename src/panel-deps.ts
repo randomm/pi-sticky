@@ -50,8 +50,10 @@ export interface PanelDeps extends StickyDeps {
    * pins end up drawn by neither surface or by both.
    *
    * Optional because `PanelDeps` is also built by hand — a wiring or owner test's — and a hand-built object
-   * with no state to report is the open panel rather than a throw in the draw path. The extension always
-   * supplies it; the readers say what its absence means.
+   * with no state to report is the **open panel** rather than a throw in the draw path: the fallback lives in
+   * the readers of this member (`PanelOwner.isVisible`, `RailGuard.consider`) and in `PanelHost.mode` on the
+   * component's side of the seam, each of which treats its absence as `open` — the frame those surfaces drew
+   * before the peek existed. The extension always supplies it.
    */
   panelMode?(): PanelModeState;
   /**

@@ -8,9 +8,10 @@
  * the branch has the pins it was shown (`landed`), and the two questions the rebuild and the draw ask are
  * answered here and nowhere else.
  *
- * `session-commit-rules.ts` states *why* the lifecycle is shaped the way it is — what pi actually does with
- * its own boundaries, and the two failures any other shape falls into. This file is the cells and their
- * contract; that file is the argument.
+ * The one constraint the shape of these cells rests on: pi dispatches its `turn_end` boundary *before* it
+ * commits that turn's drafts, so the boundary which ends a commit's turn is the one at which the branch does
+ * *not* hold the commit yet. End a commit there and the rebuild that lands the pin re-reads the hide the
+ * auto-show had just undid — the panel goes out of sight under a pin the user is still reading.
  *
  * The cells are one object because they are one fact. A caller holding the "is the branch trustworthy" bit
  * without the "what did the commit publish" pins is a rebuild which trusts a branch it has not checked; one
@@ -32,7 +33,7 @@ export interface CommitLedger {
    * answer it — an `update` changes a pin without adding one. `pins` is what those ids now hold, which is
    * what the branch will be asked to have before it is trusted.
    */
-  note(affected: readonly number[] | undefined, pins: readonly ViewPin[]): void;
+  note(affected: readonly number[], pins: readonly ViewPin[]): void;
   /**
    * The pins the outstanding commit published, which is what the branch has to hold for it to be trusted.
    * Empty with no commit outstanding — and an outstanding commit with nothing to show is the one case where
@@ -102,7 +103,7 @@ export function createCommitLedger(): CommitLedger {
       published = pins;
       // The last commit wins: the draw that spends this record draws the live state, and the live state is
       // that commit's snapshot.
-      affected = next ?? [];
+      affected = next;
     },
     // Read, not consumed: the rebuild asks this while the commit is still unappended, and several rebuilds
     // can run inside one window (a `turn_end` per boundary, a branch change), each of which has to get the

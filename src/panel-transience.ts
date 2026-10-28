@@ -25,7 +25,7 @@ import type { InputEvent, InputSource } from "@earendil-works/pi-coding-agent";
 
 import type { StickyDeps } from "./deps.ts";
 import type { PanelComponent } from "./panel-component.ts";
-import type { PanelMode, PanelModeState } from "./panel-mode.ts";
+import type { PanelModeState } from "./panel-mode.ts";
 
 /** Which submissions are the user's own: typed at the editor, or sent over RPC. Not a steer, not an extension. */
 const USER_SOURCES: readonly InputSource[] = ["interactive", "rpc"];
@@ -39,10 +39,11 @@ const USER_SOURCES: readonly InputSource[] = ["interactive", "rpc"];
  */
 export function endEarnedOpenOnSubmission(deps: StickyDeps, event: InputEvent): void {
   if (!USER_SOURCES.includes(event.source)) return;
-  if (!deps.panelEarnedOpen()) return;
   // The cell moves and the surfaces follow, in the one order every writer keeps: the overlay and the rail
   // both read the cell as their first question, so a redraw which ran first would draw the open the message
-  // has just ended and never be asked again.
+  // has just ended and never be asked again. `endEarnedOpen` answers for a peek or a hidden panel itself —
+  // they are resting states, and a user who chose to show the panel keeps it whichever way the conversation
+  // goes — so this handler does not ask the same question twice.
   deps.endEarnedOpen();
 }
 
@@ -57,25 +58,21 @@ export interface EarnedOpenCells {
 }
 
 /**
- * The two `StickyDeps` members of the panel's transient, over the three cells the extension owns.
+ * The `StickyDeps` member of the panel's transient, over the three cells the extension owns.
  *
  * Lives here rather than inline in `extension.ts` because the ordering below *is* the rule — the cell is
  * written before either surface is asked, and the component's focus is released with the open it belonged to.
  */
-export function earnedOpenCells(
-  cells: EarnedOpenCells,
-): Pick<StickyDeps, "panelEarnedOpen" | "endEarnedOpen"> {
-  const earned = (): PanelMode => cells.panel.mode();
+export function earnedOpenCells(cells: EarnedOpenCells): Pick<StickyDeps, "endEarnedOpen"> {
   return {
-    panelEarnedOpen: () => earned() === "open",
     endEarnedOpen() {
-      // Nothing earned, nothing to end: a peek and a hidden panel are resting states, and a user who chose
-      // to show the panel keeps it whichever way the conversation goes.
-      if (earned() !== "open") return;
+      // Only a panel open because a pin asked has a transient to end; `demote` alone restores what the user
+      // chose for every other state, so a peek or a hidden panel is left exactly as it was.
+      if (cells.panel.mode() !== "open") return;
       // Focus before the cell: `unfocus` is the component's own teardown of the interaction, and it reports
-      // the ending to the cell's `afterUnfocus` through the owner's wiring.
+      // the ending to the cell through the owner's wiring.
       cells.component()?.unfocus();
-      cells.panel.afterUnfocus();
+      cells.panel.endEarnedOpen();
       cells.redraw();
     },
   };

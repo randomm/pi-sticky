@@ -1,7 +1,7 @@
 /**
  * The panel's three-state cell: hidden / peek / open, and the three facts behind the one read.
  *
- * `mode()` is the only read and `settle`/`autoOpen`/`afterUnfocus`/`reset` the only writes
+ * `mode()` is the only read and `settle`/`autoOpen`/`endEarnedOpen` the only writes
  * (`src/panel-mode.ts`), so the whole of the cell's contract is a sequence of those five calls and the mode
  * each leaves. What is *not* obvious from any single transition is why there are three cells behind one
  * read — `chosen` (what the user's verbs said), `shown` (what is on screen) and `earned` (whether a pin put
@@ -56,7 +56,7 @@ test("settle moves the screen and the record together, and ends an earned open",
 test("an operator who configured open never sees a peek, not even after a demote", () => {
   const cell = createPanelMode(resting("open"));
   cell.autoOpen();
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
   // "Never peek" is what `PI_STICKY_PANEL=open` means, and a demote that put the panel into the state the
   // operator refused is the bug this assertion is about.
   expect(cell.mode()).toBe("open");
@@ -80,7 +80,7 @@ test("leaving a panel ends the open the user did not ask for and restores what t
   const cell = createPanelMode(resting("peek"));
   cell.settle(false);
   cell.autoOpen();
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
   expect(cell.mode()).toBe("hidden");
   expect(cell.shown()).toBe(false);
 });
@@ -90,7 +90,7 @@ test("leaving a panel the user showed leaves it shown, in its resting frame", ()
   cell.settle(true);
   // The user opened it themselves: an earned open they then left must not hide a panel they had shown.
   cell.autoOpen();
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
   expect(cell.mode()).toBe("peek");
   expect(cell.shown()).toBe(true);
 });
@@ -99,7 +99,7 @@ test("an auto-show on a panel the user had shown earns an open and returns to th
   const cell = createPanelMode(resting("peek"));
   cell.autoOpen();
   expect(cell.mode()).toBe("open");
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
   expect(cell.mode()).toBe("peek");
 });
 
@@ -107,16 +107,16 @@ test("a second unfocus does not hide a panel the user had shown", () => {
   const cell = createPanelMode(resting("peek"));
   cell.settle(true);
   cell.autoOpen();
-  cell.afterUnfocus();
-  cell.afterUnfocus();
+  cell.endEarnedOpen();
+  cell.endEarnedOpen();
   expect(cell.shown()).toBe(true);
 });
 
-test("reset forgets the session's transience and keeps the operator's resting mode", () => {
+test("the demote a session boundary makes forgets the transience and keeps the operator's resting mode", () => {
   const cell = createPanelMode(resting("open"));
   cell.settle(false);
   cell.autoOpen();
-  cell.reset();
+  cell.endEarnedOpen();
   // A session boundary is not the user's next interaction: the earned open is over, and the record the new
   // session's entries will settle has not been read yet — but the resting mode is the operator's, so it
   // survives.

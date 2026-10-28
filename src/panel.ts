@@ -107,7 +107,7 @@ export class PanelOwner {
       // the overlay what the panel is doing — a rail reconsidered against the still-open answer is a rail
       // that stood down for pins it should have taken back.
       onUnfocus: () => {
-        this.#wiring.deps.panelMode?.().afterUnfocus();
+        this.#wiring.deps.panelMode?.().endEarnedOpen();
         this.refresh();
       },
       panelVisible: () => this.isVisible(),

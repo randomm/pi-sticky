@@ -9,10 +9,10 @@
  * nobody asked to keep open.
  *
  * One cell with both halves in it, rather than two flags the caller has to keep in step: they move together
- * or not at all. An "earned open" that outlived the demote would reopen the panel on the next redraw, and a
+ * or not at all. An earned open that outlived its demote would reopen the panel on the next redraw, and a
  * flag cleared while the panel still read it would leave the user looking at an open panel nothing remembers
- * opening. `mode()` is the only read and `settle`/`autoOpen`/`afterUnfocus`/`reset` the only writes, so the
- * pair cannot be moved half-way.
+ * opening. `mode()` is the only read and `settle`/`autoOpen`/`endEarnedOpen` the only writes, so the pair
+ * cannot be moved half-way.
  *
  * What the state is asked for:
  *
@@ -22,7 +22,7 @@
  * - `PanelComponent` reads the same mode and draws the peek (`panel-peek.ts`) or the open frame.
  * - The auto-open rule (U11/U12): an action or warning pin opens the panel fully and it
  *   *stays* open across redraws, further pins and agent turns, until the user leaves it — Esc, Enter from a
- *   key, or a keystroke into a panel that is not open. `afterUnfocus` is the only ending, because it is the
+ *   key, or a keystroke into a panel that is not open. `endEarnedOpen` is the only ending, because it is the
  *   only event that reports an interaction the *user* ended; `settle` states why every other writer must
  *   leave an earned open standing.
  * - `PI_STICKY_PANEL=open` means peek never happens (`panelResting` in `panel-resting.ts`, the one read of the
@@ -69,8 +69,8 @@ export function demandsAttention(changed: readonly { level: PinLevel }[]): boole
  * Three cells, because there are three questions and only two of them the session can answer: `chosen`, what
  * the user's verbs said (the `pi-sticky.ui` entry's subject, and what a demote restores); `shown`, what is on
  * screen; and `earned`, whether the screen is there because a pin asked. `mode()` is the only read of the
- * three and `settle`/`autoOpen`/`afterUnfocus`/`reset` the only writes, so no caller can move one on its own
- * and leave a peek that is also an open, or an open nothing is drawing.
+ * three and `settle`/`autoOpen`/`endEarnedOpen` the only writes, so no caller can move one on its own and
+ * leave a peek that is also an open, or an open nothing is drawing.
  *
  * The recording contract U8 established and U11 leaves intact is kept by the split between `chosen` and
  * `shown`: the auto-show moves the screen and never the record, so it appends nothing and the user's choice
@@ -108,17 +108,14 @@ export interface PanelModeState {
    */
   autoOpen(): void;
   /**
-   * The interaction the user had with the panel is over: an open they did not ask for ends, and the panel
+   * The interaction the user had with the panel is over: the open they did not ask for ends, and the panel
    * goes back to what they chose.
    *
-   * The *only* ending (U12), reported by the component when the focus ends —
-   * Escape, Enter-from-a-key, a keystroke into a peek. Leaving a panel the user focused is the one event that
-   * says they read the pin, and the one event of its kind the extension is ever told about: every other write
-   * of this cell is a redraw, a rebuild or a command line whose text never reached the model.
+   * The *only* ending (U12), reached from Escape, Enter-from-a-key or a keystroke into a peek. It is also
+   * what a session boundary calls when it forgets the dead session's transience: an earned open from the
+   * branch the user left has no claim on the panel the branch they moved to draws.
    */
-  afterUnfocus(): void;
-  /** Forget the session's transience, keeping the resting mode — the reset a fresh session gets. */
-  reset(): void;
+  endEarnedOpen(): void;
 }
 
 /** The mode cell of one extension instance, resting where its configuration says. */
@@ -183,10 +180,11 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
   }
 
   /**
-   * The ending both triggers share: the earned open is over, and the panel goes back to what the user chose.
+   * The earned open is over and the panel goes back to what the user chose.
    *
    * Restoring `chosen` rather than leaving `shown` as the auto-show set it is the whole of the transience —
-   * the panel came out of hiding for a pin the user has now answered, and it goes back into it.
+   * the panel came out of hiding for a pin the user has now answered, and it goes back into it. `resting`
+   * deliberately survives: it is the operator's, not the session's.
    */
   function demote(): void {
     // Back to what the user chose, and to the resting frame.
@@ -209,7 +207,7 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
       // would fold a panel the user has not read yet back into the peek the moment anything asked the cell a
       // question — a `/pins show`, a `session_tree`, a submitted message. Hiding is the exception: a hidden
       // panel that still drew an open frame is not a state, and `settle(false)` is the one move that is never
-      // a redraw re-asking the last one. Ending an open the user *read* is `afterUnfocus`'s alone.
+      // a redraw re-asking the last one. Ending an open the user *read* is `endEarnedOpen`'s alone.
       screen(next, next && earned);
     },
     autoOpen() {
@@ -217,10 +215,6 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
       // rewrite what the user chose. The screen changes; the record does not.
       screen(true, true);
     },
-    afterUnfocus: demote,
-    // A session boundary is not the user's next interaction: the panel that opens for the branch the user
-    // just moved to rests where the configuration says, and an earned open from the branch they left has no
-    // claim on it. `resting` deliberately survives — it is the operator's, not the session's.
-    reset: demote,
+    endEarnedOpen: demote,
   };
 }

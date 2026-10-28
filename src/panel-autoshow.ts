@@ -36,8 +36,8 @@ import type { ViewPin } from "./types.ts";
  * `affected` is the ids that commit touched, straight from the reducer (`deps.commit` carries them). The
  * view is only where their levels are read, and it is a parameter because the ids mean nothing without it:
  * an `update` keeps the id it was given, so the pin to look at is named, never ranked out of the list.
- * Missing ids — an id the view no longer holds — are skipped; an empty or absent list is a commit that
- * touched nothing, which opens nothing.
+ * Missing ids — an id the view no longer holds — are skipped; an empty list is a commit that touched
+ * nothing, which opens nothing.
  *
  * The order is the part a caller can get wrong, and why the rule is here rather than in the caller: the
  * commit must be *settled into the cell* before anything is drawn. Asking the rail and the overlay about the
@@ -47,11 +47,11 @@ import type { ViewPin } from "./types.ts";
 export function autoShowForCommits(
   panel: PanelModeState,
   pins: readonly ViewPin[],
-  affected: readonly number[] | undefined,
+  affected: readonly number[],
 ): boolean {
   // A commit that touched nothing has shown the user nothing, and an auto-show spent there is an auto-show
   // the user never got.
-  if (affected === undefined || affected.length === 0) return false;
+  if (affected.length === 0) return false;
   const touched = new Set(affected);
   if (!demandsAttention(pins.filter((pin) => touched.has(pin.id)))) return false;
   // `autoOpen` and not the cell's `settle`: an auto-show is not a statement about whether the panel should

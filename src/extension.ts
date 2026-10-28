@@ -289,9 +289,9 @@ export function createStickyExtension(
       state = EMPTY_STATE;
       view = { pins: [], removed: [] };
       // Nothing a dead session's cell holds belongs to its successor — not an earned open, not a record its
-      // entries never wrote. `reset` forgets the transience and keeps the operator's resting mode; the
+      // entries never wrote. The demote forgets the transience and keeps the operator's resting mode; the
       // record is settled from the new session when it starts.
-      panel.reset();
+      panel.endEarnedOpen();
       commits.clear();
       terminal.forget();
       surfaces.panel.current?.close();

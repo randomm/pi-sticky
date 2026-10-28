@@ -93,9 +93,9 @@ export interface StickyConfig {
   focusKey?: KeyId | null;
   /**
    * How a shown panel rests when nothing has earned an open: the three-row peek, or the full panel. Read
-   * only by `panel-mode.ts`' `restMode`, and ignored in `rpc`, `print` and `json`, where there is no
-   * overlay for either state to exist in. Optional so a hand-built config may leave it out — `undefined`
-   * rests as the documented default does.
+   * only by `createPanelMode` (`panel-mode.ts`), which folds it with the earned-open bit, and ignored in
+   * `rpc`, `print` and `json`, where there is no overlay for either state to exist in. Optional so a
+   * hand-built config may leave it out — `undefined` rests as the documented default does.
    */
   panel?: PanelResting;
 }

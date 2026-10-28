@@ -68,10 +68,7 @@ export function openPanelOverlay(
         tui: hooks.tui,
         onUnfocus: hooks.onUnfocus,
         panelVisible: hooks.panelVisible,
-        // The state cell, read at *call* time and tolerant of a wiring that has no cell to give: a
-        // hand-built wiring (a test's, or any host that grew the interface before it grew this member)
-        // then draws the open panel it always drew, rather than throwing out of the component's draw path
-        // — the same degradation `PanelHost.mode` documents on the component's side of the seam.
+        // The state cell, read at *call* time; see `PanelDeps.panelMode` for what its absence means.
         mode: () => wiring.deps.panelMode?.(),
       }),
       panelCallOptions(hooks.visible, hooks.onHandle),

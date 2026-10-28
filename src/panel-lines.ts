@@ -109,13 +109,12 @@ export interface PanelContent {
 
 /**
  * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
- * *theme*. Every drawn line goes through this one escape policy, with no styled branch: an over-wide line is
- * the case the rail's own `cut` documents: `truncateToWidth` measures an escape whose terminator it does not
- * recognise as printable columns — so when
- * its result still measures too wide the line is cut again from the escape-stripped text, the only string
- * here whose width both sides agree on. Stripped whether or not the cut fired, so a row that fits is still
- * free of escape bytes; re-measured after that, because stripping can leave a line that no longer fills the
- * panel and a short row would let the chat behind it show through.
+ * *theme*. Every drawn line goes through this one escape policy, with no styled branch. The over-wide case
+ * is the one the rail's own `cut` documents: `truncateToWidth` measures an escape whose terminator it does
+ * not recognise as printable columns, so when its result still measures too wide the line is cut again from
+ * the escape-stripped text, the only string here whose width both sides agree on. Stripped whether or not the
+ * cut fired, so a row that fits is still free of escape bytes; re-measured after that, because stripping can
+ * leave a line that no longer fills the panel and a short row would let the chat behind it show through.
  *
  * The styled branch used to exist, and was a hole rather than a convenience: a styled line that measured
  * within the width was padded and returned verbatim, and `visibleWidth` counts an OSC 8 hyperlink, an
