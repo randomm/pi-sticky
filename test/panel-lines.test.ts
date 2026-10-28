@@ -134,7 +134,7 @@ test("the frame closes at every size the builder draws at, with the header in th
       expectUniformWidth(lines, width);
       // The rule is what fills the border beside the header: padding there would leave a gap the chat
       // shows through, so a border always reads as corners, label, rule, corners.
-      expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
+      expect(lines[0]?.startsWith("╭ 📌 Pinned · 1 more ")).toBe(true);
       expect(lines[0]?.endsWith(`${RULE}╮`)).toBe(true);
       expect(lines[last]?.startsWith("╰")).toBe(true);
       // The rule is what closes a border, and no border ever ends in a blank: unfocused the bottom border
@@ -142,7 +142,7 @@ test("the frame closes at every size the builder draws at, with the header in th
       // border is left for it, and which reaches the corner itself when the hint was cut to its room.
       expect(lines[last]?.endsWith(focused ? "╯" : `${RULE}╯`)).toBe(true);
       expect(lines[0]?.includes(RULE)).toBe(true);
-      expect(lines[0]).toContain("📌 Pinned for you (1)");
+      expect(lines[0]).toContain("📌 Pinned · 1 more");
       for (const row of lines.slice(1, last)) {
         // Every content row is gutter, one space, content fitted to the inner width, one space, gutter.
         expect(row.startsWith("│ ")).toBe(true);
@@ -163,7 +163,7 @@ test("a pin row is one space inside each gutter, at the inner width", () => {
   const tail = ` #1 ${NOW_AGE}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
   const text = " • Decide X".padEnd(width - GUTTER_COLUMNS - tail.length);
   expect(lines[1]).toBe(`│ ${text}${tail} │`);
-  expect(lines[0]?.startsWith("╭ 📌 Pinned for you (1) ")).toBe(true);
+  expect(lines[0]?.startsWith("╭ 📌 Pinned · 1 more ")).toBe(true);
   // The frame is as tall as its content, so the row after the pin is the bottom border: a panel with one
   // pin pads itself to nothing, which is what keeps the prompt visible beside it.
   expect(lines[2]).toBe(`╰${RULE.repeat(width - CORNER_WIDTH)}╯`);
@@ -171,7 +171,7 @@ test("a pin row is one space inside each gutter, at the inner width", () => {
 
 test("the header names the count and the pin row names the id and the local time", () => {
   const lines = built(content([one(1, "Decide X", { createdAt: NOW })]), 40, style);
-  expect(lines[0]).toContain("📌 Pinned for you (1)");
+  expect(lines[0]).toContain("📌 Pinned · 1 more");
   expect(lines[1]).toContain("#1");
   expect(lines[1]).toContain(NOW_AGE);
   expect(lines[1]).toContain("Decide X");
@@ -187,9 +187,16 @@ test("the level marker is the rail's: ! for warning, ? for action, a bullet for 
   // without the selection highlight or an id being mistaken for one.
   const marks: RenderPanelStyle = { ...style, selected: (s) => s };
   const lines = built(content(pins), 40, marks);
-  expect(inside(lines[1] as string)).toContain("!");
-  expect(inside(lines[2] as string)).toContain("?");
-  expect(inside(lines[3] as string)).toContain("•");
+  // Three levels, so three sections, so three heading rows: the table reads Warnings / the warning, Needs
+  // you / the action, FYI / the info pin. The markers are the rail's still — `!`, `?`, `•` on the pin rows —
+  // and the headings carry their own glyphs (`⚠`, `?`, `·`) at the head of the rows between them.
+  const rows = lines.slice(1, -1).map((line) => inside(line));
+  expect(rows[0]).toContain("Warnings");
+  expect(rows[1]).toContain("!");
+  expect(rows[2]).toContain("Needs you");
+  expect(rows[3]).toContain("?");
+  expect(rows[4]).toContain("FYI");
+  expect(rows[5]).toContain("•");
 });
 
 test("CJK and emoji text is measured, not counted: each row still fills the width inside the frame", () => {
@@ -209,7 +216,7 @@ test("CJK and emoji text is measured, not counted: each row still fills the widt
 test("a 33-column panel — what 33% of a 100-column terminal resolves to — still fits its rows", () => {
   const lines = built(content([one(1, "A pin with a good deal of text in it")]), 33, style);
   expectUniformWidth(lines, 33);
-  expect(lines[0]).toContain("📌 Pinned for you (1)");
+  expect(lines[0]).toContain("📌 Pinned · 1 more");
 });
 
 test("a word wider than the frame is cut, not drawn past the gutter, and its id still reads", () => {

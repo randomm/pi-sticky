@@ -65,7 +65,9 @@ test("rows are built for every pin in order and no pin is skipped", () => {
 test("the view a test builds with fixtures.ts draws like any other", () => {
   const pins = view([pin(1, "Decide X", "action")]).pins;
   const lines = built(content(pins, 0, true), 40, plainStyle);
-  expect(lines[0]).toContain("📌 Pinned for you (1)");
+  // One action pin, so the title names the level rather than a bare count: `needs you` is what an action
+  // costs the user, and it is the whole reason the counts replaced the old `(1)`.
+  expect(lines[0]).toContain("📌 Pinned · 1 needs you");
   expect(lines[1]).toContain("?");
   expect(lines[1]).toContain("Decide X");
 });

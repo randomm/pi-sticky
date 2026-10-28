@@ -10,6 +10,10 @@
  * the id read `#100 …`. Two callers of one geometry agreeing on one subtraction is what this file exists
  * for.
  *
+ * A heading row is laid out by `headingColumns` beside this: it shares the text column's *start*, so its
+ * word lines up with the pin text under it, and pays for no tail of its own — it names a section, not a pin,
+ * so there is no id to keep off the cut.
+ *
  * The tail's reserve is *not* a constant. Pin ids are never capped at 999 — `nextId` keeps counting and
  * `MAX_PIN_ID` (`bounds.ts`) is `Number.MAX_SAFE_INTEGER`, 20 digits long — so a flat eleven-column
  * reserve is a guarantee that quietly fails at `#1000`. `widestMetaColumns` measures the tails the view
@@ -194,4 +198,20 @@ export function widestMetaColumns(
  */
 export function panelTextColumns(width: number, metaColumns: number): number {
   return Math.max(1, width - FRAME_COLUMNS - metaColumns - META_SEPARATOR_COLUMNS);
+}
+
+/**
+ * Columns a section heading's text gets in a frame of `width`.
+ *
+ * A heading pays for the frame and for the same tail reserve its section's pins pay for, and nothing else:
+ * the width is `panelTextColumns` with the tail given back at zero, which is the inner width the frame leaves
+ * and the reason `headingColumns` sits beside `panelTextColumns` instead of spelling the subtraction at the
+ * call site. Charging the heading the *view's* widest id instead would indent the word `Warnings` by twenty
+ * columns for a pin id of `#1` followed by nineteen digits, and the heading would no longer line up with the
+ * text of the pins under it — the alignment is the whole reason a heading is drawn in the text column.
+ *
+ * Same floor as a pin row: a frame the builder closes always leaves the heading at least one column.
+ */
+export function headingColumns(width: number): number {
+  return panelTextColumns(width, 0);
 }

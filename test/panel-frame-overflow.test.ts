@@ -83,7 +83,7 @@ test("a header or hint too long for the frame is cut with an ellipsis and the co
     MIN_FRAME_WIDTH,
     style,
   );
-  expect(many[0]).toContain("📌 Pinned for you (9)");
+  expect(many[0]).toContain("📌 Pinned · 9 more");
   expectUniformWidth(many, MIN_FRAME_WIDTH);
   expect(many[0]?.startsWith("╭")).toBe(true);
   expect(many[0]?.endsWith("╮")).toBe(true);

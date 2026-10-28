@@ -14,8 +14,8 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { panelLayout } from "../src/panel-frame-layout.ts";
 import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
-import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
@@ -139,10 +139,12 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
     40,
   );
   expect(scrolled).toHaveLength(20);
-  expect(scrolled[0]).toContain("📌 Pinned for you (50)");
+  expect(scrolled[0]).toContain("📌 Pinned · 50 more");
   expect(scrolled.at(-1)).toContain("Enter reply");
-  expect(scrolled.some((line) => line.includes("Pin 50 "))).toBe(true);
-  expect(scrolled.some((line) => line.includes("Pin 1 "))).toBe(false);
+  // Fifty info pins draw newest id first, so the last selection — 49 — is the *oldest* pin, `Pin 1`, and the
+  // window the keys scrolled to opens on it. What has scrolled out of the frame is the newest.
+  expect(scrolled.some((line) => line.includes("Pin 1 "))).toBe(true);
+  expect(scrolled.some((line) => line.includes("Pin 50 "))).toBe(false);
   // A terminal whose half cannot hold both borders is no frame at all: `panelMaxRows` says two rows, the
   // frame's floor says three, and the builder answers an open box with nothing.
   expect(panelMaxRows(5)).toBe(2);

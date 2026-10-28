@@ -30,6 +30,8 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { stripSequences } from "./escape.ts";
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
+import type { PanelLayout } from "./panel-frame-layout.ts";
+import { frameTitle } from "./panel-frame-title.ts";
 import {
   ELLIPSIS,
   FRAME_BOTTOM_LEFT,
@@ -42,17 +44,29 @@ import {
 } from "./panel-frame.ts";
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
 import { panelContentRows, panelWindowOffset } from "./panel-rows.ts";
-import type { PanelLayout, PanelRow } from "./panel-rows.ts";
+import type { PanelRow } from "./panel-rows.ts";
+import type { PanelSection } from "./panel-sections.ts";
+import { panelSections } from "./panel-sections.ts";
 import { GUTTER_COLUMNS, drawnTail, tailReserve } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
-/** Line 1 of the panel, written into the top border. The rail's header carries ` · /pins`; here `/pins` is on the keyboard. */
-const HEADER = "📌 Pinned for you";
-
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
+
+/**
+ * The sections behind the frame's counts, read off the pins this builder was handed.
+ *
+ * The title names how many pins need a decision, how many are warnings and how many merely inform, and the
+ * only thing that can answer those questions is the same grouping the headings are drawn from — so the title
+ * is computed here rather than carried on `PanelContent`, and the frame cannot show counts that disagree with
+ * the sections under it. `content.pins` already arrives in the drawn order, and `panelSections` leaves an
+ * already-drawn list alone, so this is a grouping of the frame's own rows and not a second ranking of them.
+ */
+function titleSections(pins: readonly ViewPin[]): readonly PanelSection[] {
+  return panelSections(pins).order;
+}
 
 /** Whether a size is one a closed frame fits in: the builder draws nothing below either bound. */
 function isPanelFrameSize(width: number, height: number): boolean {
@@ -61,7 +75,7 @@ function isPanelFrameSize(width: number, height: number): boolean {
   );
 }
 
-/** What the builder draws. `pins` is in the order `PanelComponent.#ranked` ranked them. */
+/** What the builder draws. `pins` is the *drawn order* — `panelSections`'s flattened list, which is what the component hands the frame and what `selection` indexes into. */
 export interface PanelContent {
   pins: readonly ViewPin[];
   /** Selected *pin* index, not row index: a pin that wraps owns several rows. */
@@ -214,20 +228,41 @@ export function buildPanelLines(
     layout.start,
   );
 
-  const header = `${HEADER} (${content.pins.length})`;
+  // The row of the window the bar sits on, in the window's own numbering.
+  //
+  // `layout.start` is a **table** position and `content.selection` is a **pin** index, and the two number
+  // differently: a pin that wraps owns several rows, and since pins v2-3 a section heading owns a row and no
+  // pin at all. Subtracting the offset from the selection — the arithmetic this line used to hold — only
+  // worked while rows and pins were one-to-one, and it starts putting the bar one row high for every
+  // heading, or every wrapped pin, above the selection. The row to highlight is therefore the *table*
+  // position of the selected pin, taken from `layout.start`, less the row the window opens at; a negative
+  // result means the selected pin is scrolled above the window and matches no row drawn.
+  const bar = layout.start - offset;
+
+  const title = frameTitle(titleSections(content.pins));
   const lines: string[] = [
-    borderLine(header, style.header, FRAME_TOP_LEFT, FRAME_TOP_RIGHT, width, frame),
+    borderLine(title, style.header, FRAME_TOP_LEFT, FRAME_TOP_RIGHT, width, frame),
   ];
   // The window's rows, taken from the table the height was counted from: `layout.height` is
   // `owned.length` plus the borders until the ceiling cuts it, so a frame whose content fits draws every
   // row of that content and no blank row of padding — the only rows it cannot reach are the ones the
   // ceiling cut off, which is what the offset scrolls through.
   for (let i = 0; i < budget; i++) {
-    const row = owned[offset + i]?.row;
-    if (row === undefined) break;
+    const entry = owned[offset + i];
+    if (entry === undefined) break;
+    const row = entry.row;
     // The bar is on the row the keys moved to *and only while the panel holds focus* — an unfocused
     // panel highlighting its top row would claim the bar sits where the user is not.
-    const selected = content.focused && i === content.selection - offset;
+    //
+    // Two tests, because the row carries two coordinates and the bar needs both of them. `i === bar` is the
+    // row coordinate: the one row of this window that `layout.start` named, less the row the window opens at.
+    // `entry.pin === content.selection` is the pin coordinate, and `entry.pin` is an **absolute** index into
+    // the flattened drawn order — `panelPinRowOwners` stamps each row with the offset it was called at, so
+    // slicing the window out of the table never renumbers anybody. Either test alone would put the bar on the
+    // wrong row the moment the two coordinates part company: rows and pins were one-to-one before sections
+    // existed, and now a heading owns a row and no pin while a wrapped pin owns several rows and one pin. A
+    // heading's tag is `null`, so no selection can match it and the bar cannot be parked on a section title.
+    const selected = content.focused && entry.pin === content.selection && i === bar;
     lines.push(pinRow(row, inner, style, selected, gutterAt, metaColumns));
   }
   // The hint is drawn only while focused: an unfocused panel advertising keys it cannot receive would

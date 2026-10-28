@@ -43,7 +43,7 @@ function component(pins: ViewPin[], tui?: TUI) {
 
 test("render draws the header, the pins and — while focused — the hint", () => {
   const { c } = component(pins("Decide X", "Watch out"));
-  expect(c.render(40)[0]).toContain("📌 Pinned for you (2)");
+  expect(c.render(40)[0]).toContain("📌 Pinned · 2 more");
   expect(c.render(40).some((line) => line.includes("Watch out"))).toBe(true);
   // The hint lives in the bottom border, which is drawn at the full width: a frame narrower than the
   // hint cuts it, so the whole hint only appears at a width that has room for it beside the corners.

@@ -1,9 +1,12 @@
 /**
  * The component pi-tui draws inside the pins overlay, and the keys it answers.
  *
- * The pins are ranked on the way in (`rankedPins`, held by `PanelMemory`, `panel-frame-cache.ts`) and this
- * class is the only reader of that order: the frame, the bar, the clamp, the scroll window and the two
- * destructive keys all index the same array, which is what makes the pin under the bar the pin `d` dismisses.
+ * The pins are ordered on the way in — level sections, and `orderPins` within each — by `panelSections`,
+ * held by `PanelMemory` (`panel-frame-cache.ts`), and this class is the only reader of that order: the
+ * frame, the bar, the clamp, the scroll window and the two destructive keys all index the same flattened
+ * array, which is what makes the pin under the bar the pin `d` dismisses. The selection is an index into
+ * that flattened list, never into `getView().pins`, and a section heading owns no index at all (operator
+ * resolution 2 of pins v2-3).
  *
  * The selection and the focus flag live here, not in the deps object: they are view state of one overlay
  * instance, and a redraw that read them back from a fresh component would lose the user's place. `update()`
@@ -28,12 +31,14 @@ import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { ageAt, ageBucket } from "./panel-age.ts";
 import { PanelMemory, sameFrame } from "./panel-frame-cache.ts";
 import type { PanelFrame } from "./panel-frame-cache.ts";
+import { panelLayoutSections } from "./panel-frame-layout.ts";
 import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
 import { containKey } from "./panel-input.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
-import { panelLayout } from "./panel-rows.ts";
+import { panelSections } from "./panel-sections.ts";
+import type { PanelSections } from "./panel-sections.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
@@ -46,28 +51,14 @@ export class PanelComponent implements Component {
   #host: PanelHost;
   #tui: TUI | undefined;
   #theme: Theme | undefined;
-  /**
-   * The colours this component draws with, resolved once: the host's if it has any, else the mapping its
-   * own theme implies, else the identity style. Like `RailComponent`, which builds `themeStyle(theme)` in
-   * its constructor — the two surfaces are meant to be coloured alike, and they are not if one resolves
-   * per frame and the other per construction. Built lazily because a test hands the theme to some
-   * components and not to others.
-   */
+  /** Colours resolved on first draw by `#styleOf`; identity colours if nothing supplies them. */
   #style: PanelStyle | undefined;
   #handle: OverlayHandle | undefined;
   #focused = false;
   #selection = 0;
-  /** The draw-order memo, owned by this component alone: a shared one is process state, not a cache. */
   /**
-   * What the component has memorised: the last frame and the order its rows were built in, in one object so
-   * `invalidate()` cannot leave a "same frame" verdict behind against a cache it has just dropped, nor an
-   * order behind against a dropped frame. See `PanelMemory` (`panel-frame-cache.ts`).
-   *
-   * `update()` compares the live view, bar and focus against it to decide whether a redraw costs a layout
-   * pass, and `render()` compares the *pins* against it for the same reason in the other direction:
-   * `render()` is what pi-tui calls on its own schedule, and an overlay that was not sent an `update()` can
-   * be asked for a frame after the view was swapped under it. A stale frame drawn at the width the cache was
-   * keyed on is the old view's pins still on the user's screen.
+   * What the component has memorised — last frame and drawn order in one object, so `invalidate()` drops
+   * both. `PanelMemory` (`panel-frame-cache.ts`) owns the key it obeys and why the halves clear together.
    */
   #memory = new PanelMemory();
 
@@ -83,9 +74,10 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * The style to draw with, resolved once: the host's if it has one, else the mapping its own theme implies
-   * (through `panelThemeStyle`, the very mapping the rail builds, so one mapping colours both surfaces),
-   * else identity colours — which keep the frame plain rather than throwing on a missing `selected`.
+   * The style to draw with, resolved on first use: the host's if it has one, else the mapping its own theme
+   * implies — through `panelThemeStyle`, the very mapping the rail builds, so one mapping colours both
+   * surfaces — else the identity style, which keeps the frame plain rather than throwing on a missing
+   * `selected`. Lazy because a test hands the theme to some components and not to others.
    */
   #styleOf(): PanelStyle {
     if (this.#style === undefined) {
@@ -107,7 +99,7 @@ export class PanelComponent implements Component {
    * costs a full layout pass over every pin for no visible reason.
    */
   update(): void {
-    const pins = this.#ranked();
+    const pins = this.#drawn();
     if (this.#selection >= pins.length) this.#selection = Math.max(0, pins.length - 1);
     if (this.#sameFrame(pins)) return;
     this.invalidate();
@@ -120,11 +112,10 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * Everything the frame the component would draw right now depends on, read once.
-   *
-   * A method rather than five arguments at each call site because `update()` and `render()` ask the same
-   * question at different moments, and a candidate the two built differently is a cache that hits for one
-   * and misses for the other.
+   * Everything the frame the component would draw right now depends on, read once — the shape `sameFrame`
+   * compares. A method rather than five arguments at each call site because `update()` and `render()` ask the
+   * same question at different moments, and a candidate the two built differently is a cache that hits for
+   * one and misses for the other.
    */
   #candidate(pins: readonly ViewPin[]): PanelFrame {
     return {
@@ -139,10 +130,9 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * The instant this frame ages its pins at: the host's clock when it has one, else this instant.
-   *
-   * Read once per entry point — not per row — so every age in one frame agrees, and read at draw time
-   * rather than stored on the component: a component lives across the minute its own rows are aged in.
+   * The instant this frame ages its pins at: the host's clock when it has one, else this instant. Read once
+   * per entry point — not per row — so every age in one frame agrees, and read at draw time rather than
+   * stored on the component: a component lives across the minute its own rows are aged in.
    */
   #ageNow(): string {
     const clock = this.#host.ageNow;
@@ -201,7 +191,7 @@ export class PanelComponent implements Component {
    * value that is not an integer is answered with the top row, which is the one row that always exists.
    */
   select(index: number): void {
-    const last = this.#ranked().length - 1;
+    const last = this.#drawn().length - 1;
     const row = Number.isInteger(index) ? index : 0;
     this.#selection = Math.max(0, Math.min(row, last));
     this.invalidate();
@@ -212,18 +202,26 @@ export class PanelComponent implements Component {
     return this.#selection;
   }
 
-  /** The pins the panel is drawing, ranked: the array the bar is drawn over *is* the array the keys index. */
-  get pins(): readonly ViewPin[] {
-    return this.#ranked();
+  /**
+   * The pins the panel draws, in the order it draws them — `PanelMemory.sectionsOf`'s flattened list, and the
+   * array the bar is drawn over *is* the array the keys index. The sections and their memo live in
+   * `panel-frame-cache.ts`; the reason this component is the only reader of that order is stated there.
+   */
+  #drawn(): readonly ViewPin[] {
+    return this.#memory.sectionsOf(this.#host.getView().pins).flat;
+  }
+
+  /** The sections behind `#drawn()`, for the one caller that hands them to the layout as well. */
+  #sections(): PanelSections {
+    return this.#memory.sectionsOf(this.#host.getView().pins);
   }
 
   /**
-   * The pins the panel draws, in the order it draws them. The ranking and its memo are
-   * `PanelMemory.orderOf` (`panel-frame-cache.ts`); the reason this component is the only reader of that
-   * order — the destructive keys index the very array the bar is drawn over — is stated there.
+   * The pins the panel is drawing, in the order it draws them. See `#drawn` for what makes that order the
+   * one the keys answer to.
    */
-  #ranked(): readonly ViewPin[] {
-    return this.#memory.orderOf(this.#host.getView().pins);
+  get pins(): readonly ViewPin[] {
+    return this.#drawn();
   }
 
   render(width: number): string[] {
@@ -234,7 +232,8 @@ export class PanelComponent implements Component {
     // has not moved, so the cache's fast path survives the ranking. The label is read here for the same
     // reason it is drawn here: a frame that did not name it would keep the old one on screen after the
     // operator rebound the focus key.
-    const pins = this.#ranked();
+    const sections = this.#sections();
+    const pins = sections.flat;
     const replyHint = this.#host.replyHint();
     const ageNow = this.#ageNow();
     // The cache key carries the *bucket*, and the content carries the instant: two redraws in one minute
@@ -262,10 +261,11 @@ export class PanelComponent implements Component {
     };
     // One layout pass at the width pi-tui just handed over: the row table it builds is what both the
     // frame's height and the drawn window come from, so a pin is wrapped once per frame and a resize
-    // sizes the box at the width it is drawn at rather than the last cached one. `panelLayout` owns the
-    // height; the builder draws the lines it counted.
-    const layout = panelLayout(
-      pins,
+    // sizes the box at the width it is drawn at rather than the last cached one. `panelLayoutSections` owns
+    // the height — the section headings included — and is handed *these very* sections, so the rows the frame
+    // draws and the counts its title prints were grouped from one view and cannot disagree.
+    const layout = panelLayoutSections(
+      sections,
       width,
       this.#tui?.terminal?.rows,
       this.#selection,
