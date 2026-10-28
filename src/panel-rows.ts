@@ -10,7 +10,7 @@
  * output.
  *
  * Which rows a *frame* holds — the sections in drawn order, the heading over each of them, the window's
- * start for a selection and the height that all of it comes to — is `panelLayout`, and that is
+ * start for a selection and the height that all of it comes to — is `panelLayoutSections`, and that is
  * `panel-frame-layout.ts`. This file is the row: what a pin's text turns into at a given width, and nothing
  * about the box around it. The tail each first row carries is stamped by `metaStamp` (`panel-tail.ts`) — the
  * one string the row prints — and `widestMetaColumns` (`panel-frame-geometry.ts`) *measures* that very string
@@ -151,7 +151,7 @@ export function panelAllRows(
  * The window's start for a selection, given every row of the table in order and the start of the
  * selected pin: never past the end of the table, so the last pin is always on screen.
  *
- * `buildPanelLines` goes through this with the table and the start `panelLayout` built, so drawing a
+ * `buildPanelLines` goes through this with the table and the start `panelLayoutSections` built, so drawing a
  * window of the pins costs one wrap of each pin rather than three.
  */
 export function panelWindowOffset(

@@ -147,6 +147,28 @@ test("a replied-before-unreplied view draws the unanswered pin's row under the b
   expect(barRows[0]).toContain("#4");
 });
 
+test("the frame's counts are the very sections its rows were laid out from", () => {
+  // One sectioning per frame, end to end. `framed` hands the layout a grouping and the builder the same one
+  // on the content it draws, so the top border's counts and the headings in the window it drew cannot be two
+  // readings of the view: for the mixed view the title prints 2 warnings, 2 that need you and 3 facts, and
+  // the table the same call returned holds exactly those three sections' worth of pin rows.
+  const { lines, layout } = framed(
+    { pins: mixedView(), selection: 0, focused: true, replyHint: "", ageNow: LATER },
+    WIDTH,
+    style,
+  );
+  expect(lines[0]).toContain("📌 Pinned · 2 warnings · 2 needs you · 3 more");
+  // The sections the layout carries out are the ones the frame printed counts for: three, in drawn order,
+  // with the row table holding one heading per section and one row per pin.
+  expect(layout.sections.map((section) => [section.kind, section.pins.length])).toEqual([
+    ["warning", 2],
+    ["action", 2],
+    ["info", 3],
+  ]);
+  expect(layout.owned.filter((entry) => entry.pin === null)).toHaveLength(3);
+  expect(layout.owned.filter((entry) => entry.pin !== null)).toHaveLength(7);
+});
+
 test("an unfocused panel draws headings and no bar", () => {
   const rows = contentRows(frameOf(mixedView(), 0, false));
   expect(rows.filter((row) => row.includes("Warnings"))).toHaveLength(1);

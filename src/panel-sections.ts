@@ -16,9 +16,9 @@
  * gets the same *pins* in a different *order* and puts the bar in the wrong section.
  *
  * Sections are keyed on level rather than on a level-only list so a **group** section — pins the model
- * labelled with a group, drawn as its own heading (v2-6) — becomes one more kind beside these three: it
- * joins `sectionOrder` and `sectionOf` and this flattening, and needs no new coordinate. Grouping is not
- * implemented here and nothing here infers a section from pin text: text is untrusted.
+ * labelled with a group, drawn as its own heading — becomes one more kind beside these three: it joins
+ * `order` and this flattening, and needs no new coordinate. Nothing here infers a section from pin text:
+ * text is untrusted.
  */
 import { orderPins } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
@@ -34,9 +34,6 @@ export interface PanelSection {
   pins: readonly ViewPin[];
 }
 
-/** How a section is addressed: the array index `sectionOrder` holds it at. */
-export type SectionIndex = number;
-
 /** The sections of one view, and the one flattened order every panel coordinate resolves through. */
 export interface PanelSections {
   /** The sections in drawn order: best-ranked section first. Empty for a view with no pins. */
@@ -46,7 +43,7 @@ export interface PanelSections {
 }
 
 /** Where a section of a level sits in the ordering: warning, then action, then info. */
-const LEVEL_ORDER: Record<PinLevel, SectionIndex> = { warning: 0, action: 1, info: 2 };
+const LEVEL_ORDER: Record<PinLevel, number> = { warning: 0, action: 1, info: 2 };
 
 /**
  * The best-ranked pin of a section, or `undefined` for an empty one.
@@ -143,25 +140,6 @@ function compareSections(a: PanelSection, b: PanelSection): number {
   const bestB = bestOf(b);
   const bestA = bestOf(a);
   return (bestB?.id ?? 0) - (bestA?.id ?? 0);
-}
-
-/**
- * Which section holds `pin`, or `undefined` when `order` holds no such pin.
- *
- * Identity, not id: `getView()` hands out copies, and a caller that matched on `id` would answer for the
- * wrong section as soon as two views in one process held the same id (a resumed branch beside a fresh one).
- * The section the bar is addressed by and the section the drawer paints have to be the same object, and
- * they are because both came out of one call with one array.
- *
- * Reserved for the group-section API (v2-6) — nothing in the drawn frame addresses a section by pin today,
- * because the layout walks `order` and the keys index `flat`.
- */
-export function sectionOf(order: readonly PanelSection[], pin: ViewPin): SectionIndex | undefined {
-  const index = order.findIndex((section) => section.pins.includes(pin));
-  // `findIndex` answers `-1` for "not here" and -1 is a legal array index from the other end, so it is
-  // translated here rather than at each call site: a caller that compared against -1 would agree with a
-  // heading, and one that indexed `order[-1]` would read `undefined` and carry on.
-  return index < 0 ? undefined : index;
 }
 
 /** Whether `order` holds two or more sections, which is the only case the panel draws headings for. */

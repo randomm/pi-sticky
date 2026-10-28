@@ -176,7 +176,8 @@ test("the bar indexes the ranked list, so j/k walk it and d follows", () => {
 });
 
 test("a view that has not moved costs no sort, and a new view is ranked again", () => {
-  // The memo is per component and keyed on the array identity (`PanelComponent.#ranked`), which is what
+  // The memo is per component and keyed on the array identity (`PanelMemory.sectionsOf`,
+  // `panel-frame-cache.ts`), which is what
   // keeps `render()`'s frame cache hitting for a redraw of an unchanged view: a fresh ranked array per
   // call would rebuild the frame on every frame pi-tui asks for.
   const { c, state } = panel([at(1, "fact", "info"), at(2, "decide", "action")]);

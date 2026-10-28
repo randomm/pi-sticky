@@ -139,7 +139,7 @@ test("Escape hands focus back and evokes nothing else", () => {
 test("d dismisses the selected pin through the host, and an empty selection dismisses nothing", () => {
   const { c, state } = component(pins("One", "Two"));
   // The pins are drawn ranked — same level, same reply state, newest id first — so index 0 is `Two`, and
-  // the bar's index is the *ranked* list's (`PanelComponent.#ranked`). Before that, `d` here dismissed the pin
+  // the bar's index is the *drawn* list's (`PanelMemory.sectionsOf(...).flat`). Before that, `d` here dismissed the pin
   // the user was not looking at.
   c.handleInput("d");
   expect(state.dismissals).toEqual([2]);

@@ -1,12 +1,12 @@
 /**
  * The lines of the right-hand pins panel, as a pure function. Nothing here knows about a session,
  * a theme instance or an overlay: it is handed the ordered pins, the width the component resolved for
- * the overlay, the row table `panelLayout` built for that width, which pin is selected and whether the
- * panel holds focus, and it returns exactly `layout.height` lines, each of exactly `width` visible
+ * the overlay, the row table `panelLayoutSections` built for that width, which pin is selected and whether
+ * the panel holds focus, and it returns exactly `layout.height` lines, each of exactly `width` visible
  * columns (operator decision *Margin*: the panel is flush right, so a short line has to be padded or the
  * content behind it shows through).
  *
- * The height is *not* a parameter. `panelLayout` counts the frame's rows and the builder draws them, so
+ * The height is *not* a parameter. `panelLayoutSections` counts the frame's rows and the builder draws them, so
  * the box is as tall as the rows it draws and no caller can size one frame and draw another; the content
  * budget is `layout.height - BORDER_ROWS` whatever the focus — the hint owns a border row, never a
  * content row — and the scroll offset only ever moves that window, so neither the header nor the hint can
@@ -46,7 +46,6 @@ import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./pa
 import { panelContentRows, panelWindowOffset } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSection } from "./panel-sections.ts";
-import { panelSections } from "./panel-sections.ts";
 import { GUTTER_COLUMNS, drawnTail, tailReserve } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
@@ -54,20 +53,6 @@ import type { ViewPin } from "./types.ts";
 
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
-
-/**
- * The sections behind the frame's counts, read off the pins this builder was handed.
- *
- * The title names how many pins need a decision, how many are warnings and how many merely inform, and the
- * only thing that can answer those questions is the same grouping the headings are drawn from — so the title
- * is computed here rather than carried on `PanelContent`, and the frame cannot show counts that disagree with
- * the sections under it. `content.pins` already arrives in the drawn order, and `panelSections` accepts such
- * a list only after checking it against every key `orderPins` sorts by — level, reply state, then id — so
- * this is a grouping of the frame's own rows and not a second ranking of them.
- */
-function titleSections(pins: readonly ViewPin[]): readonly PanelSection[] {
-  return panelSections(pins).order;
-}
 
 /** Whether a size is one a closed frame fits in: the builder draws nothing below either bound. */
 function isPanelFrameSize(width: number, height: number): boolean {
@@ -90,6 +75,19 @@ export interface PanelContent {
    */
   replyHint: string;
   /**
+   * The sections the frame's rows were laid out from — the same `PanelSections.order` the layout was built
+   * from, and the only thing the counts in the frame's title are read off.
+   *
+   * Carried in rather than derived from `pins`: a builder that grouped the pins again would ask the question
+   * a second time, and the two answers could disagree (a second grouping also walks the whole view, so the
+   * memo the component holds would be bypassed by exactly the half of the frame that promises to match it).
+   * The heading rows under the title and the counts beside it are therefore one grouping, not two readings.
+   *
+   * Required, because the title cannot be printed without it: an optional field is a frame whose counts come
+   * from a grouping of the caller's choosing, which is the disagreement this field exists to make impossible.
+   */
+  sections: readonly PanelSection[];
+  /**
    * The instant the ages the frame draws were measured against — the very one the row table was stamped at.
    *
    * Part of the content rather than read here: the reserve and the drawn tail are the same figure only if
@@ -97,7 +95,7 @@ export interface PanelContent {
    * would measure a tail a minute away from the one it prints. The component always names it.
    *
    * Required, because both halves of that figure read it: `widestMetaColumns` measures the stamped tail and
-   * `panelLayout` stamps it, and an optional field lets one caller hand the two halves different instants —
+   * `panelLayoutSections` stamps it, and an optional field lets one caller hand the two halves different instants —
    * or none, which used to measure every tail as `--`, four columns narrower than the `999d` a frame draws.
    * A caller with no clock of its own passes the instant it is drawing at, which is what the rows do when
    * *their* `now` is left out.
@@ -147,7 +145,7 @@ function fitLine(line: string, width: number): string {
  * the room the tail left, so a short row reads as it always did (text, tail, blanks) and a row whose text
  * overflowed is cut on the text's side: the text gives up columns, never the tail, and a wide id costs its
  * own columns rather than the id's seat. `metaColumns` is the reserve `widestMetaColumns` measured for the
- * view's widest id — the same figure `panelLayout` charged the wrap, so one arithmetic decides a frame.
+ * view's widest id — the same figure `panelLayoutSections` charged the wrap, so one arithmetic decides a frame.
  */
 function pinRow(
   row: PanelRow,
@@ -173,7 +171,7 @@ function pinRow(
  * draws no highlight. An empty view draws no rows at all — the overlay is opened for the pins, and with
  * none the frame has nothing to clear.
  *
- * `layout` is the row table `panelLayout` built for the width `width` — the same table the frame's
+ * `layout` is the row table `panelLayoutSections` built for the width `width` — the same table the frame's
  * height was counted from, so the box is as tall as the rows it draws and no pin is wrapped twice. The
  * builder draws exactly `layout.height` lines and builds no table of its own: it owns the drawing, never
  * the sizing, so a caller cannot ask for one frame and draw another.
@@ -213,7 +211,7 @@ export function buildPanelLines(
   // come out of the one table the caller sized the frame with.
   const inner = width - GUTTER_COLUMNS;
   // The reserve the text column gives up, sized from the ids the view actually holds (`widestMetaColumns`
-  // — the same call `panelLayout` made for the wrap, so the layout and the row agree). The old flat
+  // — the same call `panelLayoutSections` made for the wrap, so the layout and the row agree). The old flat
   // `META_COLUMNS` was a promise the ids could break: past `#999` the tail no longer fit its reserve and
   // the row had to give its id up to close at the width the overlay was given.
   const metaColumns = widestMetaColumns(content.pins, style.dim, content.ageNow);
@@ -240,7 +238,7 @@ export function buildPanelLines(
   // result means the selected pin is scrolled above the window and matches no row drawn.
   const bar = layout.start - offset;
 
-  const title = frameTitle(titleSections(content.pins));
+  const title = frameTitle(content.sections);
   const lines: string[] = [
     borderLine(title, style.header, FRAME_TOP_LEFT, FRAME_TOP_RIGHT, width, frame),
   ];

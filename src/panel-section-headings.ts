@@ -52,7 +52,8 @@ export function headingRow(section: PanelSection): HeadingRow {
   return { mark, label: heading.slice(mark.length + 1) };
 }
 
-/** The heading of `kind`, spelled once for whoever asks — the rail and `/pins` never do (resolution 6).
+/**
+ * The heading of `kind`, spelled once for whoever asks — the rail and `/pins` never do (resolution 6).
  *
  * Reserved for the group-section API (v2-6), which needs a heading for a section the table does not yet build;
  * nothing in the drawn frame reads it today — `headingRow` is what the layout asks for.
@@ -62,28 +63,27 @@ export function headingText(kind: SectionKind): string {
 }
 
 /**
- * The heading row's text column, at the width the pin rows of the same frame are laid out at.
+ * The heading of `kind` as the row table prints it: ` ` + marker + ` ` + label, fitted to `textWidth`.
  *
- * A heading shares the text column a pin row pays for: ` ` + marker + ` ` + label, the same three columns
- * `panelPinRows` (`panel-rows.ts`) opens a pin row with, so the heading's word lines up with the pin text
- * below it rather than starting a column to the left of it. `label` comes from this module and `mark` is a
- * fixed one, so neither needs the sanitizer a pin's text goes through, and the builder still cuts every
- * drawn line to the frame's width the same way it cuts a pin row.
+ * Three cases, and the width decides which: with no column at all (`textWidth` at or below zero) the cell is
+ * the empty string, since a heading with nowhere to be drawn is not a row the frame should print; narrower
+ * than the column it is padded with blanks out to exactly `textWidth`; wider than it is cut to `textWidth`
+ * with no ellipsis, because a heading is one row of a frame whose every line is measured to the same width
+ * and a row that spilled its column would be the row the frame closed over the chat behind it.
  *
- * Padded rather than cut: a heading longer than the text column is a heading the frame has no room for,
- * and `padPlain` measures what it pads with `visibleWidth`, so a two-column glyph costs the two columns it
- * really occupies. The row is never empty — an empty row is the builder's signal for something the frame
- * should not have drawn — and the three fixed headings are far shorter than any frame the builder closes.
+ * A heading shares the text column a pin row pays for — the same three columns `panelPinRows`
+ * (`panel-rows.ts`) opens a pin row with — so the heading's word lines up with the pin text below it rather
+ * than starting a column to the left of it. `label` comes from this module and `mark` is a fixed one, so
+ * neither needs the sanitizer a pin's text goes through, and the builder still cuts every drawn line to the
+ * frame's width the same way it cuts a pin row. Both measuring halves read the string with `visibleWidth`,
+ * so a two-column glyph costs the two columns it really occupies.
  */
 export function headingCell(row: HeadingRow, textWidth: number): string {
   const cell = ` ${row.mark} ${row.label}`;
-  // Cut rather than padded when the frame has given the heading fewer columns than the heading itself needs:
-  // a heading is one row of a frame whose every line is measured to the same width, and a row that overflowed
-  // its column would be the row the frame closes over the chat behind it. `padPlain` still does the padding,
-  // because that is the case that actually happens — the headings are far shorter than any frame the builder
-  // closes, so the cut is the guard and not the path.
   if (textWidth <= 0) return "";
+  // In practice the padding branch is the one that runs: the three fixed headings are far shorter than any
+  // frame the builder closes, so the cut is the guard rather than the path.
   return visibleWidth(cell) > textWidth
-    ? (truncateToWidth(cell, textWidth, "") ?? "")
+    ? truncateToWidth(cell, textWidth, "")
     : padPlain(cell, textWidth);
 }

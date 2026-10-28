@@ -1,11 +1,12 @@
 /**
  * The row table of one panel frame: which rows it holds, in what order, and how tall it comes to.
  *
- * `panelLayout` is the one place a frame's rows are built, so the table `buildPanelLines` draws *is* the
- * table the frame's height was counted from — a pin is wrapped once per frame, and a caller cannot ask for
- * one frame and draw another. It is also the one place the order the view was pinned in becomes the panel's
- * **drawn** order: `panelSections` groups the pins into level sections and flattens them, and every row of
- * the table — and every index in it — comes out of that flattening.
+ * `panelLayoutSections` is the one place a frame's rows are built, so the table `buildPanelLines` draws *is*
+ * the table the frame's height was counted from — a pin is wrapped once per frame, and a caller cannot ask
+ * for one frame and draw another. It is also the one place the frame is *grouped*: the caller hands over the
+ * sections `panelSections` produced — one grouping per frame — and the layout carries that same `order` back
+ * out on the layout it returns, which is the only copy the frame's title reads. Ranking and sectioning both
+ * happen in `panel-sections.ts`; this module consumes its answer and never asks the question again.
  *
  * Two coordinates run through this file and only one of them is the caller's. `selection` is the pin's
  * position in the flattened drawn order (`panelSections`'s `flat`), which is what the keys, the bar's clamp,
@@ -24,8 +25,8 @@ import { panelFrameRows } from "./panel-height.ts";
 import { panelPinRows } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import { headingCell, headingRow } from "./panel-section-headings.ts";
-import { hasMultipleSections, panelSections } from "./panel-sections.ts";
-import type { PanelSections } from "./panel-sections.ts";
+import { hasMultipleSections } from "./panel-sections.ts";
+import type { PanelSection, PanelSections } from "./panel-sections.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
@@ -60,16 +61,21 @@ export interface PanelOwned {
 }
 
 /**
- * One frame's rows: the table, the row the selection starts at, and the rows the frame needs.
- *
- * Returned by `panelLayout`, the one place the pins are wrapped for a frame, so the builder draws the very
- * rows the height was counted from.
+ * One frame's rows, the row the selection starts at, the rows the frame needs, and the sections the rows
+ * were laid out from. Returned by `panelLayoutSections`, the one place the pins are wrapped for a frame.
  */
 export interface PanelLayout {
   owned: PanelOwned[];
   /** Table position of the selected pin's first row, or -1 when the selection names no pin. */
   start: number;
   height: number;
+  /**
+   * The very `PanelSections.order` the caller handed in, carried back out so the drawer prints its frame's
+   * counts off the grouping the rows were built from rather than asking the pins again — a second grouping
+   * is a second answer to the same question, and one value in and back out is what makes a title that
+   * disagrees with its headings unrepresentable rather than merely unlikely.
+   */
+  sections: readonly PanelSection[];
 }
 
 /**
@@ -115,19 +121,19 @@ function panelOwnedRows(
   if (!hasMultipleSections(sections.order)) {
     return panelPinRowOwners(sections.flat, textWidth, style, now, metaColumns, 0);
   }
-  // The running offset is taken from `flat` rather than counted up from each section's length: `flat` *is*
-  // `order` flattened, and reading the offset off the array the selection indexes means the tag a row carries
-  // and the index a key addresses cannot come apart if the two ever stop agreeing on where a section begins.
-  // `section.pins` are the section's own pins in drawn order, so its last one is the pin whose tag is last.
+  // The offset is *running*, not looked up: `panelSections` builds `flat` by flattening `order`, so the pins
+  // of the sections walked in order are the pins of `flat` read in order, and adding each section's length
+  // as the walk goes answers the same number an `indexOf` into `flat` would — without re-searching the
+  // flattened list once per section. A heading costs a row and no slot, so it never advances the offset.
   const owned: PanelOwned[] = [];
+  let offset = 0;
   for (const section of sections.order) {
     owned.push({
       row: { text: headingCell(headingRow(section), headingWidth), tail: "" },
       pin: null,
     });
-    const first = section.pins[0] as ViewPin;
-    const offset = sections.flat.indexOf(first);
     owned.push(...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset));
+    offset += section.pins.length;
   }
   return owned;
 }
@@ -148,19 +154,17 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  * frame as tall as its rows and keeps a resize from sizing the box at a width it is not drawn at. The
  * builder pads each row out to the inner width when it draws it.
  *
- * `pins` may arrive in **the order the view was pinned in**: this is the one place that order becomes the
- * panel's drawn order, through `panelSections`. `selection` is therefore an index into
- * `panelSections(pins).flat`, never into the caller's array, and the heading rows a multi-section view gains
- * sit between the sections without shifting an index — a heading owns no slot. A caller that built the
- * sections first (`PanelComponent`, through `PanelMemory`) hands over that very `flat`, and the table built
- * from it is the same table, because a section of already-drawn pins is those pins in the order they came —
- * `panelSections` accepts such a list only after checking it against every key `orderPins` sorts by, so the
- * order it hands back is one that sort would leave alone.
+ * `sections` is the one grouping the frame is built from, and the only one: the caller — `PanelComponent`
+ * through `PanelMemory`, or the test helper that draws a frame the way the component does — sections the
+ * view once and hands the result here, and this function hands the very same `order` back on the layout so
+ * the drawer can print the frame's counts off it. A frame whose title grouped the pins for itself is the
+ * failure this shape removes: two groupings can disagree, and one grouping cannot.
  *
- * `panelLayout` below is the entry point for a caller that has *no* sections yet — it builds them here, so the
- * table is still derived in exactly one place. Every caller that also draws a frame already has the sections
- * (`PanelComponent`, and the test helpers) and goes to `panelLayoutSections` instead, so its title and its
- * rows are grouped once.
+ * `sections.flat` is the drawn order and `selection` indexes into it, never into the caller's own array; the
+ * heading rows a multi-section view gains sit between the sections without shifting an index, because a
+ * heading owns no slot. A caller that built no sections of its own passes the view's own array to
+ * `panelSections` first — that is the one call site that legitimately ranks, and every caller that draws a
+ * frame has already made it.
  *
  * The text column is what gives up width, never the id/age tail: the wrap is sized so a first row still has
  * a column of text to draw *and* room for its tail beside it, because a row whose text column is zero
@@ -181,30 +185,6 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  * the prompt stays visible beside it while a list of a thousand pins stops at half the terminal and scrolls.
  * A heading is a row like any other for the purposes of the half-height cap: two sections over a short
  * terminal scroll their headings with their pins rather than pushing the frame past the ceiling.
- *
- * The entry point for a caller holding no sections yet — the tests that exercise the height in isolation, and
- * any future caller with no frame title to agree with. Every caller that *draws* a frame has the sections
- * already and goes to `panelLayoutSections`, so its counts and its rows are grouped once.
- */
-export function panelLayout(
-  pins: readonly ViewPin[],
-  frameWidth: number,
-  terminalRows: number | undefined,
-  selection: number,
-  style: PanelStyle,
-  now: string = atOnce(),
-): PanelLayout {
-  return panelLayoutSections(panelSections(pins), frameWidth, terminalRows, selection, style, now);
-}
-
-/**
- * `panelLayout` for a caller that has already built the sections — which is every caller that also draws a
- * frame, because the frame's title reads the same sections the rows were built from and a view grouped once
- * for both is a view that cannot disagree with itself.
- *
- * Split from `panelLayout` rather than given an optional argument: the sections are the one input two panel
- * modules genuinely share, and naming the sharing is what keeps a caller from handing the rows one grouping
- * and the drawer another.
  */
 export function panelLayoutSections(
   sections: PanelSections,
@@ -235,5 +215,6 @@ export function panelLayoutSections(
     owned,
     start: panelRowStartOf(owned, selection),
     height: panelFrameRows(owned.length, terminalRows),
+    sections: sections.order,
   };
 }

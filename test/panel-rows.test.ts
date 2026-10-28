@@ -14,6 +14,16 @@ import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, pin, view } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 const plainStyle: RenderPanelStyle = {
   header: (s) => s,
@@ -27,15 +37,6 @@ const plainStyle: RenderPanelStyle = {
 const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin => ({
   ...pin(id, text, "info", extra),
   ...extra,
-});
-
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
 });
 
 test("an empty pin text still owns a row, so the bar has something to sit on", () => {

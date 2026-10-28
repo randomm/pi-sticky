@@ -202,23 +202,22 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * The pins the panel draws, in the order it draws them — `PanelMemory.sectionsOf`'s flattened list, and the
-   * array the bar is drawn over *is* the array the keys index. The sections and their memo live in
-   * `panel-frame-cache.ts`; the reason this component is the only reader of that order is stated there.
+   * The pins the panel draws — `#sections()`'s flattened list, the array the bar is drawn over *is* the
+   * array the keys index. The memo, and why this component is its only reader, are `panel-frame-cache.ts`.
    */
   #drawn(): readonly ViewPin[] {
-    return this.#memory.sectionsOf(this.#host.getView().pins).flat;
+    return this.#sections().flat;
   }
 
-  /** The sections behind `#drawn()`, for the one caller that hands them to the layout as well. */
+  /**
+   * The sections the panel draws from (`PanelMemory.sectionsOf`): the order the keys index *and* the
+   * grouping the frame's counts come from, so one call answers both for one frame.
+   */
   #sections(): PanelSections {
     return this.#memory.sectionsOf(this.#host.getView().pins);
   }
 
-  /**
-   * The pins the panel is drawing, in the order it draws them. See `#drawn` for what makes that order the
-   * one the keys answer to.
-   */
+  /** The pins the panel is drawing, in the order it draws them. See `#drawn` for that order. */
   get pins(): readonly ViewPin[] {
     return this.#drawn();
   }
@@ -226,9 +225,9 @@ export class PanelComponent implements Component {
   render(width: number): string[] {
     // The live view, the resting label and the age instant are read here and are part of the cache key, not
     // just of the frame: width alone cannot tell a swapped view from an unchanged one, and `update()` — the
-    // member that used to be the only change test — is not called on pi-tui's own frame requests. The ranked
+    // member that used to be the only change test — is not called on pi-tui's own frame requests. The drawn
     // array is the key rather than the view's own, and it is the same array every time for a view that
-    // has not moved, so the cache's fast path survives the ranking. The label is read here for the same
+    // has not moved, so the cache's fast path survives the sectioning. The label is read here for the same
     // reason it is drawn here: a frame that did not name it would keep the old one on screen after the
     // operator rebound the focus key.
     const sections = this.#sections();
@@ -256,6 +255,8 @@ export class PanelComponent implements Component {
       selection: this.#selection,
       focused: this.#focused,
       replyHint,
+      // From the one sectioning the layout is handed too, so the title's counts and the headings agree.
+      sections: sections.order,
       ageNow,
     };
     // One layout pass at the width pi-tui just handed over: the row table it builds is what both the

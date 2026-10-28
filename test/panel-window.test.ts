@@ -18,6 +18,16 @@ import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 const style: RenderPanelStyle = {
   header: (s) => s,
@@ -34,16 +44,7 @@ const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin =>
   ...extra,
 });
 
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
-});
-
-/** What `panelLayout` reserves for the id/time tail before the text column — the product's number, not a copy. */
+/** What `panelLayoutSections` reserves for the id/time tail before the text column — the product's number, not a copy. */
 const META_RESERVE = META_COLUMNS + META_SEPARATOR_COLUMNS;
 
 /** The hint is long; the widths that assert on it must be long enough to draw it whole. */
@@ -59,10 +60,7 @@ function inside(line: string): string {
   return line.replace(/[╭╮╰╯│]/g, "");
 }
 
-/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
-type PanelContent = ReturnType<typeof content>;
-
-// `built` is `panel-frame.ts`'s: one `panelLayout` pass at `width` and the builder handed that table, so
+// `built` is `panel-frame.ts`'s: one `panelLayoutSections` pass at `width` and the builder handed that table, so
 // no test sizes one frame and draws another. A test that wants a short *window* asks for a short terminal,
 // which is the only thing that sizes a frame now.
 

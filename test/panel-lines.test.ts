@@ -17,11 +17,22 @@ import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometr
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS } from "../src/panel-geometry.ts";
 import { HINT, buildPanelLines } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
+import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 /** Identity colours, so a drawn line can be compared to what was asked for. */
 const style: RenderPanelStyle = {
@@ -41,18 +52,6 @@ const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin =>
   ...pin(id, text, "info", extra),
   ...extra,
 });
-
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
-});
-
-/** What the builder draws: the ordered pins, the selected pin index, and whether the panel has focus. */
-type PanelContent = ReturnType<typeof content>;
 
 /** The frame's own width: the gutters and their spaces, which the builder takes off every drawn row. */
 const FRAME_COLUMNS = 4;
@@ -75,7 +74,7 @@ function frameOf(width: number, focused = false): string[] {
 
 /**
  * The frame drawn exactly as the component draws it — `built`, from `panel-frame.ts`, which is the one
- * place a test pairs `panelLayout`'s table with the builder that draws it. A test that wants more rows
+ * place a test pairs `panelLayoutSections`'s table with the builder that draws it. A test that wants more rows
  * than the default terminal allows asks for a taller terminal, which is the only other thing that sizes
  * a frame.
  */
@@ -266,10 +265,17 @@ test("a terminal with no room for both borders draws nothing, because one border
     expect(built(content(pins, 0, false), 40, style, terminalRows)).toEqual([]);
   }
   // ...and the same holds for a height a caller hands the geometry check directly, because a row table
-  // cannot rescue a size the frame cannot close at.
+  // cannot rescue a size the frame cannot close at. Both halves of the frame are handed raw here — an empty
+  // table over the sections these pins group into — so nothing but the height can be what the check reads.
+  const sections = panelSections(pins).order;
   for (const height of [1, 2]) {
     expect(
-      buildPanelLines(content(pins, 0, false), 40, style, { owned: [], start: -1, height }),
+      buildPanelLines({ ...content(pins, 0, false), sections }, 40, style, {
+        owned: [],
+        start: -1,
+        height,
+        sections,
+      }),
     ).toEqual([]);
   }
 });

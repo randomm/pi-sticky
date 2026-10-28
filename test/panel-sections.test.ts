@@ -10,7 +10,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { hasMultipleSections, panelSections, sectionOf } from "../src/panel-sections.ts";
+import { hasMultipleSections, panelSections } from "../src/panel-sections.ts";
 import { orderPins } from "../src/render.ts";
 import { infoView, levelPin, mixedView } from "./panel-sections-fixture.ts";
 
@@ -131,16 +131,4 @@ test("the guard accepts only an order orderPins would leave alone, reply state i
   ];
   expect(ids(panelSections(mixed).flat)).toEqual(ids(orderPins(mixed)));
   expect(ids(panelSections(mixed).flat)).toEqual([6, 7, 4, 5]);
-});
-
-test("sectionOf names the section a pin draws in, and nothing for a pin the view lacks", () => {
-  const sections = panelSections(mixedView());
-  const warning = sections.flat.find((pin) => pin.level === "warning");
-  expect(sectionOf(sections.order, warning as never)).toBe(0);
-  const fact = sections.flat.find((pin) => pin.level === "info");
-  expect(sectionOf(sections.order, fact as never)).toBe(2);
-  // A pin the view does not hold is answered with nothing, and not with -1: -1 is a legal index from the
-  // other end of `order`, so a caller that trusted it would index a section and carry on.
-  const missing = levelPin(99, "not in the view", "info");
-  expect(sectionOf(sections.order, missing)).toBeUndefined();
 });

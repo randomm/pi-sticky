@@ -19,6 +19,16 @@ import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
+/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
+function content(
+  pins: readonly ViewPin[],
+  selection = 0,
+  focused = false,
+  replyHint = "",
+  ageNow = LATER,
+) {
+  return { pins, selection, focused, replyHint, ageNow };
+}
 
 const plain: RenderPanelStyle = {
   header: (s) => s,
@@ -52,19 +62,7 @@ test("a dim that adds columns is charged to the text, not to the id/time tail", 
   expect(row.indexOf("x")).toBeLessThan(row.indexOf("< #1"));
 });
 
-const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
-  pins,
-  selection,
-  focused,
-  // Required by `PanelContent`; these cases are about the rows, not the resting label.
-  replyHint: "",
-  ageNow: LATER,
-});
-
-/** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
-type PanelContent = ReturnType<typeof content>;
-
-// `built` is `panel-frame.ts`'s: one `panelLayout` pass at `width` — the rows the pins own over the two
+// `built` is `panel-frame.ts`'s: one `panelLayoutSections` pass at `width` — the rows the pins own over the two
 // borders, cut to `TERMINAL_ROWS`' half — and the builder handed that very table.
 
 /** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
