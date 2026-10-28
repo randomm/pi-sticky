@@ -112,11 +112,16 @@ test("show, hide and toggle settle the flag through the deps, and record only th
   expect(h.records).toEqual([true, false, true, false]);
 
   // The shortcut that only focuses records nothing: reading a pin is not a statement about whether the
-  // panel should stay open, so the user's recorded choice must survive it.
+  // panel should stay open, so the user's recorded choice must survive it. And it must not merely *show* the
+  // panel: `setPanelShown(true)` alone answers the resting mode's question and draws a peek under
+  // `PI_STICKY_PANEL=peek`, a frame which answers no key. So the focus key leaves the cell in the **open**
+  // frame — the observable that decides whether `d` and `Enter` do anything at all.
   const before = h.records.length;
+  expect(h.panel.component()?.isFocused()).toBe(false);
   h.panel.focusFromShortcut(ctx);
   expect(h.records).toHaveLength(before);
   expect(h.state.shown).toBe(true);
+  expect(h.panel.component()?.isFocused()).toBe(true);
 });
 
 test("a show that the terminal cannot fit says so once, and still records the choice", async () => {

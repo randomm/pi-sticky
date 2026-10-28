@@ -67,6 +67,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import type { StickyDeps } from "./deps.ts";
+import { endEarnedOpenOnSubmission } from "./panel-transience.ts";
 import { toOneLine } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
@@ -224,6 +225,12 @@ export function decideReply(
  */
 export function registerReply(pi: ExtensionAPI, deps: StickyDeps): void {
   pi.on("input", (event, ctx) => {
+    // The panel's transient first, whatever this submission turns out to be: the user's own next message is
+    // the interaction which says a shown pin was read, and it ends the open that showing earned (operator
+    // resolution 2, `panel-transience.ts`). Asked *before* the reply's own work and its early returns,
+    // because a message which is not a reply is still a message the user sent, and a branch inside the
+    // `transform` case would leave a plain "ok, seen it" with the panel still covering their transcript.
+    endEarnedOpenOnSubmission(deps, event);
     const decision = decideReply(event, deps.getView().pins);
     // The two spreads pick off the members that are this module's own — the notice pi's result contract
     // has no room for, and the pin the entry is addressed by — and pass everything pi reads onwards

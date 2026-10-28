@@ -66,6 +66,28 @@ test("a verb that does not record leaves the session alone", () => {
   expect(seen.mode).toBe("peek");
 });
 
+test("an append which throws still gets its redraw", () => {
+  // pi's `appendEntry` reaches into the session the command's context belongs to, and a context replaced
+  // since the verb was read — a reload or a branch change in flight — throws there. The cell has already
+  // moved by then, so a redraw skipped here is a panel still drawing the state the user just left, with
+  // nothing else scheduled to ask it: the surfaces read the cell once, as their first question.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  const seen: string[] = [];
+  expect(() =>
+    settlePanel(
+      panel,
+      false,
+      true,
+      () => {
+        throw new Error("session replaced");
+      },
+      () => seen.push(panel.mode()),
+    ),
+  ).toThrow("session replaced");
+  expect(seen).toEqual(["hidden"]);
+  expect(panel.mode()).toBe("hidden");
+});
+
 test("an auto-show never reaches this writer, so a transient open cannot be recorded by construction", () => {
   // The cell's `autoOpen` moves the screen without touching the record; the extension's user-verb path is
   // the only caller of `settlePanel`. Asserted as the absence of an append for a shown panel whose record

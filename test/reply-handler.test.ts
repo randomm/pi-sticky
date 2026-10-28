@@ -66,6 +66,11 @@ function drive(
     getView: () =>
       viewOf(typeof pins === "function" ? pins(viewReads + 1) : pins) as unknown as never,
     appendUserAction: (action: unknown) => actions.push(action),
+    // The panel-transience half of the input handler (`panel-transience.ts`): these cases are about the
+    // reply, and a panel with nothing earned open is the state they were all written against — the
+    // transience is asserted where the panel is driven, not here.
+    panelEarnedOpen: () => false,
+    endEarnedOpen: () => {},
   } as unknown as StickyDeps;
   const countingDeps = new Proxy(deps, {
     get(target, key) {
@@ -176,6 +181,11 @@ test("replying twice records two entries, each stamped with the clock of its own
     now: () => now,
     getView: () => viewOf([DECIDE]),
     appendUserAction: (action: unknown) => actions.push(action),
+    // The panel-transience half of the input handler (`panel-transience.ts`): these cases are about the
+    // reply, and a panel with nothing earned open is the state they were all written against — the
+    // transience is asserted where the panel is driven, not here.
+    panelEarnedOpen: () => false,
+    endEarnedOpen: () => {},
   } as unknown as StickyDeps);
   expect(actions).toEqual([
     { v: 1, uid: "uid-1", action: "reply", at: NOW },

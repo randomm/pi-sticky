@@ -10,6 +10,10 @@
  * `surfacesDrawn()` and `recorded()` are read at call time rather than passed in for the same reason the
  * entries are: the answer belongs to the instant the rebuild runs, and a rebuild that decided against a
  * value the caller read a moment earlier is the same stale read in a different place.
+ *
+ * The two questions the commit ledger answers (`unseen()`/`published()` and `autoShowPending()`) are read
+ * *before* the branch and their verdicts reported back (`landed()`, `sighted()`) after it, so a caller can
+ * never be given one answer while the ledger remembers another. What each gates is stated where it is used.
  */
 import type { HostContext } from "./context.ts";
 import { initialShown } from "./panel-deps.ts";
@@ -58,7 +62,11 @@ export interface RebuildCells {
 }
 
 /**
- * Re-read the session and settle the panel from it, clearing the counter of commits the session cannot see.
+ * Re-read the session, publish the state and view it holds, and settle the panel from it where the session is
+ * allowed to speak for the screen: never while a commit is unappended, and not while an auto-show is holding
+ * a panel up that the entries do not account for. A rebuild which finds the commit's pins on the branch ends
+ * the commit; one which was handed the branch settles the auto-show's claim. Both verdicts are reported to
+ * the ledger, which is their only writer (`session-commits.ts`).
  *
  * The terminal's width is deliberately *not* touched here: `session_tree` runs on a branch change, which is
  * not a resize, and pi-tui will not state another width until the window actually changes. A rebuild that

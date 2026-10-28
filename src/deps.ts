@@ -57,6 +57,23 @@ export interface StickyDeps {
   commit(state: PinState, affected?: readonly number[]): void;
   /** Record one of the user's actions as a `pi-sticky.user` entry. */
   appendUserAction(action: UserAction): void;
+  /**
+   * Whether the panel is on screen *because a pin asked for it* — an auto-show, or the focus key, both of
+   * which move the cell through `autoOpen` and leave it resting as an open no draw of its own would keep.
+   *
+   * The question `reply.ts` asks of a submitted message: the user's next one is the interaction that says
+   * the pin was read, and it ends that open (operator resolution 2 of pins v2-4). Every other writer — a
+   * redraw, a rebuild, a further pin, a steer — leaves it standing, which is the half the persistence test
+   * pins. A panel the user *chose* to show answers false and is nobody's to close.
+   */
+  panelEarnedOpen(): boolean;
+  /**
+   * End an earned open and settle both surfaces: the panel returns to what the user's own verbs chose and
+   * the rail takes the pins back. The one move the reply handler makes on a submitted message
+   * (`panel-transience.ts`), and the reason it is a member rather than the handler reaching the cell and the
+   * redraw separately — those two have an order, and only the extension knows it.
+   */
+  endEarnedOpen(): void;
 }
 
 /**

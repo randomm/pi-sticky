@@ -54,8 +54,12 @@ import type { ViewPin } from "./types.ts";
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
 
-/** Whether a size is one a closed frame fits in: the builder draws nothing below either bound. */
-function isPanelFrameSize(width: number, height: number): boolean {
+/**
+ * Whether a size is one a *closed* frame fits in: the builder draws nothing below either bound. Exported
+ * because the peek is drawn by another module and is measured by the same two numbers — a peek which fitted
+ * where the open panel would not draw is a frame with gutters hanging off the overlay.
+ */
+export function isPanelFrameSize(width: number, height: number): boolean {
   return (
     isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
   );

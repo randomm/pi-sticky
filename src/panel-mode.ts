@@ -30,7 +30,7 @@
  */
 import { restingMode } from "./panel-resting.ts";
 import type { PanelResting, PanelRestingSource } from "./panel-resting.ts";
-import type { ViewPin } from "./types.ts";
+import type { PinLevel, ViewPin } from "./types.ts";
 
 /** The three states the panel's on-screen answer has. */
 export type PanelMode = "hidden" | "peek" | "open";
@@ -57,9 +57,11 @@ export function panelOpensPins(mode: PanelMode): boolean {
  *
  * The argument is the pins a commit *touched*, named by id by the reducer and looked up in the view by
  * `autoShowForCommits` (`panel-autoshow.ts`), so an `update` of a pin that already existed counts when the
- * pin it became carries one of the two levels.
+ * pin it became carries one of the two levels. Typed against `PinLevel` and not `string`: the two names
+ * compared below are the whole of that union's paying half, and a spelling drift in either is a type error
+ * rather than a pin which silently never asks.
  */
-export function demandsAttention(changed: readonly { level: string }[]): boolean {
+export function demandsAttention(changed: readonly { level: PinLevel }[]): boolean {
   return changed.some((pin) => pin.level === "action" || pin.level === "warning");
 }
 

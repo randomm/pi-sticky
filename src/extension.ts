@@ -38,6 +38,7 @@ import { createPanelMode } from "./panel-mode.ts";
 import type { PanelModeState } from "./panel-mode.ts";
 import { settlePanel } from "./panel-settle.ts";
 import { panelShortcuts, registerPanelShortcuts } from "./panel-shortcuts.ts";
+import { earnedOpenCells } from "./panel-transience.ts";
 import { TerminalWidth } from "./panel-width.ts";
 import { PanelOwner } from "./panel.ts";
 import { registerReminder } from "./reminder.ts";
@@ -132,21 +133,17 @@ export function createStickyExtension(
         drawPins(ctx, view, config, surfaces.panel.current, clock, onRailGone, surfaces.rail);
     }
 
-    /**
-     * Settle the flag and draw both surfaces — the one idiom every change uses, in one fixed order, so a
-     * call site cannot pick its own and leave the last draw asking about a surface the other had moved on
-     * from. `ctx` is the context of the event, tool call or command that asked; without one the live context
-     * of the last `session_start` draws, and without that either nothing draws and the next start will.
-     */
+    // Settle the flag and draw both surfaces — the one idiom every change uses, in one fixed order, so a call
+    // site cannot pick its own and leave the last draw asking about a surface the other had moved on from.
+    // `ctx` is the context of the event, tool call or command that asked; without one the live context of the
+    // last `session_start` draws, and without that either nothing draws and the next start will.
     function redrawAll(ctx: ExtensionContext | undefined): void {
       drawRail(ctx ?? live);
       surfaces.panel.current?.refresh();
     }
 
-    /**
-     * The user's panel verb, end to end: the cell, the record, both surfaces. The order is `settlePanel`'s;
-     * what is supplied here is the entry to append and the redraw to make.
-     */
+    // The user's panel verb, end to end — the cell, the record, both surfaces — through `settlePanel`, which
+    // owns the order; what is supplied here is the entry to append and the redraw to make.
     const setShown = (shown: boolean, record: boolean): void =>
       settlePanel(
         panel,
@@ -156,9 +153,8 @@ export function createStickyExtension(
         () => redrawAll(live),
       );
 
-    // The cells `rebuildSession` reads and writes. The commit cells are the ledger's own, forwarded whole:
-    // the rebuild asks its two questions of the ledger and reports both verdicts back, which is what keeps
-    // the answer a caller is given and the state the ledger keeps from parting (`session-commits.ts`).
+    // The cells `rebuildSession` reads and writes, with the ledger's own members forwarded whole so the
+    // answer a caller is given cannot part from the state the ledger keeps (`session-commits.ts`).
     const rebuildCells: RebuildCells = {
       reconstruct: (ctx) =>
         reconstruct(ctx.sessionManager.getBranch(), ctx.sessionManager.getEntries()),
@@ -193,6 +189,11 @@ export function createStickyExtension(
         commits.autoShow(panel, view);
         redrawAll(ctx);
       },
+      ...earnedOpenCells({
+        panel,
+        component: () => surfaces.panel.current?.component(),
+        redraw: () => redrawAll(live),
+      }),
       appendUserAction: (action: UserAction) => {
         // The entry *is* on the session by the time this runs, so the rebuild can see the
         // dismissal — unlike the agent's path, whose entry pi has not written yet. Reading the

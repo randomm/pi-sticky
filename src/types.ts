@@ -8,12 +8,15 @@
  * `PinView` is what every renderer draws: the visible pins plus the removals, so the
  * rail can dim a replied pin and the tool can name a user removal.
  *
- * The one import is `KeyId`, and it is a *type*: pi's `registerShortcut` is typed against pi-tui's own
- * union, and `StickyConfig` carries resolved ids in that type rather than re-deriving a grammar. No
- * runtime value is taken from pi here, so this module still imports nothing at run time.
+ * The two imports are both `import type`: `KeyId` because pi's `registerShortcut` is typed against pi-tui's
+ * own union and `StickyConfig` carries resolved ids in that type rather than re-deriving a grammar, and
+ * `PanelResting` because the panel's resting modes have one spelling (`panel-resting.ts`). No runtime value
+ * is taken from either, so this module still imports nothing at run time.
  */
 
 import type { KeyId } from "@earendil-works/pi-tui";
+
+import type { PanelResting } from "./panel-resting.ts";
 
 /** How much attention a pin asks for. */
 export type PinLevel = "info" | "action" | "warning";
@@ -81,8 +84,6 @@ export interface UIShown {
  * members out entirely. `panel` is the opposite: always one of the two resting modes, because a resting
  * state has no "unset" for a surface to answer differently.
  */
-import type { PanelResting } from "./panel-resting.ts";
-
 export interface StickyConfig {
   disabled: boolean;
   maxPins: number;

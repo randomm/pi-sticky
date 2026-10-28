@@ -73,9 +73,10 @@ test("an info pin leaves a hidden panel hidden and the rail drawing it (U11)", a
 test("the open a pin earned persists across a redraw, a further pin and an agent turn (U11)", async () => {
   // Operator resolution 2 of pins v2-4, in one test: the earned open is not the frame of one draw. It
   // survives the redraw a command's listing causes, the rebuild a turn ending runs, a second pin landing on
-  // top of it, and a plain submitted message — every one of which reaches the cell through some writer
-  // other than the user's next interaction. Each of those moves used to fold the panel back into the peek on
-  // the spot, which is the failure this case is the regression for.
+  // top of it, and a submitted message which is *not* the user answering the pin — every one of which
+  // reaches the cell through some writer other than the user's next interaction with the pin itself. Each of
+  // those moves used to fold the panel back into the peek on the spot, which is the failure this case is the
+  // regression for. What *does* end it is the user's own next submitted message — the case below.
   const booted = await boot([], 120);
   const { stub, ctx, panel: cell } = booted;
   await stub.commands.get("pins")?.handler("hide", ctx);
@@ -104,13 +105,77 @@ test("the open a pin earned persists across a redraw, a further pin and an agent
     ctx,
   );
   expect(cell.mode()).toBe("open");
-  // A message the user submits that is not a reply: pi dispatches `input`, the extension redraws, and the
-  // open is still the open. (A reply submission is the same move with a marker in front of it.)
-  stub.emit("input", { type: "input", text: "what else", source: "interactive" }, ctx);
+  // A message the user submits while the agent is still working (`source: "steer"`): the panel was shown to
+  // carry information to them and they have not read it yet, so steering the agent is not an interaction
+  // with the pin. The open stands.
+  stub.emit("input", { type: "input", text: "what else", source: "steer" }, ctx);
   expect(cell.mode()).toBe("open");
   // The rail stayed stood down throughout, which is the user-visible half: the pins never went back to it
   // while the panel was open.
   expect(ctx.recorder.widgets.has(KEY)).toBe(false);
+});
+
+test("the user's next submitted message ends the open a pin earned", async () => {
+  // Operator resolution 2's other half, and the end the panel is actually dismissed by: the next message the
+  // user *sends* is the interaction that says the pin was read. The open is transient, so the panel goes
+  // back to what the user chose — hidden here — and the rail takes the pins back with it. Nothing else in
+  // the session ends it: the tests above pin the redraw, the turn, the further pin and the steer.
+  const booted = await boot([], 120);
+  const { stub, ctx, panel: cell } = booted;
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  const tool = toolOf(stub);
+  await tool.execute(
+    "c1",
+    { action: "pin", text: "Deploy is blocked", level: "warning" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  expect(cell.mode()).toBe("open");
+  expect(ctx.recorder.widgets.has(KEY)).toBe(false);
+
+  stub.emit("input", { type: "input", text: "ok I saw it", source: "interactive" }, ctx);
+  expect(cell.mode()).toBe("hidden");
+  // The pins are the rail's again, which is the half the user sees: the panel came down and nothing was lost.
+  expect(ctx.recorder.widgets.has(KEY)).toBe(true);
+});
+
+test("a reply to a pin ends the earned open like any other submitted message", async () => {
+  // `Re #1: …` is the user answering the pin, which is the strongest form of having read it — and it travels
+  // through the reply path (`src/reply.ts`), which appends its own entry and never reaches the panel's
+  // writer. A reply that left the panel open would be a dismissal the user could not perform.
+  const booted = await boot([], 120);
+  const { stub, ctx, panel: cell } = booted;
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  const tool = toolOf(stub);
+  await tool.execute(
+    "c1",
+    { action: "pin", text: "Decide the provider", level: "action" },
+    undefined,
+    undefined,
+    ctx,
+  );
+  expect(cell.mode()).toBe("open");
+
+  stub.emit("input", { type: "input", text: "Re #1: the blue one", source: "interactive" }, ctx);
+  expect(cell.mode()).toBe("hidden");
+  // The reply itself still landed: one user entry, addressed to the pin, from the reply path rather than
+  // from anything the panel did.
+  expect(stub.entries.filter((entry) => entry.customType === "pi-sticky.user")).toHaveLength(1);
+});
+
+test("a message submitted with no open standing settles nothing", async () => {
+  // The end has to be an *end*: a submitted message over a panel that was already resting as a peek (or
+  // hidden by the user's own verb) must not move the cell at all, or a plain turn of the conversation would
+  // be able to re-show or re-hide a panel the user is looking at.
+  const booted = await boot([], 120);
+  const { stub, ctx, panel: cell } = booted;
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  expect(cell.mode()).toBe("hidden");
+  expect(cell.mode()).toBe("hidden");
+  stub.emit("input", { type: "input", text: "hello", source: "interactive" }, ctx);
+  expect(cell.mode()).toBe("hidden");
+  expect(cell.recorded()).toBe(false);
 });
 
 test("a warning pin auto-shows too, and the open ends when the user leaves the panel", async () => {

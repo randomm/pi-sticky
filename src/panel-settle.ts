@@ -11,6 +11,13 @@
  * The rule it enforces: **the screen and the record are moved by one call, and the redraw follows**. A
  * caller cannot move the screen without asking the two surfaces about it, which is what makes "the user hid
  * the panel and something redrew the rail over it" — the failure U8 exists to prevent — unrepresentable.
+ *
+ * The redraw also happens when the *append* throws, which is the half the plain sequence did not promise:
+ * pi's `appendEntry` reaches into the session the command context belongs to, and a context which has been
+ * replaced since the verb was read — a reload or a branch change in flight — throws there. Without the
+ * finally the user's own verb would have moved the cell and left both surfaces drawing the state they just
+ * left, with nothing else scheduled to ask them again: the panel would look half-hidden until something
+ * unrelated happened to redraw it.
  */
 import type { PanelModeState } from "./panel-mode.ts";
 
@@ -27,6 +34,9 @@ export function settlePanel(
   // The record is the user's own statement, so it goes on the session and nowhere else — and only for their
   // verbs. An auto-show never reaches this function at all (it calls the cell's `autoOpen` directly), so
   // there is no flag here to get wrong: a transient open cannot be recorded by construction.
-  if (record) append(shown);
-  redraw();
+  try {
+    if (record) append(shown);
+  } finally {
+    redraw();
+  }
 }

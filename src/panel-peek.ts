@@ -40,8 +40,7 @@ import {
   glyph,
   gutter,
 } from "./panel-frame.ts";
-import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
-import { fitLine } from "./panel-lines.ts";
+import { fitLine, isPanelFrameSize } from "./panel-lines.ts";
 import { panelPinRows } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSections } from "./panel-sections.ts";
@@ -63,13 +62,6 @@ export interface PeekContent {
   ageNow: string;
   /** What the bottom border says while the user is not in the panel — the focus key, or `""`. */
   replyHint: string;
-}
-
-/** Whether a size is one a peek fits in: the same bounds the open panel's builder refuses below. */
-function isPeekFrameSize(width: number, height: number): boolean {
-  return (
-    isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
-  );
 }
 
 /**
@@ -115,7 +107,7 @@ function peekPinRow(
  * cannot disagree about how many warnings there are.
  */
 export function buildPeekLines(content: PeekContent, width: number, style: PanelStyle): string[] {
-  if (!isPeekFrameSize(width, PEEK_ROWS)) return [];
+  if (!isPanelFrameSize(width, PEEK_ROWS)) return [];
   const pins = content.sections.flat;
   // Nothing pinned is no rows at all — not a titled box asserting its own emptiness. The overlay is opened
   // for the pins, and `panelIsVisible` already answers false for an empty view, so a frame here would be a

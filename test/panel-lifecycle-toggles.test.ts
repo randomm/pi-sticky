@@ -19,6 +19,7 @@ import {
   TWO_PINNED,
   boot,
   contextWith,
+  flush,
   panelComponent,
   uiEntry,
 } from "./panel-lifecycle-fixture.ts";
@@ -108,6 +109,49 @@ test("ctrl+alt+p shows the panel without recording anything", async () => {
 
   stub.fireShortcut("ctrl+alt+p", ctx);
   expect(stub.entries).toEqual([]);
+});
+
+test("ctrl+alt+p leaves the panel open, not resting as a peek (spec 3.6)", async () => {
+  // The key's whole job is to let the user *interact* with the panel, and a peek is not a frame they can:
+  // `panel-component.ts` draws the three-row frame from `mode()` and answers no key from it. Settling the
+  // cell to "shown" — which is what the flag alone does, and what `PI_STICKY_PANEL` then draws — passed every
+  // existing assertion here, because those assert the entry and the flag and not the frame. So: the mode
+  // itself, read from the cell the overlay and the rail both draw from, after the key and not before it.
+  const booted = await boot(PINNED, 120);
+  const { stub, ctx, panel: cell } = booted;
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  expect(cell.mode()).toBe("hidden");
+  // What those two verbs recorded is not what this test is about; the assertion below is about the focus
+  // key's own silence, and that is only observable against an empty ledger.
+  stub.entries.length = 0;
+
+  stub.fireShortcut("ctrl+alt+p", ctx);
+  expect(cell.mode()).toBe("open");
+  // Records nothing, as before: the frame is what the key earns, not a preference about keeping it.
+  expect(stub.entries).toEqual([]);
+  // The rail stands down while the panel holds them, which is the visible half of the same fact.
+  expect(ctx.recorder.widgets.has(KEY)).toBe(false);
+
+  // The open the key earned is the transient kind: leaving the panel takes it back to the resting frame
+  // (`afterUnfocus`, reached by Escape and by a keystroke into a peek), and the record the user's `/pins hide`
+  // wrote is untouched throughout — `stub.entries` stayed empty above for the same reason. The *other* end,
+  // the user's next submitted message, is `test/panel-lifecycle-autoshow.test.ts`'s "the user's next
+  // submitted message ends the open a pin earned": both are endings of one earned open, and the panel has to
+  // come down for either of them.
+});
+
+test("a focused panel answers a keystroke, which a peek would not", async () => {
+  // The consequence, asserted at the surface rather than in the cell: `d` on the focused panel dismisses.
+  // Under the old behaviour the focus key left a peek here, and a peek's `handleInput` returns without
+  // reaching the selection — so the key the README promises would have silently done nothing.
+  const booted = await boot(PINNED, 120);
+  const { stub, ctx } = booted;
+  stub.fireShortcut("ctrl+alt+p", ctx);
+  await flush();
+  const before = stub.entries.length;
+  panelComponent(ctx.recorder.customCalls.at(-1))?.handleInput?.("d");
+  expect(stub.entries.length).toBeGreaterThan(before);
+  expect(stub.entries.some((entry) => entry.customType === "pi-sticky.user")).toBe(true);
 });
 
 test("the last pi-sticky.ui entry of the session decides whether the panel starts shown", async () => {
