@@ -43,7 +43,7 @@ import { registerReminder } from "./reminder.ts";
 import { registerReply } from "./reply.ts";
 import { drawFrom, drawSession, settleSession } from "./session-draw.ts";
 import { createSessionSurfaces } from "./session-surfaces.ts";
-import { createPanelTick } from "./session-tick.ts";
+import { createSessionTick } from "./session-tick.ts";
 import { reconstruct } from "./state.ts";
 import { EMPTY_STATE } from "./state.ts";
 import { createPinTool } from "./tool.ts";
@@ -88,15 +88,16 @@ export function createStickyExtension(
      * dead session's state into its successor. Its wiring reads the live cells, not their values, and both
      * questions go to the owner that installs the surfaces (`surfaces`), never a width `TerminalWidth` guessed.
      */
-    const tick = createPanelTick(
+    const tick = createSessionTick(
       {
         pinCount: () => view.pins.length,
-        panelDrawn: surfaces.surfacesDrawn,
-        now: clock,
+        drawn: surfaces.surfacesDrawn,
         redraw: () => redrawAll(live),
+        // The guard's one line goes through the session's own ui, read at report time through the live cell:
+        // without it the wiring has no way to speak and a broken minute is contained in silence.
+        notify: (message, type) => live?.ui.notify(message, type),
       },
       clock,
-      surfaces.surfacesDrawn,
     );
 
     /** A surface's teardown: the hand re-asks whether either surface is still drawn. Shared by both. */

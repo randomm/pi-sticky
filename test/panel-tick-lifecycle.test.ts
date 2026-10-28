@@ -44,11 +44,13 @@ import { createPlainTheme, createStubTui } from "./ui-stubs.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
 // The watched scheduler, the live-handle reader and the counting recorder all live in `panel-tick-watch.ts`
-// with the rest of the fixtures this family shares; `timers` is the array the current watch captured.
+// with the rest of the fixtures this family shares (`panel-tick-break.ts` boots a session whose host throws
+// from that same watch); `timers` is the array the current watch captured.
 let timers: TimerRecord[] = [];
 
-function watchTimers(): void {
+function watchTimers(): TimerRecord[] {
   timers = watchTimersOn();
+  return timers;
 }
 
 /** Every interval started so far that has not been cleared — the ones a live session still owns. */

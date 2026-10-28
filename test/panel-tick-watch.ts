@@ -69,10 +69,18 @@ export type CountingPanelContext = PanelContext & {
  * The harness file is protected and stays byte-identical to `main`, so the tally is wrapped around the
  * recorder (`countingRecorder`, `recording-ui-extra.ts`) and merged onto it *before* `piContext` builds the
  * context's bound `ui` — a member added afterwards would never reach the extension.
+ *
+ * `host` replaces the context's `ui` outright, which is the only way a case reaches a host that fails: a
+ * member assigned *after* `piContext` built the context is not on the bound `ui` the extension reads, and a
+ * wrapped recorder only ever records what it is asked to.
  */
-export function countingContext(entries: readonly unknown[]): CountingPanelContext {
+export function countingContext(
+  entries: readonly unknown[],
+  host?: Partial<RecordingUi>,
+): CountingPanelContext {
   const counting = countingRecorder();
   Object.assign(counting.recorder, counting);
+  if (host) Object.assign(counting.recorder, host);
   return piContext(entries, counting.recorder) as unknown as CountingPanelContext;
 }
 

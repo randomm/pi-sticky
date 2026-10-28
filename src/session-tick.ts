@@ -6,9 +6,9 @@ import type { AgeClock } from "./panel-age.ts";
  * the stop-and-start a lifecycle edge performs, and the handle the surfaces are handed so a surface pi
  * removes can say so. Splitting it from `extension.ts` is not decoration: the extension's job is state,
  * drawing and pi's events, and a 300-line file cannot hold all three plus a timer's lifecycle. What stays
- * here is only what has to be read through the extension's live cells, which is why the wiring is passed in
- * rather than built here. Two decisions live on the handle rather than on the tick, because both are facts
- * about *the session* rather than about the minute:
+ * here is only what has to be read through the extension's live cells, which is why the wiring is built from
+ * the cells a caller hands over (`createSessionTick`) rather than from values. Two decisions live on the
+ * handle rather than on the tick, because both are facts about *the session* rather than about the minute:
  *
  * - **Which modes get a hand at all** (`restart`). `print` and `json` draw nothing and `rpc` draws no
  *   overlay, so a minute callback there is a cost with no drawn byte at the other end of it. It cannot be
@@ -19,12 +19,16 @@ import type { AgeClock } from "./panel-age.ts";
  *   the hand when the owner says neither surface is drawn, and never starts one: a teardown that could
  *   rebuild a hand would re-arm the clock the surface just asked to stop.
  */
+import type { TickGuard } from "./panel-tick-guard.ts";
 import { createTickGuard } from "./panel-tick-guard.ts";
 import { PanelTick } from "./panel-tick.ts";
 import type { TickWiring } from "./panel-tick.ts";
 
 /** The handle the surfaces hold: say the hand is no longer wanted, safely, more than once. */
 export type TickStop = () => void;
+
+/** How a session's minute hand is built: with *this session's* containment in hand. */
+export type MakeTick = (guard: TickGuard) => PanelTick;
 
 /**
  * The modes that draw a surface the hand repaints.
@@ -47,13 +51,19 @@ const DRAWING_MODES: readonly string[] = ["tui", "rpc"];
  * starts it, and a session that never came up (a `print` run) never has one.
  */
 export class SessionTick {
-  #make: () => PanelTick;
+  #make: MakeTick;
   #drawn: () => boolean;
   #tick: PanelTick | undefined;
-  /** This session's report memory; replaced with the tick at every boundary (`restart`). */
-  #guard = createTickGuard();
+  /**
+   * This session's report memory — the one copy, and the one its tick was built with.
+   *
+   * Held here rather than inside `PanelTick` because the memory is a fact about the session: it is opened
+   * with the hand and dropped with it. `restart` builds it *before* `#make` so the pair cannot disagree, and
+   * `stop` clears it — a hand must never inherit a silence another session earned.
+   */
+  #guard: TickGuard | undefined;
 
-  constructor(make: () => PanelTick, drawn: () => boolean) {
+  constructor(make: MakeTick, drawn: () => boolean) {
     this.#make = make;
     this.#drawn = drawn;
   }
@@ -74,13 +84,13 @@ export class SessionTick {
   restart(mode: string): void {
     this.stop();
     // A new session is a new host, so a failure the previous one reported does not speak for this one: the
-    // guard is rebuilt here rather than cleared at the tick, which cannot tell a first failure from the
-    // hundredth minute of the same one. Fresh rather than reset because the guard is the session's and this
-    // is where the session changes — a new tick is built beside a new guard, and the pair never outlives a
-    // boundary together.
+    // guard is built here rather than cleared at the tick, which cannot tell a first failure from the
+    // hundredth minute of the same one. Built *before* the hand and passed into it, because the two are one
+    // pair: a tick that built its own would give this session a second memory that `stop()` and `forget()`
+    // never reach, and the silence it earned would outlive every boundary.
     this.#guard = createTickGuard();
     if (!DRAWING_MODES.includes(mode)) return;
-    this.#tick = this.#make();
+    this.#tick = this.#make(this.#guard);
     this.#tick.start();
   }
 
@@ -109,30 +119,58 @@ export class SessionTick {
    * The guard's memory goes with the tick. `stop()` is the one member every edge reaches (`restart` calls
    * it first, `surfaceGone` calls it when neither surface is drawn, `session_shutdown` calls it outright),
    * so clearing here is what guarantees no hand — the next session's or a later one in the same process —
-   * inherits a silence this session earned. `restart` then builds the fresh guard.
+   * inherits a silence this session earned. `restart` then builds the fresh guard, and hands it to the tick.
    */
   stop(): void {
     this.#tick?.stop();
     this.#tick = undefined;
-    this.#guard.forget();
+    this.#guard?.forget();
+    this.#guard = undefined;
   }
 }
 
 /**
- * Build the minute hand of one session: the timer, and the handle that starts, stops and restarts it.
+ * What the extension hands the minute hand: its live cells, never their values.
  *
- * The two are constructed together because they have exactly one contract between them — the wiring the
- * timer reads must be read *at tick time*, through the caller's live cells, and never captured as values.
- * A tick built from values is a tick that outlives the session whose width, flag and pins it memorised, and
- * the callback it fires asks the wrong session to redraw. So the wiring is a parameter of the one function
- * that builds both halves, and the extension cannot accidentally supply one and not the other. `drawn` is a
- * parameter for the same reason: it is the extension's own disjunction over the two surfaces, read when the
- * handle asks and never remembered.
+ * The five reads of `TickWiring` (`panel-tick.ts`) plus the hand's own condition, all reached through the
+ * cells the extension declares — which is the rule the whole extension follows: nothing that outlives a
+ * reload may be a value taken before it, and a wiring of values is a timer that asks the session it was
+ * built in to redraw. `notify` is asked for here rather than left optional at the call site because a wiring
+ * without it can be contained but never *reported*: the guard asks the wiring whether the user can be told,
+ * and a wiring that never offers a way to tell them leaves a broken minute silently unfixed.
  */
-export function createPanelTick(
-  wiring: TickWiring,
-  clock: AgeClock,
-  drawn: () => boolean,
-): SessionTick {
-  return new SessionTick(() => new PanelTick(wiring, clock, createTickGuard()), drawn);
+export interface TickCells {
+  /** The extension's `redrawAll`, at whatever context is still live — the one thing the hand *does*. */
+  redraw(): void;
+  /** Whether either surface is drawn, as the owner that installs them answers it. */
+  drawn(): boolean;
+  /** How many pins there are; none means neither surface draws and no hand is worth keeping. */
+  pinCount(): number;
+  /** Whether the live session's ui can be told one line, or has already gone. */
+  notify?(message: string, type?: "info" | "warning" | "error"): void;
+}
+
+/**
+ * The minute hand of one extension instance, wired to its live cells.
+ *
+ * The one place the wiring and the clock meet: both read the extension's *own* clock — the instant the ages
+ * are drawn at and the instant the frame is aged against must not disagree — and both read the surfaces
+ * through one cell. Spelled here rather than as a literal in `extension.ts` so the extension carries the
+ * cells and this file carries the shape of what a hand is allowed to ask about them.
+ *
+ * The timer and the handle are built together because they have exactly one contract between them: the wiring
+ * the timer reads must be read *at tick time*, through these cells and never captured as values. The guard is
+ * *not* built here — `SessionTick.restart` builds one per session and passes it to the factory below, so the
+ * hand and the memory that decides whether its failure is told are one pair; a guard built here would be a
+ * second one per session, and the session's own `forget()` would reset a memory no tick reads.
+ */
+export function createSessionTick(cells: TickCells, clock: AgeClock): SessionTick {
+  const wiring: TickWiring = {
+    pinCount: cells.pinCount,
+    panelDrawn: cells.drawn,
+    now: clock,
+    redraw: cells.redraw,
+    notify: cells.notify,
+  };
+  return new SessionTick((guard) => new PanelTick(wiring, clock, guard), cells.drawn);
 }
