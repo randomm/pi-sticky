@@ -59,11 +59,35 @@ test("a rejected open hands the pins back: the rail is installed and draws them"
   // Not on screen, and nothing was installed for the panel to stand down for while it claimed the pins.
   expect(h.panel.isVisible()).toBe(false);
   expect(h.railOwns).toEqual([]);
-  // The rail is asked back, and the verdict it was handed to spell that answer is the owner's own `false`:
-  // had it said `true`, the guard would have stood the rail down and the pins would be on neither surface.
+  // The rail is asked back, and the verdict it was handed to spell that answer is the owner's *own* — not a
+  // re-derivation from the mode cell. The two answers genuinely disagree in this case: an open whose
+  // `custom()` rejected has forgotten its record, so `isVisible()` answers `false` while the user's flag in
+  // the cell still answers `shown`. The first install is the handback, and it is keyed on the owner.
   const before = h.railDraws.length;
   h.panel.refresh();
   expect(h.railDraws.length).toBeGreaterThan(before);
+  expect(h.railOwns).toEqual([false]);
+  // Handed the *cell* instead of the owner — the shape `PanelOwner`'s `#railConsider` must not be allowed to
+  // take — the guard keys its one install on the cell's `true` and stands the rail down for a panel that is
+  // not on screen: the pins end up on neither surface, and nothing says so. The two verdicts are made to
+  // disagree by the case itself — a `custom()` that rejected has forgotten the record, so `isVisible()` says
+  // `false` while the user's flag in the cell still says `shown` — and `claimOwnership` puts the cell's answer
+  // in the slot the owner fills with its own. `railOwns` is filled by `redrawRail`, the callback the guard
+  // runs only when it *decides to install*, so what is read is the guard's own input on a real install. The
+  // old assertion read a fixture constant from that slot, which is why this mutation passed the whole suite.
+  const cold = contextWith([]);
+  const swapped = wiring(cold, {
+    custom: () => Promise.reject(new Error("host overlay stack full")),
+  });
+  swapped.terminal.note(120);
+  swapped.panel.open(cold);
+  await flush();
+  swapped.claimOwnership(() => swapped.panelMode().shown());
+  swapped.panel.refresh();
+  expect(swapped.railOwns).toEqual([true]);
+  expect(swapped.panel.isVisible()).toBe(false);
+  // …and the owner's own verdict, back in the same slot, is what spells the handback: the guard keys on
+  // `false` — a verdict the cell cannot give here — and the rail is installed for it.
   expect(h.railOwns).toEqual([false]);
 });
 

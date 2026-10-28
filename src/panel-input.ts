@@ -114,6 +114,11 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
  * the host stops answering keys even when the ending never completes, which is the state the user can live
  * with. A second throw cannot strand the panel, and is swallowed with the first.
  *
+ * The report is contained the way `createTickGuard` (`panel-tick-guard.ts`) contains its own: `notify` is a
+ * member of the same host that just threw, so a session whose ui has gone fails there too, and a notice that
+ * escapes would leave the panel focused *and* put the throw in pi's key path — the two things the catch is
+ * here to prevent. The report is best-effort; ending the interaction is what the guard owes the user.
+ *
  * A function beside the dispatcher rather than a `try` inside the component because the guard is about the
  * dispatch, not about the component: it belongs where the keys are, and the component is left with the one
  * line that hands pi-tui its callback.
@@ -126,7 +131,13 @@ export function containKey(
   try {
     dispatchPanelKey(data, component, host);
   } catch {
-    host.notify("A panel key could not be handled.", "warning");
+    // Contained in its own `try`, as the tick guard contains its report: `notify` belongs to the host that
+    // just threw, and a warning the user never sees is not worth a throw out of the key path.
+    try {
+      host.notify("A panel key could not be handled.", "warning");
+    } catch {
+      /* The report failed; the ending below is still owed. */
+    }
     // The flag moves on its own, before the ending is attempted: `unfocus()` is itself a host-facing path,
     // and the one thing a failed key may not leave behind is a panel that still believes it is focused.
     component.setFocused(false);

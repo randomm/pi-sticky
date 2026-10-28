@@ -68,13 +68,26 @@ export function wiring(
 ) {
   const railDraws: number[] = [];
   /**
-   * The ownership answer the guard was handed for each install — the owner's *own* verdict, read at draw
-   * time, which is the term the guard keys on after a failed open. One push per call is also what proves
-   * the guard's decision happened once: a guard that drew twice would double this and the count.
+   * The ownership answer the guard was handed for each install. `redrawRail` is the one callback the guard
+   * runs when it decides to install, so the verdict read through `handed` at that moment is what the guard
+   * keyed the install on.
+   *
+   * Recording a fixture constant would have been the mistake this replaces: with `railOwns` filled from the
+   * fixture's own default, the failed-open case asserted `railOwns === [false]` while the guard was handed
+   * `panelMode().shown()`, which answered `true` — green on a guard that stood the rail down for pins no
+   * surface drew. One push per call is also what proves the guard's decision happened once: a guard that drew
+   * twice would double this and the count.
    */
   const railOwns: boolean[] = [];
-  /** The verdict the guard is handed; installed as `() => panel.isVisible()` once the owner exists. */
+  /** The verdict the guard was handed; `() => panel.isVisible()` from the moment the owner exists. */
   let owns: () => boolean = () => false;
+  /**
+   * The thunk the owner's `#railConsider` builds (`() => this.isVisible()`) is not reachable from outside the
+   * owner, so this holder is the seam through which a test substitutes it — see `claimOwnership`. It is read
+   * by the owner's own `redrawRail` callback, which is the only thing the guard runs when it installs, so
+   * what lands in `railOwns` is the verdict the guard actually keyed on.
+   */
+  const handed: { ownsPins: () => boolean } = { ownsPins: () => owns() };
   /** The `recordPanelShown` calls, so a test can see that the owner's verbs reached the deps. */
   const records: boolean[] = [];
   /**
@@ -86,7 +99,8 @@ export function wiring(
     view: opts.view ?? ONE,
     shown: opts.shown ?? true,
     // The instant the owner ages a rail it is about to install. Fixed at `NOW` so a guard whose key ignored
-    // the age and one whose key read a second clock both answer the same way until a test moves it.
+    // the age and one whose key read a second clock both answer the same way until a test moves it. A test
+    // that means to draw a rail changes it and moves the cell with it, through the owner's own verbs.
     clock: NOW,
   };
   /**
@@ -133,18 +147,17 @@ export function wiring(
     onDispose: () => {},
     rpc: () => screen.rpc ?? false,
     redrawRail: () => {
-      // Read at draw time, and from the source the answer is actually made of: the cell, not the flag the
-      // recording verbs leave behind — an `autoOpen` puts a panel on screen without moving that flag, and a
-      // record that disagreed with the cell would be a mirror nobody could trust. The record has to say what
-      // the rail was asked to install, not what the view happens to hold when the test finally looks at it.
-      // One push per call is also what proves the guard's decision happened once — a guard that drew twice
-      // would double this and the count.
-      railOwns.push(owns());
-      railDraws.push(railOwns.length);
+      // The term the guard keyed on, read at draw time through the holder `claimOwnership` writes: normally
+      // the owner's own `isVisible()`, and during a substitution whatever the test claimed the guard was
+      // handed. Filled only on an install the guard really decided to make, which is what makes it a record
+      // of the guard's input rather than of a constant the fixture answered for it.
+      railOwns.push(handed.ownsPins());
+      railDraws.push(1);
     },
   });
   // The guard's ownership term is the owner's own answer — the one member the fixture cannot build before
-  // the owner exists, so it is wired in here rather than in the literal above.
+  // the owner exists, so it is wired in here rather than in the literal above. A test that wants to know what
+  // the guard would have keyed on *instead* — the mode cell, say — swaps it through `claimOwnership`.
   owns = () => panel.isVisible();
   // A context built for a test has a recorder's `custom`; the override is what makes it fail.
   if (opts.custom !== undefined) {
@@ -163,6 +176,15 @@ export function wiring(
       const options = framesOf(ctx).at(-1)?.options?.overlayOptions;
       const visible = typeof options === "function" ? undefined : options?.visible;
       visible?.(columns, 24);
+    },
+    /**
+     * Hand the guard a *different* ownership answer than the owner gives, so a test can see which one the
+     * rail's key was spelled from. Returns what to restore it with.
+     */
+    claimOwnership: (verdict: () => boolean) => {
+      const previous = owns;
+      owns = verdict;
+      return previous;
     },
     /** The surfaces' one cell, for a test that asks the panel what frame it is drawing. */
     panelMode: () => cell,

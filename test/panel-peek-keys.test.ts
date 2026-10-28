@@ -85,6 +85,29 @@ test("a key whose host throws still ends the interaction", () => {
   expect(state.dismissals).toEqual([]);
 });
 
+test("a key whose host throws on the notice too still ends the interaction", () => {
+  // The report is best-effort and the ending is not: `notify` belongs to the same host whose `dismiss` just
+  // threw, so a session whose ui has gone fails on the report as well — and a `notify` that escaped the
+  // catch would strand the panel focused *and* put the throw in pi's key path, the two things the guard is
+  // here to prevent. Same shape as the tick guard containing its own report (`panel-tick-guard.ts`).
+  const { c, state } = at("open", ["Decide X", "Watch out"], {
+    dismiss: () => {
+      throw new Error("host session is gone");
+    },
+    notify: () => {
+      throw new Error("ui context is gone");
+    },
+  });
+  c.focus();
+
+  // Nothing escapes `handleInput` — pi-tui has no `try` of its own around this call.
+  expect(() => c.handleInput?.("d")).not.toThrow();
+
+  expect(c.isFocused()).toBe(false);
+  expect(state.unfocusCalls).toBe(1);
+  expect(state.dismissals).toEqual([]);
+});
+
 test("a hidden panel refuses its keys whatever the mode says", () => {
   // `isVisible()` is the gate in front of the mode's one, and a hidden panel is not on screen at all.
   const { c, state } = at("open");

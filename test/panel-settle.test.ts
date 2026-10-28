@@ -59,7 +59,7 @@ test("the redraw runs after the cell moved, never before", () => {
 });
 
 test("a verb that does not record leaves the session alone", () => {
-  // `setPanelShown`' path — the focus shortcut showing a panel to read it is not a preference about whether
+  // The focus shortcut's path — the shortcut showing a panel to read it is not a preference about whether
   // it should stay open.
   const seen = settle(() => {}, true, false);
   expect(seen.appended).toEqual([]);
