@@ -14,6 +14,7 @@
  * makes through `renderList`.
  */
 import { MAX_TEXT_UNITS } from "./bounds.ts";
+import { isDense } from "./dense.ts";
 import { toOneLine } from "./render.ts";
 import { cleanPinText } from "./sanitize.ts";
 
@@ -109,9 +110,10 @@ export function cleanGroupOrUndefined(group: unknown, clearing = false): string 
 }
 
 /**
- * The `options` as they may be stored, with the same three-way answer. The length test runs on the
- * list as sent and *before* any element is sanitized, mirroring `normaliseIds`: a body that is not a
- * list of the right size has nothing to inspect. Only the exact `[]` an update sends is the clear.
+ * The `options` as they may be stored, with the same three-way answer. The shape test — a list, of the
+ * right size at both ends, with no hole or extra key of its own — runs before any element is sanitized,
+ * mirroring `normaliseIds`: a body that is not a list of the right size has nothing to inspect. Only the
+ * exact `[]` an update sends is the clear.
  */
 export function cleanOptionsOrUndefined(
   options: unknown,
@@ -120,7 +122,10 @@ export function cleanOptionsOrUndefined(
   if (options === undefined) return undefined;
   if (!Array.isArray(options)) return null;
   if (options.length === 0) return clearing ? [] : null;
-  if (!dense(options)) return null;
+  // The count is refused on the list as sent, before a single element is sanitized, and it bounds the
+  // list at both ends: an entry past `MAX_OPTIONS` would otherwise be stored, published, and refused
+  // only by `isPinState` — which loses the whole snapshot on the next rebuild, not the one bad entry.
+  if (!shapeOfAnOptionsList(options)) return null;
   const cleaned: string[] = [];
   for (const entry of options) {
     const one = cleanField(entry, false);
@@ -161,18 +166,6 @@ export function compactOrUndefined(compact: unknown): boolean | null | undefined
 }
 
 /**
- * A dense list: one whose own keys are exactly its indices. `for…of` skips holes, so without this a
- * `new Array(2)` with one element would be read as a one-entry list and answered as too short, while
- * `isPinState` answers the same shape with the list rule. Same reason `normaliseIds` tests `i in ids`.
- */
-function dense(list: readonly unknown[]): boolean {
-  for (let i = 0; i < list.length; i++) {
-    if (!(i in list)) return false;
-  }
-  return true;
-}
-
-/**
  * What the checks accepted, in the shape the reducer copies into a pin: `undefined` means the action
  * did not name the field. The two clearing sentinels — `group: ""` and `options: []` — ride through as
  * they came, and `acceptedFields` is what turns them into a key removed.
@@ -181,6 +174,16 @@ export interface PinFields {
   group?: string;
   options?: string[];
   compact?: boolean;
+}
+
+/**
+ * Is this a list of options at all: an array of `MIN_OPTIONS` to `MAX_OPTIONS` entries, each position
+ * present and no key of its own beyond the indices? The single shape test `cleanOptionsOrUndefined` and
+ * `optionsRefusal` both run, so the writer's yes/no and the classifier's wording cannot come apart —
+ * which is what makes the classifier's final `throw` unreachable rather than merely untested.
+ */
+function shapeOfAnOptionsList(options: readonly unknown[]): boolean {
+  return options.length >= MIN_OPTIONS && options.length <= MAX_OPTIONS && isDense(options);
 }
 
 /**
@@ -193,9 +196,10 @@ export interface PinFields {
  */
 function optionsRefusal(options: unknown): FieldRefusal {
   if (!Array.isArray(options)) return badOptions();
-  if (options.length < MIN_OPTIONS || options.length > MAX_OPTIONS || !dense(options)) {
-    return badOptions();
-  }
+  // The shape tests are the writer's, spelled by the shared `isDense` rather than copied out again, so
+  // the two sides state the rule once and the disagreement this function's last line catches cannot be
+  // one module growing and the other not noticing.
+  if (!shapeOfAnOptionsList(options)) return badOptions();
   const seen = new Set<string>();
   for (const entry of options) {
     if (typeof entry !== "string") return badOptionLength();

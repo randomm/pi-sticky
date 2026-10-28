@@ -237,4 +237,47 @@ describe("applyAction refuses an update whose fields are not what they claim", (
       expect(isPinState(result.state)).toBe(true);
     }
   });
+
+  test("a pin whose options list is longer than the guard allows is refused, not published", () => {
+    // Five clean entries were the CRITICAL: `cleanOptionsOrUndefined` tested only the lower bound, so
+    // the reducer answered ok and handed the tool a snapshot `isPinState` refuses — which `reconstruct`
+    // skips, so every pin the call published disappeared on the next rebuild. Refused here, and the
+    // refused shape is the one the guard refuses, so the two sides cannot drift again.
+    const five = ["a", "b", "c", "d", "e"];
+    const start = state([pin(1, "a"), pin(2, "b")], 3);
+    const pinned = applyAction(
+      EMPTY_STATE,
+      { op: "pin", text: "t", level: "info", source: "agent", now: NOW, options: five },
+      limits(),
+    );
+    expect(pinned).toEqual({
+      ok: false,
+      error: "options must be a list of 2 to 4 strings",
+    });
+    expect(isPinState(state([{ ...pin(1, "a"), options: [...five] }], 2))).toBe(false);
+    const updated = applyAction(
+      start,
+      { op: "update", id: 1, source: "agent", now: LATER, options: five },
+      limits(),
+    );
+    expect(updated).toEqual({ ok: false, error: "options must be a list of 2 to 4 strings" });
+  });
+
+  test("a hand-built options list with an extra own key is refused, as the guard reads it", () => {
+    // `updateOp` copies the pin's array by reference, so a list the writer accepted and the guard
+    // refuses would be republished by a later plain update and poison the whole snapshot. Only a
+    // non-tool caller can build one — pi's validator rejects a non-integer index — so the check is
+    // asserted at the reducer too, where the state is made.
+    const extraKey = Object.assign(["a", "b"], { zz: "z" }) as unknown as string[];
+    const start = state([pin(1, "a")], 2);
+    const refused = applyAction(
+      start,
+      { op: "update", id: 1, source: "agent", now: LATER, options: extraKey },
+      limits(),
+    );
+    expect(refused).toEqual({ ok: false, error: "options must be a list of 2 to 4 strings" });
+    // And the guard really does refuse what the writer refused — otherwise the two sides only look
+    // agreed because neither of them looked at the key.
+    expect(isPinState(state([{ ...pin(1, "a"), options: extraKey }], 2))).toBe(false);
+  });
 });

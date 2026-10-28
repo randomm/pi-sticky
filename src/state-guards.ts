@@ -7,6 +7,7 @@
  * reused, and the model would then be told to update one pin while acting on another.
  */
 import { MAX_PINS, MAX_TEXT_UNITS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
+import { isDense } from "./dense.ts";
 import { MAX_FIELD_UNITS, MAX_OPTIONS, MIN_OPTIONS } from "./pin-fields.ts";
 import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
 
@@ -36,20 +37,6 @@ export function isUid(x: unknown): x is string {
  */
 function isBoundedString(x: unknown): x is string {
   return typeof x === "string" && x.length <= MAX_TEXT_UNITS;
-}
-
-/**
- * A dense array: one whose own keys are exactly its indices 0..length-1. `Array.prototype.every`
- * skips holes, so without this a `new Array(5)` or a `[pin, , pin]` would pass an element check
- * while its holes are `undefined` — which the coherence walk below then reads as an object and
- * throws on, taking the whole rebuild with it.
- */
-function isDense(arr: readonly unknown[]): boolean {
-  if (Object.keys(arr).length !== arr.length) return false;
-  for (let i = 0; i < arr.length; i++) {
-    if (!(i in arr)) return false;
-  }
-  return true;
 }
 
 function isPin(x: unknown): x is Pin {
