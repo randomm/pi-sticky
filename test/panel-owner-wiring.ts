@@ -27,6 +27,21 @@ import type { RecordedCustomCall } from "./recorded-ui-types.ts";
  */
 const panelStyle: PanelStyle = NO_PANEL_COLOUR;
 
+/**
+ * The one writer of a hand-built fixture's screen: the cell and the flag move together and only here, so
+ * no setter can leave them disagreeing about what is drawn. The two deps below are its only callers, which
+ * is what keeps the recording and non-recording halves one line apart.
+ */
+function moveTo(
+  cell: ReturnType<typeof createPanelMode>,
+  screen: { shown: boolean },
+  shown: boolean,
+): boolean {
+  cell.settle(shown);
+  screen.shown = shown;
+  return shown;
+}
+
 /** The one-pinned view every hand-built wiring starts from. */
 /**
  * The one-pin view most of these hosts draw with, stamped a day before `NOW` so a panel that ages its rows
@@ -67,7 +82,7 @@ export function wiring(
   const records: boolean[] = [];
   /**
    * The user's recorded choice, as the verbs left it. A test reads it; it does not write it — the screen
-   * moves through `hide`, `show`/`toggle` or `setShown`, the same verbs the extension's own wiring exposes,
+   * moves through `hide`, `show`/`toggle` or `focusFromShortcut`, the same verbs the extension exposes,
    * so nothing can leave the flag and the cell disagreeing about what is drawn.
    */
   const screen: { view: PinView; shown: boolean; rpc?: boolean; clock?: string } = {
@@ -80,8 +95,9 @@ export function wiring(
   /**
    * The one place a `PanelDeps` is built for these files.
    *
-   * Only the members the owner and the rail guard actually read are built: `getView`, `panelMode`,
-   * `setPanelShown` and `recordPanelShown`, plus the `notify` the open path uses for a rejected
+   * Only the members the owner and the rail guard read are built — `getView`, `panelMode` and
+   * `recordPanelShown` — plus `setPanelShown`, which the owner never reaches but `settlePanel` below drives,
+   * and the `notify` the open path uses for a rejected
    * `custom()` or a close whose handle threw. `panelFactory`'s host closure mentions `dismiss`,
    * `startReply` and the component's notify too, and those are exercised where the component is driven
    * (`panel-component.test.ts`, `panel-lifecycle-toggles.test.ts`), not on an inert stub here. Neither is
@@ -99,7 +115,7 @@ export function wiring(
   const deps = {
     getView: () => screen.view,
     // The surfaces' one cell, read as it is: a pure read, with no write folded into it. Every state change
-    // goes through the verbs below — `setPanelShown` / `recordPanelShown` — which is what makes the cell
+    // goes through the verbs below — `recordPanelShown` — which is what makes the cell
     // observable rather than re-settled by whoever happens to ask it a question.
     panelMode: () => cell,
     // The owner's `replyHint` reaches `config` through the real deps, and these files are about the
@@ -109,21 +125,14 @@ export function wiring(
     // The same reason: the component asks the host for the instant its ages are measured at, and a
     // hand-built deps that cannot answer one is an exception in the draw path rather than a stub.
     now: () => screen.clock ?? NOW,
-    // The one caller is `PanelOwner.focusFromShortcut` — which now asks the cell for the earned open
-    // outright (`autoOpen`) and never reaches a setter here: reading a pin records nothing and settles
-    // nothing, so a branch for it would be a closure no test can reach (that is the
-    // `panel-wiring.test.ts` setter-pair case's job, not this one's). Kept because `PanelDeps` declares it.
-    setPanelShown: (shown: boolean) => {
-      cell.settle(shown);
-      screen.shown = shown;
-    },
+    // The non-recording half of the extension's setter pair. No `PanelOwner` verb reaches it — `show`,
+    // `hide` and `toggle` all record, and `focusFromShortcut` asks the cell for the earned open directly —
+    // so a test drives it through `settlePanel` below, which is how a panel gets on or off screen here
+    // without the user having spoken.
+    setPanelShown: (shown: boolean) => moveTo(cell, screen, shown),
     // The recording `shown` below is the flag the owner's verbs leave behind, and the `/pins` verbs are
     // expected to settle it — so a recorded entry is what proves the recording half of the pair ran.
-    recordPanelShown: (shown: boolean) => {
-      screen.shown = shown;
-      cell.settle(shown);
-      records.push(shown);
-    },
+    recordPanelShown: (shown: boolean) => void records.push(moveTo(cell, screen, shown)),
   } as unknown as PanelDeps;
   const terminal = new TerminalWidth();
   const panel = new PanelOwner({
@@ -167,11 +176,11 @@ export function wiring(
       visible?.(columns, 24);
     },
     /**
-     * Move the screen the way the extension's non-recording setter does: settle the cell, leave the record
-     * where it is. A test that needs a panel on (or off) screen without the user having spoken uses this;
-     * one that needs the user's own verb uses `panel.show`/`panel.hide`/`panel.toggle`.
+     * Move the screen the way the extension's non-recording setter does: settle the cell, record nothing.
+     * A test that needs a panel on (or off) screen without the user having spoken uses this; one that needs
+     * the user's own verb uses `panel.show`/`panel.hide`/`panel.toggle`.
      */
-    setShown: (shown: boolean) => deps.setPanelShown(shown),
+    settlePanel: (shown: boolean) => deps.setPanelShown(shown),
     /** The surfaces' one cell, for a test that asks the panel what frame it is drawing. */
     panelMode: () => cell,
   };

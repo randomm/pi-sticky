@@ -119,8 +119,9 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
 test("show, hide and toggle settle the flag through the deps, and record only the user's choice", async () => {
   // `setPanelShown` settles the live flag and records nothing; `recordPanelShown` also appends the entry
   // that makes the choice survive a reload. The distinction is the persistence contract: `show`/`hide` are
-  // the user speaking, `focusFromShortcut` is not, and a wiring that could not tell the two apart would
-  // record a preference every time the user pressed a key to read a pin.
+  // the user speaking, `settlePanel` (the fixture's name for the extension's non-recording setter) is not,
+  // and a wiring that could not tell the two apart would record a preference every time the user pressed a
+  // key to read a pin.
   const ctx = contextWith([]);
   const h = wiring(ctx, { shown: false });
   h.terminal.note(120);
@@ -162,6 +163,31 @@ test("show, hide and toggle settle the flag through the deps, and record only th
   // the user chose, rather than a panel the shortcut left covering the transcript.
   h.panel.component()?.unfocus();
   expect(h.panelMode().mode()).toBe("hidden");
+});
+
+test("the non-recording setter moves the screen and leaves the user's record alone", () => {
+  // The half of the setter pair no `PanelOwner` verb reaches: `show`/`hide`/`toggle` all append, and
+  // `focusFromShortcut` asks the cell for the earned open outright. `extension.ts` hands it to the wiring
+  // as `setPanelShown` (`panel-deps.ts`), and the rule it carries is that the screen moves and the record
+  // does not — the same rule `panel-settle.ts` enforces for the extension, asserted here on the owner's
+  // own deps so a setter that recorded would fail this rather than only the lifecycle suite.
+  const ctx = contextWith([]);
+  const h = wiring(ctx);
+  h.terminal.note(120);
+
+  const before = h.records.length;
+  h.settlePanel(false);
+  expect(h.panelMode().mode()).toBe("hidden");
+  expect(h.screen.shown).toBe(false);
+  expect(h.panel.isVisible()).toBe(false);
+  expect(h.records).toHaveLength(before);
+
+  // …and the way back: the cell and the flag move together, so neither can be left telling a different
+  // story about what is drawn, and the user's recorded choice is still whatever their last verb left.
+  h.settlePanel(true);
+  expect(h.panelMode().mode()).toBe("open");
+  expect(h.screen.shown).toBe(true);
+  expect(h.records).toHaveLength(before);
 });
 
 test("a show that the terminal cannot fit says so once, and still records the choice", async () => {

@@ -59,8 +59,8 @@ export interface PanelFrame {
  * Whether the cached `frame` is the frame the component would draw right now.
  *
  * `pins` are compared by identity and everything else by value; `candidate` is a frame-shaped read of the
- * component's current state, built by `PanelComponent.#candidate`, so the two frames are compared field by
- * field rather than by five positional arguments that can be passed in the wrong order. `width` and `lines`
+ * component's current state, built by `frameCandidate` (`panel-component-frame.ts`), so the two frames are
+ * compared field by field rather than by five positional arguments that can be passed in the wrong order. `width` and `lines`
  * are not compared: a candidate names neither, and both follow from the fields that are.
  */
 export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame): boolean {

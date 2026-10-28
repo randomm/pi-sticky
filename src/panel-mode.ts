@@ -16,8 +16,8 @@
  *
  * What the state is asked for:
  *
- * - `PanelOwner.isVisible()` reads `mode()` through `PanelDeps` and answers the pins question with
- *   `panelOpensPins`: the panel owns the pins in peek *and* in open, and the rail draws only in hidden (or at
+ * - `PanelOwner.isVisible()` reads `mode()` through `PanelDeps` and answers the pins question with the
+ *   mode itself: the panel owns the pins in peek *and* in open, and the rail draws only in hidden (or at
  *   a terminal too narrow for a frame) — U11: a pin is drawn by exactly one surface.
  * - `PanelComponent` reads the same mode and draws the peek (`panel-peek.ts`) or the open frame.
  * - The auto-open rule (U11/U12): an action or warning pin opens the panel fully and it
@@ -34,18 +34,6 @@ import type { PinLevel, ViewPin } from "./types.ts";
 
 /** The three states the panel's on-screen answer has. */
 export type PanelMode = "hidden" | "peek" | "open";
-
-/**
- * Whether a panel in `mode` owns the pins — the half of the visibility question this state adds.
- *
- * Both drawn states answer true and only hidden answers false: the panel owns the pins in peek exactly as it
- * does in open, so a peek never hands the same pin to the rail as well. The other two terms — room at the
- * terminal, and a view with pins in it — stay `panelIsVisible`'s (`panel-geometry.ts`), which keeps one
- * predicate answering the whole question.
- */
-export function panelOpensPins(mode: PanelMode): boolean {
-  return mode !== "hidden";
-}
 
 /**
  * Whether any of the pins a commit touched asks the user to do something: an action or a warning.

@@ -36,7 +36,12 @@ export interface PanelDeps extends StickyDeps {
   /** `panelMode` is `StickyDeps`' — see `StickyDeps.panelMode` for the cell and why it is one. */
   panelMode(): PanelModeState;
   /**
-   * Change the live flag and redraw both surfaces; records nothing. Only an explicit user toggle appends.
+   * Change the live flag and redraw both surfaces; records nothing.
+   *
+   * The non-recording half of the extension's setter pair (`panel-settle.ts`): no `PanelOwner` verb reaches
+   * it — `show`/`hide`/`toggle` all record, and `focusFromShortcut` asks the cell for the earned open
+   * directly — so the member belongs to the extension's own wiring, and a test double of it would be a
+   * closure nothing can call.
    */
   setPanelShown(shown: boolean): void;
   /**

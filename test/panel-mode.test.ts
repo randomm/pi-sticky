@@ -18,7 +18,7 @@
 import { expect, test } from "bun:test";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { createPanelMode, panelOpensPins } from "../src/panel-mode.ts";
+import { createPanelMode } from "../src/panel-mode.ts";
 import type { StickyConfig } from "../src/types.ts";
 
 /** The config of one resting mode — the only config member the cell reads. */
@@ -123,12 +123,4 @@ test("the demote a session boundary makes forgets the transience and keeps the o
   expect(cell.mode()).toBe("hidden");
   cell.settle(true);
   expect(cell.mode()).toBe("open");
-});
-
-test("panelOpensPins is true for everything but hidden", () => {
-  // The rail's handoff question, spelled once: a peek stands the rail down exactly as an open does, or the
-  // same pin is drawn on two surfaces.
-  expect(panelOpensPins("hidden")).toBe(false);
-  expect(panelOpensPins("peek")).toBe(true);
-  expect(panelOpensPins("open")).toBe(true);
 });
