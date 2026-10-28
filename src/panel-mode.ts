@@ -138,8 +138,8 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
    *
    * It is *not* the same as what the session recorded: `autoOpen` moves it and appends nothing, and the
    * user's own record is what `demote` puts back. That separation is the whole of the transience, and it is
-   * also why `PanelDeps.isPanelShown()` — which reads *this* — is the on-screen question (the room gate and
-   * the toggle ask it), while `recorded()` is the one the rail's guard and the refusal messages answer.
+   * also why `shown()` is the on-screen question the surfaces ask (the room gate and the toggle), while
+   * `recorded()` is the one the rail's guard and the refusal messages answer.
    */
   let shown = true;
   /** Whether the current open was earned by a pin rather than asked for by the user. */

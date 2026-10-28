@@ -15,7 +15,7 @@ import type { PanelWiring } from "./panel-deps.ts";
 import { PANEL_OVERLAY_OPTIONS } from "./panel-geometry.ts";
 import { replyHint } from "./panel-hint.ts";
 import type { PanelHost } from "./panel-host.ts";
-import type { PanelModeState } from "./panel-mode.ts";
+import type { PanelMode } from "./panel-mode.ts";
 
 /**
  * The factory pi-tui calls to build the overlay's component.
@@ -45,10 +45,9 @@ export function panelFactory(
      */
     panelVisible(): boolean;
     /**
-     * The panel's mode cell, or `undefined` for a hand-built wiring that has none — which the component and
-     * the host both read as the open panel (`PanelHost.mode`).
+     * Which frame to draw and which keys to answer (`PanelHost.mode`).
      */
-    mode(): PanelModeState | undefined;
+    mode(): PanelMode;
   },
 ): PanelCustomFactory {
   const deps = wiring.deps;
@@ -84,10 +83,7 @@ export function panelFactory(
       // read at key time, so a hide, a resize or a last dismissal is visible here without anything
       // having told the component.
       isVisible: () => hooks.panelVisible(),
-      // The state, read at draw time from the extension's one cell. A cell that is absent (a hand-built
-      // wiring) is reported as no state at all rather than as `open`: the component then draws the frame it
-      // drew before the peek existed, which is the reading `PanelHost.mode` documents.
-      mode: () => hooks.mode()?.mode(),
+      mode: hooks.mode,
       // The panel's one notify line, through the extension: the component has no context of its own and
       // the live one belongs to the session that drew it.
       notify: (message, type) => deps.notify(message, type),

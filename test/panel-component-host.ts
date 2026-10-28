@@ -13,6 +13,7 @@
 import type { TUI } from "@earendil-works/pi-tui";
 
 import type { PanelHost } from "../src/panel-host.ts";
+import type { PanelMode } from "../src/panel-mode.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
@@ -44,7 +45,7 @@ export function host(pins: ViewPin[] = []) {
      * dispatcher both read as the open panel. Absent by default because every pre-peek component test draws
      * the open frame; a case that wants the peek sets it.
      */
-    mode: undefined as "hidden" | "peek" | "open" | undefined,
+    mode: "open" as PanelMode,
   };
   const tui = { requestRender: () => void state.renders++ } as unknown as TUI;
   const stub: PanelHost = {
@@ -68,7 +69,8 @@ export function host(pins: ViewPin[] = []) {
     // one. The default is "drawn", because the key tests are about the keys themselves.
     isVisible: () => state.visible !== false,
     // The state, read at draw and key time like the view: a test moves `state.mode` and the next frame or
-    // keystroke answers it, which is how the component's peek branch is observable without a session.
+    // keystroke answers it, which is how the component's peek branch is observable without a session. The
+    // cell is the one the extension hands the real host, so a test drives the surface's actual dependency.
     mode: () => state.mode,
   };
   return { stub, state, tui };

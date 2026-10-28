@@ -76,7 +76,13 @@ export interface RebuildCells {
 function holdsCommit(rebuilt: Rebuilt, published: readonly ViewPin[]): boolean {
   if (published.length === 0) return true;
   const onBranch = new Map(rebuilt.state.pins.map((pin) => [pin.id, pin]));
-  return published.every((pin) => onBranch.get(pin.id)?.uid === pin.uid);
+  // The instant as well as the identity: a commit whose pin the branch has since moved on from is not the
+  // commit the branch records, and trusting it for the panel would settle the auto-show against a drawing
+  // the user is no longer looking at.
+  return published.every(
+    (pin) =>
+      onBranch.get(pin.id)?.uid === pin.uid && onBranch.get(pin.id)?.updatedAt === pin.updatedAt,
+  );
 }
 
 export function rebuildSession(ctx: HostContext | undefined, cells: RebuildCells): void {

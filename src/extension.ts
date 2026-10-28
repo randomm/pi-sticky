@@ -213,7 +213,6 @@ export function createStickyExtension(
       createPanelWiring({
         deps,
         terminal,
-        isPanelShown: () => panel.shown(),
         // The one cell, handed to every surface: the overlay, the rail and the component all read the same
         // object, so the frame drawn and the pins the rail stands down for cannot disagree about one view.
         panelMode: () => panel,

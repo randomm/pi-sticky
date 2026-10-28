@@ -33,15 +33,6 @@ import { latestUIShown } from "./session-entries.ts";
  */
 export interface PanelDeps extends StickyDeps {
   /**
-   * Whether the panel is *on screen*: the user's recorded choice, or what an earned open has put there for
-   * them. The room gate (`panelIsVisible`) and the toggle's own question are both asked of the screen, not
-   * of the record — an earned open must clear the width test or the pin that earned it draws nothing.
-   *
-   * Deliberately not the record: `panelMode().recorded()` answers "what the user chose", and the two differ
-   * while a transient open is on screen.
-   */
-  isPanelShown(): boolean;
-  /**
    * The panel's three-state cell: `mode()` is what the overlay, the rail and the component all ask, and the
    * verbs are the extension's (a toggle, an auto-show, the ending of a transient open).
    *
@@ -49,13 +40,11 @@ export interface PanelDeps extends StickyDeps {
    * surfaces read it in the same turn; a per-surface flag is three answers that can disagree, which is how
    * pins end up drawn by neither surface or by both.
    *
-   * Optional because `PanelDeps` is also built by hand — a wiring or owner test's — and a hand-built object
-   * with no state to report is the **open panel** rather than a throw in the draw path: the fallback lives in
-   * the readers of this member (`PanelOwner.isVisible`, `RailGuard.consider`) and in `PanelHost.mode` on the
-   * component's side of the seam, each of which treats its absence as `open` — the frame those surfaces drew
-   * before the peek existed. The extension always supplies it.
+   * Required, and the extension's cell is the only answer: a surface that guessed `open` when the panel was
+   * hidden is a rail that stood down for pins nothing drew. The hand-built wirings in the tests build the
+   * cell (`createPanelMode`), which is what a surface needs to be tested against the state it reads.
    */
-  panelMode?(): PanelModeState;
+  panelMode(): PanelModeState;
   /**
    * Change the live flag and redraw both surfaces; records nothing. Only an explicit user toggle appends.
    */
@@ -150,9 +139,8 @@ export function initialShown(ctx: HostContext | undefined): boolean {
 export interface PanelWiringParts {
   deps: StickyDeps;
   terminal: TerminalWidth;
-  isPanelShown(): boolean;
   /** The panel's mode cell, held by the extension and read by every surface; see `PanelDeps.panelMode`. */
-  panelMode?(): PanelModeState;
+  panelMode(): PanelModeState;
   setPanelShown(shown: boolean): void;
   recordPanelShown(shown: boolean): void;
   /** Dismiss one pin as the user, through the command layer's single dismissal path. */
@@ -183,7 +171,6 @@ export interface PanelWiringParts {
 export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
   const deps: PanelDeps = {
     ...parts.deps,
-    isPanelShown: parts.isPanelShown,
     panelMode: parts.panelMode,
     setPanelShown: parts.setPanelShown,
     recordPanelShown: parts.recordPanelShown,

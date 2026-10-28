@@ -45,15 +45,10 @@ export interface PanelKeyHost {
   /**
    * Which of the three states the panel is in. Only `open` has rows a key can address, so `peek` and
    * `hidden` both hand the focus back: a peek is three rows with no bar, nothing to dismiss and nothing to
-   * answer, and a hidden panel is not on screen at all. `undefined` is a host with no state to give, which
-   * is the open panel for every purpose and takes its keys — the same reading `PanelComponent` gives the
-   * frame, so the drawing and the keys cannot disagree about one host.
-   *
-   * The `undefined` this may return and the "a host that does not answer" are the same case: a peek is the
-   * only state that refuses keys, so both spellings of "no state" and one of the two wrong ones end the
-   * interaction rather than act on a row that is not drawn.
+   * answer, and a hidden panel is not on screen at all. The same reading `PanelComponent` gives the frame,
+   * so the drawing and the keys cannot disagree about one host.
    */
-  mode?(): PanelMode | undefined;
+  mode(): PanelMode;
   /** Record a dismissal of `id`; the host redraws, and the bar re-clamps. */
   dismiss(id: number): void;
   /** Put `Re #<id>: ` in the editor and start the reply flow. */
@@ -72,7 +67,7 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
   // `hidden` and `peek` both end the interaction rather than act: in the first case the user cannot see the
   // panel at all, and in the second it is three rows with nothing for a key to address. Either way the focus
   // is where the user is not, and the editor is where they are.
-  if (!host.isVisible() || host.mode?.() === "peek") {
+  if (!host.isVisible() || host.mode() === "peek") {
     target.unfocus();
     return;
   }

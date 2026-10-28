@@ -68,8 +68,9 @@ export function openPanelOverlay(
         tui: hooks.tui,
         onUnfocus: hooks.onUnfocus,
         panelVisible: hooks.panelVisible,
-        // The state cell, read at *call* time; see `PanelDeps.panelMode` for what its absence means.
-        mode: () => wiring.deps.panelMode?.(),
+        // The cell itself, read at *call* time: the component is the only thing that knows the peek and the
+        // open frames are different sizes, and the cell is the extension's, not the component's.
+        mode: () => wiring.deps.panelMode().mode(),
       }),
       panelCallOptions(hooks.visible, hooks.onHandle),
     )

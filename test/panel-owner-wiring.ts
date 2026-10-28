@@ -9,6 +9,7 @@ import type { PanelDeps } from "../src/panel-deps.ts";
  * host can fail.
  */
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
+import { createPanelMode } from "../src/panel-mode.ts";
 import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -66,7 +67,7 @@ export function wiring(
   /**
    * The one place a `PanelDeps` is built for these files.
    *
-   * Only the members the owner and the rail guard actually read are built: `getView`, `isPanelShown`,
+   * Only the members the owner and the rail guard actually read are built: `getView`, `panelMode`,
    * `setPanelShown` and `recordPanelShown`, plus the `notify` the open path uses for a rejected
    * `custom()` or a close whose handle threw. `panelFactory`'s host closure mentions `dismiss`,
    * `startReply` and the component's notify too, and those are exercised where the component is driven
@@ -79,9 +80,19 @@ export function wiring(
    * as the partial it is and cast once: it is a `PanelDeps` *for the owner*, and the owner reads only the
    * members above.
    */
+  // The surfaces' one cell, at the resting mode the tests were written for: `open`, the frame those files
+  // assert on.
+  const cell = createPanelMode({ panel: "open" });
   const deps = {
     getView: () => state.view,
-    isPanelShown: () => state.shown,
+    // The cell the surfaces read, driven by the owner's own verbs: a `setPanelShown`/`recordPanelShown`
+    // settles it, and the guard's key and `isVisible` answer from it — the same cell the extension hands.
+    // Read at call time, and settled from `state.shown` on the way: several tests move that flag directly
+    // to model a hide the user made, and the surfaces must answer it the way the extension's cell would.
+    panelMode: () => {
+      cell.settle(state.shown);
+      return cell;
+    },
     // The owner's `replyHint` reaches `config` through the real deps, and these files are about the
     // guard's key, not the border's label: the component reads this every candidate frame, so an absent
     // `config` is an exception out of `update()` rather than an inert stub.
@@ -92,13 +103,15 @@ export function wiring(
     // The one caller is `PanelOwner.focusFromShortcut`, which settles the flag to shown and records nothing;
     // a `false` through this member is unrepresentable in the owner, so a branch for it here would be a
     // closure no test can reach (that is the `panel-wiring.test.ts` setter-pair case's job, not this one's).
-    setPanelShown: () => {
-      state.shown = true;
+    setPanelShown: (shown: boolean) => {
+      cell.settle(shown);
+      state.shown = shown;
     },
     recordPanelShown: (shown: boolean) => {
       // The recording `shown` below is the flag the owner answers from, and the `/pins` verbs are
       // expected to settle it — so a recorded entry is what proves the recording half of the pair ran.
       state.shown = shown;
+      cell.settle(shown);
       records.push(shown);
     },
   } as unknown as PanelDeps;

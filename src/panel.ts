@@ -107,7 +107,7 @@ export class PanelOwner {
       // the overlay what the panel is doing — a rail reconsidered against the still-open answer is a rail
       // that stood down for pins it should have taken back.
       onUnfocus: () => {
-        this.#wiring.deps.panelMode?.().endEarnedOpen();
+        this.#wiring.deps.panelMode().endEarnedOpen();
         this.refresh();
       },
       panelVisible: () => this.isVisible(),
@@ -185,16 +185,16 @@ export class PanelOwner {
   isVisible(): boolean {
     const deps = this.#wiring.deps;
     if (this.#record === undefined) return false;
-    // `panelMode()` is the whole of the on-screen answer: hidden, peek or open, folded from the user's
+    // The mode cell is the whole of the on-screen answer: hidden, peek or open, folded from the user's
     // choice and from whether a pin earned the full frame (`panel-mode.ts`). Peek and open both own the
     // pins and hidden hands them back, which is what a *peek* must do or the rail would draw the same pin
-    // twice — and `mode()` answers it directly rather than through `isPanelShown()`, which is the screen
-    // without the peek/open half. A wiring with no cell at all keeps asserting the screen alone, which is
-    // what a hand-built wiring without the member means.
-    const mode = deps.panelMode?.().mode();
-    return (
-      (mode === undefined ? deps.isPanelShown() : panelOpensPins(mode)) &&
-      panelIsVisible(this.#columns(), deps.isPanelShown(), deps.getView().pins.length)
+    // twice. `shown()` is the room gate's half: whether anything is drawn at all, which a peek and an open
+    // both answer and hidden does not.
+    const mode = deps.panelMode();
+    return panelIsVisible(
+      this.#columns(),
+      mode.shown(),
+      panelOpensPins(mode.mode()) ? deps.getView().pins.length : 0,
     );
   }
 
@@ -269,7 +269,7 @@ export class PanelOwner {
 
   /** `ctrl+alt+t`: whichever way it lands, it was the user's choice, so it is recorded. */
   toggle(ctx: HostContext | undefined): void {
-    if (this.#wiring.deps.isPanelShown()) this.hide();
+    if (this.#wiring.deps.panelMode().shown()) this.hide();
     else this.show(ctx);
   }
 
@@ -294,7 +294,7 @@ export class PanelOwner {
     // under `PI_STICKY_PANEL=peek` — a frame which answers no key. The cell is asked for the open outright,
     // and `focus()` gives it the keyboard; the earned open that results ends the way an auto-show's does.
     this.#wiring.deps.setPanelShown(true);
-    this.#wiring.deps.panelMode?.().autoOpen();
+    this.#wiring.deps.panelMode().autoOpen();
     this.focus();
   }
 }

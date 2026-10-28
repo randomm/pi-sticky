@@ -62,12 +62,10 @@ export class RailGuard {
   ): void {
     if (this.#settled(open)) return;
     const view = deps.getView();
-    // The mode cell answers the handoff's question where there is one: a peek must stand the rail down
-    // exactly as an open panel does, or the same pin is drawn twice, and the screen alone would say
-    // otherwise — it knows the panel is drawn, not that the panel owns these pins. A wiring with no cell
-    // falls back to the screen, the only answer such a wiring has.
-    const mode = deps.panelMode?.().mode();
-    const owns = mode === undefined ? deps.isPanelShown() : panelOpensPins(mode);
+    // The mode cell answers the handoff's question: a peek must stand the rail down exactly as an open
+    // panel does, or the same pin is drawn twice, and the screen alone would say otherwise — it knows the
+    // panel is drawn, not that the panel owns these pins.
+    const owns = panelOpensPins(deps.panelMode().mode());
     const key = `${columns}|${owns}|${railStamp(view.pins)}|${ageBucket}`;
     if (this.#same(key)) return;
     this.#install(key, redraw);

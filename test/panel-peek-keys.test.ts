@@ -19,9 +19,8 @@ import { createOverlayHandle } from "./harness.ts";
 import { host, pins } from "./panel-component-host.ts";
 
 /** A component over a host that reports `mode` (or no state at all), with the handle already released. */
-function at(mode: PanelMode | undefined, texts: string[] = ["Decide X", "Watch out"]) {
+function at(mode: PanelMode, texts: string[] = ["Decide X", "Watch out"]) {
   const h = host(pins(...texts));
-  // The one member a test of the gate has to own: `host()` answers the open panel by leaving it absent.
   h.stub.mode = () => mode;
   const c = new PanelComponent(h.stub, h.tui);
   const handle = createOverlayHandle();
@@ -56,15 +55,6 @@ test("the open panel still takes its keys when the host reports its state", () =
   expect(state.dismissals).toEqual([2]);
   // …and dismissed without ending the interaction, so the bar stays where the user left it.
   expect(state.unfocusCalls).toBe(0);
-});
-
-test("a host with no state to report is the open panel, and keeps its keys", () => {
-  // `undefined` is what a hand-built wiring answers (`panel-overlay.ts`), and the reading the component and
-  // the key dispatcher must share: no state is the open panel, not a peek that refuses everything.
-  const { c, state } = at(undefined);
-  c.focus();
-  c.handleInput?.("d");
-  expect(state.dismissals).toEqual([2]);
 });
 
 test("a hidden panel refuses its keys whatever the mode says", () => {

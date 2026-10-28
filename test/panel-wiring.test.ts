@@ -77,7 +77,6 @@ function panelWiring(parts: Partial<PanelWiringParts> = {}) {
     wiring: createPanelWiring({
       deps: stickyDeps(),
       terminal,
-      isPanelShown: () => true,
       // The mode cell the wiring hands the owner: a peek is what the extension's own cell answers by
       // default, so the fixture takes the same one the extension builds rather than a hand-rolled stand-in.
       panelMode: () => createPanelMode(DEFAULT_CONFIG),
@@ -100,7 +99,7 @@ const livesAs = (live: unknown): PanelWiringParts["live"] =>
 
 test("the wiring hands the panel the members the extension's deps object does not carry", () => {
   const { wiring } = panelWiring();
-  expect(wiring.deps.isPanelShown()).toBe(true);
+  expect(wiring.deps.panelMode().shown()).toBe(true);
   expect(typeof wiring.redrawRail).toBe("function");
   expect(typeof wiring.themeStyle).toBe("function");
   // The sticky half is *shared*, not copied: the flag and the view are one cell, and a copy of it is how

@@ -20,14 +20,13 @@ import type { PanelMode } from "./panel-mode.ts";
 import type { ViewPin } from "./types.ts";
 
 /**
- * The state the next frame would be drawn for, or `undefined` for a host with no mode cell — which draws the
- * open frame.
+ * The state the next frame would be drawn for.
  *
  * Read beside the label and the age rather than cached on the component: the two frames of one view are not
  * the same bytes, so a key that did not name the state could answer an auto-open with the peek's three rows.
  */
-export function frameMode(host: PanelHost): PanelMode | undefined {
-  return host.mode?.();
+export function frameMode(host: PanelHost): PanelMode {
+  return host.mode();
 }
 
 /**

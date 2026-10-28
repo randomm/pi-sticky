@@ -10,6 +10,7 @@
 import { expect, test } from "bun:test";
 
 import type { PanelDeps } from "../src/panel-deps.ts";
+import { createPanelMode } from "../src/panel-mode.ts";
 import { createRailHandoff } from "../src/panel-rail-handoff.ts";
 import { RailGuard } from "../src/panel-rail.ts";
 import type { PinView } from "../src/types.ts";
@@ -17,9 +18,15 @@ import { NOW, pin } from "./fixtures.ts";
 
 /** The deps the guard reads: the view it stamps and the flag it puts in the key, nothing else. */
 function railDeps(state: { view: PinView; shown: boolean }): PanelDeps {
+  // The cell the guard reads for the handoff. `state.shown` drives it because these cases are about the
+  // answer the key spells, not about the verbs: `settle` is the one member that moves the screen.
+  const cell = createPanelMode({ panel: "open" });
   return {
     getView: () => state.view,
-    isPanelShown: () => state.shown,
+    panelMode: () => {
+      cell.settle(state.shown);
+      return cell;
+    },
   } as unknown as PanelDeps;
 }
 

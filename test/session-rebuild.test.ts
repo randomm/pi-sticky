@@ -27,6 +27,22 @@ import { UI_TYPE } from "../src/types.ts";
 import type { ViewPin } from "../src/types.ts";
 import { contextWith } from "./panel-lifecycle-fixture.ts";
 
+/** A pin the branch and a commit can agree on: one uid, one instant, `updatedAt` movable by the test. */
+function branchPin(id: number): ViewPin {
+  return {
+    id,
+    uid: `u${id}`,
+    text: `pin ${id}`,
+    level: "action",
+    source: "agent",
+    createdAt: "2026-10-23T10:00:00.000Z",
+    updatedAt: "2026-10-23T10:00:00.000Z",
+  };
+}
+
+/** What `landed` below collects; one array per file is enough — each case asserts on its own run. */
+const landed: number[] = [];
+
 /** The entries of a session whose last panel verb was `shown`. */
 const hideEntry = { type: "custom", customType: UI_TYPE, data: { v: 1, shown: false } };
 
@@ -44,6 +60,8 @@ function cells(
     published?: Rebuilt[];
     autoShow?: boolean;
     holds?: ViewPin[];
+    /** Records that the rebuild told the ledger the branch held the commit. */
+    landed?: () => void;
   },
 ): RebuildCells {
   const holds = opts.holds ?? [];
@@ -63,7 +81,7 @@ function cells(
     surfacesDrawn: () => opts.drawn,
     unseen: () => opts.unseen,
     published: () => holds,
-    landed: () => {},
+    landed: () => opts.landed?.(),
     autoShowPending: () => opts.autoShow ?? false,
     sighted: () => {},
     publish: () => {},
@@ -157,6 +175,43 @@ test("a recorded verb outranks an auto-show still standing", () => {
   // The entry says hidden and the cell's record says shown; the cell's own record is the user's last verb,
   // so the screen settles to what the entries say and the record is not restated over it.
   expect(panel.shown()).toBe(false);
+});
+
+test("a commit whose pin the branch has moved on from is not held, and does not settle the panel", () => {
+  // `holdsCommit`'s strict half. The commit published pin 1 at one instant; the branch now carries pin 1 at
+  // another (an update, or the same id recycled after a dismiss). Same uid, same id — and not the commit the
+  // branch records. Trusting it would land the commit and settle the auto-show's claim against a drawing the
+  // user is no longer looking at, which is the panel going out of sight under a pin they have not read.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.autoOpen();
+  const before = panel.mode();
+  const published = { ...branchPin(1), updatedAt: "2026-10-23T11:00:00.000Z" };
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: false, unseen: true, holds: [published] }),
+  );
+  expect(panel.mode()).toBe(before);
+});
+
+test("a commit the branch holds at the same instant is held, and its pins stay put", () => {
+  // The pair to the case above: identical uid *and* identical `updatedAt` is the commit the branch records,
+  // so the rebuild takes the branch's answer and the earned open survives it.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.autoOpen();
+  const held = branchPin(1);
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, {
+      drawn: false,
+      unseen: true,
+      holds: [held],
+      landed: () => landed.push(1),
+    }),
+  );
+  expect(landed).toEqual([1]);
+  expect(panel.mode()).toBe("open");
 });
 
 test("a rebuild with no context changes nothing", () => {
