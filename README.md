@@ -290,8 +290,9 @@ those three: the committed record stays the truth and the pin is only how you se
 pi install /path/to/noni
 ```
 
-Confirm the skills loaded by starting pi in the target project — the startup listing names each loaded
-skill — or by forcing one with `/skill:census`. If noni's skills are not there, work through the three
+Confirm the skills loaded by starting pi in the target project — the startup listing names each
+loaded skill, shown by default and forced on with `--verbose` — or by forcing one with
+`/skill:census`. If noni's skills are not there, work through the three
 failure states yourself: the skill is absent (fix the install or the `skills` setting below); the script
 is not at its path (wrong clone); or the script is there but exits non-zero naming an import error — that
 one is a Python problem, so point at `PYTHONPATH` below rather than at the skills setting.
@@ -311,8 +312,10 @@ Notes:
   is what confirming the load above is for. It records a package rather than copying into
   `~/.pi/agent/extensions/`, so the subagent-isolation rule under *Disabling and subagent isolation*
   stays intact for noni's skills whichever route you use.
-- A git-URL install works too: it does a full `git clone` into pi's package cache on first load (and a
-  fetch/reset when upstream moves), then re-collects resources on startup exactly as a path install does.
+- A git-URL install works too: it does a full `git clone` into pi's package cache on first load, then
+  re-collects resources on startup from that existing checkout exactly as a path install does — no fetch.
+  The clone refreshes on `pi update`, which fetches and hard-resets the cached checkout, so local edits
+  made inside the cached clone are discarded.
 - The scripts those skills run need noni's own modules importable in the environment the agent runs in —
   `PYTHONPATH=<clone>/src` is the direct route (the package lives under `src/`), or install it from your
   clone with `pip install -e <clone>`. Noni's README also documents `pip install noni`, and that name is
