@@ -100,6 +100,26 @@ function cleanField(value: unknown, clearing: boolean): string | null {
 }
 
 /**
+ * The rule an `options` walk tripped, reported by the walk itself so the wording is chosen from the one
+ * reading of the list rather than re-derived from a second: `list` for a body that is not a list of
+ * `MIN_OPTIONS` to `MAX_OPTIONS` dense entries, `entries` for a defect one element carries on its own, and
+ * `duplicate` for two entries that clean to the same text. Returning `null` is what keeps the three-way
+ * answer of the reader that returns it — `null` is "present and will not store", `undefined` "no field was
+ * sent". A rule only ever outlives the call that set it by the length of one statement: the writer has no
+ * early return, so `checkPinFields` reads it immediately after the answer `null` and nothing else in the
+ * module can have overwritten it since.
+ */
+type OptionsRule = "list" | "entries" | "duplicate";
+
+/** Which rule the last `options` walk tripped; `list` until one says otherwise. */
+let refusedOptions: OptionsRule = "list";
+
+function optionsRejection(rule: OptionsRule): null {
+  refusedOptions = rule;
+  return null;
+}
+
+/**
  * The `group` as it may be stored: a cleaned one-liner, `undefined` for a field the model did not send,
  * and `null` for a present value that will not store — a non-string such as `group: null`, or one that
  * cleans to nothing or runs past the bound. `checkPinFields` reads the body to name which rule it tripped.
@@ -112,25 +132,29 @@ export function cleanGroupOrUndefined(group: unknown, clearing = false): string 
 /**
  * The `options` as they may be stored, with the same three-way answer. The shape test — a list, of the
  * right size at both ends, with no hole or extra key of its own — runs before any element is sanitized,
- * mirroring `normaliseIds`: a body that is not a list of the right size has nothing to inspect. Only the
- * exact `[]` an update sends is the clear.
+ * mirroring `normaliseIds`: a body that is not a list of the right size has nothing to inspect. The
+ * entries are then read once, through an `Array.from` copy of the list the shape check measured, and each
+ * refusal names the rule it tripped. Only the exact `[]` an update sends is the clear.
  */
 export function cleanOptionsOrUndefined(
   options: unknown,
   clearing = false,
 ): string[] | null | undefined {
   if (options === undefined) return undefined;
-  if (!Array.isArray(options)) return null;
-  if (options.length === 0) return clearing ? [] : null;
+  if (!Array.isArray(options)) return optionsRejection("list");
+  if (options.length === 0) return clearing ? [] : optionsRejection("list");
   // The count is refused on the list as sent, before a single element is sanitized, and it bounds the
   // list at both ends: an entry past `MAX_OPTIONS` would otherwise be stored, published, and refused
   // only by `isPinState` — which loses the whole snapshot on the next rebuild, not the one bad entry.
-  if (!shapeOfAnOptionsList(options)) return null;
+  if (!shapeOfAnOptionsList(options)) return optionsRejection("list");
+  // From here on the list is read through this copy, so the entries inspected are exactly the ones the
+  // count and density checks above measured.
+  const entries = Array.from(options);
   const cleaned: string[] = [];
-  for (const entry of options) {
+  for (const entry of entries) {
     const one = cleanField(entry, false);
-    if (one === null) return null;
-    if (cleaned.includes(one)) return null;
+    if (one === null) return optionsRejection("entries");
+    if (cleaned.includes(one)) return optionsRejection("duplicate");
     cleaned.push(one);
   }
   return cleaned;
@@ -176,40 +200,11 @@ export interface PinFields {
 
 /**
  * Is this a list of options at all: an array of `MIN_OPTIONS` to `MAX_OPTIONS` entries, each position
- * present and no key of its own beyond the indices? The single shape test `cleanOptionsOrUndefined` and
- * `optionsRefusal` both run, so the writer's yes/no and the classifier's wording cannot come apart —
- * which is what makes the classifier's final `throw` unreachable rather than merely untested.
+ * present and no key of its own beyond the indices? The one shape test, spelled by the shared `isDense`
+ * so the writer, the guard in `state-guards.ts` and this module state the rule once.
  */
 function shapeOfAnOptionsList(options: readonly unknown[]): boolean {
   return options.length >= MIN_OPTIONS && options.length <= MAX_OPTIONS && isDense(options);
-}
-
-/**
- * Which refusal a rejected `options` list deserves. Shape comes first: a body that is not a list, or a
- * list of the wrong size, or one holding a hole `for…of` would have skipped, is about the list and names
- * `options` without its elements ever being sanitized. Only then is a defect an element carries on its own
- * — not a string, empty after cleaning, over one of the two bounds, or a duplicate of another entry —
- * about the entries. `checkPinFields` asks this after `cleanOptionsOrUndefined` rejected the list, so one
- * of these branches always answers; the walk is what tells the two families of refusal apart.
- */
-function optionsRefusal(options: unknown): FieldRefusal {
-  if (!Array.isArray(options)) return badOptions();
-  // The shape tests are the writer's, spelled by the shared `isDense` rather than copied out again, so
-  // the two sides state the rule once and the disagreement this function's last line catches cannot be
-  // one module growing and the other not noticing.
-  if (!shapeOfAnOptionsList(options)) return badOptions();
-  const seen = new Set<string>();
-  for (const entry of options) {
-    if (typeof entry !== "string") return badOptionLength();
-    const oneLine = toOneLine(cleanPinText(entry));
-    if (oneLine === "" || !withinBudget(oneLine)) return badOptionLength();
-    if (seen.has(oneLine)) return duplicateOptions();
-    seen.add(oneLine);
-  }
-  // Loud rather than wrong: reaching here would mean the two walks disagree about the same list, and an
-  // `ok` body handed to a refusal would be answered with the list rule, which is a fact about pins that
-  // is really a fact about this module. `checkPinFields` only asks after a rejection, so it cannot.
-  throw new Error("pin-fields: a list both failed and passed its own checks");
 }
 
 /**
@@ -229,7 +224,16 @@ export function checkPinFields(
     return typeof body.group === "string" ? badGroupLength() : badGroup();
   }
   const options = cleanOptionsOrUndefined(body.options, clearing);
-  if (options === null) return optionsRefusal(body.options);
+  if (options === null) {
+    // The walk already read the list and knows which rule it tripped, so the wording comes from that one
+    // reading — there is no second pass that could disagree with the first, and no "both said yes" case
+    // left to explain away.
+    return refusedOptions === "duplicate"
+      ? duplicateOptions()
+      : refusedOptions === "entries"
+        ? badOptionLength()
+        : badOptions();
+  }
   const compact = compactOrUndefined(body.compact);
   if (compact === null) return badCompact();
 
