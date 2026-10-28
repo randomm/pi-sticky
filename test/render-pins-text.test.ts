@@ -10,6 +10,16 @@ import { describe, expect, test } from "bun:test";
 
 import { renderPinsText } from "../src/render.ts";
 import { LATER, LATER_TIME, NOW_TIME, pin, view } from "./fixtures.ts";
+import {
+  BREAKS,
+  HOSTILE_TAILS,
+  assertNoForgery,
+  foldedHostileFields,
+  linesOf,
+} from "./panel-hostile-fields.ts";
+
+/** A row of the listing: what a real pin line looks like and nothing else may. */
+const ROW = /^#\d+ \[(info|action|warning)\] /;
 
 describe("renderPinsText", () => {
   test("says so when nothing is pinned", () => {
@@ -91,6 +101,47 @@ describe("renderPinsText", () => {
       ].join("\n"),
     );
     expect(text.split("\n").some((line) => line.startsWith("# "))).toBe(false);
+  });
+
+  test("a hostile group and hostile options forge no row and no reply line", () => {
+    // `/pins` is the listing the *user* reads, and it is the one surface that keeps a pin text's own breaks
+    // — so the fields have further to travel here: a group is drawn after the level and an options list gets
+    // a line of its own. Both are the model's words, and both arrive with a shape the model is told to trust
+    // elsewhere: another pin's row, or a reply the user never typed. `pin-fields.ts` stores them as written,
+    // so the listing owes the fold, and it owes it for the group and for every option, not only the text.
+    for (const brk of BREAKS) {
+      const fields = foldedHostileFields(brk);
+      const listed = view([pin(1, "Decide X", "warning", fields)]);
+      const lines = linesOf(renderPinsText(listed));
+      // The header, the pin's row, and the one options line the listing adds for a pin with options. No field
+      // of either kind bought a line of its own, at any break shape.
+      expect(lines).toHaveLength(3);
+      expect(lines[1]).toMatch(ROW);
+      assertNoForgery(lines, ROW);
+      // The fold was a fold, not a drop: the group and every option are still named, so a user reading their
+      // own list sees what the model filed rather than a row the model invented.
+      expect(lines[1]).toInclude(HOSTILE_TAILS[0]);
+      expect(lines[2]).toInclude(HOSTILE_TAILS[1]);
+      // ...and the options line is the listing's own shape, indented under the text column and numbered the
+      // way the panel's options row asks the user to answer them.
+      expect(lines[2]?.trimStart().startsWith("options: 1)")).toBe(true);
+    }
+  });
+
+  test("a hostile field cannot escape the three-space continuation indent", () => {
+    // The indent is what makes a continuation a continuation: a forged row that reached column zero would be a
+    // row, and `#` at column zero is how this listing spells a pin id. A hostile group is drawn inside the
+    // pin's own row, and a hostile option inside the indented options line, so neither can stand at the left
+    // edge on a line the listing did not number.
+    for (const brk of BREAKS) {
+      const fields = foldedHostileFields(brk);
+      const lines = linesOf(renderPinsText(view([pin(1, "a\nb", "info", fields)])));
+      for (const line of lines.slice(2)) {
+        if (line.trim() === "") continue;
+        expect(line.startsWith("   ")).toBe(true);
+      }
+      assertNoForgery(lines, ROW);
+    }
   });
 
   test("an unusable timestamp still leaves a well-shaped row", () => {

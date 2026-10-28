@@ -25,7 +25,7 @@ import { panelFrameRows } from "./panel-height.ts";
 import { panelPinRows } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import { headingCell, headingRow } from "./panel-section-headings.ts";
-import { hasMultipleSections } from "./panel-sections.ts";
+import { hasHeadings } from "./panel-sections.ts";
 import type { PanelSection, PanelSections } from "./panel-sections.ts";
 
 import type { PanelStyle } from "./render.ts";
@@ -160,8 +160,8 @@ function panelPinRowOwners(
  * Headings are inserted between the sections *after* their pin rows are built, because a heading owns a row
  * and not a slot: the pin tags are numbered over the flattened pins alone, so adding a heading row never
  * moves the index the bar, `d` and `Enter` address, while the row count the window scrolls by does include
- * it. A single-section view takes the shortcut at the top and is built as one run of pins, which is what
- * keeps a one-panel frame byte-for-byte what it was before sections existed (operator resolution 1).
+ * it. A view with **nothing to head** takes the shortcut at the top and is built as one run of pins, which is
+ * what keeps a one-panel frame byte-for-byte what it was before sections existed (operator resolution 1).
  */
 function panelOwnedRows(
   sections: PanelSections,
@@ -171,7 +171,7 @@ function panelOwnedRows(
   now: string,
   metaColumns: number,
 ): PanelOwned[] {
-  if (!hasMultipleSections(sections.order)) {
+  if (!hasHeadings(sections.order)) {
     return panelPinRowOwners(sections.flat, textWidth, style, now, metaColumns, 0);
   }
   // The offset is *running*, not looked up: `panelSections` builds `flat` by flattening `order`, so the pins
@@ -181,10 +181,17 @@ function panelOwnedRows(
   const owned: PanelOwned[] = [];
   let offset = 0;
   for (const section of sections.order) {
-    owned.push({
-      row: { text: headingCell(headingRow(section), headingWidth, style), tail: "" },
-      pin: null,
-    });
+    // A level whose every pin carries a group is a *counting* section: it exists so the frame's title can
+    // count that level, and it holds no pins, owns no rows and prints no heading — a heading over nothing
+    // would be a blank row the window scrolls through and the bar could be parked on. The pins of its level
+    // are drawn by the group sections beside it, which is exactly why this one holds none: a section that
+    // held them too would draw them twice and give `d` two copies to dismiss.
+    if (section.pins.length > 0) {
+      owned.push({
+        row: { text: headingCell(headingRow(section), headingWidth, style), tail: "" },
+        pin: null,
+      });
+    }
     owned.push(...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset));
     offset += section.pins.length;
   }

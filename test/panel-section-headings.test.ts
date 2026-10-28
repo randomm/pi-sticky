@@ -13,10 +13,12 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "../src/escape.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
+import type { HeadingRow } from "../src/panel-section-headings.ts";
 import { headingCell, headingRow } from "../src/panel-section-headings.ts";
+import type { PanelSection } from "../src/panel-sections.ts";
 import { panelSections } from "../src/panel-sections.ts";
-import type { SectionKind } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
+import type { PinLevel } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 
@@ -30,53 +32,58 @@ const style: RenderPanelStyle = {
   borderFocused: (s) => s,
 };
 
-/** The cell of `kind` padded to `textWidth`, as the row table asks for it. */
-function cellOf(kind: SectionKind, textWidth: number): string {
-  return headingCell(headingRow(sectionOfKind(kind)), textWidth, style);
+/** The cell of the `level` section padded to `textWidth`, as the row table asks for it. */
+function cellOf(level: PinLevel, textWidth: number): string {
+  return headingCell(headingRow(sectionOfLevel(level)), textWidth, style);
 }
 
-/** The one section of `kind` the mixed view produces, which is the section the headings are read off. */
-function sectionOfKind(kind: SectionKind) {
-  const section = panelSections(mixedView()).order.find((candidate) => candidate.kind === kind);
-  if (section === undefined) throw new Error(`the fixture holds no ${kind} section`);
+/** The one section of `level` the mixed view produces, which is the section the headings are read off. */
+function sectionOfLevel(level: PinLevel): PanelSection {
+  const section = panelSections(mixedView()).order.find(
+    (candidate) => candidate.kind === "level" && candidate.level === level,
+  );
+  if (section === undefined) throw new Error(`the fixture holds no ${level} section`);
   return section;
 }
 
-const KINDS: readonly SectionKind[] = ["warning", "action", "info"];
+const KINDS: readonly PinLevel[] = ["warning", "action", "info"];
 
 test("the three headings are the fixed strings the user is taught to read", () => {
   // The three strings live in the module's table and reach the screen only through `headingRow`, so the
   // strings are pinned by what the row prints: glyph and word spelled out per kind, and nothing derived from
   // a pin. A heading the model could word would be a heading a pin could forge. The glyph is the level's own
   // — the one the pin rows under the heading carry — so a heading says the same thing as its rows.
-  const heads: Record<SectionKind, string> = {
+  const heads: Record<PinLevel, string> = {
     warning: "! Warnings",
     action: "? Needs you",
     info: "• FYI",
   };
   for (const kind of KINDS) {
-    const row = headingRow(sectionOfKind(kind));
-    expect(`${row.mark} ${row.label}`).toBe(heads[kind]);
+    const row = headingRow(sectionOfLevel(kind));
+    expect(`${rowMark(row)} ${row.label}`).toBe(heads[kind]);
   }
 });
 
+/** The glyph of a heading row, which only a level heading carries. */
+const rowMark = (row: HeadingRow): string => (row.kind === "level" ? row.mark : "");
+
 test("a heading row carries its glyph apart from its word, for the marker colour", () => {
-  const marks: Record<SectionKind, string> = { warning: "!", action: "?", info: "•" };
-  const labels: Record<SectionKind, string> = {
+  const marks: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
+  const labels: Record<PinLevel, string> = {
     warning: "Warnings",
     action: "Needs you",
     info: "FYI",
   };
   for (const kind of KINDS) {
-    const row = headingRow(sectionOfKind(kind));
-    expect(row.mark).toBe(marks[kind]);
+    const row = headingRow(sectionOfLevel(kind));
+    expect(rowMark(row)).toBe(marks[kind]);
     expect(row.label).toBe(labels[kind]);
     // The glyph is the head of the heading, split from the word at its one space: a heading whose glyph was
     // baked into its text could not be coloured through `style.marker` the way a pin row's marker is.
-    expect(row.mark.length).toBeGreaterThan(0);
-    expect(row.label.startsWith(row.mark)).toBe(false);
+    expect(rowMark(row).length).toBeGreaterThan(0);
+    expect(row.label.startsWith(rowMark(row))).toBe(false);
     // The word follows the glyph at the cell's one space, spelled the way `headingCell` joins it.
-    expect(` ${row.mark} ${row.label}`).toBe(headingCell(row, 30, style).trimEnd());
+    expect(` ${rowMark(row)} ${row.label}`).toBe(headingCell(row, 30, style).trimEnd());
   }
 });
 
@@ -86,13 +93,13 @@ test("a heading never reads a pin's text (untrusted input)", () => {
   const sections = panelSections(mixedView());
   const forged = "⚠ Warnings";
   const withForgedText = sections.flat.map((pin) => ({ ...pin, text: forged }));
-  const heading = headingRow(sectionOfKind("warning")).label;
+  const heading = headingRow(sectionOfLevel("warning")).label;
   expect(heading).toBe("Warnings");
-  expect(headingRow({ kind: "info", pins: withForgedText }).label).toBe("FYI");
+  expect(headingRow({ kind: "level", level: "info", pins: withForgedText }).label).toBe("FYI");
 });
 
 test("the heading cell fills the text column its section's pins are laid out at", () => {
-  const row = headingRow(sectionOfKind("action"));
+  const row = headingRow(sectionOfLevel("action"));
   for (const textWidth of [30, 40, 60]) {
     const cell = headingCell(row, textWidth, style);
     expect(visibleWidth(cell)).toBe(textWidth);
@@ -109,7 +116,7 @@ test("a heading is measured with visibleWidth, so a CJK label would cost what it
   // chat behind it. The claim is checked against `visibleWidth` itself, not a hard-coded column count that
   // would rot if pi-tui's table changed.
   const width = 24;
-  const wide = { mark: "决", label: "决定", kind: "info" as const };
+  const wide: HeadingRow = { kind: "level", level: "info", mark: "决", label: "决定" };
   const cell = headingCell(wide, width, style);
   expect(visibleWidth(cell)).toBe(width);
   expect(cell.length).toBeLessThan(width);
@@ -138,14 +145,14 @@ test("a heading's glyph is its level's MARKER, coloured through the theme's mark
       return s;
     },
   };
-  for (const kind of KINDS) headingCell(headingRow(sectionOfKind(kind)), 30, recording);
+  for (const kind of KINDS) headingCell(headingRow(sectionOfLevel(kind)), 30, recording);
   expect(asked).toEqual(["warning:!", "action:?", "info:•"]);
 
   // The byte the heading opens with is the byte the pin row of the same level opens with — marker and the
   // three columns that open a row, compared before either string reaches its own word.
   const prefixOf = (text: string): string => text.slice(0, 3);
   for (const kind of KINDS) {
-    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, style);
+    const cell = headingCell(headingRow(sectionOfLevel(kind)), 30, style);
     const pinRow = panelPinRows(levelPin(1, "x", kind), 30, style, LATER)[0]?.text ?? "";
     expect(prefixOf(cell)).toBe(prefixOf(pinRow));
   }
@@ -161,13 +168,13 @@ test("a theme whose marker adds visible bytes still draws the heading at the fra
     marker: (_level, s) => `<m:\u{1b}[31m${s}\u{1b}[0m>`,
   };
   for (const kind of KINDS) {
-    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping);
+    const cell = headingCell(headingRow(sectionOfLevel(kind)), 30, wrapping);
     expect(visibleWidth(cell)).toBe(30);
     expect(cell).not.toContain("<m:");
     expect(stripSequences(cell)).not.toContain("\u{1b}");
   }
   // The plain glyph under the wrapper is what the cell keeps, so the level still reads.
-  expect(headingCell(headingRow(sectionOfKind("warning")), 30, wrapping)).toContain("Warnings");
+  expect(headingCell(headingRow(sectionOfLevel("warning")), 30, wrapping)).toContain("Warnings");
 });
 
 test("a cut heading cell carries no escape bytes of its own at any width", () => {
@@ -178,7 +185,7 @@ test("a cut heading cell carries no escape bytes of its own at any width", () =>
   const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
   for (const kind of KINDS) {
     for (const textWidth of [1, 2, 3, 5, 6, 7, 12, 30]) {
-      const cell = headingCell(headingRow(sectionOfKind(kind)), textWidth, wrapping);
+      const cell = headingCell(headingRow(sectionOfLevel(kind)), textWidth, wrapping);
       expect(stripSequences(cell)).not.toContain("\u{1b}");
       expect(visibleWidth(cell)).toBeLessThanOrEqual(textWidth);
     }
@@ -192,7 +199,7 @@ test("a theme whose marker adds visible bytes cuts the pin row's marker the same
   // itself and neither one measures the other's marker.
   const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
   for (const kind of KINDS) {
-    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping);
+    const cell = headingCell(headingRow(sectionOfLevel(kind)), 30, wrapping);
     const rows = panelPinRows(levelPin(1, "text", kind), 30, wrapping, LATER);
     expect(rows[0]?.text.slice(0, 3)).toBe(cell.slice(0, 3));
     // ...and neither string carries the wrapper's bytes.

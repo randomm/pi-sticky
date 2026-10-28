@@ -22,20 +22,17 @@
  * the inner width less the widest id/time tail the view carries — and every produced line is padded or cut
  * here, because `wrapTextWithAnsi` breaks on words and a single word wider than the panel comes back whole.
  * A row draws its text and its tail as two parts, so it is the text that is cut and the tail that is
- * padded: the id is the one thing on the row the frame never spends. `pinRow` is that arithmetic and is
+ * padded: the id is the one thing on the row the frame never spends. `pinRow` (`panel-draw.ts`) is that arithmetic and is
  * shared with the peek (`panel-peek.ts`), which draws one row of the same pin and pays the same reserve. The
  * border glyphs and the theme's colours are trusted; a pin's text is not, and it never reaches a border.
  */
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-
-import { stripSequences } from "./escape.ts";
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
+import { fitLine, pinRow } from "./panel-draw.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
-import type { PanelLayout } from "./panel-frame-layout.ts";
+import type { PanelLayout, PanelOwned } from "./panel-frame-layout.ts";
 import { panelWindowOffset } from "./panel-frame-layout.ts";
 import { frameTitle } from "./panel-frame-title.ts";
 import {
-  ELLIPSIS,
   FRAME_BOTTOM_LEFT,
   FRAME_BOTTOM_RIGHT,
   FRAME_TOP_LEFT,
@@ -44,28 +41,19 @@ import {
   gutter,
   padPlain,
 } from "./panel-frame.ts";
-import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
+import { isPanelFrameSize } from "./panel-geometry.ts";
+import { drawOptionRow } from "./panel-options-row.ts";
 import { panelContentRows } from "./panel-rows.ts";
+import { isOptionRow } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSection } from "./panel-sections.ts";
-import { GUTTER_COLUMNS, drawnTail, tailReserve } from "./panel-tail.ts";
+import { GUTTER_COLUMNS } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
-
-/**
- * Whether a size is one a *closed* frame fits in: the builder draws nothing below either bound. Exported
- * because the peek is drawn by another module and is measured by the same two numbers — a peek which fitted
- * where the open panel would not draw is a frame with gutters hanging off the overlay.
- */
-export function isPanelFrameSize(width: number, height: number): boolean {
-  return (
-    isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
-  );
-}
 
 /** What the builder draws. `pins` is the *drawn order* — `panelSections`'s flattened list, which is what the component hands the frame and what `selection` indexes into. */
 export interface PanelContent {
@@ -107,74 +95,6 @@ export interface PanelContent {
    * *their* `now` is left out.
    */
   ageNow: string;
-}
-
-/**
- * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
- * *theme*. Every drawn line goes through this one escape policy, with no styled branch. The over-wide case
- * is the one the rail's own `cut` documents: `truncateToWidth` measures an escape whose terminator it does
- * not recognise as printable columns, so when its result still measures too wide the line is cut again from
- * the escape-stripped text, the only string here whose width both sides agree on. Stripped whether or not the
- * cut fired, so a row that fits is still free of escape bytes; re-measured after that, because stripping can
- * leave a line that no longer fills the panel and a short row would let the chat behind it show through.
- *
- * The styled branch used to exist, and was a hole rather than a convenience: a styled line that measured
- * within the width was padded and returned verbatim, and `visibleWidth` counts an OSC 8 hyperlink, an
- * OSC 2/52 window-title or an APC sequence as *zero* columns — so a theme whose `header`/`dim` emitted
- * one measured as free and was flushed right over the chat, its padding extending a smuggled hyperlink
- * across columns the user believes are blank. Nothing in a panel row is a hyperlink and AGENTS.md says a
- * pin never draws one, so refusing every escape byte on every drawn line costs nothing real; what the
- * theme loses is only sequences pi-tui would have counted as zero-width anyway, since `stripSequences`
- * keeps what it does not recognise as an escape to remove and SGR colouring survives intact.
- *
- * Shared with the peek (`panel-peek.ts`), so every drawn line of both frames — the open panel's rows and the
- * peek's three — goes through one escape policy with one owner.
- */
-export function fitLine(line: string, width: number): string {
-  const spare = width - visibleWidth(line);
-  if (spare >= 0) return padPlain(stripSequences(line), width);
-  const cut = stripSequences(truncateToWidth(line, width, ELLIPSIS));
-  if (visibleWidth(cut) <= width) return padPlain(cut, width);
-  const plain = stripSequences(truncateToWidth(stripSequences(line), width, ELLIPSIS));
-  return padPlain(plain, width);
-}
-
-/**
- * A pin's text column and its dim `#id HH:MM` tail, fitted to the inner width between the gutters.
- *
- * The two halves are measured apart and joined at the end, which is the whole point of this function:
- * `fitLine` over the joined body spends the last columns of the row on its ellipsis and the tail is the last
- * thing on it, so an over-long text used to take the `#id` with it (`#100 …`) and a theme whose `dim` adds
- * *visible* bytes pushed the id past the gutter and had it truncated. The tail is `drawnTail` (`panel-tail.ts`)
- * — `row.meta`, the very string `metaStamp` stamped and `widestMetaColumns` measured, stripped, cut to
- * `metaColumns` + the separator and padded to exactly it, the policy a frame glyph is drawn under (`glyph`,
- * `panel-frame.ts`): its width is the columns the frame set aside and nothing else, and the theme is applied
- * to a tail exactly once, on the way in rather than by the drawer on the way out. The text keeps
- * the room the tail left, so a short row reads as it always did (text, tail, blanks) and a row whose text
- * overflowed is cut on the text's side: the text gives up columns, never the tail, and a wide id costs its
- * own columns rather than the id's seat. `metaColumns` is the reserve `widestMetaColumns` measured for the
- * view's widest id — the same figure `panelLayoutSections` charged the wrap, so one arithmetic decides a frame.
- *
- * Exported for the peek (`panel-peek.ts`), which draws one row of the same pin and must not lay it out a
- * second way. `selected` is the open panel's question — the bar across the row the keys moved to — and the
- * peek passes `false`: it is never focused and so never carries a bar.
- */
-export function pinRow(
-  row: PanelRow,
-  inner: number,
-  style: PanelStyle,
-  selected: boolean,
-  gutterAt: (text: string) => string,
-  metaColumns: number,
-): string {
-  if (row.tail === "") {
-    return gutter(fitLine(selected ? style.selected(row.text) : row.text, inner), gutterAt);
-  }
-  const reserve = tailReserve(metaColumns, inner, META_SEPARATOR_COLUMNS);
-  const body = `${fitLine(row.text, inner - reserve)}${drawnTail(row.tail, metaColumns, inner, META_SEPARATOR_COLUMNS)}`;
-  // The bar is applied to the joined line, as it was before the tail got its own columns: a bar that
-  // stopped where the tail begins would draw a highlight with unpainted columns at its right end.
-  return gutter(fitLine(selected ? style.selected(body) : body, inner), gutterAt);
 }
 
 /**
@@ -272,7 +192,16 @@ export function buildPanelLines(
     // existed, and now a heading owns a row and no pin while a wrapped pin owns several rows and one pin. A
     // heading's tag is `null`, so no selection can match it and the bar cannot be parked on a section title.
     const selected = content.focused && entry.pin === content.selection && i === bar;
-    lines.push(pinRow(row, inner, style, selected, gutterAt, metaColumns));
+    lines.push(
+      pinRow(
+        optionFilled(entry, inner, style, content.pins),
+        inner,
+        style,
+        selected,
+        gutterAt,
+        metaColumns,
+      ),
+    );
   }
   // The hint is drawn only while focused: an unfocused panel advertising keys it cannot receive would
   // be a lie, and it has nowhere else to be written — the bottom border is the frame's own. What the
@@ -290,4 +219,24 @@ export function buildPanelLines(
     ),
   );
   return lines;
+}
+
+/**
+ * The row as the frame prints it, with a pin's options filled into the row the table only reserved (the row
+ * `optionRows` builds in `panel-rows.ts`, which tags it so this is the only thing that can match it).
+ * Filling happens here because it is the only place the frame's inner width is known; `drawOptionRow` drops
+ * whole entries from the end rather than truncating one. The width it fills at is the frame's *full inner
+ * width*, not the text column the pin's own rows wrapped at — the row carries no tail, so it pays for no
+ * id/age reserve (see `panel-options-row.ts`).
+ */
+function optionFilled(
+  entry: PanelOwned,
+  inner: number,
+  style: PanelStyle,
+  pins: readonly ViewPin[],
+): PanelRow {
+  if (entry.pin === null || !isOptionRow(entry.row)) return entry.row;
+  const pin = pins[entry.pin];
+  if (pin === undefined) return entry.row;
+  return { text: drawOptionRow(pin, inner, style), tail: "" };
 }

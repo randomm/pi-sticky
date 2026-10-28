@@ -11,7 +11,8 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { plainStyle, renderRailLines } from "../src/render.ts";
+import { renderRailLines } from "../src/rail-lines.ts";
+import { plainStyle } from "../src/render.ts";
 import type { PinLevel, PinView } from "../src/types.ts";
 import { NOW, NOW_TIME, pin, view } from "./fixtures.ts";
 

@@ -8,17 +8,37 @@
  * columns. A drawing that trusted a styled string's measurement would pad such a sequence across the
  * chat behind it, so every drawn line, border included, is stripped before it is padded. These tests are
  * that promise, and the promise that a hostile pin cannot reach a border column.
+ *
+ * The three v2 fields (`group`, `options`, `compact`) get the same frame and the same sweep in
+ * `panel-fields-hostile.test.ts`; the colours, the width assertion and the pin builder both files draw with
+ * are `panel-lines-hostile-fixture.ts`.
  */
 import { expect, test } from "bun:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
 
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
-import { LATER, NOW, pin } from "./fixtures.ts";
+import { LATER, NOW } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
-import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
+import {
+  BREAKS,
+  assertNoForgery,
+  foldedHostileFields,
+  linesOf,
+  withHostileFields,
+} from "./panel-hostile-fields.ts";
+import {
+  BEL,
+  ESC,
+  HOSTILE,
+  MIN_FRAME_WIDTH,
+  ST,
+  TERMINAL_ROWS,
+  offenders,
+} from "./panel-hostile.ts";
+import { expectUniformWidth, one, plain } from "./panel-lines-hostile-fixture.ts";
+
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
 function content(
   pins: readonly ViewPin[],
@@ -29,20 +49,6 @@ function content(
 ) {
   return { pins, selection, focused, replyHint, ageNow };
 }
-
-const plain: RenderPanelStyle = {
-  header: (s) => s,
-  marker: (_level, s) => s,
-  dim: (s) => s,
-  selected: (s) => `[${s}]`,
-  border: (s) => s,
-  borderFocused: (s) => s,
-};
-
-const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin => ({
-  ...pin(id, text, "info", extra),
-  ...extra,
-});
 
 /**
  * The resting frame's pin row drawn by a theme whose `dim` *wraps* rather than colours, at the narrowest
@@ -64,14 +70,6 @@ test("a dim that adds columns is charged to the text, not to the id/time tail", 
 
 // `built` is `panel-frame.ts`'s: one `panelLayoutSections` pass at `width` — the rows the pins own over the two
 // borders, cut to `TERMINAL_ROWS`' half — and the builder handed that very table.
-
-/** The smallest size at which the builder closes a frame at all (see `panel-lines.ts`). */
-const MIN_FRAME_WIDTH = 30;
-
-/** Every line the same visible width, or the panel would composite over the chat behind it. */
-function expectUniformWidth(lines: string[], width: number): void {
-  for (const line of lines) expect(visibleWidth(line)).toBe(width);
-}
 
 test("a themed panel draws through all six colours", () => {
   // One draw per focus state: a frame is coloured by `border` or by `borderFocused` and never by both at

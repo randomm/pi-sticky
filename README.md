@@ -108,6 +108,28 @@ If there is no room for the panel — under 100 columns, or nothing pinned — `
 `ctrl+alt+t` notify `The pins panel needs at least 100 columns; use /pins.` or `Nothing is pinned.`
 and record the choice anyway. `ctrl+alt+p` refuses with the same lines and changes nothing.
 
+### Grouping, options and a short pin
+
+The agent can add three optional fields when it pins. They are the agent's data; how they are laid out is
+still yours:
+
+- **`group`** puts the pin in a section of its own, headed by the group's name. A grouped pin is drawn in its
+  group and nowhere else — one row, one place for the bar, one `d` — and the level it carries is still counted
+  in the frame's title, so a `Now` group holding your only warning still titles `1 warning`. A pin with no
+  group stays in its level's section.
+- **`options`** are the actions the agent is offering. They are drawn on one row under the pin, each with its
+  number (`⌨1 Passed on   ⌨2 Not yet`), and you type that number into the editor yourself: nothing here acts
+  for you. When the frame is too narrow to name them all, the last ones are left off whole rather than cut
+  mid-word, so a label you can read is a label you can answer.
+- **`compact`** asks for the pin to occupy one row instead of several: its text is cut rather than wrapped.
+  Use it for a pin whose text is a formality and whose `#id` is the thing you will act on. There is no key to
+  expand it back: the row the bar sits on has to be a row the panel counted before the bar moved there.
+
+The peek shows neither group nor options and is always one line; the rail shows neither group nor options,
+and `compact` changes nothing about it. `/pins` lists the group after the level and puts the options on their
+own indented line (`options: 1) Passed on  2) Not yet`), and does not print `compact` — that is an instruction
+to the panel, not something you asked to read. The tool result's listing carries all three.
+
 ### The rail
 
 When the panel is not drawn, the pins appear above the editor instead:

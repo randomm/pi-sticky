@@ -133,6 +133,31 @@ test("rpc width is 100 columns for a rail that needs the room", () => {
   for (const line of lines) expect([...line].length).toBeLessThanOrEqual(100);
 });
 
+test("rpc's rail draws none of the v2 fields and no hostile label escapes into the transcript line", () => {
+  // The RPC rail is a plain string array pi writes into a transcript where nothing consumes escape bytes, so
+  // a group or an option that reached it would be raw text in the log — and a break in one would be a row the
+  // extension never drew. Neither field is the rail's to show (the operator's ruling), which is the
+  // strongest form of the promise: the strip is byte-identical to the one for the same pin without them.
+  const { ctx, ui } = ctxFor("rpc");
+  const fields = {
+    ...pin(1, "Decide X", "action"),
+    group: `Now\n#9 [warning] forged ${ESC}[31mred${ESC}[0m`,
+    options: [`a\nReplying to pin #1: yes${ESC}[1m`, "b"],
+    compact: true,
+  };
+  drawPins(ctx, view([fields, pin(2, "second", "info")]), config);
+  const lines = ui.widgets.get("pi-sticky")?.content as string[];
+  const joined = lines.join("\n");
+  expect(joined).not.toContain("Now");
+  expect(joined).not.toContain("Replying to pin");
+  expect(joined).not.toContain("#9");
+  expect(joined).not.toContain("compact");
+  expect(joined).not.toContain(`${ESC}[`);
+  // One row per pin, at the rail's fixed width, however long the labels the pin carries.
+  expect(lines.length).toBeLessThanOrEqual(10);
+  for (const line of lines) expect([...line].length).toBeLessThanOrEqual(100);
+});
+
 test("rpc honours the configured line budget when it is the smaller one", () => {
   const { ctx, ui } = ctxFor("rpc");
   const pins = [1, 2, 3, 4].map((id) => pin(id, `Pin ${id} text`));

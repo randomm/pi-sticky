@@ -1,13 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import {
-  orderPins,
-  plainStyle,
-  renderList,
-  renderPinsText,
-  renderRailLines,
-} from "../src/render.ts";
+import { renderRailLines } from "../src/rail-lines.ts";
+import { orderPins, plainStyle, renderList, renderPinsText } from "../src/render.ts";
 import { formatLocalTime } from "../src/time.ts";
 import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
 import { HOUR_BEFORE_NOW, MINUTE_BEFORE_NOW } from "./fixtures-age.ts";

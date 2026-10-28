@@ -5,9 +5,10 @@
  * does not add up is skipped in favour of the last valid one.
  */
 import { describe, expect, test } from "bun:test";
+import { renderRailLines } from "../src/rail-lines.ts";
 
 import { applyAction } from "../src/reducer.ts";
-import { plainStyle, renderList, renderPinsText, renderRailLines } from "../src/render.ts";
+import { plainStyle, renderList, renderPinsText } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { isPinState } from "../src/state-guards.ts";
 import { EMPTY_STATE, reconstruct } from "../src/state.ts";

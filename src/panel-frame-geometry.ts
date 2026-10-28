@@ -153,7 +153,7 @@ export const MIN_COLUMNS_FOR_META = FRAME_COLUMNS + META_COLUMNS + META_SEPARATO
 
 /**
  * The columns the widest *drawn* id/age tail in `pins` owns. `dim` is the theme's `dim`, the same member
- * `pinRow` (`panel-lines.ts`) passes to the tail when it prints it, so the reserve is measured on the string
+ * `pinRow` (`panel-draw.ts`) passes to the tail when it prints it, so the reserve is measured on the string
  * the row actually occupies rather than on the undimmed one — a theme whose `dim` wraps its argument in
  * visible bytes makes the tail wider than the tail alone, and measuring the undimmed string handed those
  * columns to the text and cut the id. The stamping itself is `panel-row-tail.ts`'s; this only asks for the

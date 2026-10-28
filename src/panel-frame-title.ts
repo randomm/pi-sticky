@@ -9,12 +9,19 @@
  *
  * The title counts the view rather than naming it, because the count is the thing the user could not read
  * off the old one: `📌 Pinned for you (12)` said twelve and said nothing about which of the twelve asked
- * for a decision. `📌 Pinned · 1 needs you · 11 more` names the one, and the counts come from the sections
- * the frame was laid out on — the `order` `panelLayoutSections` was handed and hands back — rather than from
- * a second pass over the pins, so the number beside the frame's opening is the number of rows under the
- * heading it names.
+ * for a decision. `📌 Pinned · 1 needs you · 11 more` names the one.
+ *
+ * The counts are by **level, never by group** (spec 3.5). A group is the model's own word for a bundle of
+ * pins and it may mix levels freely — a `Now` group holding one warning and two facts contributes `1
+ * warning` and `2 more` to this title, not a `3 Now` segment — so the numbers are summed over the view
+ * rather than read one segment off each section. They are still summed over the *sections* the frame was
+ * laid out on (`panelLayoutSections` hands its `order` back) rather than over a second pass over the pins:
+ * every pin of the view is a member of some section, so the totals are the same answer read from the one
+ * grouping the headings under this title came from.
  */
-import type { PanelSection, SectionKind } from "./panel-sections.ts";
+import type { PanelSection } from "./panel-sections.ts";
+import { LEVEL_KINDS } from "./panel-sections.ts";
+import type { PinLevel } from "./types.ts";
 
 /** The frame title's opening, before its first count. */
 const TITLE = "📌 Pinned";
@@ -27,7 +34,7 @@ const SEPARATOR = " · ";
  * does not; `info` has no noun of its own at all — it is spelled `more` once a segment precedes it and stands
  * as a bare count when none does, which is the branch `frameTitle` takes for it.
  */
-const NOUNS: Record<SectionKind, string> = {
+const NOUNS: Record<PinLevel, string> = {
   warning: "warning",
   action: "needs you",
   info: "more",
@@ -40,36 +47,69 @@ const NOUNS: Record<SectionKind, string> = {
  * `12 needs yous` reads as a string a person did not write. `info` is `false` because its count never reaches
  * `plural` at all — `frameTitle` spells that one itself, since its shape depends on the segments before it.
  */
-const INFLECTS: Record<SectionKind, boolean> = { warning: true, action: false, info: false };
+const INFLECTS: Record<PinLevel, boolean> = { warning: true, action: false, info: false };
 
 /**
  * The panel's frame title for `sections`, which must be the drawn order (`panelSections`'s `order`).
  *
- * One segment per section, in the order the frame draws them, and the count's spelling follows the segment's
- * *position* (operator resolution 3): `<n> warning` / `<n> warnings` and `<n> needs you` wherever they fall,
- * and the facts as `<n> more` only once a segment already precedes them — `📌 Pinned · 1 needs you · 11 more`.
- * Facts alone carry no earlier segment to hang `more` on, so their count stands bare: the frame of a panel of
- * three facts and nothing else reads `📌 Pinned · 3`, not `📌 Pinned · 3 more`. The bare form is what the
- * spec's third example names, and it is the difference between a count that answers "how many" and one that
- * answers "how many more" — a question only a frame already showing counts of something else poses.
+ * One segment per *level the view holds*, in the fixed order warning, action, info, and the count's spelling
+ * follows the segment's *position* (operator resolution 3): `<n> warning` / `<n> warnings` and `<n> needs
+ * you` wherever they fall, and the facts as `<n> more` only once a segment already precedes them —
+ * `📌 Pinned · 1 needs you · 11 more`. Facts alone carry no earlier segment to hang `more` on, so their
+ * count stands bare: the frame of a panel of three facts and nothing else reads `📌 Pinned · 3`, not
+ * `📌 Pinned · 3 more`. The bare form is what the spec's third example names, and it is the difference
+ * between a count that answers "how many" and one that answers "how many more" — a question only a frame
+ * already showing counts of something else poses.
  * An empty view has no counts to print and titles `📌 Pinned`, which the frame never draws anyway: the builder
  * answers a view with no pins with no rows at all.
  */
 export function frameTitle(sections: readonly PanelSection[]): string {
+  const counts = levelCounts(sections);
   const segments: string[] = [];
-  for (const section of sections) {
-    const count = section.pins.length;
-    // The test is on the section's kind and the segments already built, never on an index into `sections`
+  for (const level of LEVEL_KINDS) {
+    const count = counts[level];
+    if (count === 0) continue;
+    // The test is on the level and the segments already built, never on an index into `sections`
     // (which would name a position in the caller's array rather than the counts the title has printed) and
     // never on the noun string: `plural` would hand back `3 more` for the bare case too, since `more` does
     // not inflect, so the borrowing has to be spelled here.
-    if (section.kind === "info") {
-      segments.push(segments.length > 0 ? `${count} ${NOUNS.info}` : `${count}`);
-    } else {
-      segments.push(plural(count, NOUNS[section.kind], INFLECTS[section.kind]));
-    }
+    segments.push(
+      level === "info" && segments.length === 0
+        ? `${count}`
+        : plural(count, NOUNS[level], INFLECTS[level]),
+    );
   }
   return segments.length === 0 ? TITLE : `${TITLE}${SEPARATOR}${segments.join(SEPARATOR)}`;
+}
+
+/**
+ * How many pins of each level the sections hold, each pin counted once.
+ *
+ * Summed over sections rather than over the view because the sections *are* the frame's one grouping, and a
+ * second pass over the pins is the disagreement this module's callers go to lengths to avoid.
+ *
+ * Two kinds of section contribute, and the difference is what the title is for:
+ *
+ * - a **level** section — the pins of that level that carry no group — contributes the pins it holds;
+ * - a **group** section — whose pins belong to no level section (that is the placement rule, `panelSections`)
+ *   — contributes one per pin, at each pin's own level.
+ *
+ * Reading only the level sections would silently drop a group's pins: the twelve-pin session whose only
+ * warning sat in a `Now` group would have titled `📌 Pinned · 11 more` and hidden the one pin that asked for a
+ * decision. Counting a pin twice — once in its group and once in its level — is the failure the two branches
+ * are written apart to avoid.
+ */
+function levelCounts(sections: readonly PanelSection[]): Record<PinLevel, number> {
+  const counts: Record<PinLevel, number> = { warning: 0, action: 0, info: 0 };
+  for (const section of sections) {
+    if (section.kind === "level") {
+      counts[section.level] += section.pins.length;
+      continue;
+    }
+    // A group section: its pins belong to their own levels here and nowhere else in this sum.
+    for (const pin of section.pins) counts[pin.level] += 1;
+  }
+  return counts;
 }
 
 /** `<n> <noun>`, with the noun carrying an `s` when there is more than one of it and the noun inflects. */

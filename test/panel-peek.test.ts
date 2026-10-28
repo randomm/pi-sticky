@@ -34,6 +34,13 @@ import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW } from "./fixtures.ts";
+import {
+  BREAKS,
+  assertNoForgery,
+  foldedHostileFields,
+  linesOf,
+  withHostileFields,
+} from "./panel-hostile-fields.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 
 /** The identity frame: no member wraps anything in visible bytes, so every frame below closes. */
@@ -168,6 +175,46 @@ test("a peek row whose text is short keeps the tail padded to its reserve", () =
 test("a border that paints visible bytes answers with no rows at all", () => {
   const painted: PanelStyle = { ...identity, border: (s) => `[${s}]` };
   expect(buildPeekLines(content([levelPin(1, "x", "info")]), WIDTH, painted)).toEqual([]);
+});
+
+test("a hostile group and hostile options forge no row and no reply line in the peek", () => {
+  // The peek's restraint (`panel-fields-restraint.test.ts`) is that it draws neither field; this is the other
+  // direction — that a field it does not draw also cannot reach its rows. The sweep splits the peek's three
+  // rows on every break shape, so a group name that came back as a row of its own is a fourth row and is
+  // refused, and no row may open with the invented pin or the invented reply.
+  for (const width of [30, 40, 60, 120]) {
+    const pin = withHostileFields(levelPin(1, "Decide X", "warning"), "\n", foldedHostileFields());
+    const lines = buildPeekLines(content([pin]), width, identity);
+    // Always three rows: title, the one pin, the hint — whatever the fields claim to be.
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(visibleWidth(line)).toBe(width);
+    expect(linesOf(lines.join("\n"))).toHaveLength(3);
+    // The genuine row is the peek's own pin; nothing else in three rows is a row at all. The peek draws
+    // neither field, so it owes no evidence that one was printed — that restraint is the sibling file's
+    // subject; what this sweep holds the peek to is that a field it refuses still forges nothing.
+    assertNoForgery(lines, /! Decide X/, false);
+    // And the peek drew neither field, so the forgery is absent from its rows entirely.
+    const body = lines.join("\n");
+    expect(body).not.toContain("approved");
+    expect(body).not.toContain("Replying");
+  }
+});
+
+test("a peek row never breaks for a field that carries a break, whatever its shape", () => {
+  // The raw shape, with the break still in it. The peek folds its own row and draws no field at all, so the
+  // break cannot reach the screen whichever shape it was: three rows, none of them carrying a break, at every
+  // width the peek closes at.
+  for (const brk of BREAKS) {
+    for (const width of [30, 40, 120]) {
+      const pin = withHostileFields(levelPin(1, "Decide X", "warning"), brk);
+      const lines = buildPeekLines(content([pin]), width, identity);
+      expect(lines).toHaveLength(3);
+      for (const line of lines) expect(visibleWidth(line)).toBe(width);
+      for (const line of lines) {
+        for (const shape of BREAKS) expect(line).not.toInclude(shape);
+      }
+    }
+  }
 });
 
 test("the bottom border says nothing when the focus key is off", () => {

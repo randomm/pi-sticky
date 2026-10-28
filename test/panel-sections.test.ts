@@ -10,17 +10,26 @@
  */
 import { expect, test } from "bun:test";
 
-import { hasMultipleSections, panelSections } from "../src/panel-sections.ts";
+import { hasHeadings, panelSections } from "../src/panel-sections.ts";
 import { orderPins } from "../src/render.ts";
+import type { PinLevel } from "../src/types.ts";
 import { infoView, levelPin, mixedView } from "./panel-sections-fixture.ts";
 
+/** Each section spelled as the frame reads it: a level by its level, a group by its name. */
+/** Each section spelled as the frame reads it: a level by its level, a group by its name. */
 const kinds = (pins: Parameters<typeof panelSections>[0]) =>
-  panelSections(pins).order.map((section) => section.kind);
+  panelSections(pins).order.map((section) =>
+    section.kind === "level" ? section.level : section.name,
+  );
 const ids = (pins: readonly { id: number }[]) => pins.map((pin) => pin.id);
+
+/** The pins of the level section of `level`, or `[]` when the view holds none. */
+const pinsOfLevel = (sections: ReturnType<typeof panelSections>, level: PinLevel) =>
+  sections.order.find((section) => section.kind === "level" && section.level === level)?.pins ?? [];
 
 test("a view that holds all three levels forms one section per level", () => {
   const sections = panelSections(mixedView());
-  expect(sections.order.map((section) => section.kind)).toEqual(["warning", "action", "info"]);
+  expect(kinds(sections.flat)).toEqual(["warning", "action", "info"]);
   expect(sections.order.map((section) => section.pins.length)).toEqual([2, 2, 3]);
 });
 
@@ -46,10 +55,8 @@ test("a section keeps unreplied pins before replied ones (resolution 5)", () => 
   // Pin 4 and pin 6 are replied and still draw: replying does not resolve a pin, and a level whose pins are
   // all replied is still a level with a heading and a count.
   const sections = panelSections(mixedView());
-  const facts = sections.order.find((section) => section.kind === "info");
-  expect(ids(facts?.pins ?? [])).toEqual([7, 1, 4]);
-  const actions = sections.order.find((section) => section.kind === "action");
-  expect(ids(actions?.pins ?? [])).toEqual([2, 6]);
+  expect(ids(pinsOfLevel(sections, "info"))).toEqual([7, 1, 4]);
+  expect(ids(pinsOfLevel(sections, "action"))).toEqual([2, 6]);
 });
 
 test("a section of nothing but replied pins still forms (resolution 5)", () => {
@@ -59,9 +66,9 @@ test("a section of nothing but replied pins still forms (resolution 5)", () => {
   // with it the frame's `1 needs you`, which is the count the twelve-pin session came to read.
   const repliedOnly = [levelPin(1, "a", "action", true), levelPin(2, "b", "action", true)];
   const sections = panelSections([...repliedOnly, levelPin(3, "c", "info")]);
-  expect(sections.order.map((section) => section.kind)).toEqual(["action", "info"]);
+  expect(kinds(sections.flat)).toEqual(["action", "info"]);
   expect(sections.order.map((section) => section.pins.length)).toEqual([2, 1]);
-  expect(hasMultipleSections(sections.order)).toBe(true);
+  expect(hasHeadings(sections.order)).toBe(true);
   // Both replied actions are addressable: their indices are 0 and 1 of the flattened list, so `d` and `Enter`
   // reach them exactly as they reach an unreplied pin.
   expect(ids(sections.flat)).toEqual([2, 1, 3]);
@@ -77,15 +84,15 @@ test("flat is order flattened, so the selection indexes the rows the frame draws
 
 test("a single-level view is one section and one flat run", () => {
   const sections = panelSections(infoView(4));
-  expect(sections.order.map((section) => section.kind)).toEqual(["info"]);
+  expect(kinds(sections.flat)).toEqual(["info"]);
   expect(ids(sections.flat)).toEqual([4, 3, 2, 1]);
-  expect(hasMultipleSections(sections.order)).toBe(false);
+  expect(hasHeadings(sections.order)).toBe(false);
 });
 
 test("two levels is multiple sections; one is not (resolution 1)", () => {
-  expect(hasMultipleSections(panelSections(mixedView()).order)).toBe(true);
-  expect(hasMultipleSections(panelSections(infoView(3)).order)).toBe(false);
-  expect(hasMultipleSections(panelSections([]).order)).toBe(false);
+  expect(hasHeadings(panelSections(mixedView()).order)).toBe(true);
+  expect(hasHeadings(panelSections(infoView(3)).order)).toBe(false);
+  expect(hasHeadings(panelSections([]).order)).toBe(false);
 });
 
 test("an empty view has no sections, no pins and no title counts to print", () => {
@@ -101,7 +108,7 @@ test("sectioning a list that is already drawn leaves it exactly as it was", () =
   const once = panelSections(mixedView());
   const twice = panelSections(once.flat);
   expect(ids(twice.flat)).toEqual(ids(once.flat));
-  expect(twice.order.map((section) => section.kind)).toEqual(once.order.map((s) => s.kind));
+  expect(kinds(twice.flat)).toEqual(kinds(once.flat));
   expect(twice.order.map((section) => ids(section.pins))).toEqual(
     once.order.map((section) => ids(section.pins)),
   );

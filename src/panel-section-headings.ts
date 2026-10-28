@@ -1,13 +1,16 @@
 /**
- * The headings the panel draws between its level sections.
+ * The headings the panel draws between its sections.
  *
- * The strings are read off the sections `panelSections` built — never off a pin's text. Pin text is
- * untrusted (AGENTS.md, "Untrusted text"), so nothing here infers a section from what a pin says: a
- * heading the model could word is a heading a pin could forge, so all three are fixed strings in this file
- * and the user is taught to read them. The rail, `/pins` and the model-facing listing keep their own
- * headers — pins v2-3 changes the panel's frame title alone (operator resolution 6), and the frame's title
- * is spelled by its own module, `panel-frame-title.ts`, not here. The heading's glyph is not a fourth string
- * to invent: it is the level's own glyph, read from `MARKER` in `panel-rows.ts` and coloured through
+ * A level heading is read off the section `panelSections` built and is one of three fixed strings: a heading
+ * the model could word is a heading a pin could forge, so the three are fixed in this file and the user is
+ * taught to read them. A **group** heading is the one exception, and it is the model's own word — stored only
+ * after `cleanField` (`pin-fields.ts`) has sanitized it, folded it onto one line and bounded it to
+ * `MAX_FIELD_GRAPHEMES`, which is what makes a heading a pin can influence safe to draw. Nothing here reads a
+ * pin's *text* for a heading, group included: text is untrusted (AGENTS.md, "Untrusted text") and no length
+ * bound makes it a section name. The rail, `/pins` and the model-facing listing keep their own headers —
+ * pins v2-3 changes the panel's frame title alone (operator resolution 6), and the frame's title is spelled
+ * by its own module, `panel-frame-title.ts`, not here. A heading's glyph is not a fourth string to invent:
+ * for a level it is the level's own glyph, read from `MARKER` in `panel-rows.ts` and coloured through
  * `style.marker` the way the rows under the heading are.
  *
  * The heading rows are produced here rather than by the drawer: `panel-rows.ts` owns how many rows a frame
@@ -15,82 +18,115 @@
  * sections existed (operator resolution 7), so what a heading *is* lives beside the strings that spell it
  * and the two owners of the table and the drawing just ask for it.
  */
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-
-import { stripSequences } from "./escape.ts";
-import { markerCell, padPlain } from "./panel-frame.ts";
+import { foldBreaks, stripSequences } from "./escape.ts";
+import { fitLine } from "./panel-draw.ts";
+import { markerCell } from "./panel-frame.ts";
 import { MARKER } from "./panel-rows.ts";
-import type { PanelSection, SectionKind } from "./panel-sections.ts";
+import type { PanelSection } from "./panel-sections.ts";
 import type { PanelStyle } from "./render.ts";
+import type { PinLevel } from "./types.ts";
 
 /**
  * The heading of each level section, spelled once. Fixed strings, deliberately: a heading the model could
- * word would be a heading a pin could forge, and the three are what the user is taught to look for.
+ * word would be a heading a pin could forge, and the three are what the user is taught to look for. A group
+ * section's heading is its own stored name instead — see `headingRow`.
  */
-const HEADINGS: Record<SectionKind, string> = {
+const HEADINGS: Record<PinLevel, string> = {
   warning: "Warnings",
   action: "Needs you",
   info: "FYI",
 };
 
-/** One drawn heading row: the text the user reads, and the part of it the theme may colour. */
-export interface HeadingRow {
-  /** The heading without its leading glyph, e.g. `Warnings` — what the text column prints. */
-  label: string;
-  /** The heading's leading glyph — the level's own, from `MARKER` — drawn through `style.marker`. */
-  mark: string;
-  /**
-   * The level the row was built from — the kind `headingRow` already read off the section, so the cell that
-   * colours the glyph does not have to be told it a second time and cannot be told a different one.
-   */
-  kind: SectionKind;
-}
+/**
+ * One drawn heading row: the text the user reads, and the level whose glyph colours it.
+ *
+ * A discriminated pair rather than one shape with a sentinel: a **level** heading carries the level's own
+ * glyph and the level it must be coloured as, and a **group** heading carries only its name, because a group
+ * mixes levels and no single level's mark could stand for it without claiming one. A group therefore holds no
+ * level at all — not even a placeholder that would colour a glyph the cell never draws.
+ */
+export type HeadingRow =
+  | {
+      readonly kind: "level";
+      readonly level: PinLevel;
+      readonly mark: string;
+      readonly label: string;
+    }
+  | { readonly kind: "group"; readonly label: string };
 
 /**
  * The heading row of `section`, as the row table prints it.
  *
- * The glyph is split from the word so a selected warning still reads as a warning under the bar: `panel-rows.ts`
- * colours a pin row's marker through `style.marker(level, glyph)` for the same reason, and a heading whose
- * glyph was baked into the text could not be coloured at all. The glyph itself is the level's own — `MARKER`
- * (`panel-rows.ts`), the table a pin row is drawn from — so the heading over a section and the rows under it
- * agree about what a warning looks like. The kind travels on the row for the same reason: it is read off the
- * section once, here, and the cell that colours the glyph reads it back rather than being handed it again.
+ * For a level section the glyph is split from the word so a selected warning still reads as a warning under
+ * the bar: `panel-rows.ts` colours a pin row's marker through `style.marker(level, glyph)` for the same
+ * reason, and a heading whose glyph was baked into the text could not be coloured at all. The glyph itself is
+ * the level's own — `MARKER` (`panel-rows.ts`), the table a pin row is drawn from — so the heading over a
+ * section and the rows under it agree about what a warning looks like.
+ *
+ * A group heading carries no glyph at all, and what it carries instead is the group's own name, indented by
+ * `INDENT` — two columns, the width the mark and its space would have taken — so the name still lines up with
+ * the pin text under it and the section reads as a label over those rows rather than as a pin of its own. The
+ * drawer never asks for a heading over an empty section (`panel-frame-layout.ts` skips one), so a group
+ * section always has a name to read off.
  */
 export function headingRow(section: PanelSection): HeadingRow {
-  return { mark: MARKER[section.kind], label: HEADINGS[section.kind], kind: section.kind };
+  if (section.kind === "group") {
+    // The name is the model's word and reaches the frame unfiltered if it is not passed through the one
+    // folding policy here (`foldBreaks`, `escape.ts` — the fold `toOneLine` wraps): the heading is one row of
+    // a frame whose every line is measured and closed to the same width, so a break the view still carried —
+    // a snapshot written before the fields were cleaned, or a view built directly rather than through the
+    // reducer — would be a row the builder closed over the chat. `pin-fields.ts` already sanitises and folds
+    // what it stores; this is the drawn surface's own guarantee, the same one a pin's text gets from the row
+    // table.
+    return { kind: "group", label: `${INDENT}${foldBreaks(section.name)}` };
+  }
+  return {
+    kind: "level",
+    level: section.level,
+    mark: MARKER[section.level],
+    label: HEADINGS[section.level],
+  };
 }
 
 /**
- * The heading of `row` as the row table prints it: ` ` + marker + ` ` + label, fitted to `textWidth`.
+ * What a group name is indented by: two columns, the marker's own column plus the space after it. With the
+ * one leading space `headingCell` puts in front of *both* kinds of cell, the name opens exactly where
+ * `Warnings`/`Needs you`/`FYI` open, and one column right of the markers the rows under it carry. A name at
+ * the marker's column would read as a pin competing with them.
+ */
+const INDENT = "  ";
+
+/**
+ * The heading of `row` as the row table prints it: ` ` + marker + ` ` + label, closed to `textWidth`.
  *
- * Three cases, and the width decides which: with no column at all (`textWidth` at or below zero) the cell is
- * the empty string, since a heading with nowhere to be drawn is not a row the frame should print; narrower
- * than the column it is padded with blanks out to exactly `textWidth`; wider than it is cut to `textWidth`
- * with no ellipsis, because a heading is one row of a frame whose every line is measured to the same width
- * and a row that spilled its column would be the row the frame closed over the chat behind it.
+ * Two cases, and the width decides which: with no column at all (`textWidth` at or below zero) the cell is
+ * the empty string, since a heading with nowhere to be drawn is not a row the frame should print; otherwise
+ * the cell goes through `fitLine` (`panel-draw.ts`), the one escape policy every drawn line of both frames
+ * passes through — padded with blanks to exactly `textWidth` when it fits, cut to it with no ellipsis when it
+ * does not, because a heading is one row of a frame whose every line is measured to the same width and a row
+ * that spilled its column would be the row the frame closed over the chat behind it.
  *
  * A heading shares the text column a pin row pays for — the same three columns `panelPinRows`
  * (`panel-rows.ts`) opens a pin row with — so the heading's word lines up with the pin text below it rather
- * than starting a column to the left of it. `label` comes from this module and `mark` is the level's own
- * `MARKER` glyph, so neither needs the sanitizer a pin's text goes through, and the builder still cuts every
- * drawn line to the frame's width the same way it cuts a pin row. Both measuring halves read the string with
- * `visibleWidth`, so a two-column glyph costs the two columns it really occupies.
+ * than starting a column to the left of it. `label` is this module's word, or the model's for a group, and
+ * `mark` is the level's own `MARKER` glyph: the group's name is cleaned before it is stored
+ * (`pin-fields.ts`) and `fitLine` refuses every escape byte that survives to here anyway, so a smuggled
+ * sequence buys neither free columns in a flush-right overlay nor live bytes on the screen. Both measuring
+ * halves read the string with `visibleWidth`, so a two-column glyph costs the two columns it really occupies.
  */
 export function headingCell(row: HeadingRow, textWidth: number, style: PanelStyle): string {
-  // The glyph is coloured the way `panelPinRows` colours a pin row's marker, and the theme's bytes are
-  // refused before the cell is measured — the policy of `fitLine` (`panel-lines.ts`), which cuts the joined
-  // row again when it still measures too wide. A `marker` that wrapped the glyph in visible bytes is
-  // therefore cut back to the columns the plain glyph owns, so it cannot push the row past the column the
-  // frame set aside while still drawing the level the user reads.
-  const glyph = MARKER[row.kind];
-  const mark = markerCell(style.marker(row.kind, glyph), glyph);
-  const cell = ` ${mark} ${row.label}`;
   if (textWidth <= 0) return "";
-  // In practice the padding branch is the one that runs: the three fixed headings are far shorter than any
-  // frame the builder closes, so the cut is the guard rather than the path. Stripped after the cut rather
-  // than before it, because the theme's colour is meant to survive a cell that fits — only the bytes the cut
-  // itself injects are refused here, and `fitLine` (`panel-lines.ts`) is where the rest are.
-  return visibleWidth(cell) > textWidth
-    ? padPlain(stripSequences(truncateToWidth(cell, textWidth, "")), textWidth)
-    : padPlain(cell, textWidth);
+  // The glyph is coloured the way `panelPinRows` colours a pin row's marker, and `markerCell`
+  // (`panel-frame.ts`) has already cut it to the columns the plain glyph owns, so a `marker` that wrapped it
+  // in visible bytes cannot push the row past the column the frame set aside while still drawing the level
+  // the user reads. A group heading has no glyph, so its cell is its label alone — already indented by
+  // `headingRow` into the column a level heading's word occupies.
+  const cell =
+    row.kind === "group"
+      ? // The group's name is measured on what survives the strip, so it can neither count as columns it
+        // does not draw nor reach the screen with escape bytes of its own; the drawer's own `fitLine` below
+        // then closes the row whatever the theme added around it.
+        ` ${stripSequences(row.label)}`
+      : ` ${markerCell(style.marker(row.level, row.mark), row.mark)} ${row.label}`;
+  return fitLine(cell, textWidth);
 }

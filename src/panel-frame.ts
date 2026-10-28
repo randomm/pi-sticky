@@ -68,7 +68,7 @@ export function padPlain(line: string, width: number): string {
  * heading over its section (`headingCell`, `panel-section-headings.ts`): the two draw the same glyph, and a
  * `marker` that wrapped it in visible bytes would otherwise give the heading one version of it and the row
  * under it another — each string closed to its own width by its own caller, neither one measuring the
- * other's marker. `fitLine` (`panel-lines.ts`) closes the *line*; this closes the marker alone, before the
+ * other's marker. `fitLine` (`panel-draw.ts`) closes the *line*; this closes the marker alone, before the
  * row is joined, so a theme cannot make a row ask the frame for columns the glyph does not own.
  *
  * Escapes and C0/C1 controls and DEL go on both branches, not only the cut one: the cell is returned to its
