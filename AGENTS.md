@@ -69,6 +69,10 @@ Pin text comes from a model and is untrusted. All of it passes through the sanit
 - **Hard limit: 300 lines per TypeScript file** in `src/` and `test/`, enforced by `test/file-size.test.ts`. Refactor trigger: near the limit, or three or more distinct responsibilities in one file. One responsibility per file.
 - The authoritative description of a module is the jsdoc header of its source file. Do not add file-by-file tables to this file or to docs.
 - Commit messages: conventional commits with an alphabetic scope (`feat(tool):`, `fix(render):`) or a bare type. Never put an issue number in the scope; link issues with `Closes #N` in the PR body. First line ≤ 72 characters; explain why in the body.
+- Comments: a jsdoc header says what the module is for and its non-obvious constraints, nothing more. Write an inline comment only where the code cannot say it. Never narrate the history of a change in a comment; that belongs in the commit message.
+- Build only what the issue asks for: no unrequested optimisations, caches or failure reporters.
+- When a file nears the 300-line limit, split it once, deliberately, along real responsibilities in a dedicated change. Do not let each feature carve off a piece.
+- Do not move code that a recent PR just placed unless the current issue needs it.
 
 ## Common pitfalls
 
