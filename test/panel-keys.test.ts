@@ -11,7 +11,7 @@ import { expect, test } from "bun:test";
 
 import { matchesKey } from "@earendil-works/pi-tui";
 
-import { isDismissKey, isSubmitKey } from "../src/panel-keys.ts";
+import { isDismissKey, isSubmitKey, optionKeyPressed } from "../src/panel-keys.ts";
 import { ESC, HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
 
 test("a bare letter is a dismiss press in either case, and nothing else is", () => {
@@ -49,5 +49,24 @@ test("a key that is neither of the two destructive keys is refused by both gates
   for (const input of ["j", "Escape", "\t", " ", ESC]) {
     expect(isDismissKey(input)).toBe(false);
     expect(isSubmitKey(input)).toBe(false);
+  }
+});
+
+/**
+ * The option keys: `1` to `MAX_OPTIONS` (`pin-fields.ts`), each answered as the option of that position.
+ * `0` is unassigned — it is truthy as a string and `0` as a number, so the gate has to refuse it as a
+ * position rather than by accident — and every digit past the list a pin may store is inert with it.
+ */
+test("a bare digit 1-4 is that option, and nothing else is an option key", () => {
+  expect(["1", "2", "3", "4"].map(optionKeyPressed)).toEqual([1, 2, 3, 4]);
+  for (const input of ["0", "5", "9", "d", "\r", "", " ", ESC, "12", "٣"]) {
+    expect([input, optionKeyPressed(input)]).toEqual([input, undefined]);
+  }
+});
+
+test("no escape sequence that merely ends in a digit is an option key", () => {
+  // The same sweep that protects `d` and Enter, and for the same reason: a digit rewrites the draft.
+  for (const input of HOSTILE_KEY_INPUTS) {
+    expect([input, optionKeyPressed(input)]).toEqual([input, undefined]);
   }
 });

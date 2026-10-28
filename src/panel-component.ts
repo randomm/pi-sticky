@@ -21,6 +21,8 @@
  *
  * `Enter` submits nothing: it puts `Re #<id>: ` at offset 0 of the raw editor buffer and hands focus back
  * to the main editor. The marker replaces one already there and the rest of the draft is kept verbatim.
+ * Keys `1` to `MAX_OPTIONS` (`pin-fields.ts`) do the same for one of the selected pin's `options`, with that
+ * option's text after the marker; like `Enter`, they send nothing — the user presses Enter.
  */
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";

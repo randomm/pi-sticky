@@ -34,7 +34,9 @@ function at(
   const handle = createOverlayHandle();
   handle.unfocus();
   c.setHandle(handle);
-  return { c, ...h };
+  /** Replace one host member after the fact — for the rare case that must observe it rather than record it. */
+  const patch = (member: Partial<PanelHost>) => Object.assign(h.stub, member);
+  return { c, patch, ...h };
 }
 
 test("a keystroke into the peek hands the focus back instead of acting on a row", () => {
@@ -42,15 +44,17 @@ test("a keystroke into the peek hands the focus back instead of acting on a row"
   c.focus();
   const dismissalsBefore = state.dismissals.length;
 
-  // `d` is the panel's dismiss key and Enter its reply key; neither has a row in a three-frame peek.
+  // `d` is the panel's dismiss key and Enter its reply key; neither has a row in a three-frame peek. The
+  // digits are the panel's option keys and have no row either — a peek draws no options and no bar.
   c.handleInput?.("d");
   c.handleInput?.("\r");
+  c.handleInput?.("1");
   c.handleInput?.("\x1b[B");
 
   expect(state.dismissals).toHaveLength(dismissalsBefore);
   expect(state.replies).toEqual([]);
   // Every one of them ended the interaction, which is the whole answer a peek can give.
-  expect(state.unfocusCalls).toBe(3);
+  expect(state.unfocusCalls).toBe(4);
   expect(c.isFocused()).toBe(false);
 });
 
@@ -106,6 +110,21 @@ test("a key whose host throws on the notice too still ends the interaction", () 
   expect(c.isFocused()).toBe(false);
   expect(state.unfocusCalls).toBe(1);
   expect(state.dismissals).toEqual([]);
+});
+
+test("a key whose host throws is reported once, in the words the guard spells", () => {
+  // The notice is the user's only evidence that the key they pressed was refused rather than obeyed, and
+  // until now no test read it: `containKey` swallows the throw, so the sole observable was this line.
+  const { c, patch } = at("open", ["Decide X", "Watch out"], {
+    dismiss: () => {
+      throw new Error("host session is gone");
+    },
+  });
+  const notices: string[] = [];
+  patch({ notify: (message, type) => void notices.push(`${type}:${message}`) });
+  c.focus();
+  c.handleInput?.("d");
+  expect(notices).toEqual(["warning:A panel key could not be handled."]);
 });
 
 test("a hidden panel refuses its keys whatever the mode says", () => {

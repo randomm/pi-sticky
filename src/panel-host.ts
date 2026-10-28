@@ -72,8 +72,9 @@ export interface PanelHost {
   mode(): PanelMode;
   /** Tell the user one line, on the surface the extension still has. */
   notify(message: string, type?: "info" | "warning" | "error"): void;
-  /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. */
-  startReply(id: number): void;
+  /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. `answer` is the text of the
+   * option the user chose by digit, which goes after the marker. */
+  startReply(id: number, answer?: string): void;
 }
 
 /**

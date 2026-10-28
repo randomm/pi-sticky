@@ -60,6 +60,10 @@ export const RLO = String.fromCharCode(0x202e);
  * an `O`-prefixed final, an ESC-bracketed paste, OSC and APC with the letter in their string body, a `d`
  * carrying a NUL, a surrogate or surrounding spaces, and `d` glued to a CR. None is a bare press, so none
  * may dismiss or reply — see `isBarePress` in `src/panel-keys.ts`, which is consulted *before* `matchesKey`.
+ *
+ * The digits of the option keys are swept with the same shapes because a digit rewrites the user's draft
+ * exactly as `d` and Enter do: `ESC [ 1 ; 3 2` ends in a `2`, `ESC [ 200 ~ 3` is a bracketed paste around a
+ * digit, and `1\r` is a digit glued to a submit — none is a press of option 1 or 2.
  */
 export const HOSTILE_KEY_INPUTS = [
   `${ESC}[1;3d`,
@@ -77,6 +81,19 @@ export const HOSTILE_KEY_INPUTS = [
   "d\r",
   "\rd",
   `${ESC}[200~d`,
+  `${ESC}[1;32`,
+  `${ESC}O3`,
+  `${ESC}4`,
+  `${LONE_SURROGATE}2`,
+  "3\0",
+  " 1",
+  " 4 ",
+  `${ESC}[0m5`,
+  `${ESC}]0;2${BEL}`,
+  `${ESC}_pi;3${BEL}`,
+  `${ESC}[200~4`,
+  "1\r",
+  "\r2",
 ];
 
 /** The code points a drawn line must never carry. */

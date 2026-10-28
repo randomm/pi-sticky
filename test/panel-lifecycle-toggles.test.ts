@@ -15,6 +15,7 @@ import { PANEL_MIN_COLUMNS } from "../src/panel-geometry.ts";
 import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-refusals.ts";
 import { KEY, UI_TYPE } from "../src/types.ts";
 import {
+  OPTIONED,
   PINNED,
   TWO_PINNED,
   boot,

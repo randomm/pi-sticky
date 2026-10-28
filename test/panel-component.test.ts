@@ -14,7 +14,7 @@ import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PinView, ViewPin } from "../src/types.ts";
 import { createOverlayHandle } from "./harness.ts";
-import { host, pins } from "./panel-component-host.ts";
+import { host, pins, withOptions } from "./panel-component-host.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
 
 // The Kitty protocol's release and repeat forms of `d`, and the two arrows in the byte sequences a

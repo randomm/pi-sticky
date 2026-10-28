@@ -18,7 +18,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 import type { KeyId } from "@earendil-works/pi-tui";
 
 import type { PanelHost } from "./panel-host.ts";
-import { isDismissKey, isSubmitKey, presses } from "./panel-keys.ts";
+import { isDismissKey, isSubmitKey, optionKeyPressed, presses } from "./panel-keys.ts";
 import type { PanelMode } from "./panel-mode.ts";
 import type { ViewPin } from "./types.ts";
 
@@ -53,8 +53,11 @@ export interface PanelKeyHost {
   mode(): PanelMode;
   /** Record a dismissal of `id`; the host redraws, and the bar re-clamps. */
   dismiss(id: number): void;
-  /** Put `Re #<id>: ` in the editor and start the reply flow. */
-  startReply(id: number): void;
+  /**
+   * Put `Re #<id>: ` in the editor and start the reply flow. `answer` is the text of the option the user
+   * chose by digit, which the host puts after the marker; without it the draft carries only the marker.
+   */
+  startReply(id: number, answer?: string): void;
 }
 
 /**
@@ -90,6 +93,19 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
     // The host's dismissal redraws and the component re-clamps, so dismissing the last pin lands the bar
     // on the new last one rather than on a row that no longer exists.
     if (pin) host.dismiss(pin.id);
+    return;
+  }
+  const digit = optionKeyPressed(data);
+  if (digit !== undefined) {
+    // One of the options the selected pin offers, answered by *position* — the position the keycap row drew
+    // that digit over (`panel-options-row.ts`). Past the pin's list there is no option to name, and a digit
+    // on a pin without options names none either: both do nothing, and the interaction stays where it was.
+    const answer = pin?.options?.[digit - 1];
+    if (pin && answer !== undefined) {
+      host.startReply(pin.id, answer);
+      // Like Enter: the answer is read in the editor, so the panel lets go of the keyboard.
+      target.unfocus();
+    }
     return;
   }
   const moved = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
