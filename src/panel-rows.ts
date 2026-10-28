@@ -20,6 +20,7 @@
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { widestMetaColumns } from "./panel-frame-geometry.ts";
+import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
@@ -35,8 +36,15 @@ import { GUTTER_COLUMNS } from "./panel-tail.ts";
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
 
-/** The character drawn in front of a pin; the rail quotes the same three. */
-const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
+/**
+ * The one level→glyph table of the panel: the character drawn in front of a pin, and the one drawn in
+ * front of that level's section heading. The rail quotes the same three from its own copy in `render.ts`.
+ *
+ * Exported, because a heading that invented a fourth glyph would say one thing above its pins and another
+ * on them: `panel-section-headings.ts` reads the mark off this table and colours it the way `panelPinRows`
+ * colours a pin row's marker, so one kind has one glyph wherever it appears.
+ */
+export const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
 
 /**
  * The instant an age is measured against when the caller has none: `new Date()` at the moment the rows are
@@ -98,12 +106,16 @@ export function panelPinRows(
   metaColumns: number = widestMetaColumns([pin], style.dim, now),
 ): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
+  const glyph = MARKER[pin.level];
   if (textWidth <= 0) {
     // No text column is the degenerate frame: the row is the marker and nothing else, and there is no row
     // below it for the age to live on, so the one row carries the whole tail: id and age, whichever half the
     // layout would otherwise have split between two lines — stamped whole rather than through `pinTails`,
     // which decides which of its two rows gets which half and has no second row to give one to here.
-    return [{ text: ` ${marker} `, tail: fullStamp(pin, style.dim, now) }];
+    // Cut to the one column the marker owns before it is joined, the policy of `markerCell`
+    // (`panel-frame.ts`): a theme whose `marker` wrapped the glyph would otherwise widen the only row this
+    // frame has past the column the frame set aside for it, and this branch never reaches `fitLine`.
+    return [{ text: ` ${markerCell(marker, glyph)} `, tail: fullStamp(pin, style.dim, now) }];
   }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
   // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks like.
@@ -116,10 +128,10 @@ export function panelPinRows(
   const count = wrapped.length > 0 ? wrapped.length : 1;
   const tails = pinTails(pin, count, metaColumns, now, style.dim);
   const rows = wrapped.map((line, index) => ({
-    text: index === 0 ? ` ${marker} ${line}` : `   ${line}`,
+    text: index === 0 ? ` ${markerCell(marker, glyph)} ${line}` : `   ${line}`,
     tail: index === 0 ? tails.first : index === 1 ? (tails.second ?? "") : "",
   }));
-  return rows.length > 0 ? rows : [{ text: ` ${marker} `, tail: tails.first }];
+  return rows.length > 0 ? rows : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first }];
 }
 
 /**
@@ -144,23 +156,4 @@ export function panelAllRows(
   const rows: PanelRow[] = [];
   for (const pin of pins) rows.push(...panelPinRows(pin, textWidth, style, now, metaColumns));
   return rows;
-}
-
-/**
- * The window's start for a selection, given every row of the table in order and the start of the
- * selected pin: never past the end of the table, so the last pin is always on screen.
- *
- * `buildPanelLines` goes through this with the table and the start `panelLayoutSections` built, so drawing a
- * window of the pins costs one wrap of each pin rather than three.
- */
-export function panelWindowOffset(
-  contentRows: number,
-  selection: number,
-  all: readonly PanelRow[],
-  start: number,
-): number {
-  const total = all.length;
-  if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
-  if (start < 0) return total - contentRows;
-  return Math.min(start, total - contentRows);
 }

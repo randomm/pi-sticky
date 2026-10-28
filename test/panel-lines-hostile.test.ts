@@ -89,7 +89,15 @@ test("a themed panel draws through all six colours", () => {
   };
   const focused = built(content([one(1, "Decide X")], 0, true), 40, painted);
   expect(focused[0]).toContain("<h:t>");
-  expect(focused[1]).toContain("<m:t>");
+  // The marker's wrapper is *cut*, not drawn: the glyph owns one column and this theme's `marker` puts six
+  // visible columns around it, so the row keeps the first of them and the glyph itself is what gives way — the
+  // policy `glyph` (`panel-frame.ts`) applies to a corner, and the one this file's first test spells out for a
+  // tail (`< x >`, not `< x …`). Six colours are still asked for, and the frame's other five are drawn. The
+  // cell the row opens with is therefore the wrapper's lone surviving column and none of its tail: `<m:t>`
+  // would mean the whole wrapper was drawn, and `<m` would mean the cut left the marker's own name on the
+  // screen, and a bare `<` would pass for any other byte a theme put there.
+  expect(focused[1]).toContain(" < ");
+  expect(focused[1]).not.toContain("<m");
   expect(focused[1]).toContain("<s:t>");
   // ...and the *resting* row's tail is whole. This theme's `dim` wraps — its tag is drawn, not counted away —
   // so the tail it stamps is sixteen columns wider than the `#<id> <age>` an undimmed measurement saw. A

@@ -12,12 +12,13 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
 import { HINT } from "../src/panel-lines.ts";
-import { GUTTER_COLUMNS, panelAllRows, panelPinRows } from "../src/panel-rows.ts";
+import { GUTTER_COLUMNS, panelAllRows, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, pin } from "./fixtures.ts";
-import { built } from "./panel-frame.ts";
+import { built, framed } from "./panel-frame.ts";
+import { infoView, levelPin } from "./panel-sections-fixture.ts";
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
 function content(
   pins: readonly ViewPin[],
@@ -158,4 +159,73 @@ test("the window never scrolls past the last pin, and a bar past the end draws n
   // A bar on a pin that is not there highlights nothing at all.
   const past = built(content(six, 99, true), width, style, 10);
   expect(past.filter((line) => line.includes("]")).length).toBe(0);
+});
+
+/** The repro of the reported bug: one warning above twelve facts, at a terminal too short for the table. */
+function shortWarningFrame(focused: boolean): { lines: string[]; rows: string[] } {
+  const pins = [levelPin(1, "warn", "warning"), ...infoView(12)];
+  const lines = built({ ...content(pins, 0, focused), ageNow: LATER }, 60, style, 14);
+  return { lines, rows: lines.slice(1, -1) };
+}
+
+test("the window opens on the heading over the selected pin, not one row below it", () => {
+  // 1 warning + 12 facts at a 14-row terminal: the frame halves to 7 rows, so 5 of the 15-row table are
+  // drawn. The warning is the table's second row (its heading is the first) and the old offset scrolled
+  // straight past that heading, leaving the bar on a row with nothing above it to say it was a warning.
+  const pins = [levelPin(1, "warn", "warning"), ...infoView(12)];
+  const { layout } = framed({ ...content(pins, 0, true), ageNow: LATER }, 60, style, 14);
+  expect(layout.owned).toHaveLength(15);
+  expect(layout.height).toBe(7);
+  expect(panelContentRows(layout.height)).toBe(5);
+  expect(layout.start).toBe(1);
+
+  for (const focused of [true, false]) {
+    const { lines, rows } = shortWarningFrame(focused);
+    // The heading directly above the pin, focused or not: focus moves the bar, never the window.
+    expect(rows[0]).toContain("Warnings");
+    expect(rows[1]).toContain("! warn");
+    expect(rows[1]).toContain("#1");
+    // The bar, when there is one, is still on the pin's row and not on the heading above it.
+    const bar = rows.filter((row) => row.includes("["));
+    expect(bar).toHaveLength(focused ? 1 : 0);
+    if (focused) expect(bar[0]).toBe(rows[1]);
+    expectUniformWidth(lines, 60);
+  }
+});
+
+test("a single-section view at the same short terminal scrolls exactly as it always did", () => {
+  // No headings in the table at all, so the heading-aware opening has nothing to move for: the window of a
+  // one-section view opens on the selected pin's first row, which is what every scroll test here has always
+  // asserted. Twelve facts at 60 columns draw one row each, so a 14-row terminal shows five of them and the
+  // selection moves the window by the pin's own row, one row at a time.
+  const pins = infoView(12);
+  for (const [selection, firstShown] of [
+    [0, "note 12"],
+    [3, "note 9"],
+    [7, "note 5"],
+  ] as const) {
+    const rows = built(content(pins, selection, true), 60, style, 14).slice(1, -1);
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toContain(firstShown);
+    for (const row of rows) expect(row).not.toMatch(/Warnings|Needs you|FYI/);
+  }
+});
+
+test("a heading is left out when it and the selected pin cannot both fit the window", () => {
+  // The warning owns four rows of a three-row window, so a heading above it would cost the pin its last row:
+  // the window opens on the pin, exactly as it did before the heading knew about the window. Two facts sit
+  // under it so the table is longer than the frame whatever the offset, and the second section is what makes
+  // the warning's heading a row at all.
+  const pins = [levelPin(1, "a".repeat(40), "warning"), levelPin(2, "far below", "info")];
+  const { layout } = framed({ ...content(pins, 0, true), ageNow: LATER }, 30, style, 8);
+  const rowsOfSelected = layout.owned.filter((entry) => entry.pin === 0).length;
+  const budget = panelContentRows(layout.height);
+  expect(rowsOfSelected).toBe(4);
+  expect(budget).toBe(2);
+  const rows = built({ ...content(pins, 0, true), ageNow: LATER }, 30, style, 8).slice(1, -1);
+  expect(rows).toHaveLength(budget);
+  expect(rows[0]).toContain("a".repeat(10));
+  expect(rows[0]).not.toContain("Warnings");
+  // The bar is on that first row — the pin's own — and not on the heading that was left out.
+  expect(rows.filter((row) => row.includes("["))[0]).toBe(rows[0]);
 });

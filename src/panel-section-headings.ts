@@ -6,7 +6,9 @@
  * heading the model could word is a heading a pin could forge, so all three are fixed strings in this file
  * and the user is taught to read them. The rail, `/pins` and the model-facing listing keep their own
  * headers — pins v2-3 changes the panel's frame title alone (operator resolution 6), and the frame's title
- * is spelled by its own module, `panel-frame-title.ts`, not here.
+ * is spelled by its own module, `panel-frame-title.ts`, not here. The heading's glyph is not a fourth string
+ * to invent: it is the level's own glyph, read from `MARKER` in `panel-rows.ts` and coloured through
+ * `style.marker` the way the rows under the heading are.
  *
  * The heading rows are produced here rather than by the drawer: `panel-rows.ts` owns how many rows a frame
  * holds and `panel-lines.ts` owns drawing them, and both were near the project's 300-line cap before
@@ -15,28 +17,33 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { padPlain } from "./panel-frame.ts";
+import { stripSequences } from "./escape.ts";
+import { markerCell, padPlain } from "./panel-frame.ts";
+import { MARKER } from "./panel-rows.ts";
 import type { PanelSection, SectionKind } from "./panel-sections.ts";
+import type { PanelStyle } from "./render.ts";
 
 /**
  * The heading of each level section, spelled once. Fixed strings, deliberately: a heading the model could
  * word would be a heading a pin could forge, and the three are what the user is taught to look for.
  */
 const HEADINGS: Record<SectionKind, string> = {
-  warning: "⚠ Warnings",
-  action: "? Needs you",
-  info: "· FYI",
+  warning: "Warnings",
+  action: "Needs you",
+  info: "FYI",
 };
-
-/** The leading glyph of each heading, so the heading row can colour it the way a pin row colours its marker. */
-const MARKS: Record<SectionKind, string> = { warning: "⚠", action: "?", info: "·" };
 
 /** One drawn heading row: the text the user reads, and the part of it the theme may colour. */
 export interface HeadingRow {
   /** The heading without its leading glyph, e.g. `Warnings` — what the text column prints. */
   label: string;
-  /** The heading's leading glyph, e.g. `⚠` — drawn through `style.marker` at the section's kind. */
+  /** The heading's leading glyph — the level's own, from `MARKER` — drawn through `style.marker`. */
   mark: string;
+  /**
+   * The level the row was built from — the kind `headingRow` already read off the section, so the cell that
+   * colours the glyph does not have to be told it a second time and cannot be told a different one.
+   */
+  kind: SectionKind;
 }
 
 /**
@@ -44,16 +51,17 @@ export interface HeadingRow {
  *
  * The glyph is split from the word so a selected warning still reads as a warning under the bar: `panel-rows.ts`
  * colours a pin row's marker through `style.marker(level, glyph)` for the same reason, and a heading whose
- * glyph was baked into the text could not be coloured at all.
+ * glyph was baked into the text could not be coloured at all. The glyph itself is the level's own — `MARKER`
+ * (`panel-rows.ts`), the table a pin row is drawn from — so the heading over a section and the rows under it
+ * agree about what a warning looks like. The kind travels on the row for the same reason: it is read off the
+ * section once, here, and the cell that colours the glyph reads it back rather than being handed it again.
  */
 export function headingRow(section: PanelSection): HeadingRow {
-  const heading = HEADINGS[section.kind];
-  const mark = MARKS[section.kind];
-  return { mark, label: heading.slice(mark.length + 1) };
+  return { mark: MARKER[section.kind], label: HEADINGS[section.kind], kind: section.kind };
 }
 
 /**
- * The heading of `kind` as the row table prints it: ` ` + marker + ` ` + label, fitted to `textWidth`.
+ * The heading of `row` as the row table prints it: ` ` + marker + ` ` + label, fitted to `textWidth`.
  *
  * Three cases, and the width decides which: with no column at all (`textWidth` at or below zero) the cell is
  * the empty string, since a heading with nowhere to be drawn is not a row the frame should print; narrower
@@ -63,17 +71,26 @@ export function headingRow(section: PanelSection): HeadingRow {
  *
  * A heading shares the text column a pin row pays for — the same three columns `panelPinRows`
  * (`panel-rows.ts`) opens a pin row with — so the heading's word lines up with the pin text below it rather
- * than starting a column to the left of it. `label` comes from this module and `mark` is a fixed one, so
- * neither needs the sanitizer a pin's text goes through, and the builder still cuts every drawn line to the
- * frame's width the same way it cuts a pin row. Both measuring halves read the string with `visibleWidth`,
- * so a two-column glyph costs the two columns it really occupies.
+ * than starting a column to the left of it. `label` comes from this module and `mark` is the level's own
+ * `MARKER` glyph, so neither needs the sanitizer a pin's text goes through, and the builder still cuts every
+ * drawn line to the frame's width the same way it cuts a pin row. Both measuring halves read the string with
+ * `visibleWidth`, so a two-column glyph costs the two columns it really occupies.
  */
-export function headingCell(row: HeadingRow, textWidth: number): string {
-  const cell = ` ${row.mark} ${row.label}`;
+export function headingCell(row: HeadingRow, textWidth: number, style: PanelStyle): string {
+  // The glyph is coloured the way `panelPinRows` colours a pin row's marker, and the theme's bytes are
+  // refused before the cell is measured — the policy of `fitLine` (`panel-lines.ts`), which cuts the joined
+  // row again when it still measures too wide. A `marker` that wrapped the glyph in visible bytes is
+  // therefore cut back to the columns the plain glyph owns, so it cannot push the row past the column the
+  // frame set aside while still drawing the level the user reads.
+  const glyph = MARKER[row.kind];
+  const mark = markerCell(style.marker(row.kind, glyph), glyph);
+  const cell = ` ${mark} ${row.label}`;
   if (textWidth <= 0) return "";
   // In practice the padding branch is the one that runs: the three fixed headings are far shorter than any
-  // frame the builder closes, so the cut is the guard rather than the path.
+  // frame the builder closes, so the cut is the guard rather than the path. Stripped after the cut rather
+  // than before it, because the theme's colour is meant to survive a cell that fits — only the bytes the cut
+  // itself injects are refused here, and `fitLine` (`panel-lines.ts`) is where the rest are.
   return visibleWidth(cell) > textWidth
-    ? truncateToWidth(cell, textWidth, "")
+    ? padPlain(stripSequences(truncateToWidth(cell, textWidth, "")), textWidth)
     : padPlain(cell, textWidth);
 }

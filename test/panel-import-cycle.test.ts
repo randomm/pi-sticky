@@ -25,6 +25,9 @@ const COLD_MODULES = [
   "src/panel-frame-geometry.ts",
   "src/panel-lines.ts",
   "src/panel-tail.ts",
+  // The frame path evaluates it: `panel-frame-layout.ts` builds each heading through it, and it reaches
+  // `panel-rows.ts` for the level glyph — so it is on the graph whose import order used to matter.
+  "src/panel-section-headings.ts",
 ];
 
 /**
@@ -65,6 +68,11 @@ function COLD_PROBE(modulePath: string, target: string): string {
   }
   if (modulePath.endsWith("panel-tail.ts")) {
     return `import("${target}").then((m)=>{if(m.GUTTER_COLUMNS!==4||typeof m.metaStamp!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-section-headings.ts")) {
+    // The headings of the frame path: both of its exported builders must survive a cold load, since
+    // `panel-frame-layout.ts` builds a heading row and its cell on every frame it lays out.
+    return `import("${target}").then((m)=>{if(typeof m.headingRow!=="function"||typeof m.headingCell!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   // The builder: the module that reads both halves of the arithmetic, so it is the one whose import order
   // a future edit is most likely to change.

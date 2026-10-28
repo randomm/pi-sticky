@@ -9,10 +9,16 @@
  * for a frame wider than the overlay was given. `buildPanelLines` (`panel-lines.ts`) draws the rows;
  * nothing here knows about pins, heights or the scroll window. The six glyphs are also exported as one
  * list (`frameGlyphs`), which is what lets that guard ask all of them rather than the two it once read.
+ *
+ * The module is also where a level's *marker* is cut to its glyph's columns (`markerCell`): the same promise
+ * one row in from either gutter, since a `marker` that wrapped the glyph in visible bytes asks for a row
+ * wider than the frame was given. Pin rows (`panel-rows.ts`) and section headings
+ * (`panel-section-headings.ts`) both draw theirs through that one helper, so neither can disagree with the
+ * other about what one level looks like.
  */
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { stripSequences } from "./escape.ts";
+import { dropControls, stripSequences } from "./escape.ts";
 
 import type { PanelStyle } from "./render.ts";
 
@@ -53,6 +59,27 @@ export const INJECTED_RESET = new RegExp(
 /** Pad an already-safe line out to the width. */
 export function padPlain(line: string, width: number): string {
   return line + " ".repeat(Math.max(0, width - visibleWidth(line)));
+}
+
+/**
+ * A theme's marker for a level's glyph, cut to the columns the plain glyph owns and padded back to them.
+ *
+ * The one marker policy of the panel, shared by the pin row (`panelPinRows`, `panel-rows.ts`) and the
+ * heading over its section (`headingCell`, `panel-section-headings.ts`): the two draw the same glyph, and a
+ * `marker` that wrapped it in visible bytes would otherwise give the heading one version of it and the row
+ * under it another — each string closed to its own width by its own caller, neither one measuring the
+ * other's marker. `fitLine` (`panel-lines.ts`) closes the *line*; this closes the marker alone, before the
+ * row is joined, so a theme cannot make a row ask the frame for columns the glyph does not own.
+ *
+ * Escapes and C0/C1 controls and DEL go on both branches, not only the cut one: the cell is returned to its
+ * caller unpainted, the way `glyph` below returns one, and a theme's `marker` that folded a line break in
+ * around the glyph would otherwise put an LF or CR on the screen whatever branch the width took.
+ */
+export function markerCell(marked: string, glyphText: string): string {
+  const stripped = dropControls(stripSequences(marked));
+  const columns = visibleWidth(glyphText);
+  if (visibleWidth(stripped) <= columns) return padPlain(stripped, columns);
+  return padPlain(dropControls(stripSequences(truncateToWidth(stripped, columns, ""))), columns);
 }
 
 /**

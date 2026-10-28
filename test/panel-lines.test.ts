@@ -187,8 +187,8 @@ test("the level marker is the rail's: ! for warning, ? for action, a bullet for 
   const marks: RenderPanelStyle = { ...style, selected: (s) => s };
   const lines = built(content(pins), 40, marks);
   // Three levels, so three sections, so three heading rows: the table reads Warnings / the warning, Needs
-  // you / the action, FYI / the info pin. The markers are the rail's still — `!`, `?`, `•` on the pin rows —
-  // and the headings carry their own glyphs (`⚠`, `?`, `·`) at the head of the rows between them.
+  // you / the action, FYI / the info pin. The glyph is the rail's one table — `!`, `?`, `•` — on the pin rows
+  // *and* at the head of the heading row over each section, so a heading and its pins read the same way.
   const rows = lines.slice(1, -1).map((line) => inside(line));
   expect(rows[0]).toContain("Warnings");
   expect(rows[1]).toContain("!");
@@ -196,6 +196,11 @@ test("the level marker is the rail's: ! for warning, ? for action, a bullet for 
   expect(rows[3]).toContain("?");
   expect(rows[4]).toContain("FYI");
   expect(rows[5]).toContain("•");
+  // The headings, not merely their words: each heading row opens with its level's marker, the same glyph the
+  // row under it carries. The heading is ` ! Warnings`, not ` ⚠ Warnings`.
+  expect(rows[0]?.trimStart().startsWith("! ")).toBe(true);
+  expect(rows[2]?.trimStart().startsWith("? ")).toBe(true);
+  expect(rows[4]?.trimStart().startsWith("• ")).toBe(true);
 });
 
 test("CJK and emoji text is measured, not counted: each row still fills the width inside the frame", () => {
