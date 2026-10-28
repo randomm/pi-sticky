@@ -1,8 +1,9 @@
 /**
  * Building the panel's dependency object and its wiring, away from the extension's own wiring.
  *
- * `PanelDeps` *extends* `StickyDeps` and adds only what the panel alone needs, and the visibility trio
- * lives here rather than on `StickyDeps` because `tool.ts`, `commands.ts` and `reminder.ts` — the
+ * `PanelDeps` *extends* `StickyDeps` and adds only what the panel alone needs; the mode cell is on
+ * `StickyDeps` itself because the tool's commit path answers the auto-show question with it. The rest of
+ * the visibility pair lives here rather than there because `tool.ts`, `commands.ts` and `reminder.ts` — the
  * modules `StickyDeps` is handed to — read none of them.
  *
  * The construction lives here too, so the panel's dependency shape — the four members the extension's
@@ -139,8 +140,6 @@ export function initialShown(ctx: HostContext | undefined): boolean {
 export interface PanelWiringParts {
   deps: StickyDeps;
   terminal: TerminalWidth;
-  /** The panel's mode cell, held by the extension and read by every surface; see `PanelDeps.panelMode`. */
-  panelMode(): PanelModeState;
   setPanelShown(shown: boolean): void;
   recordPanelShown(shown: boolean): void;
   /** Dismiss one pin as the user, through the command layer's single dismissal path. */
@@ -171,7 +170,6 @@ export interface PanelWiringParts {
 export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
   const deps: PanelDeps = {
     ...parts.deps,
-    panelMode: parts.panelMode,
     setPanelShown: parts.setPanelShown,
     recordPanelShown: parts.recordPanelShown,
     dismiss: parts.dismiss,

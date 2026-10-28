@@ -21,6 +21,8 @@ import type { PinView } from "../src/types.ts";
 import { ONE } from "./panel-owner-wiring.ts";
 
 /** A sticky deps object with nothing behind it but the view the panel draws. */
+const cell = createPanelMode(DEFAULT_CONFIG);
+
 function stickyDeps(view: PinView = ONE): StickyDeps {
   return {
     config: DEFAULT_CONFIG,
@@ -30,6 +32,10 @@ function stickyDeps(view: PinView = ONE): StickyDeps {
     redraw: () => {},
     commit: () => {},
     appendUserAction: () => {},
+    // The cell the surfaces read. A peek is what the extension's own cell answers by default, so the
+    // fixture takes the same one the extension builds rather than a hand-rolled stand-in. One cell for the
+    // whole fixture: the surfaces must not each be handed a different answer.
+    panelMode: () => cell,
   } as unknown as StickyDeps;
 }
 
@@ -62,6 +68,10 @@ function editorHost(
     notify: (message: string, type?: "info" | "warning" | "error") => {
       calls.notified = `${type}:${message}`;
     },
+    // The cell the wiring's surfaces read. A peek is what the extension's own cell answers by default, so
+    // the fixture takes the same one the extension builds rather than a hand-rolled stand-in. One cell for
+    // the whole fixture: the surfaces must not each be handed a different answer.
+    panelMode: () => cell,
   };
   const live = { hasUI: opts.hasUI ?? true, mode: opts.mode ?? "tui", ui };
   return { live, calls };
@@ -77,9 +87,8 @@ function panelWiring(parts: Partial<PanelWiringParts> = {}) {
     wiring: createPanelWiring({
       deps: stickyDeps(),
       terminal,
-      // The mode cell the wiring hands the owner: a peek is what the extension's own cell answers by
-      // default, so the fixture takes the same one the extension builds rather than a hand-rolled stand-in.
-      panelMode: () => createPanelMode(DEFAULT_CONFIG),
+      // The mode cell reaches the owner through `deps`: the fixture's own cell, the same one the extension
+      // builds rather than a hand-rolled stand-in.
       setPanelShown: () => {},
       recordPanelShown: () => {},
       dismiss: () => {},
@@ -99,7 +108,9 @@ const livesAs = (live: unknown): PanelWiringParts["live"] =>
 
 test("the wiring hands the panel the members the extension's deps object does not carry", () => {
   const { wiring } = panelWiring();
-  expect(wiring.deps.panelMode().shown()).toBe(true);
+  // The mode cell now travels with `StickyDeps`, so the panel adds only the two it owns; the cell is shared
+  // with the deps it was built from, exactly as the view and the config are.
+  expect(wiring.deps.panelMode()).toBe(cell);
   expect(typeof wiring.redrawRail).toBe("function");
   expect(typeof wiring.themeStyle).toBe("function");
   // The sticky half is *shared*, not copied: the flag and the view are one cell, and a copy of it is how

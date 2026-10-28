@@ -169,6 +169,10 @@ export function createStickyExtension(
 
     const deps: StickyDeps = {
       config,
+      // The one cell, handed to every surface through deps: the overlay, the rail and the component all read
+      // the same object, so the frame drawn and the pins the rail stands down for cannot disagree about one
+      // view.
+      panelMode: () => panel,
       now: clock,
       getState: () => state,
       getView: () => view,
@@ -213,9 +217,6 @@ export function createStickyExtension(
       createPanelWiring({
         deps,
         terminal,
-        // The one cell, handed to every surface: the overlay, the rail and the component all read the same
-        // object, so the frame drawn and the pins the rail stands down for cannot disagree about one view.
-        panelMode: () => panel,
         setPanelShown: (shown) => setShown(shown, false),
         recordPanelShown: (shown) => setShown(shown, true),
         // The panel's `d` key: one id, through the same batch path the `/unpin` command uses (see
