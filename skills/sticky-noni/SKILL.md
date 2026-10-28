@@ -87,16 +87,27 @@ session, and again after a batch of order changes or a steering commit, or when 
 confirming. `--only <check>` (the same script's flag) narrows what was evaluated, so it reuses the
 previous full run's verdict rather than re-scanning per check. It is the arbiter.
 
-- Exit `0` from a **full** run (no `--only`) is clean — warnings included — and gets no pin: unpin any
-  census warning you have. A `--only` run may update that warning, never clear one.
-- Any other non-zero exit **with a census row**: **one** `warning` pin naming that row's own `check`,
-  its exit code and its own `fix:` text — do not derive an owner from the row's name prefix. A row that
-  says the scan or the read did not run (a cannot-tell / probe-honesty row, which `--strict` promotes to
-  a failure) belongs with the next bullet: no check is named as failed and no repair owner is named.
+Its exit codes are its own table: `0` clean, `2` usage error, `3` a required tool missing, then one code
+per failing class — `10` ledger-record, `12` ledger-edited, `15` ordering-malformed, `20` ledger-chain,
+`30` session-double, `31` session-claim, `32` session-malformed, `40` session-stalled, `41` probe,
+`42` ledger-empty, `43` session-same-identity, `44` session-deleted, `45` ordering-stale, `46`
+ordering-closed, `50` hygiene — and the lowest failing code wins. There is no exit `1`.
+
+- Read the verdict the census printed rather than the shape of the run: exit `0` with `summary: clean; …`
+  on stdout is clean — warnings included — and gets no pin, so unpin any census warning you have. Exit
+  `0` is the only clean answer the census gives, whatever it was asked for: a `--only` run that prints it
+  may update that warning, never clear one.
+- Any non-zero exit **with a census row** names the class that failed, because the exit code is that row's
+  own code: **one** `warning` pin naming that row's `check`, its exit code and its own `fix:` text — do
+  not derive an owner from the row's name prefix. A row that says the scan or the read did not run (a
+  cannot-tell / probe-honesty row, which `--strict` promotes to a failure) belongs with the next bullet:
+  no check is named as failed and no repair owner is named.
 - Exit `2` with no row is a bad argument (an unknown `--only` name, an unparseable `--now` or
   `--stale-after`, a `--repo` that does not exist): quote what the census wrote on stderr and never
-  guess a missing binary. Exit `2` or `3` with nothing to quote — the script not found, `python3` or
-  `git` missing, the run killed — means **the census did not run**, so it is not a verdict: pin a
+  guess a missing binary. Exit `3` is census's own "required tool missing" (it names `git` on stderr), and
+  an unimportable `noni` package is a `3` from the in-place wrapper that names itself the same way.
+  Exit `3`, or any exit outside that table — the script not found, `python3` missing, the run killed —
+  means **the census did not run**, so it is not a verdict: pin a
   `warning` saying the census did not run and what is missing.
 - Track the census pin's `#id` from the call that created it. While the same check keeps failing,
   `update` that pin in place; when a different check fails, that one pin names what fails now. After a

@@ -272,9 +272,11 @@ has not answered.
 ```
 
 The `description` is what the model reads when deciding whether to load the skill, so say what it does
-and when it applies. Run `/reload` after editing a skill. In a `packages` entry a bare `"source"` narrows
-what that package contributes; the `+` prefix in the [noni settings example](#using-with-noni) belongs to
-the top-level `skills` list, where it forces in a directory another entry excludes.
+and when it applies. Run `/reload` after editing a skill. What a package contributes is set by the
+resource lists beside `source` in a `packages` entry — a list narrows that type and `[]` loads none of
+it, while a bare `"source"` with no list loads everything the package declares. The `+` prefix in the
+[noni settings example](#using-with-noni) belongs to the top-level `skills` list, where it forces in a
+directory another entry excludes.
 
 ## Using with noni
 
@@ -288,9 +290,10 @@ those three: the committed record stays the truth and the pin is only how you se
 pi install /path/to/noni
 ```
 
-Confirm it with `pi list` — noni's skills must appear there. If they do not, `pi list` distinguishes the
-three failure states: the skill is absent (fix the install or the `skills` setting below); the script is
-not at its path (wrong clone); or the script is there but exits non-zero naming an import error — that
+Confirm the skills loaded by starting pi in the target project — the startup listing names each loaded
+skill — or by forcing one with `/skill:census`. If noni's skills are not there, work through the three
+failure states yourself: the skill is absent (fix the install or the `skills` setting below); the script
+is not at its path (wrong clone); or the script is there but exits non-zero naming an import error — that
 one is a Python problem, so point at `PYTHONPATH` below rather than at the skills setting.
 
 **Verified:** `pi install` of a noni clone does expose its skills with no manifest. noni's repo has no
@@ -305,14 +308,15 @@ Notes:
 
 - Same install rule as this extension: `pi install`, never a symlink. `pi install` of a path is validated
   only by an existence check, so a typo'd or moved clone can record the package and load no skills — that
-  is what `pi list` above is for. It records a package rather than copying into
+  is what confirming the load above is for. It records a package rather than copying into
   `~/.pi/agent/extensions/`, so the subagent-isolation rule under *Disabling and subagent isolation*
   stays intact for noni's skills whichever route you use.
 - A git-URL install works too: it does a full `git clone` into pi's package cache on first load (and a
   fetch/reset when upstream moves), then re-collects resources on startup exactly as a path install does.
 - The scripts those skills run need noni's own modules importable in the environment the agent runs in —
-  `PYTHONPATH=<clone>` is the direct route. `pip install noni` resolves to a PyPI project unrelated to
-  noni, so install noni from your clone (`pip install <clone>`) rather than that name.
+  `PYTHONPATH=<clone>/src` is the direct route (the package lives under `src/`), or install it from your
+  clone with `pip install -e <clone>`. Noni's README also documents `pip install noni`, and that name is
+  taken on PyPI by an unrelated project — check what you actually got before trusting it.
 - noni's scripts run with the agent's own permissions over the target repo, and the census reads
   attacker-influenceable files under the target's `noni/`. Install noni from a source you trust as much
   as you trust the agent; the census being read-only is the property being relied on.
@@ -337,7 +341,8 @@ directory where you can, and set `PYTHONDONTWRITEBYTECODE=1` so running the scri
 To confirm both halves are loaded, from the target project:
 
 1. Force noni's own skill and check the census actually runs —
-   `python3 <clone>/skills/census/scripts/census.py --repo .`, or `noni census` where installed.
+   `python3 <clone>/skills/census/scripts/census.py --repo .` from the target project, or `noni census`
+   where the package is installed.
 2. Force the bridge and check it pins what the census reported.
 
 ```text
@@ -346,7 +351,7 @@ To confirm both halves are loaded, from the target project:
 ```
 
 If either answer says the project has no noni, or the census script cannot be reached, the skills are
-not loaded — re-check the path in `pi list` or in the `skills` setting before trusting the verdict.
+not loaded — re-check the install, or the path in the `skills` setting, before trusting the verdict.
 
 Without noni the bridge declines rather than inventing a record.
 
