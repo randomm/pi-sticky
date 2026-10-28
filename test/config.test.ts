@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { DEFAULT_CONFIG, readConfig } from "../src/config.ts";
 import { FOCUS_KEY, TOGGLE_KEY } from "../src/panel-keys.ts";
+import { PANEL_DEFAULT_MODE } from "../src/panel-resting.ts";
 import { parseKeyIdStrict } from "../src/panel-shortcuts.ts";
 
 test("an empty environment gives the defaults", () => {
@@ -20,7 +21,27 @@ test("an empty environment gives the defaults", () => {
     // these are the ids the README documents and the ones pi's plan-mode example collides with.
     toggleKey: TOGGLE_KEY,
     focusKey: FOCUS_KEY,
+    // The resting state pins v2-4 added: a shown panel rests as its peek unless a pin earns the full frame,
+    // and `PI_STICKY_PANEL=open` is the operator's way of refusing the peek.
+    panel: "peek",
   });
+  expect(DEFAULT_CONFIG.panel).toBe(PANEL_DEFAULT_MODE);
+});
+
+test("PI_STICKY_PANEL: the two names, tolerated case and space, and everything else is the default", () => {
+  // The grammar is `panel-resting.ts`'s and this is the end of it that belongs to the reader: what the
+  // operator writes in the environment is what the cell is built with. `open` is the one value that
+  // refuses the peek; everything else — a typo, `hidden`, an empty string — rests in the state that covers
+  // the least of the transcript, so a mistyped variable never widens the panel.
+  expect(readConfig({ PI_STICKY_PANEL: "open" }).panel).toBe("open");
+  expect(readConfig({ PI_STICKY_PANEL: "  OPEN  " }).panel).toBe("open");
+  expect(readConfig({ PI_STICKY_PANEL: "Peek" }).panel).toBe("peek");
+  expect(readConfig({ PI_STICKY_PANEL: "hidden" }).panel).toBe(PANEL_DEFAULT_MODE);
+  expect(readConfig({ PI_STICKY_PANEL: "" }).panel).toBe(PANEL_DEFAULT_MODE);
+  expect(readConfig({ PI_STICKY_PANEL: "yes" }).panel).toBe(PANEL_DEFAULT_MODE);
+  // Present and never absent: `readConfig({})` equals `DEFAULT_CONFIG` in both directions only because an
+  // unset variable answers the default rather than leaving the member out.
+  expect("panel" in readConfig({})).toBe(true);
 });
 
 test("readConfig reads only its argument, never process.env", () => {
@@ -240,6 +261,7 @@ test("the variables are independent", () => {
     maxWidgetLines: 3,
     toggleKey: TOGGLE_KEY,
     focusKey: FOCUS_KEY,
+    panel: "peek",
   });
 });
 
@@ -251,6 +273,7 @@ test("no placement or file variables exist", () => {
     "maxChars",
     "maxPins",
     "maxWidgetLines",
+    "panel",
     "toggleKey",
   ]);
 });

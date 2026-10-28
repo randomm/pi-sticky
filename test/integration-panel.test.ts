@@ -15,8 +15,9 @@ import "./env-clear.ts";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
+import { TOOL_NAME } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
-import { type Harness, createHarness } from "./harness.ts";
+import { type Harness, call, createHarness, reply } from "./harness.ts";
 import {
   command,
   contextFor,
@@ -36,6 +37,7 @@ import {
   userEntries,
 } from "./integration-support.ts";
 
+import { leavePanel } from "./panel-transience.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
 /**
@@ -102,11 +104,16 @@ test("a pin arriving while the panel is hidden shows it again and records nothin
   const h = await createHarness({ factories: [extension] });
   try {
     await resize(h, 120);
-    await pin(h, "Decide X");
+    // An `action` pin: since U11 only a pin the user must act on earns the auto-show, and the plain
+    // `pin()` default is `info`, which deliberately leaves a hidden panel hidden.
+    await pin(h, "Decide X", "action");
     await command(h, "/pins hide");
+    // The earned open is over before the second pin, so what follows is a *fresh* auto-show from a panel
+    // that is resting hidden — not a second commit landing on a panel the first one had already opened.
+    await leavePanel(h);
     expect(uiEntries(h)).toEqual([{ v: 1, shown: false }]);
 
-    await pin(h, "Watch out");
+    await pin(h, "Watch out", "action");
     await flush();
 
     // The new pin is visible without the user re-opening anything — through the *live* overlay's own
@@ -122,12 +129,43 @@ test("a pin arriving while the panel is hidden shows it again and records nothin
   }
 });
 
+test("an update that promotes a pin to warning shows a hidden panel, and records nothing", async () => {
+  // Issue #40's "or updated" half, on a live session. The pin already existed and keeps its id, so the
+  // commit says nothing countable about itself: only the ids it touched say that a blocker arrived, and
+  // `extension.ts`'s `commit` is what hands them to the ledger. A hidden panel with a promoted blocker on
+  // the rail only is the failure this pins.
+  const h = await createHarness({ factories: [extension] });
+  try {
+    await resize(h, 120);
+    await pin(h, "Migration pending");
+    await command(h, "/pins hide");
+    await leavePanel(h);
+    expect(uiEntries(h)).toEqual([{ v: 1, shown: false }]);
+
+    h.script([call(TOOL_NAME, { action: "update", id: 1, level: "warning" }), reply("ok")]);
+    await h.run("promote");
+    await flush();
+
+    const handle = panelCall(h)?.handle as { isHidden?: () => boolean } | undefined;
+    expect(handle?.isHidden?.()).toBe(false);
+    expect(panelVisible(h, 120)).toBe(true);
+    expect(registeredRail(h)).toBe(false);
+    // The hide the user chose is still the record: an earned open does not overwrite it.
+    expect(uiEntries(h)).toEqual([{ v: 1, shown: false }]);
+  } finally {
+    await h.dispose();
+  }
+});
+
 test("the panel keeps drawing through a reload, and the user's hide comes back with the session", async () => {
   const h = await createHarness({ factories: [extension] });
   try {
     await resize(h, 120);
     await pin(h, "Decide X");
     await command(h, "/pins hide");
+    // The hide ended the open the first pin earned, so the reload below re-reads a session whose entries end
+    // in that hide. A reload is *not* itself the user's next interaction — it settles the panel from the
+    // entries, which is what the assertions below are about.
     const customBefore = h.ui.customCount;
 
     await h.session.reload();

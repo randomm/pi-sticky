@@ -26,7 +26,7 @@ import { newPanelRecord } from "./panel-call.ts";
 import { releasePanel } from "./panel-close.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelDeps, PanelWiring } from "./panel-deps.ts";
-import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
+import { openPanelOverlay } from "./panel-open.ts";
 import { createRailHandoff } from "./panel-rail-handoff.ts";
 import type { TerminalWidth } from "./panel-width.ts";
 
@@ -55,12 +55,10 @@ export class PanelOwner {
     this.#wiring = wiring;
   }
 
-  /**
-   * The component of the open panel, once its factory has run — and `undefined` both before it and after the
-   * close. A caller that has to decide in the same turn as `open()` (the rail, on `session_start`) asks
-   * `isVisible()` instead: `custom()` is a promise, so the component arrives on a later microtask, and a rail
-   * that waited for it would draw nothing in the turn that asked for it.
-   */
+  // The component of the open panel, once its factory has run — and `undefined` both before it and after the
+  // close. A caller that has to decide in the same turn as `open()` (the rail, on `session_start`) asks
+  // `isVisible()` instead: `custom()` is a promise, so the component arrives on a later microtask, and a rail
+  // that waited for it would draw nothing in the turn that asked for it.
   component(): PanelComponent | undefined {
     return this.#record?.component;
   }
@@ -95,37 +93,32 @@ export class PanelOwner {
     // handoff decidable in the same turn as `open()`.
     this.#record = record;
     this.#railConsider(false);
-    const visible = (columns: number, rows: number): boolean => this.#visible(columns, rows);
-
-    // `custom` is read at *call* time, not captured above, so a host that installs its own per call has
-    // to be consulted now, or the panel opens on the `custom` from a moment ago and the swap is bypassed.
-    void ui
-      .custom(
-        panelFactory(record, this.#wiring, {
-          onTui: (tui) => {
-            this.#tui = tui;
-          },
-          tui: () => this.#tui,
-          onUnfocus: () => this.refresh(),
-          // The owner's own visibility answer — the predicate pi-tui asked before it drew the overlay,
-          // so the component and the overlay cannot disagree about whether the user is looking at it.
-          panelVisible: () => this.isVisible(),
-        }),
-        panelCallOptions(visible, (handle) => {
-          this.#record?.component?.setHandle(handle);
-        }),
-      )
-      .catch((err: unknown) => {
-        // With no panel the rail keeps drawing, which is the fallback by design — but a poisoned overlay
-        // stack rejects *every* open from then on, and a rail that answers forever looks the same as a
-        // working one. The user hears why once per failed open. This is a *separate* report from
-        // `#closeFailure`: this line says the panel never came up, that one says a panel that did come up
-        // could not be put down, and the user needs both. A failed open leaves no overlay of its own, so
-        // it must not clear a close failure the owner is still owed — clearing it here lost the warning
-        // for an entry still sitting in pi's stack whenever a wedge made the next open reject as well.
+    // The overlay itself is `panel-open.ts`'s to build; the owner keeps the decisions around it — the
+    // close-before-open, the refusals, the record's publication — and hands over only the four closures the
+    // factory needs from a session that is still alive.
+    openPanelOverlay(ctx, record, this.#wiring, {
+      tui: () => this.#tui,
+      onTui: (tui) => {
+        this.#tui = tui;
+      },
+      // The interaction ended: the earned open ends with it, and then the surfaces are settled. The ending
+      // goes to the cell before the redraw rather than after, because `refresh()` is what asks the rail and
+      // the overlay what the panel is doing — a rail reconsidered against the still-open answer is a rail
+      // that stood down for pins it should have taken back.
+      onUnfocus: () => {
+        this.#wiring.deps.panelMode().endEarnedOpen();
+        this.refresh();
+      },
+      panelVisible: () => this.isVisible(),
+      onHandle: (handle) => {
+        this.#record?.component?.setHandle(handle);
+      },
+      onFailed: (reason) => {
         if (this.#record === record) this.#record = undefined;
-        ctx.ui.notify(`pins panel unavailable: ${reasonOf(err)}`, "warning");
-      });
+        ctx.ui.notify(`pins panel unavailable: ${reason}`, "warning");
+      },
+      visible: (columns, rows) => this.#visible(columns, rows),
+    });
   }
 
   /**
@@ -148,13 +141,10 @@ export class PanelOwner {
     return this.isVisible();
   }
 
-  /**
-   * Close the open panel, once — safe when none is open or the host already popped it.
-   *
-   * The record is dropped first and unconditionally, so nothing `releasePanel()` does — nor a host whose
-   * teardown throws — can leave the extension still answering `isVisible()` for a panel the user closed.
-   * The release itself, and what it means for the user, are `panel-close.ts`'s.
-   */
+  // Close the open panel, once — safe when none is open or the host already popped it. The record is dropped
+  // first and unconditionally, so nothing `releasePanel()` does — nor a host whose teardown throws — can
+  // leave the extension still answering `isVisible()` for a panel the user closed. The release itself, and
+  // what it means for the user, are `panel-close.ts`'s.
   close(): void {
     const record = this.#record;
     this.#record = undefined;
@@ -180,41 +170,44 @@ export class PanelOwner {
   }
 
   /**
-   * Whether the panel is on screen at the width pi-tui last stated: the same terms pi-tui uses before
-   * it draws the overlay. The rail asks this instead of guessing from the visibility flag: two surfaces
-   * that decide independently who owns the pins is how pins end up drawn by neither.
+   * The panel's on-screen answer, in the terms pi-tui itself uses before it draws the overlay. The rail is
+   * handed this verdict rather than re-deriving one from the mode cell: two surfaces that decide
+   * independently who owns the pins is how pins end up drawn by neither.
    *
-   * Reads the record, the flag and the view *now*, through the wiring — which is why the rail holds the
-   * owner rather than a function captured at open time. The record is part of the question because
-   * `open()` publishes none in a mode with no overlay: one that was never opened cannot own the pins.
-   *
-   * The one answer `#railConsider` caches against: whatever this returns is what the rail was last asked
-   * to yield to — the same question, spelled in the key as the width, the flag and the view it reads.
+   * The record, the flag and the view are read *now*, through the wiring — which is why the rail holds the
+   * owner and not a function captured at open time. The record is part of the question because `open()`
+   * publishes none in a mode with no overlay, and forgets it when `custom()` rejects: a panel that was never
+   * opened, or whose open failed, cannot own the pins. It is also the one answer `#railConsider` caches
+   * against, so the guard never holds a verdict the owner has stopped giving.
    */
   isVisible(): boolean {
-    const deps = this.#wiring.deps;
     if (this.#record === undefined) return false;
-    return panelIsVisible(this.#columns(), deps.isPanelShown(), deps.getView().pins.length);
+    // The mode cell is the whole of the on-screen answer: hidden, peek or open, folded from the user's
+    // choice and from whether a pin earned the full frame (`panel-mode.ts`). A shown panel — in peek or in
+    // open — owns the pins and asks for one frame of every pin it holds; hidden draws nothing and asks for
+    // none, which is the rail's answer.
+    const shown = this.#wiring.deps.panelMode().shown();
+    return panelIsVisible(this.#columns(), shown, shown ? this.#pins() : 0);
   }
 
-  /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
+  /** What the panel would draw: the live view's pins, read *now* through the wiring. */
+  #pins(): number {
+    return this.#wiring.deps.getView().pins.length;
+  }
+  // Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them.
   railDrawn?(iso: string): void {
     this.#rail.drawn(iso);
   }
 
-  /**
-   * Whether either surface is on screen — the minute hand's one question, over the readers of
-   * `panel-surfaces.ts`, so a verdict is *now* and never the frame the owner opened on.
-   */
+  // Whether either surface is on screen — the minute hand's one question, over the readers of
+  // `panel-surfaces.ts`, so a verdict is *now* and never the frame the owner opened on.
   isAnySurfaceVisible(): boolean {
     return ownerHasSurface(this, this.#wiring);
   }
 
-  /**
-   * The width this instance was last told — what every visibility question is measured in. Asked of the
-   * wiring, not a module global: two sessions in one process have two terminals. See `panel-width.ts` for
-   * the two silences and `judgeColumns` for what each is measured as.
-   */
+  // The width this instance was last told — what every visibility question is measured in. Asked of the
+  // wiring, not a module global: two sessions in one process have two terminals. See `panel-width.ts` for the
+  // two silences and `judgeColumns` for what each is measured as.
   #columns(): number {
     return judgeColumns(this.#wiring.terminal.status());
   }
@@ -234,18 +227,14 @@ export class PanelOwner {
     this.#railConsider(true);
   }
 
-  /**
-   * Ask the rail to be reconsidered — the owner's one call into `RailHandoff`, which holds the guard, the
-   * recorded minute and both verdicts on `open`. The width is read here, at the moment the answer is
-   * decided, because the frame that asked is the one that measured it.
-   */
+  // Ask the rail to be reconsidered — the owner's one call into `RailHandoff`, which holds the guard, the
+  // recorded minute and both verdicts on `open`. The width is read here, at the moment the answer is decided,
+  // because the frame that asked is the one that measured it.
   #railConsider(open: boolean): void {
-    this.#rail.consider(this.#wiring, this.#columns(), open);
-  }
-
-  /** Give the panel the keyboard. Works whether or not it is drawn at the moment. */
-  focus(): void {
-    this.#record?.component?.focus();
+    // The owner's own verdict goes to the guard rather than the cell's: an open that failed has forgotten
+    // its record and still says "shown", and a guard that read the cell would stand the rail down for a
+    // panel that is not on screen. See `panel-rail.ts`.
+    this.#rail.consider(this.#wiring, this.#columns(), open, () => this.isVisible());
   }
 
   /**
@@ -266,6 +255,11 @@ export class PanelOwner {
     this.#wiring.deps.recordPanelShown(true);
   }
 
+  // Give the panel the keyboard. Works whether or not it is drawn at the moment.
+  focus(): void {
+    this.#record?.component?.focus();
+  }
+
   /** Hide the panel. Silent — a hide has no dead end to warn about — and always records. */
   hide(): void {
     this.#wiring.deps.recordPanelShown(false);
@@ -274,13 +268,22 @@ export class PanelOwner {
 
   /** `ctrl+alt+t`: whichever way it lands, it was the user's choice, so it is recorded. */
   toggle(ctx: HostContext | undefined): void {
-    if (this.#wiring.deps.isPanelShown()) this.hide();
+    if (this.#wiring.deps.panelMode().shown()) this.hide();
     else this.show(ctx);
   }
 
   /**
-   * `ctrl+alt+p`: focus the panel, showing it first if it was hidden. Records nothing — showing a
-   * panel to read it is not a preference about whether it should stay open (persistence decision).
+   * `ctrl+alt+p`: put the panel in the **open** frame and give it the keyboard, from hidden, from a peek or
+   * from where it already is. Records nothing — showing a panel to read it is not a preference about whether
+   * it should stay open (persistence decision).
+   *
+   * The frame is the point of the key and not a side effect of it: a move that only *shows* the panel rests
+   * it where the operator's configuration says — under `PI_STICKY_PANEL=peek`, the three-row peek — and a
+   * focused peek answers no key: no bar, no `d`, an `Enter` that would put a reply marker beside a list
+   * nothing is selected in. So the cell is asked for the outright earned open, `autoOpen` (`panel-mode.ts`:
+   * the one verb that shows *and* opens while recording nothing, the same move an action pin's auto-show
+   * makes), the surfaces are settled, and only then does the component take the keyboard. The earned open
+   * ends the way an auto-show's does: `endEarnedOpen` on the way out, back to what the user chose.
    */
   focusFromShortcut(ctx: HostContext | undefined): void {
     const refusal = refusalToShow(this.#columns(), this.#wiring.deps.getView());
@@ -288,12 +291,10 @@ export class PanelOwner {
       ctx?.ui.notify(refusal, "warning");
       return;
     }
-    this.#wiring.deps.setPanelShown(true);
+    // `autoOpen` is not the redraw the extension's own setters perform, so `refresh()` is asked for here: a
+    // rail still standing over the pins the panel has just taken is the pins drawn twice.
+    this.#wiring.deps.panelMode().autoOpen();
+    this.refresh();
     this.focus();
   }
-}
-
-/** What a rejected `custom()` says about itself, for the one line the user is told. */
-function reasonOf(err: unknown): string {
-  return err instanceof Error && err.message !== "" ? err.message : String(err);
 }

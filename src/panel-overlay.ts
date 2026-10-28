@@ -15,6 +15,7 @@ import type { PanelWiring } from "./panel-deps.ts";
 import { PANEL_OVERLAY_OPTIONS } from "./panel-geometry.ts";
 import { replyHint } from "./panel-hint.ts";
 import type { PanelHost } from "./panel-host.ts";
+import type { PanelMode } from "./panel-mode.ts";
 
 /**
  * The factory pi-tui calls to build the overlay's component.
@@ -43,6 +44,10 @@ export function panelFactory(
      * acts on a key: pi-tui routes input to the focused component whether or not `visible()` let it draw.
      */
     panelVisible(): boolean;
+    /**
+     * Which frame to draw and which keys to answer (`PanelHost.mode`).
+     */
+    mode(): PanelMode;
   },
 ): PanelCustomFactory {
   const deps = wiring.deps;
@@ -78,6 +83,7 @@ export function panelFactory(
       // read at key time, so a hide, a resize or a last dismissal is visible here without anything
       // having told the component.
       isVisible: () => hooks.panelVisible(),
+      mode: hooks.mode,
       // The panel's one notify line, through the extension: the component has no context of its own and
       // the live one belongs to the session that drew it.
       notify: (message, type) => deps.notify(message, type),

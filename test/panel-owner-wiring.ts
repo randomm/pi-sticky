@@ -9,6 +9,7 @@ import type { PanelDeps } from "../src/panel-deps.ts";
  * host can fail.
  */
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
+import { createPanelMode } from "../src/panel-mode.ts";
 import { TerminalWidth } from "../src/panel-width.ts";
 import { PanelOwner } from "../src/panel.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -25,6 +26,20 @@ import type { RecordedCustomCall } from "./recorded-ui-types.ts";
  * owner's type with the identity `NO_PANEL_COLOUR` rather than inventing stubs.
  */
 const panelStyle: PanelStyle = NO_PANEL_COLOUR;
+
+/**
+ * The one writer of a hand-built fixture's screen: the cell and the flag move together and only here, so
+ * no setter can leave them disagreeing about what is drawn. `recordPanelShown` is its only caller.
+ */
+function moveTo(
+  cell: ReturnType<typeof createPanelMode>,
+  screen: { shown: boolean },
+  shown: boolean,
+): boolean {
+  cell.settle(shown);
+  screen.shown = shown;
+  return shown;
+}
 
 /** The one-pinned view every hand-built wiring starts from. */
 /**
@@ -52,22 +67,47 @@ export function wiring(
   opts: { view?: PinView; shown?: boolean; custom?: unknown } = {},
 ) {
   const railDraws: number[] = [];
-  /** What each rail draw was asked to draw, so the callback's argument is observable. */
-  const railKeys: string[] = [];
-  /** The `recordPanelShown` calls, so a test can see which half of the setter pair ran. */
+  /**
+   * The ownership answer the guard was handed for each install. `redrawRail` is the one callback the guard
+   * runs when it decides to install, so the verdict read through `handed` at that moment is what the guard
+   * keyed the install on.
+   *
+   * Recording a fixture constant would have been the mistake this replaces: with `railOwns` filled from the
+   * fixture's own default, the failed-open case asserted `railOwns === [false]` while the guard was handed
+   * `panelMode().shown()`, which answered `true` — green on a guard that stood the rail down for pins no
+   * surface drew. One push per call is also what proves the guard's decision happened once: a guard that drew
+   * twice would double this and the count.
+   */
+  const railOwns: boolean[] = [];
+  /** The verdict the guard was handed; `() => panel.isVisible()` from the moment the owner exists. */
+  let owns: () => boolean = () => false;
+  /**
+   * The thunk the owner's `#railConsider` builds (`() => this.isVisible()`) is not reachable from outside the
+   * owner, so this holder is the seam through which a test substitutes it — see `claimOwnership`. It is read
+   * by the owner's own `redrawRail` callback, which is the only thing the guard runs when it installs, so
+   * what lands in `railOwns` is the verdict the guard actually keyed on.
+   */
+  const handed: { ownsPins: () => boolean } = { ownsPins: () => owns() };
+  /** The `recordPanelShown` calls, so a test can see that the owner's verbs reached the deps. */
   const records: boolean[] = [];
-  const state: { view: PinView; shown: boolean; rpc?: boolean; clock?: string } = {
+  /**
+   * The user's recorded choice, as the verbs left it. A test reads it; it does not write it — the screen
+   * moves through `hide`, `show`/`toggle` or `focusFromShortcut`, the same verbs the extension exposes,
+   * so nothing can leave the flag and the cell disagreeing about what is drawn.
+   */
+  const screen: { view: PinView; shown: boolean; rpc?: boolean; clock?: string } = {
     view: opts.view ?? ONE,
     shown: opts.shown ?? true,
     // The instant the owner ages a rail it is about to install. Fixed at `NOW` so a guard whose key ignored
-    // the age and one whose key read a second clock both answer the same way until a test moves it.
+    // the age and one whose key read a second clock both answer the same way until a test moves it. A test
+    // that means to draw a rail changes it and moves the cell with it, through the owner's own verbs.
     clock: NOW,
   };
   /**
    * The one place a `PanelDeps` is built for these files.
    *
-   * Only the members the owner and the rail guard actually read are built: `getView`, `isPanelShown`,
-   * `setPanelShown` and `recordPanelShown`, plus the `notify` the open path uses for a rejected
+   * Only the members the owner and the rail guard read are built — `getView`, `panelMode` and
+   * `recordPanelShown` — plus the `notify` the open path uses for a rejected
    * `custom()` or a close whose handle threw. `panelFactory`'s host closure mentions `dismiss`,
    * `startReply` and the component's notify too, and those are exercised where the component is driven
    * (`panel-component.test.ts`, `panel-lifecycle-toggles.test.ts`), not on an inert stub here. Neither is
@@ -79,28 +119,25 @@ export function wiring(
    * as the partial it is and cast once: it is a `PanelDeps` *for the owner*, and the owner reads only the
    * members above.
    */
+  // The surfaces' one cell, at the resting mode the tests were written for: `open`, the frame those files
+  // assert on.
+  const cell = createPanelMode({ panel: "open" });
   const deps = {
-    getView: () => state.view,
-    isPanelShown: () => state.shown,
+    getView: () => screen.view,
+    // The surfaces' one cell, read as it is: a pure read, with no write folded into it. Every state change
+    // goes through the verbs below — `recordPanelShown` — which is what makes the cell
+    // observable rather than re-settled by whoever happens to ask it a question.
+    panelMode: () => cell,
     // The owner's `replyHint` reaches `config` through the real deps, and these files are about the
     // guard's key, not the border's label: the component reads this every candidate frame, so an absent
     // `config` is an exception out of `update()` rather than an inert stub.
     config: { focusKey: "ctrl+alt+p", maxWidgetLines: 12 },
     // The same reason: the component asks the host for the instant its ages are measured at, and a
     // hand-built deps that cannot answer one is an exception in the draw path rather than a stub.
-    now: () => state.clock ?? NOW,
-    // The one caller is `PanelOwner.focusFromShortcut`, which settles the flag to shown and records nothing;
-    // a `false` through this member is unrepresentable in the owner, so a branch for it here would be a
-    // closure no test can reach (that is the `panel-wiring.test.ts` setter-pair case's job, not this one's).
-    setPanelShown: () => {
-      state.shown = true;
-    },
-    recordPanelShown: (shown: boolean) => {
-      // The recording `shown` below is the flag the owner answers from, and the `/pins` verbs are
-      // expected to settle it — so a recorded entry is what proves the recording half of the pair ran.
-      state.shown = shown;
-      records.push(shown);
-    },
+    now: () => screen.clock ?? NOW,
+    // The flag the owner's verbs leave behind, and the `/pins` verbs are expected to settle it — so a
+    // recorded entry is what proves the recording verb ran and the cell moved with it.
+    recordPanelShown: (shown: boolean) => void records.push(moveTo(cell, screen, shown)),
   } as unknown as PanelDeps;
   const terminal = new TerminalWidth();
   const panel = new PanelOwner({
@@ -108,15 +145,20 @@ export function wiring(
     terminal,
     themeStyle: () => panelStyle,
     onDispose: () => {},
-    rpc: () => state.rpc ?? false,
+    rpc: () => screen.rpc ?? false,
     redrawRail: () => {
-      // Read at draw time: the record has to say what the rail was asked to install, not what the view
-      // happens to hold when the test finally looks at it. One push per call is also what proves the
-      // guard's decision happened once — a guard that drew twice would double this and the count.
-      railKeys.push(`${terminal.columns()}|${state.shown}|${state.view.pins.length}`);
-      railDraws.push(railKeys.length);
+      // The term the guard keyed on, read at draw time through the holder `claimOwnership` writes: normally
+      // the owner's own `isVisible()`, and during a substitution whatever the test claimed the guard was
+      // handed. Filled only on an install the guard really decided to make, which is what makes it a record
+      // of the guard's input rather than of a constant the fixture answered for it.
+      railOwns.push(handed.ownsPins());
+      railDraws.push(1);
     },
   });
+  // The guard's ownership term is the owner's own answer — the one member the fixture cannot build before
+  // the owner exists, so it is wired in here rather than in the literal above. A test that wants to know what
+  // the guard would have keyed on *instead* — the mode cell, say — swaps it through `claimOwnership`.
+  owns = () => panel.isVisible();
   // A context built for a test has a recorder's `custom`; the override is what makes it fail.
   if (opts.custom !== undefined) {
     (ctx as unknown as { ui: Record<string, unknown> }).ui.custom = opts.custom;
@@ -125,9 +167,9 @@ export function wiring(
     panel,
     terminal,
     railDraws,
-    railKeys,
     records,
-    state,
+    screen,
+    railOwns,
     ctx,
     /** State a width the way pi-tui does — the overlay's per-frame `visible()` — and reconsider the rail. */
     frame: (columns: number) => {
@@ -135,5 +177,16 @@ export function wiring(
       const visible = typeof options === "function" ? undefined : options?.visible;
       visible?.(columns, 24);
     },
+    /**
+     * Hand the guard a *different* ownership answer than the owner gives, so a test can see which one the
+     * rail's key was spelled from. Returns what to restore it with.
+     */
+    claimOwnership: (verdict: () => boolean) => {
+      const previous = owns;
+      owns = verdict;
+      return previous;
+    },
+    /** The surfaces' one cell, for a test that asks the panel what frame it is drawing. */
+    panelMode: () => cell,
   };
 }

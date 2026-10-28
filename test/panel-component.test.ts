@@ -52,6 +52,30 @@ test("render draws the header, the pins and — while focused — the hint", () 
   expect(c.render(HINT_ROOM).some((line) => line.includes("Esc back"))).toBe(true);
 });
 
+test("the component draws the peek's three rows when the host reports its state, and the open frame when it changes", () => {
+  // The component's own `mode === "peek"` branch (`panel-component.ts`) — the only place the two frames are
+  // chosen. `panel-peek.test.ts` drives the builder and `panel-peek-keys.test.ts` the keys; neither reaches
+  // the choice, and a component that read the state into its cache key but not into its drawing would pass
+  // both of those files while drawing six rows over the transcript.
+  const { c, state } = component(pins("Decide X", "Watch out"));
+  // Two borders over one row per pin: the open frame is four rows here, and the peek three.
+  expect(c.render(40)).toHaveLength(4); // no state cell: the open frame, as it always was
+  state.mode = "peek";
+  const peek = c.render(40);
+  expect(peek).toHaveLength(3);
+  // The peek's title is the counts title, and its one row is the *best-ranked* pin rather than the first of
+  // the view — both halves read from the open frame's own parts, so a peek cannot disagree with the panel it
+  // rests into. (`pins()` are both `info`, and `orderPins` breaks that tie by newest id: #2, not #1.)
+  expect(peek[0]).toContain("📌 Pinned · 2");
+  expect(peek[1]).toContain("Watch out");
+  expect(peek[1]).not.toContain("Decide X");
+  state.mode = "open";
+  expect(c.render(40)).toHaveLength(4);
+  // …and back again: the cache key names the mode (`panel-frame-cache.ts`), so a demote repaints.
+  state.mode = "peek";
+  expect(c.render(40)).toHaveLength(3);
+});
+
 test("render caches its lines until the view, the selection or the focus changes", () => {
   const { c, state } = component(pins("One"));
   const first = c.render(40);

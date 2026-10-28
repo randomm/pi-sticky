@@ -30,7 +30,6 @@ import { fullStamp } from "./panel-tail.ts";
  */
 export { GUTTER_COLUMNS } from "./panel-tail.ts";
 
-import { META_COLUMNS } from "./panel-frame-geometry.ts";
 import { GUTTER_COLUMNS } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";

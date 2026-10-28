@@ -22,8 +22,9 @@
  * the inner width less the widest id/time tail the view carries — and every produced line is padded or cut
  * here, because `wrapTextWithAnsi` breaks on words and a single word wider than the panel comes back whole.
  * A row draws its text and its tail as two parts, so it is the text that is cut and the tail that is
- * padded: the id is the one thing on the row the frame never spends. The border glyphs and the theme's
- * colours are trusted; a pin's text is not, and it never reaches a border.
+ * padded: the id is the one thing on the row the frame never spends. `pinRow` is that arithmetic and is
+ * shared with the peek (`panel-peek.ts`), which draws one row of the same pin and pays the same reserve. The
+ * border glyphs and the theme's colours are trusted; a pin's text is not, and it never reaches a border.
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
@@ -54,8 +55,12 @@ import type { ViewPin } from "./types.ts";
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
 
-/** Whether a size is one a closed frame fits in: the builder draws nothing below either bound. */
-function isPanelFrameSize(width: number, height: number): boolean {
+/**
+ * Whether a size is one a *closed* frame fits in: the builder draws nothing below either bound. Exported
+ * because the peek is drawn by another module and is measured by the same two numbers — a peek which fitted
+ * where the open panel would not draw is a frame with gutters hanging off the overlay.
+ */
+export function isPanelFrameSize(width: number, height: number): boolean {
   return (
     isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
   );
@@ -105,13 +110,12 @@ export interface PanelContent {
 
 /**
  * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
- * *theme* — and `right` says which side the spare columns go on. Every drawn line goes through this one
- * escape policy, with no styled branch: an over-wide line is the case the rail's own `cut` documents —
- * `truncateToWidth` measures an escape whose terminator it does not recognise as printable columns — so when
- * its result still measures too wide the line is cut again from the escape-stripped text, the only string
- * here whose width both sides agree on. Stripped whether or not the cut fired, so a row that fits is still
- * free of escape bytes; re-measured after that, because stripping can leave a line that no longer fills the
- * panel and a short row would let the chat behind it show through.
+ * *theme*. Every drawn line goes through this one escape policy, with no styled branch. The over-wide case
+ * is the one the rail's own `cut` documents: `truncateToWidth` measures an escape whose terminator it does
+ * not recognise as printable columns, so when its result still measures too wide the line is cut again from
+ * the escape-stripped text, the only string here whose width both sides agree on. Stripped whether or not the
+ * cut fired, so a row that fits is still free of escape bytes; re-measured after that, because stripping can
+ * leave a line that no longer fills the panel and a short row would let the chat behind it show through.
  *
  * The styled branch used to exist, and was a hole rather than a convenience: a styled line that measured
  * within the width was padded and returned verbatim, and `visibleWidth` counts an OSC 8 hyperlink, an
@@ -121,8 +125,11 @@ export interface PanelContent {
  * pin never draws one, so refusing every escape byte on every drawn line costs nothing real; what the
  * theme loses is only sequences pi-tui would have counted as zero-width anyway, since `stripSequences`
  * keeps what it does not recognise as an escape to remove and SGR colouring survives intact.
+ *
+ * Shared with the peek (`panel-peek.ts`), so every drawn line of both frames — the open panel's rows and the
+ * peek's three — goes through one escape policy with one owner.
  */
-function fitLine(line: string, width: number): string {
+export function fitLine(line: string, width: number): string {
   const spare = width - visibleWidth(line);
   if (spare >= 0) return padPlain(stripSequences(line), width);
   const cut = stripSequences(truncateToWidth(line, width, ELLIPSIS));
@@ -146,8 +153,12 @@ function fitLine(line: string, width: number): string {
  * overflowed is cut on the text's side: the text gives up columns, never the tail, and a wide id costs its
  * own columns rather than the id's seat. `metaColumns` is the reserve `widestMetaColumns` measured for the
  * view's widest id — the same figure `panelLayoutSections` charged the wrap, so one arithmetic decides a frame.
+ *
+ * Exported for the peek (`panel-peek.ts`), which draws one row of the same pin and must not lay it out a
+ * second way. `selected` is the open panel's question — the bar across the row the keys moved to — and the
+ * peek passes `false`: it is never focused and so never carries a bar.
  */
-function pinRow(
+export function pinRow(
   row: PanelRow,
   inner: number,
   style: PanelStyle,

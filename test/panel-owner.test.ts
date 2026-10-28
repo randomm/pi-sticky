@@ -41,6 +41,56 @@ test("a host whose custom() rejects leaves no panel claimed, so the rail keeps d
   expect(h.panel.component()).toBeUndefined();
 });
 
+test("a rejected open hands the pins back: the rail is installed and draws them", async () => {
+  // The failed open is the case the handoff exists for. `onFailed` forgets the record, and the guard's
+  // ownership answer is the *owner's* verdict — `isVisible()`, which reads that record — so the rail is
+  // asked back. Had it re-derived ownership from the mode cell alone, the cell would still have said
+  // "shown", the rail would have stood down for a panel that is not on screen, and no surface at all would
+  // have drawn the pins. Asserted on the draw itself, not only on the record being gone.
+  const ctx = contextWith([]);
+  const h = wiring(ctx, {
+    custom: () => Promise.reject(new Error("host overlay stack full")),
+  });
+  h.terminal.note(120); // wide: the panel would have owned the pins had it opened
+
+  h.panel.open(ctx);
+  await flush();
+
+  // Not on screen, and nothing was installed for the panel to stand down for while it claimed the pins.
+  expect(h.panel.isVisible()).toBe(false);
+  expect(h.railOwns).toEqual([]);
+  // The rail is asked back, and the verdict it was handed to spell that answer is the owner's *own* — not a
+  // re-derivation from the mode cell. The two answers genuinely disagree in this case: an open whose
+  // `custom()` rejected has forgotten its record, so `isVisible()` answers `false` while the user's flag in
+  // the cell still answers `shown`. The first install is the handback, and it is keyed on the owner.
+  const before = h.railDraws.length;
+  h.panel.refresh();
+  expect(h.railDraws.length).toBeGreaterThan(before);
+  expect(h.railOwns).toEqual([false]);
+  // Handed the *cell* instead of the owner — the shape `PanelOwner`'s `#railConsider` must not be allowed to
+  // take — the guard keys its one install on the cell's `true` and stands the rail down for a panel that is
+  // not on screen: the pins end up on neither surface, and nothing says so. The two verdicts are made to
+  // disagree by the case itself — a `custom()` that rejected has forgotten the record, so `isVisible()` says
+  // `false` while the user's flag in the cell still says `shown` — and `claimOwnership` puts the cell's answer
+  // in the slot the owner fills with its own. `railOwns` is filled by `redrawRail`, the callback the guard
+  // runs only when it *decides to install*, so what is read is the guard's own input on a real install. The
+  // old assertion read a fixture constant from that slot, which is why this mutation passed the whole suite.
+  const cold = contextWith([]);
+  const swapped = wiring(cold, {
+    custom: () => Promise.reject(new Error("host overlay stack full")),
+  });
+  swapped.terminal.note(120);
+  swapped.panel.open(cold);
+  await flush();
+  swapped.claimOwnership(() => swapped.panelMode().shown());
+  swapped.panel.refresh();
+  expect(swapped.railOwns).toEqual([true]);
+  expect(swapped.panel.isVisible()).toBe(false);
+  // …and the owner's own verdict, back in the same slot, is what spells the handback: the guard keys on
+  // `false` — a verdict the cell cannot give here — and the rail is installed for it.
+  expect(h.railOwns).toEqual([false]);
+});
+
 test("a host with no custom() at all opens nothing and still leaves the rail in charge", () => {
   const ctx = contextWith([]);
   // `null`, not `undefined`: clearing the member would only ask the recorder's `custom` (the override
@@ -68,14 +118,17 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
 
   // Pins arrive, the user's flag is kept: the answer follows the view, through the same wiring, with
   // nothing rebuilt — which is why the rail holds the owner rather than a function captured at open.
-  h.state.view = ONE;
+  h.screen.view = ONE;
   expect(h.panel.isVisible()).toBe(true);
-  h.state.shown = false;
+  const before = h.railDraws.length;
+  // The hide goes through the owner's own verb, which moves the cell and the flag together: the fixture's
+  // reader is pure now, so a flag nothing settled would be an answer the cell never got. And the answer
+  // moving is what makes the rail ask for a redraw, which is the assertion the `refresh()` below carries.
+  h.panel.hide();
   expect(h.panel.isVisible()).toBe(false);
 
   // Every change that can move the pins asks for the rail to be reinstalled: `refresh()` is the seam,
   // and the owner does not draw the rail itself, it announces that the answer may have changed.
-  const before = h.railDraws.length;
   h.panel.refresh();
   expect(h.railDraws.length).toBeGreaterThan(before);
 
@@ -86,10 +139,9 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
 });
 
 test("show, hide and toggle settle the flag through the deps, and record only the user's choice", async () => {
-  // `setPanelShown` settles the live flag and records nothing; `recordPanelShown` also appends the entry
-  // that makes the choice survive a reload. The distinction is the persistence contract: `show`/`hide` are
-  // the user speaking, `focusFromShortcut` is not, and a wiring that could not tell the two apart would
-  // record a preference every time the user pressed a key to read a pin.
+  // `recordPanelShown` is the verb the user's choices go through; it settles the live flag and appends the
+  // entry that makes the choice survive a reload. A reading of the same rule from the other side is
+  // `panel-settle.ts`, which owns the order the extension's own setters use.
   const ctx = contextWith([]);
   const h = wiring(ctx, { shown: false });
   h.terminal.note(120);
@@ -98,12 +150,13 @@ test("show, hide and toggle settle the flag through the deps, and record only th
 
   // `show` is the user's choice: the flag moves and the recording setter is the one that runs.
   h.panel.show(ctx);
-  expect(h.state.shown).toBe(true);
+  expect(h.screen.shown).toBe(true);
   expect(h.records).toEqual([true]);
 
-  // `hide` releases the pins to the rail and records that too.
+  // `hide` releases the pins to the rail and records that too — the cell answers it, not just the flag.
   h.panel.hide();
-  expect(h.state.shown).toBe(false);
+  expect(h.screen.shown).toBe(false);
+  expect(h.panelMode().mode()).toBe("hidden");
   expect(h.records).toEqual([true, false]);
 
   // `toggle` from a hidden state shows, and from a shown state hides — both are the user's choice.
@@ -112,11 +165,24 @@ test("show, hide and toggle settle the flag through the deps, and record only th
   expect(h.records).toEqual([true, false, true, false]);
 
   // The shortcut that only focuses records nothing: reading a pin is not a statement about whether the
-  // panel should stay open, so the user's recorded choice must survive it.
+  // panel should stay open, so the user's recorded choice must survive it. And it must not merely *show* the
+  // panel: a move that only shows answers the resting mode's question and draws a peek under
+  // `PI_STICKY_PANEL=peek`, a frame which answers no key. So the focus key leaves the cell in the **open**
+  // frame — the observable that decides whether `d` and `Enter` do anything at all — in one verb: `autoOpen`
+  // shows *and* opens while recording nothing, so it settles no flag and leaves the user's recorded hide
+  // exactly where it was.
   const before = h.records.length;
+  expect(h.panel.component()?.isFocused()).toBe(false);
   h.panel.focusFromShortcut(ctx);
   expect(h.records).toHaveLength(before);
-  expect(h.state.shown).toBe(true);
+  expect(h.panelMode().shown()).toBe(true);
+  expect(h.panelMode().mode()).toBe("open");
+  expect(h.screen.shown).toBe(false);
+  expect(h.panel.component()?.isFocused()).toBe(true);
+  // …and leaving the interaction ends the earned open the way an auto-show's does: back to the hidden state
+  // the user chose, rather than a panel the shortcut left covering the transcript.
+  h.panel.component()?.unfocus();
+  expect(h.panelMode().mode()).toBe("hidden");
 });
 
 test("a show that the terminal cannot fit says so once, and still records the choice", async () => {
@@ -129,7 +195,7 @@ test("a show that the terminal cannot fit says so once, and still records the ch
   h.panel.show(ctx);
   // Nothing pinned: the refusal is about the pins, and it reached the user through `deps.notify`.
   expect(ctx.recorder.notifications.length).toBe(1);
-  expect(h.state.shown).toBe(true);
+  expect(h.screen.shown).toBe(true);
 });
 
 test("a same-count change of *which* pins the view holds still reinstalls the rail", async () => {
@@ -146,7 +212,7 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
   const installed = h.railDraws.length;
   expect(installed).toBeGreaterThan(0);
 
-  h.state.view = { pins: [pin(1, "Decide X")], removed: [] };
+  h.screen.view = { pins: [pin(1, "Decide X")], removed: [] };
   h.panel.refresh();
   // A *fresh* array of identical pins still counts as the same view: what the key must catch is a view
   // that draws differently, not one that was merely re-published — and `commit`/`reconstruct` publish a
@@ -155,7 +221,7 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
 
   // …and the reply suffix the rail dims a pin with is a drawn change, so a same-id/same-stamp view
   // whose pin now reads as replied is not the frame the installed component drew.
-  h.state.view = {
+  h.screen.view = {
     pins: [{ ...pin(1, "Decide X"), repliedAt: NOW }],
     removed: [],
   };
@@ -163,7 +229,7 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
   expect(h.railDraws.length).toBe(installed + 1);
 
   // Same width, same flag, same count — different pins, which is the case the count cannot see.
-  h.state.view = { pins: [pin(7, "Something else")], removed: [] };
+  h.screen.view = { pins: [pin(7, "Something else")], removed: [] };
   h.panel.refresh();
   expect(h.railDraws.length).toBe(installed + 2);
   // …and a frame that changed nothing after it costs nothing again.

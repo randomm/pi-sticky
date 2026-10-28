@@ -23,6 +23,7 @@
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import type { PanelModeState } from "./panel-mode.ts";
 import type { PinState, PinView, StickyConfig, UserAction } from "./types.ts";
 
 export interface StickyDeps {
@@ -46,10 +47,38 @@ export interface StickyDeps {
    * `applyAction` produced *before* it asks for the redraw: the caller commits the snapshot (pi
    * appends the tool result after `execute` returns) and only a rebuild after that can see it, so
    * a redraw that rebuilt first would reset the pins to what the stale branch said.
+   *
+   * `affected` is the ids that very call answered for — the reducer's own `affected` list, handed over
+   * rather than guessed at. The panel asks one question about a commit ("did it touch a pin the user must
+   * act on?", `panel-autoshow.ts`) and the answer is about those ids: a `count`-shaped proxy is wrong for
+   * both cases the criterion names — an `update` keeps the id it was given, and the drawn order ranks by
+   * reply state, so "the newest pin" is not "the pin the commit touched". Required because there is exactly
+   * one caller and it holds the reducer's own answer: `list` publishes no snapshot and so commits nothing.
    */
-  commit(state: PinState): void;
+  commit(state: PinState, affected: readonly number[]): void;
   /** Record one of the user's actions as a `pi-sticky.user` entry. */
   appendUserAction(action: UserAction): void;
+  /**
+   * The panel's three-state cell: `mode()` is what the overlay, the rail and the component all ask, and the
+   * verbs are the extension's (a toggle, an auto-show, the ending of a transient open).
+   *
+   * The cell rather than a boolean because there is one answer to "what is the panel doing" and four
+   * readers of it in the same turn — the overlay, the rail, the component and the tool's auto-show — where a
+   * per-surface flag is four answers that can disagree, which is how pins end up drawn by neither surface or
+   * by both.
+   *
+   * Required, and read at call time: a surface that guessed `open` while the extension's cell said hidden is
+   * a rail that stood down for pins nothing drew. The hand-built deps in the tests build a real cell
+   * (`createPanelMode`), which is what a surface needs to be tested against the state it reads.
+   */
+  panelMode(): PanelModeState;
+  /**
+   * End an earned open and settle both surfaces: the panel returns to what the user's own verbs chose and
+   * the rail takes the pins back. The one move the reply handler makes on a submitted message
+   * (`panel-transience.ts`), and the reason it is a member rather than the handler reaching the cell and the
+   * redraw separately — those two have an order, and only the extension knows it.
+   */
+  endEarnedOpen(): void;
 }
 
 /**

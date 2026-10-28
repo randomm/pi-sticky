@@ -54,6 +54,9 @@ import { ONE } from "./panel-owner-wiring.ts";
 function handHostStub(): PanelHost {
   return {
     getView: () => ONE,
+    // The open frame is what this file draws, so the cell says open; the component reads it the way the
+    // extension's host does.
+    mode: () => "open",
     // The instant the panel ages at, pinned so the row this file asserts byte-for-byte says `4d` rather
     // than whatever minute the run happens to fall in. Absent, `#ageNow()` falls back to `new Date()` and
     // the assertion below would be a clock reading rather than a drawing.

@@ -29,6 +29,9 @@ function frame(over: Partial<PanelFrame> = {}): PanelFrame {
     pins: PINS,
     selection: 0,
     focused: false,
+    // The state the frame was drawn for: `open` is what every case below draws, and the one case that needs
+    // the peek's rows names it.
+    mode: "open",
     replyHint: "",
     ageNow: 29_725_800,
     ...over,
@@ -78,6 +81,6 @@ test("the drawn lines and the width are not part of the key", () => {
 
 test("every field of the key is a field of the frame, so a new one cannot be left out silently", () => {
   expect(Object.keys(frame()).sort()).toEqual(
-    ["ageNow", "focused", "lines", "pins", "replyHint", "selection", "width"].sort(),
+    ["ageNow", "focused", "lines", "mode", "pins", "replyHint", "selection", "width"].sort(),
   );
 });

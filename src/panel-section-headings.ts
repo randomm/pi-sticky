@@ -15,7 +15,7 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { ELLIPSIS, padPlain } from "./panel-frame.ts";
+import { padPlain } from "./panel-frame.ts";
 import type { PanelSection, SectionKind } from "./panel-sections.ts";
 
 /**

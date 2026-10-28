@@ -1,42 +1,40 @@
 /**
  * Building the panel's dependency object and its wiring, away from the extension's own wiring.
  *
- * `PanelDeps` *extends* `StickyDeps` and adds only what the panel alone needs, and the visibility trio
- * lives here rather than on `StickyDeps` because `tool.ts`, `commands.ts` and `reminder.ts` — the
+ * `PanelDeps` *extends* `StickyDeps` and adds only what the panel alone needs; the mode cell is on
+ * `StickyDeps` itself because the tool's commit path answers the auto-show question with it. The rest of
+ * the visibility pair lives here rather than there because `tool.ts`, `commands.ts` and `reminder.ts` — the
  * modules `StickyDeps` is handed to — read none of them.
  *
- * The construction lives here too, so the panel's dependency shape — the four members the extension's
- * own deps object does not carry, and the editor/notify paths that guard themselves against a host that
+ * The construction lives here too, so the panel's dependency shape — the members the extension's own deps
+ * object does not carry, and the editor/notify paths that guard themselves against a host that
  * throws — is one file's business rather than a block in the middle of `extension.ts`. `createPanelWiring`
  * is the seam a lifecycle test hands the owner a record instead of a session.
  *
- * The redraw contract, stated once: **`setPanelShown`/`recordPanelShown` settle the flag and redraw both
- * surfaces.** The setters are the extension's, not this file's, and the rail handoff is a decision the
- * rail makes only when it is asked to draw — so a visibility change has to be the thing that asks it, or
- * the pins sit on the surface the user just closed. `PanelOwner` may *additionally* announce a change
- * through `refresh()` when it moved something the setters know nothing about (its own component);
- * `show`/`hide` do not, and neither does any caller of the setters.
+ * The redraw contract, stated once: **`recordPanelShown` settles the flag and redraws both surfaces.** The
+ * setter is the extension's, not this file's, and the rail handoff is a decision the rail makes only when it
+ * is asked to draw — so a visibility change has to be the thing that asks it, or the pins sit on the surface
+ * the user just closed. `PanelOwner` may *additionally* announce a change through `refresh()` when it moved
+ * something the setter knows nothing about (its own component); `show`/`hide` do not, and neither does any
+ * caller of the setter.
  */
 import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
 
 import type { HostContext } from "./context.ts";
 import type { StickyDeps } from "./deps.ts";
+import type { PanelModeState } from "./panel-mode.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import { replyMarker } from "./reply.ts";
 import { latestUIShown } from "./session-entries.ts";
 
 /**
- * What the panel reads and changes in the extension: everything the pins wiring exposes, plus the three
- * things only the panel needs.
+ * What the panel reads and changes in the extension: everything the pins wiring exposes, plus the five
+ * members only the panel needs (the recording visibility verb, the dismissal, and the editor/notify paths).
  */
 export interface PanelDeps extends StickyDeps {
-  /** Whether the panel's own `visible()` may draw right now. */
-  isPanelShown(): boolean;
-  /**
-   * Change the live flag and redraw both surfaces; records nothing. Only an explicit user toggle appends.
-   */
-  setPanelShown(shown: boolean): void;
+  /** `panelMode` is `StickyDeps`' — see `StickyDeps.panelMode` for the cell and why it is one. */
+  panelMode(): PanelModeState;
   /**
    * Append the `pi-sticky.ui` entry that makes a user's toggle survive a reload, then redraw.
    *
@@ -118,7 +116,7 @@ export function initialShown(ctx: HostContext | undefined): boolean {
 }
 
 /**
- * What the extension hands `createPanelWiring`: its own deps object plus the four things only the panel
+ * What the extension hands `createPanelWiring`: its own deps object plus the five things only the panel
  * asks, and the two things the wiring needs that are not deps at all.
  *
  * `deps` is *shared* rather than copied: the flag that decides what is on screen is one cell, and two
@@ -127,8 +125,6 @@ export function initialShown(ctx: HostContext | undefined): boolean {
 export interface PanelWiringParts {
   deps: StickyDeps;
   terminal: TerminalWidth;
-  isPanelShown(): boolean;
-  setPanelShown(shown: boolean): void;
   recordPanelShown(shown: boolean): void;
   /** Dismiss one pin as the user, through the command layer's single dismissal path. */
   dismiss(id: number): void;
@@ -148,7 +144,7 @@ export interface PanelWiringParts {
 }
 
 /**
- * The panel's wiring, built from the extension's deps and the four members the panel adds.
+ * The panel's wiring, built from the extension's deps and the members the panel adds.
  *
  * Annotated as `PanelDeps`/`PanelWiring` rather than spread at the construction site, so a member the
  * panel gains (or drops) is a compile error at this literal rather than at some consumer forty lines
@@ -158,8 +154,6 @@ export interface PanelWiringParts {
 export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
   const deps: PanelDeps = {
     ...parts.deps,
-    isPanelShown: parts.isPanelShown,
-    setPanelShown: parts.setPanelShown,
     recordPanelShown: parts.recordPanelShown,
     dismiss: parts.dismiss,
     notify: (message, type) => parts.notify(message, type),

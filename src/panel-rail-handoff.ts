@@ -43,6 +43,10 @@ export interface RailHandoff {
    * a dropped one) — forget the answer, so the next frame compares against nothing. The answer, its cache
    * and both verdicts are the guard's: see `panel-rail.ts`.
    *
+   * `ownsPins` is the owner's own visibility verdict (`PanelOwner.isVisible`), handed down so the guard's
+   * ownership term is the very answer the owner gives the overlay and the rail installer: a record the owner
+   * has forgotten — a failed open — is not a panel the rail should stand down for.
+   *
    * `columns` is the width the caller measured the visibility question at, passed in rather than re-read:
    * the caller is the frame that asked, and its measurement is the answer's subject.
    *
@@ -50,7 +54,7 @@ export interface RailHandoff {
    * then read one clock rather than two, which is the difference between a key that moves once a minute and
    * one that moves every frame.
    */
-  consider(wiring: PanelWiring, columns: number, open: boolean): void;
+  consider(wiring: PanelWiring, columns: number, open: boolean, ownsPins: () => boolean): void;
 }
 
 /** The rail's handoff of one owner: a guard of its own, and no minute recorded yet. */
@@ -72,7 +76,12 @@ export function createRailHandoff(): RailHandoff {
     minute = ageBucket(iso);
   }
 
-  function consider(wiring: PanelWiring, columns: number, open: boolean): void {
+  function consider(
+    wiring: PanelWiring,
+    columns: number,
+    open: boolean,
+    ownsPins: () => boolean,
+  ): void {
     // A lifecycle edge (`open === false`) forgets both halves this object holds, and does it before the guard
     // is asked: a frame that compared the rail against no installed answer while still holding the previous
     // minute would be one comparison away from installing nothing. They are one edge, so they go together —
@@ -84,6 +93,7 @@ export function createRailHandoff(): RailHandoff {
       wiring.redrawRail,
       open,
       minute ?? ageBucket(wiring.deps.now()),
+      ownsPins,
     );
   }
 

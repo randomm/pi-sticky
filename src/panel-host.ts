@@ -10,6 +10,7 @@
  * and whose factory got no theme still has to draw, and a selected row drawn with no bar at all looks
  * like a panel whose keys do nothing.
  */
+import type { PanelMode, PanelModeState } from "./panel-mode.ts";
 import type { PanelStyle } from "./render.ts";
 import type { PinView } from "./types.ts";
 
@@ -57,6 +58,18 @@ export interface PanelHost {
    * is to hand the focus back rather than to dismiss, reply or move.
    */
   isVisible(): boolean;
+  /**
+   * The panel's mode cell — hidden, the three-row peek, or the full sectioned panel (`panel-mode.ts`).
+   * Read at draw time and at key time, like the view: the state is the extension's cell, and the component
+   * is the only thing that knows the two frames are different sizes. `panelMode().mode()`, spelled once for
+   * the host.
+   *
+   * The cell and not its `mode()`, because the frame to draw and the keys to accept are the same answer asked
+   * twice — "what is the panel doing" — and a host that reported one and not the other is a peek drawing
+   * three rows whose `d` still dismisses. `panel-input.ts` refuses every key the peek has no row for, which
+   * is the rule.
+   */
+  mode(): PanelMode;
   /** Tell the user one line, on the surface the extension still has. */
   notify(message: string, type?: "info" | "warning" | "error"): void;
   /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. */

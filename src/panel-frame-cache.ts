@@ -1,3 +1,4 @@
+import type { PanelMode } from "./panel-mode.ts";
 /**
  * What a `PanelComponent` has memorised, in one place.
  *
@@ -33,6 +34,15 @@ export interface PanelFrame {
   selection: number;
   /** Focus decides the bar, the hint and which border colour is asked for. */
   focused: boolean;
+  /**
+   * Which of the three states the frame was drawn for — hidden, the three-row peek, or the open panel.
+   *
+   * In the key because the two drawn states of *one* view are different bytes: a cache that keyed on the
+   * view, the bar and the label alone would answer an auto-open with the peek's three rows, or a demote with
+   * the open panel's rows, and neither is a frame the user could act on. Every component has a mode cell to
+   * ask (`PanelHost.mode`), so the key always names one.
+   */
+  mode: PanelMode;
   /** The resting border's label, read from the host at draw time. */
   replyHint: string;
   /**
@@ -49,8 +59,8 @@ export interface PanelFrame {
  * Whether the cached `frame` is the frame the component would draw right now.
  *
  * `pins` are compared by identity and everything else by value; `candidate` is a frame-shaped read of the
- * component's current state, built by `PanelComponent.#candidate`, so the two frames are compared field by
- * field rather than by five positional arguments that can be passed in the wrong order. `width` and `lines`
+ * component's current state, built by `frameCandidate` (`panel-component-frame.ts`), so the two frames are
+ * compared field by field rather than by five positional arguments that can be passed in the wrong order. `width` and `lines`
  * are not compared: a candidate names neither, and both follow from the fields that are.
  */
 export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame): boolean {
@@ -60,6 +70,7 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
     frame.selection === candidate.selection &&
     frame.focused === candidate.focused &&
     frame.replyHint === candidate.replyHint &&
+    frame.mode === candidate.mode &&
     frame.ageNow === candidate.ageNow
   );
 }

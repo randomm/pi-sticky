@@ -27,6 +27,10 @@ function load(env: Record<string, string | undefined>): ReturnType<typeof stubAp
     // which ids get registered — and so a case below can set one and read the result off `stub`.
     "PI_STICKY_TOGGLE_KEY",
     "PI_STICKY_FOCUS_KEY",
+    // The resting-state variable, for the same reason as the two shortcuts: an ambient
+    // `PI_STICKY_PANEL=open` in whoever's shell would otherwise decide how every entry-point test's panel
+    // rests, and one case below sets it and reads the result off the cell.
+    "PI_STICKY_PANEL",
   ];
   const saved: [string, string | undefined][] = keys.map((key) => [key, process.env[key]]);
   const effective: Record<string, string | undefined> = {
