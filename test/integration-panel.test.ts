@@ -15,8 +15,9 @@ import "./env-clear.ts";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
+import { TOOL_NAME } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
-import { type Harness, createHarness } from "./harness.ts";
+import { type Harness, call, createHarness, reply } from "./harness.ts";
 import {
   command,
   contextFor,
@@ -123,6 +124,34 @@ test("a pin arriving while the panel is hidden shows it again and records nothin
     expect(panelVisible(h, 120)).toBe(true);
     expect(uiEntries(h)).toEqual([{ v: 1, shown: false }]);
     expect(registeredRail(h)).toBe(false);
+  } finally {
+    await h.dispose();
+  }
+});
+
+test("an update that promotes a pin to warning shows a hidden panel, and records nothing", async () => {
+  // Issue #40's "or updated" half, on a live session. The pin already existed and keeps its id, so the
+  // commit says nothing countable about itself: only the ids it touched say that a blocker arrived, and
+  // `extension.ts`'s `commit` is what hands them to the ledger. A hidden panel with a promoted blocker on
+  // the rail only is the failure this pins.
+  const h = await createHarness({ factories: [extension] });
+  try {
+    await resize(h, 120);
+    await pin(h, "Migration pending");
+    await command(h, "/pins hide");
+    await leavePanel(h);
+    expect(uiEntries(h)).toEqual([{ v: 1, shown: false }]);
+
+    h.script([call(TOOL_NAME, { action: "update", id: 1, level: "warning" }), reply("ok")]);
+    await h.run("promote");
+    await flush();
+
+    const handle = panelCall(h)?.handle as { isHidden?: () => boolean } | undefined;
+    expect(handle?.isHidden?.()).toBe(false);
+    expect(panelVisible(h, 120)).toBe(true);
+    expect(registeredRail(h)).toBe(false);
+    // The hide the user chose is still the record: an earned open does not overwrite it.
+    expect(uiEntries(h)).toEqual([{ v: 1, shown: false }]);
   } finally {
     await h.dispose();
   }

@@ -2,10 +2,11 @@
  * The ledger of commits the branch cannot be read for (`src/session-commits.ts`).
  *
  * pi appends a tool result only after `execute()` returns, so the live state runs ahead of the session for
- * one window, and two cells cover it: "a commit exists the branch does not hold" (which the rebuild reads
- * before it may trust the entries) and "the draw now running is the one that follows that commit" (the only
- * draw allowed to ask the auto-show question — which is why `autoShow` takes no flag and reads the second
- * cell itself).
+ * one window, and three cells cover it: "a commit exists the branch does not hold" (which the rebuild reads
+ * before it may trust the entries), "which pins that commit touched" (which is what the level test is asked
+ * of — a count cannot answer it, because an `update` changes a pin without adding one) and "the draw now
+ * running is the one that follows that commit" (the only draw allowed to ask the auto-show question — which
+ * is why `autoShow` takes no flag and reads that cell itself).
  *
  * The regression these tests pin is the one `extension.ts` could not see from the inside: an *ordinary* draw
  * — a command's listing, the minute's tick, a resize — reaching the auto-show, which both opened a panel the
@@ -42,7 +43,7 @@ const hidden = (): PanelModeState => {
 test("the tool's own draw opens the panel for a pin that asks, and answers the commit", () => {
   const ledger = createCommitLedger();
   const cell = hidden();
-  ledger.note();
+  ledger.note([1]);
   ledger.autoShow(cell, view(pin(1, "action")));
   expect(cell.mode()).toBe("open");
   expect(cell.recorded()).toBe(false);
@@ -60,7 +61,7 @@ test("an ordinary draw opens nothing, because no commit is waiting for it", () =
 test("the commit stays unseen until a boundary settles it, not until the draw has asked", () => {
   const ledger = createCommitLedger();
   const cell = hidden();
-  ledger.note();
+  ledger.note([1]);
   // The rebuild asks this between the commit and the draw, and must keep getting "do not trust the branch".
   expect(ledger.unseen()).toBe(true);
   ledger.autoShow(cell, view(pin(1, "warning")));
@@ -93,7 +94,7 @@ test("an info pin leaves a hidden panel hidden (U11) and still answers the commi
 test("one draw answers one commit, so a later draw cannot re-open the panel", () => {
   const ledger = createCommitLedger();
   const cell = hidden();
-  ledger.note();
+  ledger.note([1]);
   ledger.autoShow(cell, view(pin(1, "action")));
   expect(cell.mode()).toBe("open");
 
@@ -103,10 +104,21 @@ test("one draw answers one commit, so a later draw cannot re-open the panel", ()
   expect(cell.mode()).toBe("hidden");
 });
 
+test("an update of an existing pin is a commit, and reaches the level test (issue #40)", () => {
+  // The case a length comparison dropped: `updateOp` returns the same number of pins, so nothing about the
+  // commit says "new" — and yet the pin it became is a warning the user has to act on. The ids the commit
+  // touched are what carry that, and one of them is old.
+  const ledger = createCommitLedger();
+  const cell = hidden();
+  ledger.note([4]);
+  ledger.autoShow(cell, view(pin(9, "info"), pin(4, "warning")));
+  expect(cell.mode()).toBe("open");
+});
+
 test("clear forgets both cells, which is what a session boundary is", () => {
   const ledger = createCommitLedger();
   const cell = hidden();
-  ledger.note();
+  ledger.note([1]);
   ledger.clear();
   expect(ledger.unseen()).toBe(false);
   // The draw that had been marked as the tool's is ordinary again: a commit the boundary settled is not a

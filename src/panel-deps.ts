@@ -32,7 +32,14 @@ import { latestUIShown } from "./session-entries.ts";
  * things only the panel needs.
  */
 export interface PanelDeps extends StickyDeps {
-  /** Whether the panel's own `visible()` may draw right now. */
+  /**
+   * Whether the panel is *on screen*: the user's recorded choice, or what an earned open has put there for
+   * them. The room gate (`panelIsVisible`) and the toggle's own question are both asked of the screen, not
+   * of the record — an earned open must clear the width test or the pin that earned it draws nothing.
+   *
+   * Deliberately not the record: `panelMode().recorded()` answers "what the user chose", and the two differ
+   * while a transient open is on screen.
+   */
   isPanelShown(): boolean;
   /**
    * The panel's three-state cell: `mode()` is what the overlay, the rail and the component all ask, and the

@@ -39,6 +39,12 @@ export function host(pins: ViewPin[] = []) {
     unfocusCalls: 0,
     dismissals: [] as number[],
     replies: [] as number[],
+    /**
+     * The state the host reports, or `undefined` for "no state cell" — which the component and the key
+     * dispatcher both read as the open panel. Absent by default because every pre-peek component test draws
+     * the open frame; a case that wants the peek sets it.
+     */
+    mode: undefined as "hidden" | "peek" | "open" | undefined,
   };
   const tui = { requestRender: () => void state.renders++ } as unknown as TUI;
   const stub: PanelHost = {
@@ -61,6 +67,9 @@ export function host(pins: ViewPin[] = []) {
     // `#handleInput` asks this before it dispatches a key: a panel pi-tui is not drawing must not act on
     // one. The default is "drawn", because the key tests are about the keys themselves.
     isVisible: () => state.visible !== false,
+    // The state, read at draw and key time like the view: a test moves `state.mode` and the next frame or
+    // keystroke answers it, which is how the component's peek branch is observable without a session.
+    mode: () => state.mode,
   };
   return { stub, state, tui };
 }

@@ -193,9 +193,9 @@ export class PanelOwner {
     // `panelMode()` is the whole of the on-screen answer: hidden, peek or open, folded from the user's
     // choice and from whether a pin earned the full frame (`panel-mode.ts`). Peek and open both own the
     // pins and hidden hands them back, which is what a *peek* must do or the rail would draw the same pin
-    // twice. `isPanelShown()` is deliberately not consulted here: it is the rail's cheap "what the user
-    // chose" read, and the two differ during a transient auto-open. A wiring with no cell at all keeps
-    // asserting the user's choice alone, which is what a hand-built wiring without the member means.
+    // twice — and `mode()` answers it directly rather than through `isPanelShown()`, which is the screen
+    // without the peek/open half. A wiring with no cell at all keeps asserting the screen alone, which is
+    // what a hand-built wiring without the member means.
     const mode = deps.panelMode?.().mode();
     return (
       (mode === undefined ? deps.isPanelShown() : panelOpensPins(mode)) &&

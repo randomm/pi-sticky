@@ -75,18 +75,15 @@ export function createStickyExtension(
     // The context from the most recent `session_start`/`session_tree`, and undefined after
     // `session_shutdown` — never reused across a session it does not belong to.
     let live: ExtensionContext | undefined;
-    // The user's panel choice as the session file last recorded it: an explicit toggle appends a
-    // `pi-sticky.ui` entry, an auto-show does not, so the flag is rebuilt here and not in `rebuild`,
-    // which is about pins and must stay about pins. ONE cell, read by every surface.
     // The panel's three-state cell — hidden / peek / open, and the record of what the user's verbs chose.
-    // One cell per instance, read by the overlay's `visible()`, the rail's handoff and the component's choice
-    // of frame, so no two of them can answer two different questions about one view (`panel-mode.ts`).
+    // The user's choice lives in the `pi-sticky.ui` entry (an explicit toggle appends one, an auto-show does
+    // not), so it is rebuilt at `session_start` and not in `rebuild`, which is about pins and must stay about
+    // pins. One cell per instance, read by the overlay's `visible()`, the rail's handoff and the component's
+    // choice of frame, so no two of them can answer two different questions about one view
+    // (`panel-mode.ts`).
     const panel = panelCell ?? createPanelMode(config);
-    // Pins the tool has committed since the last rebuild: the first auto-shows a hidden panel, so a pin the
-    // user never saw does not arrive silently (U8), and a redraw of a view the session already had does not
-    // fight a panel the user just closed.
     /**
-     * The two counters of commits the branch cannot be read for — see `session-commits.ts`. One object
+     * The counters of commits the branch cannot be read for — see `session-commits.ts`. One object
      * because the two are one fact: the draw that may ask the auto-show is the draw that follows a commit,
      * and a caller holding one cell without the other is a panel that spends an auto-show it never gave.
      */
@@ -177,10 +174,12 @@ export function createStickyExtension(
       now: clock,
       getState: () => state,
       getView: () => view,
-      commit: (next) => {
+      commit: (next, affected) => {
         // The ledger is written before `state` is replaced, so the commit it counts is the one the branch
-        // cannot be read for yet (U8, narrowed by U11).
-        if (next.pins.length > state.pins.length) commits.note();
+        // cannot be read for yet (U8, narrowed by U11). *Every* commit is noted, including one that added no
+        // pin: an `update` that promotes a pin to `action` is exactly the commit U11 says must reach the
+        // level test, and a length comparison would have dropped it before it got there.
+        commits.note(affected);
         state = next;
         view = { pins: next.pins, removed: next.removed };
       },

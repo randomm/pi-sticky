@@ -105,9 +105,9 @@ export interface PanelContent {
 
 /**
  * One drawn line, whatever its source — an untrusted pin row, or a header/hint whose bytes come from the
- * *theme* — and `right` says which side the spare columns go on. Every drawn line goes through this one
- * escape policy, with no styled branch: an over-wide line is the case the rail's own `cut` documents —
- * `truncateToWidth` measures an escape whose terminator it does not recognise as printable columns — so when
+ * *theme*. Every drawn line goes through this one escape policy, with no styled branch: an over-wide line is
+ * the case the rail's own `cut` documents: `truncateToWidth` measures an escape whose terminator it does not
+ * recognise as printable columns — so when
  * its result still measures too wide the line is cut again from the escape-stripped text, the only string
  * here whose width both sides agree on. Stripped whether or not the cut fired, so a row that fits is still
  * free of escape bytes; re-measured after that, because stripping can leave a line that no longer fills the
@@ -121,8 +121,11 @@ export interface PanelContent {
  * pin never draws one, so refusing every escape byte on every drawn line costs nothing real; what the
  * theme loses is only sequences pi-tui would have counted as zero-width anyway, since `stripSequences`
  * keeps what it does not recognise as an escape to remove and SGR colouring survives intact.
+ *
+ * Shared with the peek (`panel-peek.ts`), so every drawn line of both frames — the open panel's rows and the
+ * peek's three — goes through one escape policy with one owner.
  */
-function fitLine(line: string, width: number): string {
+export function fitLine(line: string, width: number): string {
   const spare = width - visibleWidth(line);
   if (spare >= 0) return padPlain(stripSequences(line), width);
   const cut = stripSequences(truncateToWidth(line, width, ELLIPSIS));

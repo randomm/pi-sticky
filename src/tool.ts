@@ -216,7 +216,7 @@ export function createPinTool(deps: StickyDeps): ToolDefinition {
       // returns, so a rebuild that ran first would read a branch that does not hold the new
       // snapshot yet and reset the pins to what the stale branch said — which is how the second
       // pin of one assistant message would lose the first.
-      deps.commit(result.state);
+      deps.commit(result.state, result.affected);
       deps.redraw(ctx);
       const level = (body.level ?? "info") as PinLevel;
       return success(

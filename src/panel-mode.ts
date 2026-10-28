@@ -30,7 +30,6 @@
  */
 import { restingMode } from "./panel-resting.ts";
 import type { PanelResting, PanelRestingSource } from "./panel-resting.ts";
-import { panelSections } from "./panel-sections.ts";
 import type { ViewPin } from "./types.ts";
 
 /** The three states the panel's on-screen answer has. */
@@ -56,29 +55,12 @@ export function panelOpensPins(mode: PanelMode): boolean {
  * `action` and `warning` are the two levels whose whole purpose is a decision or a blocker — and a new `info`
  * pin leaves the panel hidden and leaves the rail drawing it, unchanged.
  *
- * The argument is the pins a commit *touched* rather than a count, so an `update` of a pin that already
- * existed counts when the pin it became carries one of the two levels. `newestPins` reads them out of the
- * view the caller has just committed.
+ * The argument is the pins a commit *touched*, named by id by the reducer and looked up in the view by
+ * `autoShowForCommits` (`panel-autoshow.ts`), so an `update` of a pin that already existed counts when the
+ * pin it became carries one of the two levels.
  */
 export function demandsAttention(changed: readonly { level: string }[]): boolean {
   return changed.some((pin) => pin.level === "action" || pin.level === "warning");
-}
-
-/**
- * The newest `count` pins of `pins`, in the order the panel draws them.
- *
- * `sinceRebuild` counts commits, and the pins a commit added or updated are the newest of the view: the
- * reducer mints `nextId` forward and an `update` keeps the id it was given, so "touched since the last
- * rebuild" and "the newest `n`" are the same set whatever the model did in between. Ranking through
- * `panelSections` rather than reading the view's own array is what makes "newest" mean the panel's newest —
- * section-ranked, ids descending — rather than the order the entries happened to be reconstructed in.
- *
- * Fewer pins than `count`, or none, answer with what is there: the only question asked of the result is
- * "does any of these demand attention", and a short list answers it correctly.
- */
-export function newestPins(pins: readonly ViewPin[], count: number): ViewPin[] {
-  if (count <= 0 || pins.length === 0) return [];
-  return panelSections(pins).flat.slice(0, Math.min(count, pins.length));
 }
 
 /**
@@ -159,8 +141,8 @@ export function createPanelMode(config: PanelRestingSource | undefined): PanelMo
    *
    * It is *not* the same as what the session recorded: `autoOpen` moves it and appends nothing, and the
    * user's own record is what `demote` puts back. That separation is the whole of the transience, and it is
-   * also what keeps `isPanelShown()` — the "what the user chose" read the rail's guard and the refusal
-   * messages use — answering the user's question rather than the model's.
+   * also why `PanelDeps.isPanelShown()` — which reads *this* — is the on-screen question (the room gate and
+   * the toggle ask it), while `recorded()` is the one the rail's guard and the refusal messages answer.
    */
   let shown = true;
   /** Whether the current open was earned by a pin rather than asked for by the user. */

@@ -16,6 +16,7 @@
  */
 import { expect, test } from "bun:test";
 
+import { DEFAULT_CONFIG } from "../src/config.ts";
 import { KEY } from "../src/types.ts";
 import { boot, panelComponent } from "./panel-lifecycle-fixture.ts";
 
@@ -137,4 +138,59 @@ test("a warning pin auto-shows too, and the open ends when the user leaves the p
   component?.unfocus();
   expect(cell.mode()).toBe("hidden");
   expect(ctx.recorder.widgets.has(KEY)).toBe(true);
+});
+
+test("an update that promotes an existing pin to warning opens a hidden panel (issue #40)", async () => {
+  // The criterion's "or updated" half, end to end: `updateOp` changes a pin without adding one, so the
+  // commit says nothing about itself that a count could read — the ids it touched are what carry the fact
+  // that a blocker arrived. Before that, a model promoting an existing pin left the user's blocker on the
+  // rail with the panel hidden.
+  const booted = await boot([], 120);
+  const { stub, ctx, panel: cell } = booted;
+  const tool = toolOf(stub);
+  await tool.execute("c1", { action: "pin", text: "Migration pending" }, undefined, undefined, ctx);
+  // A resting panel, not an open one: this test is about the promotion, and an open already on screen would
+  // have nothing left to earn.
+  cell.settle(false);
+  stub.entries.length = 0;
+
+  await tool.execute(
+    "c2",
+    { action: "update", id: 1, level: "warning", text: "Migration is BLOCKED" },
+    undefined,
+    undefined,
+    ctx,
+  );
+
+  expect(cell.mode()).toBe("open");
+  // It records nothing — an earned open is not the user's preference — and the rail stood down for it.
+  expect(stub.entries).toEqual([]);
+  expect(ctx.recorder.widgets.has(KEY)).toBe(false);
+});
+
+test("under PI_STICKY_PANEL=open a shown panel never rests as a peek (resolution 6)", async () => {
+  // The never-peek case, which no lifecycle test reached before: `panel-mode.test.ts` asserts the fold, but
+  // nothing booted the extension with `panel: "open"`, so an extension that ignored the configuration and
+  // always rested as a peek passed the whole suite. Driven through the config seam the fixture names, not
+  // through `process.env`.
+  const booted = await boot([], 120, {}, { ...DEFAULT_CONFIG, panel: "open" });
+  const { stub, ctx, panel: cell } = booted;
+  const tool = toolOf(stub);
+  await tool.execute("c1", { action: "pin", text: "FYI" }, undefined, undefined, ctx);
+  expect(cell.mode()).toBe("open");
+
+  // The peek never happens: a hide and a show come back to the full frame, because a demote has no peek to
+  // put the panel into.
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  expect(cell.mode()).toBe("hidden");
+  await stub.commands.get("pins")?.handler("show", ctx);
+  expect(cell.mode()).toBe("open");
+
+  // …and an earned open under `open` ends the same way it does under `peek`: the operator's value says how
+  // a shown panel rests, not that the user can never leave one.
+  const component = panelComponent(ctx.recorder.customCalls.at(-1));
+  component?.focus();
+  component?.unfocus();
+  expect(cell.mode()).toBe("open");
+  expect(ctx.recorder.widgets.has(KEY)).toBe(false);
 });
