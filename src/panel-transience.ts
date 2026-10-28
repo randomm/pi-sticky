@@ -8,7 +8,9 @@
  * interaction that says the pin was read.
  *
  * This module is the one writer which ends an earned open from outside the panel, and it reaches the cell
- * through `deps.redraw`'s owner rather than holding one. Two rules it owns:
+ * through `deps.redraw`'s owner rather than holding one. Where a component is on screen it does the whole
+ * ending itself — its `unfocus` moves the cell and redraws both surfaces through the owner's `onUnfocus` —
+ * and only the component-less case reaches for the cell and the redraw directly. Two rules it owns:
  *
  * - **Which submission.** Only what the user *sent*, from the editor or over RPC. A steer (`streaming
  *   behavior` set, dispatched while the agent is mid-run) is the user steering the model, not answering a
@@ -69,9 +71,18 @@ export function earnedOpenCells(cells: EarnedOpenCells): Pick<StickyDeps, "endEa
       // Only a panel open because a pin asked has a transient to end; `demote` alone restores what the user
       // chose for every other state, so a peek or a hidden panel is left exactly as it was.
       if (cells.panel.mode() !== "open") return;
-      // Focus before the cell: `unfocus` is the component's own teardown of the interaction, and it reports
-      // the ending to the cell through the owner's wiring.
-      cells.component()?.unfocus();
+      const component = cells.component();
+      if (component) {
+        // The component moves the cell and redraws both surfaces itself: `unfocus` releases its handle and
+        // reports the ending through the owner's `onUnfocus`, which moves the cell and settles the rail (see
+        // `panel.ts`). Reaching for the cell and `redraw` on top of that would ask the same question twice,
+        // so the interaction's own teardown is the whole of this branch.
+        component.unfocus();
+        return;
+      }
+      // No component: the overlay is gone (or never finished building), so its teardown cannot announce the
+      // ending and nobody but this writer moves the cell or asks the surfaces to draw. This is the case the
+      // two calls below belong to — a panel the cell still believes is open with no component to close it.
       cells.panel.endEarnedOpen();
       cells.redraw();
     },

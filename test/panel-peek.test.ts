@@ -13,18 +13,26 @@
  *    panel leads with and the bar starts on.
  * 3. **Every row closes at the width it was given.** The frame's own escape policy applies — a smuggled
  *    escape must not buy free columns and let the chat behind the panel show through a flush-right border.
+ * 4. **The row keeps its tail.** A pin whose text wraps in the open panel still shows its `#id` in the peek,
+ *    and a pin the open panel gives a whole `#id <age>` stamp keeps it whole: the peek pays the open panel's
+ *    tail reserve and cuts its *text*, never its stamp.
  *
  * Style is the identity one throughout: a coloured border would wrap each glyph in visible bytes, and the
  * builder's answer to that is no rows at all — asserted separately at the end.
  */
 import { expect, test } from "bun:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
+import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { buildPeekLines } from "../src/panel-peek.ts";
 import type { PeekContent } from "../src/panel-peek.ts";
 import { panelSections } from "../src/panel-sections.ts";
+import { GUTTER_COLUMNS, drawnTail, fullStamp, idStamp } from "../src/panel-tail.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
+import type { ViewPin } from "../src/types.ts";
 import { NOW } from "./fixtures.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 
@@ -32,6 +40,21 @@ import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 const identity: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
 
 const WIDTH = 40;
+
+/**
+ * The tail the peek's row ends with for `pin` at `width`: `drawnTail`'s own answer, measured over a view of
+ * `pin` alone. Spelled through the product's own functions rather than padded by hand so the assertion says
+ * "the row ends in the drawn tail" and rots with the geometry, not with the machine's clock.
+ */
+function peekTail(pin: ViewPin, stamped: string, width: number): string {
+  const inner = width - GUTTER_COLUMNS;
+  return drawnTail(
+    stamped,
+    widestMetaColumns([pin], identity.dim, NOW),
+    inner,
+    META_SEPARATOR_COLUMNS,
+  );
+}
 
 /** The content of one peek: sections derived from `pins` the way the component derives them. */
 function content(
@@ -97,6 +120,49 @@ test("a long pin is cut to one row however it would have wrapped", () => {
   const lines = buildPeekLines(content([long]), WIDTH, identity);
   expect(lines).toHaveLength(3);
   for (const line of lines) expect(line).toHaveLength(WIDTH);
+});
+
+test("a pin whose text wraps still shows its #id in the peek", () => {
+  // The open panel lays this text out over several rows, so `panelPinRows`' first row carries the id *alone*
+  // and its age lives on the row below — which is why the assertion is the id and not the pair. The peek
+  // draws that same first row: a peek that joined text-and-tail and let `fitLine` cut the pair spent the
+  // row's last columns on an ellipsis and lost the `#id` with them, so the tail is what distinguishes the
+  // fix from the bug.
+  for (const width of [60, 120]) {
+    const long = levelPin(1, "a".repeat(400), "warning");
+    const lines = buildPeekLines(content([long]), width, identity);
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(line).toHaveLength(width);
+    // The row's content between its two gutters, which is what `pinRow` filled with text-then-tail.
+    const row = (lines[1] ?? "").slice(2, -2);
+    // `drawnTail`'s own answer for the id's stamp: the reserve it pads into is the view's, so the row ends
+    // with the id in exactly the columns the open frame charged for the tail — no ellipsis, no truncation.
+    const tail = peekTail(long, idStamp(long, identity.dim), width);
+    expect(row.endsWith(tail)).toBe(true);
+    expect(row).toContain("#1");
+  }
+});
+
+test("a pin that fits one row shows its whole stamp — id and age — in the peek", () => {
+  // The other half of the tail: a pin the open panel gives a one-row `#id <age>` pair keeps that pair whole
+  // at the end of the peek's row, so the two surfaces say the same thing about the same pin.
+  const short = levelPin(7, "Decide X", "action");
+  const lines = buildPeekLines(content([short]), 120, identity);
+  const row = (lines[1] ?? "").slice(2, -2);
+  expect(visibleWidth(row)).toBe(120 - GUTTER_COLUMNS);
+  expect(row.endsWith(peekTail(short, fullStamp(short, identity.dim, NOW), 120))).toBe(true);
+  expect(row).toContain("#7");
+});
+
+test("a peek row whose text is short keeps the tail padded to its reserve", () => {
+  // The reserve is the view's, so a wide id costs the *text* its columns and never the id: at 120 columns
+  // this text has room to spare, and the row still closes at exactly the width it was given.
+  const wide = levelPin(123456, "short", "action");
+  const rows: readonly ViewPin[] = [wide];
+  const lines = buildPeekLines(content(rows), 120, identity);
+  const row = lines[1] ?? "";
+  expect(visibleWidth(row)).toBe(120);
+  expect(row).toContain("#123456");
 });
 
 test("a border that paints visible bytes answers with no rows at all", () => {

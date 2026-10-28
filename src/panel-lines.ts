@@ -22,8 +22,9 @@
  * the inner width less the widest id/time tail the view carries — and every produced line is padded or cut
  * here, because `wrapTextWithAnsi` breaks on words and a single word wider than the panel comes back whole.
  * A row draws its text and its tail as two parts, so it is the text that is cut and the tail that is
- * padded: the id is the one thing on the row the frame never spends. The border glyphs and the theme's
- * colours are trusted; a pin's text is not, and it never reaches a border.
+ * padded: the id is the one thing on the row the frame never spends. `pinRow` is that arithmetic and is
+ * shared with the peek (`panel-peek.ts`), which draws one row of the same pin and pays the same reserve. The
+ * border glyphs and the theme's colours are trusted; a pin's text is not, and it never reaches a border.
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
@@ -152,8 +153,12 @@ export function fitLine(line: string, width: number): string {
  * overflowed is cut on the text's side: the text gives up columns, never the tail, and a wide id costs its
  * own columns rather than the id's seat. `metaColumns` is the reserve `widestMetaColumns` measured for the
  * view's widest id — the same figure `panelLayoutSections` charged the wrap, so one arithmetic decides a frame.
+ *
+ * Exported for the peek (`panel-peek.ts`), which draws one row of the same pin and must not lay it out a
+ * second way. `selected` is the open panel's question — the bar across the row the keys moved to — and the
+ * peek passes `false`: it is never focused and so never carries a bar.
  */
-function pinRow(
+export function pinRow(
   row: PanelRow,
   inner: number,
   style: PanelStyle,

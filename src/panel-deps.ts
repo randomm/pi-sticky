@@ -6,8 +6,8 @@
  * the visibility pair lives here rather than there because `tool.ts`, `commands.ts` and `reminder.ts` — the
  * modules `StickyDeps` is handed to — read none of them.
  *
- * The construction lives here too, so the panel's dependency shape — the four members the extension's
- * own deps object does not carry, and the editor/notify paths that guard themselves against a host that
+ * The construction lives here too, so the panel's dependency shape — the members the extension's own deps
+ * object does not carry, and the editor/notify paths that guard themselves against a host that
  * throws — is one file's business rather than a block in the middle of `extension.ts`. `createPanelWiring`
  * is the seam a lifecycle test hands the owner a record instead of a session.
  *
@@ -29,22 +29,11 @@ import { replyMarker } from "./reply.ts";
 import { latestUIShown } from "./session-entries.ts";
 
 /**
- * What the panel reads and changes in the extension: everything the pins wiring exposes, plus the three
- * things only the panel needs.
+ * What the panel reads and changes in the extension: everything the pins wiring exposes, plus the six
+ * members only the panel needs (the visibility verbs and the editor/notify paths).
  */
 export interface PanelDeps extends StickyDeps {
-  /**
-   * The panel's three-state cell: `mode()` is what the overlay, the rail and the component all ask, and the
-   * verbs are the extension's (a toggle, an auto-show, the ending of a transient open).
-   *
-   * The cell rather than a boolean because there is one answer to "what is the panel doing" and three
-   * surfaces read it in the same turn; a per-surface flag is three answers that can disagree, which is how
-   * pins end up drawn by neither surface or by both.
-   *
-   * Required, and the extension's cell is the only answer: a surface that guessed `open` when the panel was
-   * hidden is a rail that stood down for pins nothing drew. The hand-built wirings in the tests build the
-   * cell (`createPanelMode`), which is what a surface needs to be tested against the state it reads.
-   */
+  /** `panelMode` is `StickyDeps`' — see `StickyDeps.panelMode` for the cell and why it is one. */
   panelMode(): PanelModeState;
   /**
    * Change the live flag and redraw both surfaces; records nothing. Only an explicit user toggle appends.
