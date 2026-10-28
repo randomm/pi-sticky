@@ -23,11 +23,11 @@ The main agent posts messages for the user. The user is often away for a long ti
 | U5 | After reply | Pin stays, dimmed with a ↩ "replied" marker, until the agent unpins it or the user dismisses it. |
 | U6 | Agent tool | Keep the plan's 4-action `pin_for_user` (pin / update / unpin / list; levels info / action / warning). List output shows replied state. |
 | U7 | Attention | **Nothing out-of-band** (no title, bell, desktop notification). |
-| U8 | New pin while hidden | **Auto-show** the panel. *(Narrowed by U11: only a pin the user must act on.)* |
+| U8 | New pin while hidden | **Auto-show** the panel. |
 | U9 | Scope | **Drop** the event-bus API (R10) and the file mirror (R12) from v1. |
 | U10 | Tree navigation | **User actions stick** session-wide (dismiss, replied). Agent pins follow the branch. |
 | U11 | Panel at rest | Three states — **hidden / peek / open**. A shown panel rests as a 3-row **peek** (counts title, best-ranked pin, the focus-key border); the full frame is **earned** by an `action` or `warning` pin and ends when the user leaves it or sends their next message (U12). `info` pins never earn it. `PI_STICKY_PANEL=open` refuses the peek. The earned open records nothing, so the user's own hide survives it. **The rail stands down whenever the panel draws** — in the peek as in the full frame — so a pin is drawn by exactly one surface. |
-| U12 | The earned open | The open a pin earned is **not** the frame of one draw: it persists across a redraw, a rebuild, a further pin and a steer, and ends on the user's next **submitted** message (which says the pin was read) or when the user leaves the panel. `ctrl+alt+p` puts the panel in the open outright, whatever the resting mode, and records nothing: reaching for a pin to read it is not a choice about keeping the panel covering the transcript. |
+| U12 | The earned open | **Supersedes U8**: an auto-show happens only for an `action` or `warning` pin. The open a pin earned persists across a redraw, a rebuild, a further pin and a steer, and ends on the user's next **submitted** message (which says the pin was read) or when the user leaves the panel. `ctrl+alt+p` puts the panel in the open outright, whatever the resting mode, and records nothing. |
 
 Settled since this table was written: publishing is an MIT open-source release (LICENSE and
 `package.json` `"private": true` are still outstanding), with npm publishing left as a manual operator

@@ -15,6 +15,12 @@
  * - A rejection must leave the published record forgotten (`onFailed`), because an invisible record keeps
  *   `isVisible()` answering true for an overlay that is not on screen — and must *not* clear a close
  *   failure the owner is still owed, since a wedged overlay stack makes the next open reject as well.
+ *
+ * Two more facts about the two failure reports:
+ * - With no panel the rail keeps drawing, which is the fallback by design — but a poisoned overlay stack
+ *   rejects *every* open from then on, and a rail that answers forever looks the same as a working one.
+ * - An `Error` with an empty message still has to say something: `String(err)` keeps the class name rather
+ *   than leaving the user with "pins panel unavailable: ".
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -71,19 +77,11 @@ export function openPanelOverlay(
       panelCallOptions(hooks.visible, hooks.onHandle),
     )
     .catch((err: unknown) => {
-      // With no panel the rail keeps drawing, which is the fallback by design — but a poisoned overlay
-      // stack rejects *every* open from then on, and a rail that answers forever looks the same as a
-      // working one. The user hears why once per failed open; the wording is the owner's to keep.
       hooks.onFailed(reasonOf(err));
     });
 }
 
-/**
- * What a rejected `custom()` says about itself, for the one line the user is told.
- *
- * An `Error` with an empty message still has to say something: `String(err)` keeps the class name rather
- * than leaving the user with "pins panel unavailable: ".
- */
+/** What a rejected `custom()` says about itself, for the one line the user is told. */
 function reasonOf(err: unknown): string {
   return err instanceof Error && err.message !== "" ? err.message : String(err);
 }

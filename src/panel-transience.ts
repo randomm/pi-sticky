@@ -1,15 +1,14 @@
 /**
- * Ending the transient the panel's open states are transient by (`src/panel-transience.ts`).
+ * Ending the transient the panel's open states are transient by.
  *
  * Two of the panel's three states are on screen because *something showed them*: an auto-show earned by an
  * `action`/`warning` pin, or the focus key, which moves the cell through the same write so the keys have a
- * frame to answer from. Operator resolution 2 of pins v2-4 says that open is not the frame of one draw — it
- * persists across a redraw, a rebuild, a further pin and a steer — and it *is* ended by the user's next
- * submitted message, which is the interaction that says the pin was read.
+ * frame to answer from. Per U12 that open is not the frame of one draw — it persists across a redraw, a
+ * rebuild, a further pin and a steer — and it *is* ended by the user's next submitted message, which is the
+ * interaction that says the pin was read.
  *
- * This module owns the second half: it is the one writer which ends an earned open from outside the panel,
- * and it reaches the cell through `deps.redraw`'s owner rather than holding one. Both are rules worth having
- * in one place, because both are easy to get wrong in a way no single-surface test sees:
+ * This module is the one writer which ends an earned open from outside the panel, and it reaches the cell
+ * through `deps.redraw`'s owner rather than holding one. Two rules it owns:
  *
  * - **Which submission.** Only what the user *sent*, from the editor or over RPC. A steer (`streaming
  *   behavior` set, dispatched while the agent is mid-run) is the user steering the model, not answering a
@@ -43,8 +42,7 @@ export function endEarnedOpenOnSubmission(deps: StickyDeps, event: InputEvent): 
   if (!deps.panelEarnedOpen()) return;
   // The cell moves and the surfaces follow, in the one order every writer keeps: the overlay and the rail
   // both read the cell as their first question, so a redraw which ran first would draw the open the message
-  // has just ended and never be asked again. `endEarnedOpen` is the extension's, which is where the cell,
-  // the component's focus and the rail handoff are all reachable.
+  // has just ended and never be asked again.
   deps.endEarnedOpen();
 }
 
@@ -62,9 +60,7 @@ export interface EarnedOpenCells {
  * The two `StickyDeps` members of the panel's transient, over the three cells the extension owns.
  *
  * Lives here rather than inline in `extension.ts` because the ordering below *is* the rule — the cell is
- * written before either surface is asked, and the component's focus is released with the open it belonged to
- * — and the file that states when an open ends is the file that should state how. `extension.ts` supplies the
- * cells and spreads the result into its deps, exactly as it forwards the commit ledger's own members.
+ * written before either surface is asked, and the component's focus is released with the open it belonged to.
  */
 export function earnedOpenCells(
   cells: EarnedOpenCells,
@@ -77,9 +73,7 @@ export function earnedOpenCells(
       // to show the panel keeps it whichever way the conversation goes.
       if (earned() !== "open") return;
       // Focus before the cell: `unfocus` is the component's own teardown of the interaction, and it reports
-      // the ending to the cell's `afterUnfocus` through the owner's wiring. Asking for it here rather than
-      // calling `afterUnfocus` directly is what keeps the two halves of leaving a panel — the component's
-      // handle and the cell's mode — from parting when a panel happens to be open.
+      // the ending to the cell's `afterUnfocus` through the owner's wiring.
       cells.component()?.unfocus();
       cells.panel.afterUnfocus();
       cells.redraw();

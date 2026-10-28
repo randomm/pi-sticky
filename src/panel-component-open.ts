@@ -3,10 +3,6 @@ import { panelLayoutSections } from "./panel-frame-layout.ts";
  * The open panel's rows: one layout pass at the width pi-tui just handed over, and the builder handed that
  * very table.
  *
- * Extracted from `PanelComponent` because the component is the *cache* — it decides whether a frame has to
- * be built at all — and this is the part that builds one when it does. Two responsibilities, two files, and
- * one interface between them: the content the frame prints and the row table it is cut from.
- *
  * The row table is what both the frame's height and the drawn window come from, so a pin is wrapped once per
  * frame and a resize sizes the box at the width it is *drawn* at rather than the last cached one.
  * `panelLayoutSections` owns the height — section headings included — and is handed the very sections whose

@@ -7,7 +7,7 @@
  * component's frame still said "resting" is a panel drawn without its keys hint. So the two verbs live here,
  * beside the order they impose, and the component keeps the frame and the selection.
  *
- * Focus belongs to the *open* panel alone (operator resolution 2 of pins v2-4). The peek is a three-row
+ * Focus belongs to the *open* panel alone (U11). The peek is a three-row
  * notice with no bar, no window and no keys, so a peek that took focus would route keystrokes to a frame
  * with no answer for them and leave the user typing into nothing. The focus key and Enter-from-a-key both
  * reach the panel through `focus()`, which makes opening the act that keys become live — and what this file
@@ -59,10 +59,9 @@ export function unfocusPanel(target: PanelFocus): void {
   target.state.setFocused(false);
   target.handle?.unfocus();
   // The ending of a *transient* open, announced here rather than in `pi.on("input")` because this is where
-  // the interaction actually ends (operator resolution 2 of pins v2-4). Focus is the only way in — the focus
-  // key and Enter-from-a-key — so a panel the user focused and then left is the case the rule is about, and
-  // a keystroke into a peek already arrives through here via the key dispatcher. The host decides what that
-  // means for the rail; this file only says the interaction is over.
+  // the interaction actually ends (U12). Focus is the only way in — the focus key and Enter-from-a-key — so
+  // a panel the user focused and then left is the case the rule is about, and a keystroke into a peek already
+  // arrives through here via the key dispatcher.
   target.host.unfocus();
   target.host.requestRender();
 }

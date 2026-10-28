@@ -1,11 +1,9 @@
 /**
  * The peek: the panel's three-row resting frame.
  *
- * A panel that is shown but has nothing to say about where the user should look used to draw its whole
- * sectioned box over the transcript, every frame, for pins the user had not asked to read. The peek is the
- * answer the operator chose (pins v2-4): three rows — the frame's counts title, the single best-ranked pin
- * cut to one line, and the bottom border carrying the key that gets the user in — so the panel says "there
- * is something here" in a third of the rows the open panel spends, and the transcript keeps the rest.
+ * A shown panel with nothing to say about where the user should look draws three rows, not its whole
+ * sectioned box: the frame's counts title, the single best-ranked pin cut to one line, and the bottom border
+ * carrying the key that gets the user in. The transcript keeps the rest.
  *
  * Two rules the module is written around:
  *
@@ -16,8 +14,7 @@
  *   grouping is a peek that disagrees with the panel it is a rest state of.
  * - **The pin is the best-ranked one, not the first pinned.** `PanelSections.flat` is `panelSections`'
  *   flattened drawn order — sections ordered warning, then action, then info, each ranked by `orderPins` —
- *   and its first element is the same pin the open panel draws at the top and the bar starts on (operator
- *   resolution 4 of pins v2-4).
+ *   and its first element is the same pin the open panel draws at the top and the bar starts on.
  *
  * The pin row is the open panel's own first row for this pin and this width: `panelPinRows` produces it, so
  * the marker, the wrap and the `#id`/age tail are laid out by the same arithmetic the open panel pays for
@@ -69,11 +66,10 @@ export interface PeekContent {
  * inner width, so the gutters either side close at `width`.
  *
  * The row is `panelPinRows`' first row for this pin, which is the row the open panel would draw for it at
- * the same width. It is deliberately *not* a fresh formatting: the marker, the replied `↩ ` mark and the
- * tail's stamp each have one owner, and a peek that spelled them again is a peek that drifts from the
- * panel. What the peek adds is the guarantee that it is *one* row however the text wrapped: the row comes
- * from a wrap sized for the open panel's window, and a peek that drew all of a three-row wrap would be a
- * five-row peek.
+ * the same width: the marker, the replied `↩ ` mark and the tail's stamp each have one owner, and a peek that
+ * spelled them again is a peek that drifts from the panel. What the peek adds is the guarantee that it is
+ * *one* row however the text wrapped: the row comes from a wrap sized for the open panel's window, and a peek
+ * that drew all of a three-row wrap would be a five-row peek.
  *
  * The cut that keeps the row to one line is `fitLine` (`panel-lines.ts`) — the open builder's own escape
  * policy, shared rather than restated — over the joined text-and-tail. The tail is the last thing in that
@@ -109,9 +105,8 @@ function peekPinRow(
 export function buildPeekLines(content: PeekContent, width: number, style: PanelStyle): string[] {
   if (!isPanelFrameSize(width, PEEK_ROWS)) return [];
   const pins = content.sections.flat;
-  // Nothing pinned is no rows at all — not a titled box asserting its own emptiness. The overlay is opened
-  // for the pins, and `panelIsVisible` already answers false for an empty view, so a frame here would be a
-  // box around an absence the rail is drawing instead.
+  // Nothing pinned is no rows at all — the overlay is opened for the pins, and `panelIsVisible` already
+  // answers false for an empty view, so a frame here would be a box around an absence the rail draws instead.
   if (pins.length === 0) return [];
 
   const frame = style.border;

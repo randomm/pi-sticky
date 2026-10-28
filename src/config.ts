@@ -15,13 +15,13 @@
  * back as `null` and an unset one as nothing at all, so `readConfig({})` and `DEFAULT_CONFIG` are equal
  * in both directions and a test can compare the two without spelling either default.
  *
- * `PI_STICKY_PANEL` is validated by `readPanelResting` for the same reason — its grammar is the panel's
+ * `PI_STICKY_PANEL` is validated by `panelResting` for the same reason — its grammar is the panel's
  * business, not the environment reader's — and unlike the two shortcuts its member is *always* present:
  * a resting mode has no "unset" state for a surface to answer differently, so an unreadable value is the
  * default rather than an absent member, and `readConfig({})` still equals `DEFAULT_CONFIG`.
  */
 import { FOCUS_KEY, TOGGLE_KEY } from "./panel-keys.ts";
-import { PANEL_DEFAULT_MODE, readPanelResting } from "./panel-resting.ts";
+import { PANEL_DEFAULT_MODE, panelResting } from "./panel-resting.ts";
 import { resolvePanelKeys } from "./panel-shortcuts.ts";
 import type { StickyConfig } from "./types.ts";
 
@@ -86,6 +86,6 @@ export function readConfig(env: Record<string, string | undefined>): StickyConfi
     ...(keys.focusKey === undefined ? {} : { focusKey: keys.focusKey }),
     // Always a member, always one of the two modes: see the header for why this one variable is never
     // conditionally spread the way the two shortcut ids are.
-    panel: readPanelResting(env.PI_STICKY_PANEL),
+    panel: panelResting(env.PI_STICKY_PANEL),
   };
 }

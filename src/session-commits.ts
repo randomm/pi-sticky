@@ -100,8 +100,8 @@ export function createCommitLedger(): CommitLedger {
     note(next, pins) {
       unseen = true;
       published = pins;
-      // The last commit wins, which is the right answer: the draw that spends this record draws the live
-      // state, and the live state is that commit's snapshot.
+      // The last commit wins: the draw that spends this record draws the live state, and the live state is
+      // that commit's snapshot.
       affected = next ?? [];
     },
     // Read, not consumed: the rebuild asks this while the commit is still unappended, and several rebuilds
@@ -111,8 +111,7 @@ export function createCommitLedger(): CommitLedger {
     published: () => published,
     landed() {
       // The branch holds the pins, so there is nothing left for a draw to be entitled about. The auto-show's
-      // claim does *not* go with it: what ends that is a rebuild which was handed the branch, and the one
-      // which finds the pins here has not been — it is the one which decided it could not be trusted.
+      // claim does *not* go with it: what ends that is a rebuild which was handed the branch.
       unseen = false;
       published = [];
       affected = [];
@@ -124,8 +123,8 @@ export function createCommitLedger(): CommitLedger {
     autoShow(panel, view) {
       if (!unseen) return;
       // One commit answered for, however it answered: the user has now been shown, or deliberately not shown,
-      // what it held. `autoShowForCommits` is what says yes, and what opens the panel when it does — and the
-      // claim below is recorded from that verdict rather than from the attempt.
+      // what it held. `autoShowForCommits` opens the panel when it says yes, and the claim below is recorded
+      // from that verdict rather than from the attempt.
       if (autoShowForCommits(panel, view.pins, affected)) unsighted = true;
     },
     clear() {

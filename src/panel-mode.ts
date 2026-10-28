@@ -18,18 +18,18 @@
  *
  * - `PanelOwner.isVisible()` reads `mode()` through `PanelDeps` and answers the pins question with
  *   `panelOpensPins`: the panel owns the pins in peek *and* in open, and the rail draws only in hidden (or at
- *   a terminal too narrow for a frame) — operator resolution 3 of pins v2-4.
+ *   a terminal too narrow for a frame) — U11: a pin is drawn by exactly one surface.
  * - `PanelComponent` reads the same mode and draws the peek (`panel-peek.ts`) or the open frame.
- * - The auto-open rule (operator resolution 2): an action or warning pin opens the panel fully and it
+ * - The auto-open rule (U11/U12): an action or warning pin opens the panel fully and it
  *   *stays* open across redraws, further pins and agent turns, until the user leaves it — Esc, Enter from a
  *   key, or a keystroke into a panel that is not open. `afterUnfocus` is the only ending, because it is the
  *   only event that reports an interaction the *user* ended; `settle` states why every other writer must
  *   leave an earned open standing.
- * - `PI_STICKY_PANEL=open` means peek never happens (`restingMode` in `panel-resting.ts`, the one read of the
+ * - `PI_STICKY_PANEL=open` means peek never happens (`panelResting` in `panel-resting.ts`, the one read of the
  *   resolved value).
  */
-import { restingMode } from "./panel-resting.ts";
-import type { PanelResting, PanelRestingSource } from "./panel-resting.ts";
+import { PANEL_DEFAULT_MODE, panelResting } from "./panel-resting.ts";
+import type { PanelResting } from "./panel-resting.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
 
 /** The three states the panel's on-screen answer has. */
@@ -50,10 +50,8 @@ export function panelOpensPins(mode: PanelMode): boolean {
 /**
  * Whether any of the pins a commit touched asks the user to do something: an action or a warning.
  *
- * The narrowed auto-show (U11, which supersedes U8). A fact arriving while the panel was hidden used to show
- * it, which let a chatty model decide when the transcript got covered. What the user must act on still does —
- * `action` and `warning` are the two levels whose whole purpose is a decision or a blocker — and a new `info`
- * pin leaves the panel hidden and leaves the rail drawing it, unchanged.
+ * The auto-show rule (U12, which supersedes U8's any-pin auto-show): only the two levels whose whole purpose
+ * is a decision or a blocker show the panel; a new `info` pin leaves it hidden and leaves the rail drawing it.
  *
  * The argument is the pins a commit *touched*, named by id by the reducer and looked up in the view by
  * `autoShowForCommits` (`panel-autoshow.ts`), so an `update` of a pin that already existed counts when the
@@ -113,7 +111,7 @@ export interface PanelModeState {
    * The interaction the user had with the panel is over: an open they did not ask for ends, and the panel
    * goes back to what they chose.
    *
-   * The *only* ending (operator resolution 2 of pins v2-4), reported by the component when the focus ends —
+   * The *only* ending (U12), reported by the component when the focus ends —
    * Escape, Enter-from-a-key, a keystroke into a peek. Leaving a panel the user focused is the one event that
    * says they read the pin, and the one event of its kind the extension is ever told about: every other write
    * of this cell is a redraw, a rebuild or a command line whose text never reached the model.
@@ -124,7 +122,7 @@ export interface PanelModeState {
 }
 
 /** The mode cell of one extension instance, resting where its configuration says. */
-export function createPanelMode(config: PanelRestingSource | undefined): PanelModeState {
+export function createPanelMode(config: { panel?: PanelResting } | undefined): PanelModeState {
   /**
    * How a *shown* panel rests when nothing has earned an open: `PI_STICKY_PANEL`, resolved once.
    *
@@ -132,7 +130,7 @@ export function createPanelMode(config: PanelRestingSource | undefined): PanelMo
    * operator's and cannot change inside a session: a hide and the show that follows must come back to the
    * same state the operator asked for, so no caller of this cell gets to move it.
    */
-  const resting = restingMode(config);
+  const resting = config?.panel ?? PANEL_DEFAULT_MODE;
   /**
    * Whether the panel is on screen — what the user chose, or what an auto-show has just put there for them.
    *
@@ -191,8 +189,7 @@ export function createPanelMode(config: PanelRestingSource | undefined): PanelMo
    * the panel came out of hiding for a pin the user has now answered, and it goes back into it.
    */
   function demote(): void {
-    // Back to what the user chose, and to the resting frame: the transient is over, and the panel that came
-    // out of hiding for a pin goes back into it if hiding is what the user asked for.
+    // Back to what the user chose, and to the resting frame.
     screen(chosen, false);
   }
 
@@ -208,7 +205,7 @@ export function createPanelMode(config: PanelRestingSource | undefined): PanelMo
       // for a shown panel.
       if (recorded !== false) chosen = next;
       // The earned open is *kept*. `settle` is reached on every redraw, every rebuild and every command line,
-      // and operator resolution 2 requires an open to persist across all three; `screen(next, false)` here
+      // and U12 requires an open to persist across all three; `screen(next, false)` here
       // would fold a panel the user has not read yet back into the peek the moment anything asked the cell a
       // question — a `/pins show`, a `session_tree`, a submitted message. Hiding is the exception: a hidden
       // panel that still drew an open frame is not a state, and `settle(false)` is the one move that is never

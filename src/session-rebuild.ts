@@ -73,13 +73,6 @@ export interface RebuildCells {
  * discarded it would leave the panel with no measurement to answer `visible()` with and the pins on neither
  * surface. Only `session_shutdown` clears it.
  */
-/**
- * Whether the branch holds the pins the outstanding commit published — the only evidence the extension is
- * ever given that pi has written the tool result, since the append lands after the boundary which ends the
- * turn has been dispatched. Every id the commit touched has to be there under the uid it was published with:
- * a branch still showing the pre-commit pins, or one missing a pin, has not landed the commit, and the
- * commit stays owed. An empty `published` is the case with nothing to wait for, and lands at once.
- */
 function holdsCommit(rebuilt: Rebuilt, published: readonly ViewPin[]): boolean {
   if (published.length === 0) return true;
   const onBranch = new Map(rebuilt.state.pins.map((pin) => [pin.id, pin]));
@@ -89,9 +82,9 @@ function holdsCommit(rebuilt: Rebuilt, published: readonly ViewPin[]): boolean {
 export function rebuildSession(ctx: HostContext | undefined, cells: RebuildCells): void {
   if (!ctx) return;
   // A commit pi has not appended yet says nothing about the pins: the auto-show that recorded it has already
-  // moved the screen, and re-reading a hide it just undid would put the panel back out of sight. Both the
-  // answer and what it is an answer about are taken *before* the branch is read, and the verdict is recorded
-  // the moment the reading is done, so no caller can be given one answer while the ledger remembers another.
+  // moved the screen, and re-reading a hide it just undid would put the panel back out of sight. The answer
+  // and what it is an answer about are taken *before* the branch is read, and the verdict recorded the moment
+  // the reading is done.
   const stale = cells.unseen();
   const published = cells.published();
   const rebuilt = cells.reconstruct(ctx);
@@ -103,11 +96,8 @@ export function rebuildSession(ctx: HostContext | undefined, cells: RebuildCells
   // screen is not an argument about that choice, so it is settled from the entry with `recorded: false` —
   // without that, one auto-open after a `/pins hide` would make every later rebuild re-show a panel the user
   // had closed. With nothing drawn and the user's verb last in the record, the entries decide outright.
-  //
-  // The auto-show's own claim is the second gate, and it outranks the entries without outranking the user:
-  // a panel which came out of hiding for a pin the branch has only this moment been read for stays where the
-  // auto-show put it. A verb the user wrote themselves outranks an auto-show every time — that is what makes
-  // the claim a transience rather than a latch.
+  // The auto-show's claim is the second gate: it outranks the entries, but not the user — a verb the user
+  // wrote themselves wins every time, which is what makes the claim a transience rather than a latch.
   if (!stale && (cells.surfacesDrawn() || cells.panel.recorded())) {
     if (!cells.autoShowPending() || cells.panel.recorded()) {
       cells.panel.settle(initialShown(ctx), !cells.surfacesDrawn());
