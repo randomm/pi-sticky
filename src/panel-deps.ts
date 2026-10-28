@@ -21,6 +21,7 @@ import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-a
 
 import type { HostContext } from "./context.ts";
 import type { StickyDeps } from "./deps.ts";
+import type { PanelModeState } from "./panel-mode.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import { replyMarker } from "./reply.ts";
@@ -33,6 +34,19 @@ import { latestUIShown } from "./session-entries.ts";
 export interface PanelDeps extends StickyDeps {
   /** Whether the panel's own `visible()` may draw right now. */
   isPanelShown(): boolean;
+  /**
+   * The panel's three-state cell: `mode()` is what the overlay, the rail and the component all ask, and the
+   * verbs are the extension's (a toggle, an auto-show, the ending of a transient open).
+   *
+   * The cell rather than a boolean because there is one answer to "what is the panel doing" and three
+   * surfaces read it in the same turn; a per-surface flag is three answers that can disagree, which is how
+   * pins end up drawn by neither surface or by both.
+   *
+   * Optional because `PanelDeps` is also built by hand — a wiring or owner test's — and a hand-built object
+   * with no state to report is the open panel rather than a throw in the draw path. The extension always
+   * supplies it; the readers say what its absence means.
+   */
+  panelMode?(): PanelModeState;
   /**
    * Change the live flag and redraw both surfaces; records nothing. Only an explicit user toggle appends.
    */
@@ -128,6 +142,8 @@ export interface PanelWiringParts {
   deps: StickyDeps;
   terminal: TerminalWidth;
   isPanelShown(): boolean;
+  /** The panel's mode cell, held by the extension and read by every surface; see `PanelDeps.panelMode`. */
+  panelMode?(): PanelModeState;
   setPanelShown(shown: boolean): void;
   recordPanelShown(shown: boolean): void;
   /** Dismiss one pin as the user, through the command layer's single dismissal path. */
@@ -159,6 +175,7 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
   const deps: PanelDeps = {
     ...parts.deps,
     isPanelShown: parts.isPanelShown,
+    panelMode: parts.panelMode,
     setPanelShown: parts.setPanelShown,
     recordPanelShown: parts.recordPanelShown,
     dismiss: parts.dismiss,

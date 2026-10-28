@@ -22,6 +22,10 @@
  * session can be read for.
  */
 
+import { demandsAttention, newestPins } from "./panel-mode.ts";
+import type { PanelModeState } from "./panel-mode.ts";
+import type { ViewPin } from "./types.ts";
+
 /**
  * Does the session still not know what the user is being shown — because a commit arrived since the
  * last rebuild, and pi has not appended it yet?
@@ -31,4 +35,35 @@
  */
 export function hasUnseenPins(sinceRebuild: number): boolean {
   return sinceRebuild > 0;
+}
+
+/**
+ * The counter, and the one question the panel asks of it: does a commit the user has not been shown demand
+ * their attention, and so owe them an open panel?
+ *
+ * U8 said *any* new pin shows a hidden panel. U11 narrowed that to the levels whose whole purpose is a
+ * decision or a blocker — `action` and `warning` — because a chatty model was deciding when the user's
+ * transcript got covered, and the rail already draws an `info` pin whether or not the panel is open. What
+ * survives of U8 is the half that mattered: a pin the user must act on must not arrive silently.
+ *
+ * The order is the part a caller can get wrong, and why the rule is here rather than in the caller: the
+ * commit must be *settled into the cell* before anything is drawn. Asking the rail and the overlay about the
+ * visibility the user left, and only then changing it, leaves the rail on screen over a panel that has
+ * become visible, with nothing left to redraw it.
+ */
+export function autoShowForCommits(
+  panel: PanelModeState,
+  pins: readonly ViewPin[],
+  sinceRebuild: number,
+): boolean {
+  // The return is the caller's answer to "may I clear the counter". Only a commit this function actually
+  // *answered* is spent: a draw that reached no decision — no unseen commit, or one whose pins do not ask
+  // for attention — has not shown the user anything, and clearing the counter there would spend the
+  // auto-show before the user ever had it.
+  if (!hasUnseenPins(sinceRebuild)) return false;
+  if (!demandsAttention(newestPins(pins, sinceRebuild))) return false;
+  // `autoOpen` and not the cell's `settle`: an auto-show is not a statement about whether the panel should
+  // *stay* shown, so it records nothing and the user's recorded choice survives it.
+  panel.autoOpen();
+  return true;
 }

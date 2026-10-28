@@ -1,4 +1,5 @@
 import type { PanelDeps } from "./panel-deps.ts";
+import { railStamp } from "./panel-geometry.ts";
 /**
  * The rail's install guard: the one cache between "the answer may have changed" and the expensive
  * `setExtensionWidget` call.
@@ -23,7 +24,7 @@ import type { PanelDeps } from "./panel-deps.ts";
  * The owner hands the key the bucket it read its own view at, so the age in the key is the age the rows
  * print — and a minute that did not move costs a comparison, exactly as a frame that changed nothing does.
  */
-import { railStamp } from "./panel-geometry.ts";
+import { panelOpensPins } from "./panel-mode.ts";
 
 export class RailGuard {
   /** The last answer the rail was installed for, or `undefined` when nothing is installed. */
@@ -61,7 +62,13 @@ export class RailGuard {
   ): void {
     if (this.#settled(open)) return;
     const view = deps.getView();
-    const key = `${columns}|${deps.isPanelShown()}|${railStamp(view.pins)}|${ageBucket}`;
+    // The mode cell answers the handoff's question where there is one: a peek must stand the rail down
+    // exactly as an open panel does, or the same pin is drawn twice, and `isPanelShown()` alone would say
+    // otherwise during a transient auto-open. A wiring with no cell falls back to the user's choice, which
+    // is the only answer such a wiring has.
+    const mode = deps.panelMode?.().mode();
+    const owns = mode === undefined ? deps.isPanelShown() : panelOpensPins(mode);
+    const key = `${columns}|${owns}|${railStamp(view.pins)}|${ageBucket}`;
     if (this.#same(key)) return;
     this.#install(key, redraw);
   }

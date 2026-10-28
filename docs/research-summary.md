@@ -23,9 +23,10 @@ The main agent posts messages for the user. The user is often away for a long ti
 | U5 | After reply | Pin stays, dimmed with a ↩ "replied" marker, until the agent unpins it or the user dismisses it. |
 | U6 | Agent tool | Keep the plan's 4-action `pin_for_user` (pin / update / unpin / list; levels info / action / warning). List output shows replied state. |
 | U7 | Attention | **Nothing out-of-band** (no title, bell, desktop notification). |
-| U8 | New pin while hidden | **Auto-show** the panel. |
+| U8 | New pin while hidden | **Auto-show** the panel. *(Narrowed by U11: only a pin the user must act on.)* |
 | U9 | Scope | **Drop** the event-bus API (R10) and the file mirror (R12) from v1. |
 | U10 | Tree navigation | **User actions stick** session-wide (dismiss, replied). Agent pins follow the branch. |
+| U11 | Panel at rest | Three states — **hidden / peek / open**. A shown panel rests as a 3-row **peek** (counts title, best-ranked pin, the focus-key border); the full frame is **earned** by an `action` or `warning` pin and ends when the user leaves it. `info` pins never earn it — the rail draws them either way. `PI_STICKY_PANEL=open` refuses the peek. The earned open records nothing, so the user's own hide survives it. |
 
 Settled since this table was written: publishing is an MIT open-source release (LICENSE and
 `package.json` `"private": true` are still outstanding), with npm publishing left as a manual operator

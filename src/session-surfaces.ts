@@ -38,5 +38,9 @@ export interface SessionSurfaces {
 export function createSessionSurfaces(): SessionSurfaces {
   const rail = createLiveRail();
   const panel: { current: PanelOwner | undefined } = { current: undefined };
-  return { rail, panel, surfacesDrawn: () => panel.current?.isAnySurfaceVisible() ?? false };
+  return {
+    rail,
+    panel,
+    surfacesDrawn: () => panel.current?.isAnySurfaceVisible() ?? false,
+  };
 }

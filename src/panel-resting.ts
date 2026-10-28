@@ -1,0 +1,68 @@
+/**
+ * The panel's resting mode, read from the environment: `PI_STICKY_PANEL` is the whole of this module.
+ *
+ * The grammar is the one operator resolution 6 of pins v2-4 settled: trimmed, lowercased, and then it must
+ * equal `peek` or `open`. Anything else — `PEEK`, `""`, `hidden`, an unset variable, a typo — falls back to
+ * `peek`, the same way the numeric variables fall back to their defaults and the same way a shortcut the
+ * parser refuses falls back to its default id. A value that is not one of the two is a typo, and the safe
+ * reading of a typo is the state that covers the least of the transcript.
+ *
+ * `open` is *never-peek*: the panel rests open and a demote has no peek to put it into (see
+ * `panel-mode.ts`' `createPanelMode`, which is the only reader of the resolved value). In `rpc`, `print` and
+ * `json` the value is ignored: neither state exists where there is no overlay, and the rail behaves exactly
+ * as it did before this variable existed.
+ *
+ * Its own module rather than a line in `config.ts` for the reason `panel-shortcuts.ts` exists for the two
+ * shortcut ids: the grammar is not the extension's or the config reader's business, and the file whose whole
+ * point is the environment's shape stays a table of variables. `readConfig` hands each raw value over and
+ * keeps what comes back.
+ */
+
+/** The two resting modes, spelled once so the type, the parser and the default cannot drift apart. */
+export const PANEL_RESTING_MODES = ["peek", "open"] as const;
+
+/** A value the operator wrote, resolved. `readConfig` always answers one; a hand-built config may hold none. */
+export type PanelResting = (typeof PANEL_RESTING_MODES)[number];
+
+/** The mode an unset or unreadable value rests in — also the mode a hand-built config rests in. */
+export const PANEL_DEFAULT_MODE: PanelResting = "peek";
+
+/** What the two readers below are asked about: a configuration, which may or may not have named a mode. */
+export interface PanelRestingSource {
+  panel?: PanelResting;
+}
+
+/**
+ * The mode of `value` — the raw environment string, or the `StickyConfig` member — or the default when it
+ * spelled neither. One function, because the environment's grammar and the configuration's fallback are the
+ * same rule asked twice: trimmed, lowercased, then one of the two names, and the safe reading of anything
+ * else is the state that covers the least of the transcript.
+ */
+export function panelResting(value: string | PanelResting | undefined): PanelResting {
+  if (value === undefined) return PANEL_DEFAULT_MODE;
+  const name = value.trim().toLowerCase();
+  return name === "open" ? "open" : PANEL_DEFAULT_MODE;
+}
+
+/**
+ * The mode a configuration rests a shown panel in when nothing has earned an open. The one read of
+ * `StickyConfig.panel`, and therefore the only thing that decides whether a peek ever happens: `open` is
+ * never-peek, so an operator who asked for the full panel never sees the three-row one.
+ *
+ * An unset member — a hand-built config in a test — rests as the documented default does, which is the same
+ * answer an unreadable value of the variable gets: one fallback, stated once.
+ */
+export function restingMode(config: PanelRestingSource | undefined): PanelResting {
+  return panelResting(config?.panel);
+}
+
+/**
+ * `PI_STICKY_PANEL` as a resting mode: whitespace and case tolerated, then `peek` or `open`, else `peek`.
+ *
+ * `undefined` and `""` both answer the default, so `readConfig`'s `panel` member is always present rather
+ * than conditionally spread — which is what keeps `readConfig({})` and `DEFAULT_CONFIG` equal in both
+ * directions, the way the two shortcut ids are equal only because an unset one is omitted.
+ */
+export function readPanelResting(raw: string | undefined): PanelResting {
+  return panelResting(raw);
+}

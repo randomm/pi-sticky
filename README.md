@@ -82,9 +82,19 @@ Once focused:
   `/tree` and a reload.
 - `Esc` returns to the editor. The panel stays open.
 
-When the agent pins something while the panel is hidden, the panel shows itself once. Your own
-show/hide choice is recorded on the session and read back on the next `session_start`, so it survives
-a `/reload` or a resume. A pin the user has replied to stays on screen until the agent unpins it or
+The panel has **three resting states**, and one question decides which one you are looking at: *does
+something here need you to act?* A shown panel rests as a **peek** — three rows: the counts title, the
+single best-ranked pin on one line, and the border carrying the focus key — so the panel says "there is
+something here" in a third of the rows and your transcript keeps the rest. What earns the **full** panel is
+a pin you have to act on: an `action` or a `warning` pin that arrives while the panel is hidden or peeking
+shows the whole frame once, and the frame goes back to the peek when you leave it (`Esc`, or `Enter` from a
+key). `info` pins never earn it — the rail draws them whether or not the panel is open — so a chatty agent
+cannot decide when your transcript gets covered. `PI_STICKY_PANEL=open` refuses the peek altogether: the
+panel rests at the full frame, and nothing ever puts it into the three-row one.
+
+Your own show/hide choice is recorded on the session and read back on the next `session_start`, so it
+survives a `/reload` or a resume. The open a pin earned records nothing: it was the agent speaking, not you,
+and the hide you chose is still the record when that open ends. A pin the user has replied to stays on screen until the agent unpins it or
 the user dismisses it, marked as described under Replying to a pin.
 
 If there is no room for the panel — under 100 columns, or nothing pinned — `/pins show` and
@@ -169,11 +179,12 @@ change.
 | `PI_STICKY_MAX_LINES` | `8` | 3–30 | Lines in the rail, header included. |
 | `PI_STICKY_TOGGLE_KEY` | `ctrl+alt+t` | a pi key id, or `off` | The shortcut that toggles the panel. |
 | `PI_STICKY_FOCUS_KEY` | `ctrl+alt+p` | a pi key id, or `off` | The shortcut that focuses the panel. |
+| `PI_STICKY_PANEL` | `peek` | `peek` or `open` | How a shown panel rests: the three-row peek, or the full frame. Anything else — a typo, `hidden`, an empty value — is read as `peek`, the state that covers the least. Ignored in `rpc`, `print` and `json`, where there is no overlay. |
 
 A numeric value outside its range, or one that is not a run of ASCII digits, falls back to the
 default. `PI_STICKY_MAX_LINES` is clamped to 10 in RPC mode, because pi caps a string widget there. The
-numeric bounds above live in `src/config.ts`; the rules for the two shortcuts live in
-`src/panel-shortcuts.ts`.
+rules for the two shortcuts live in `src/panel-shortcuts.ts`, and the rules for `PI_STICKY_PANEL` in
+`src/panel-resting.ts`.
 
 A shortcut value is a pi key id: one or more of `ctrl`, `alt`, `shift` and `super` joined by `+`, then
 a single key name — `alt+j`, `ctrl+shift+f`, `ctrl+alt+pageUp` — in any case, with the modifiers in

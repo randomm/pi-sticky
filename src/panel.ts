@@ -26,7 +26,8 @@ import { newPanelRecord } from "./panel-call.ts";
 import { releasePanel } from "./panel-close.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelDeps, PanelWiring } from "./panel-deps.ts";
-import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
+import { panelOpensPins } from "./panel-mode.ts";
+import { openPanelOverlay } from "./panel-open.ts";
 import { createRailHandoff } from "./panel-rail-handoff.ts";
 import type { TerminalWidth } from "./panel-width.ts";
 
@@ -95,37 +96,32 @@ export class PanelOwner {
     // handoff decidable in the same turn as `open()`.
     this.#record = record;
     this.#railConsider(false);
-    const visible = (columns: number, rows: number): boolean => this.#visible(columns, rows);
-
-    // `custom` is read at *call* time, not captured above, so a host that installs its own per call has
-    // to be consulted now, or the panel opens on the `custom` from a moment ago and the swap is bypassed.
-    void ui
-      .custom(
-        panelFactory(record, this.#wiring, {
-          onTui: (tui) => {
-            this.#tui = tui;
-          },
-          tui: () => this.#tui,
-          onUnfocus: () => this.refresh(),
-          // The owner's own visibility answer — the predicate pi-tui asked before it drew the overlay,
-          // so the component and the overlay cannot disagree about whether the user is looking at it.
-          panelVisible: () => this.isVisible(),
-        }),
-        panelCallOptions(visible, (handle) => {
-          this.#record?.component?.setHandle(handle);
-        }),
-      )
-      .catch((err: unknown) => {
-        // With no panel the rail keeps drawing, which is the fallback by design — but a poisoned overlay
-        // stack rejects *every* open from then on, and a rail that answers forever looks the same as a
-        // working one. The user hears why once per failed open. This is a *separate* report from
-        // `#closeFailure`: this line says the panel never came up, that one says a panel that did come up
-        // could not be put down, and the user needs both. A failed open leaves no overlay of its own, so
-        // it must not clear a close failure the owner is still owed — clearing it here lost the warning
-        // for an entry still sitting in pi's stack whenever a wedge made the next open reject as well.
+    // The overlay itself is `panel-open.ts`'s to build; the owner keeps the decisions around it — the
+    // close-before-open, the refusals, the record's publication — and hands over only the four closures the
+    // factory needs from a session that is still alive.
+    openPanelOverlay(ctx, record, this.#wiring, {
+      tui: () => this.#tui,
+      onTui: (tui) => {
+        this.#tui = tui;
+      },
+      // The interaction ended: the earned open ends with it, and then the surfaces are settled. The ending
+      // goes to the cell before the redraw rather than after, because `refresh()` is what asks the rail and
+      // the overlay what the panel is doing — a rail reconsidered against the still-open answer is a rail
+      // that stood down for pins it should have taken back.
+      onUnfocus: () => {
+        this.#wiring.deps.panelMode?.().afterUnfocus();
+        this.refresh();
+      },
+      panelVisible: () => this.isVisible(),
+      onHandle: (handle) => {
+        this.#record?.component?.setHandle(handle);
+      },
+      onFailed: (reason) => {
         if (this.#record === record) this.#record = undefined;
-        ctx.ui.notify(`pins panel unavailable: ${reasonOf(err)}`, "warning");
-      });
+        ctx.ui.notify(`pins panel unavailable: ${reason}`, "warning");
+      },
+      visible: (columns, rows) => this.#visible(columns, rows),
+    });
   }
 
   /**
@@ -194,7 +190,17 @@ export class PanelOwner {
   isVisible(): boolean {
     const deps = this.#wiring.deps;
     if (this.#record === undefined) return false;
-    return panelIsVisible(this.#columns(), deps.isPanelShown(), deps.getView().pins.length);
+    // `panelMode()` is the whole of the on-screen answer: hidden, peek or open, folded from the user's
+    // choice and from whether a pin earned the full frame (`panel-mode.ts`). Peek and open both own the
+    // pins and hidden hands them back, which is what a *peek* must do or the rail would draw the same pin
+    // twice. `isPanelShown()` is deliberately not consulted here: it is the rail's cheap "what the user
+    // chose" read, and the two differ during a transient auto-open. A wiring with no cell at all keeps
+    // asserting the user's choice alone, which is what a hand-built wiring without the member means.
+    const mode = deps.panelMode?.().mode();
+    return (
+      (mode === undefined ? deps.isPanelShown() : panelOpensPins(mode)) &&
+      panelIsVisible(this.#columns(), deps.isPanelShown(), deps.getView().pins.length)
+    );
   }
 
   /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
@@ -291,9 +297,4 @@ export class PanelOwner {
     this.#wiring.deps.setPanelShown(true);
     this.focus();
   }
-}
-
-/** What a rejected `custom()` says about itself, for the one line the user is told. */
-function reasonOf(err: unknown): string {
-  return err instanceof Error && err.message !== "" ? err.message : String(err);
 }

@@ -15,6 +15,7 @@ import type { HostContext } from "../src/context.ts";
 import type { StickyDeps } from "../src/deps.ts";
 import { createPanelWiring, initialShown } from "../src/panel-deps.ts";
 import type { PanelWiringParts } from "../src/panel-deps.ts";
+import { createPanelMode } from "../src/panel-mode.ts";
 import { UI_TYPE } from "../src/types.ts";
 import type { PinView } from "../src/types.ts";
 import { ONE } from "./panel-owner-wiring.ts";
@@ -77,6 +78,9 @@ function panelWiring(parts: Partial<PanelWiringParts> = {}) {
       deps: stickyDeps(),
       terminal,
       isPanelShown: () => true,
+      // The mode cell the wiring hands the owner: a peek is what the extension's own cell answers by
+      // default, so the fixture takes the same one the extension builds rather than a hand-rolled stand-in.
+      panelMode: () => createPanelMode(DEFAULT_CONFIG),
       setPanelShown: () => {},
       recordPanelShown: () => {},
       dismiss: () => {},

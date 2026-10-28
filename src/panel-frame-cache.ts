@@ -1,3 +1,4 @@
+import type { PanelMode } from "./panel-mode.ts";
 /**
  * What a `PanelComponent` has memorised, in one place.
  *
@@ -33,6 +34,17 @@ export interface PanelFrame {
   selection: number;
   /** Focus decides the bar, the hint and which border colour is asked for. */
   focused: boolean;
+  /**
+   * Which of the three states the frame was drawn for — hidden, the three-row peek, or the open panel — or
+   * `undefined` for a host with no mode cell, which always draws the open frame.
+   *
+   * In the key because the two drawn states of *one* view are different bytes: a cache that keyed on the
+   * view, the bar and the label alone would answer an auto-open with the peek's three rows, or a demote with
+   * the open panel's rows, and neither is a frame the user could act on. `undefined` rather than `hidden`
+   * for "no state" because a host that never named one is not a hidden panel — it is the open panel, which
+   * is what every component-level test has always drawn.
+   */
+  mode: PanelMode | undefined;
   /** The resting border's label, read from the host at draw time. */
   replyHint: string;
   /**
@@ -60,6 +72,7 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
     frame.selection === candidate.selection &&
     frame.focused === candidate.focused &&
     frame.replyHint === candidate.replyHint &&
+    frame.mode === candidate.mode &&
     frame.ageNow === candidate.ageNow
   );
 }

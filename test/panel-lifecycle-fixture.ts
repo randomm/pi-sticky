@@ -21,6 +21,9 @@ import { KeybindingsManager as TuiKeybindingsManager } from "@earendil-works/pi-
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
+import { createPanelMode } from "../src/panel-mode.ts";
+import type { PanelModeState } from "../src/panel-mode.ts";
+
 import type { PanelComponent } from "../src/panel-component.ts";
 import type { StickyConfig } from "../src/types.ts";
 import { TOOL_NAME, UI_TYPE } from "../src/types.ts";
@@ -211,6 +214,14 @@ export function handCustom(
 export interface Booted {
   stub: StubApi;
   ctx: PanelContext;
+  /**
+   * The panel's mode cell: the object the extension runs on, which the overlay's `visible()`, the rail's
+   * handoff and the component's choice of frame all read.
+   *
+   * `autoOpen()` is the move an action pin's `redraw()` makes, and the honest way for a test to need the
+   * open frame: focusing a resting panel is not it — a peek hands a keystroke back to the editor.
+   */
+  panel: PanelModeState;
 }
 
 /**
@@ -228,7 +239,12 @@ export async function boot(
   config: StickyConfig = DEFAULT_CONFIG,
 ): Promise<Booted> {
   const stub = stubApi();
-  createStickyExtension(config, () => LATER)(stub.api);
+  const cell = cellFor(config);
+  // The mode cell is handed to the extension rather than left inside it, so a test can move the panel the
+  // way a pin does (`autoOpen`) and read the state the overlay, the rail and the component all read. The
+  // extension is free to build its own — every production path does — and `cellFor` is the one place the
+  // harness spells what that would have built.
+  createStickyExtension(config, () => LATER, cell)(stub.api);
   const ctx = contextWith(entries);
   // A test that wants to watch the close — a host `done` that throws, say — replaces the callback this
   // host hands the factory, and this is the only place it reaches the host.
@@ -245,5 +261,10 @@ export async function boot(
   // exists and the frame says how wide the terminal is. `undefined` states nothing, leaving whatever
   // the last frame said — a boot is not a resize.
   if (columns !== undefined) frameWidth(ctx.recorder, columns);
-  return { stub, ctx };
+  return { stub, ctx, panel: cell };
+}
+
+/** The cell the extension would have built for itself: the harness's copy of that one line. */
+function cellFor(config: StickyConfig): PanelModeState {
+  return createPanelMode(config);
 }

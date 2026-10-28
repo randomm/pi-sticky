@@ -74,11 +74,15 @@ export interface UIShown {
 /**
  * Effective configuration from the environment (see docs/plan.md 6.9 for the four numeric/disable
  * variables; the two shortcut ids are the operator decision that closed research-summary's open
- * "exact shortcut keys" gap). They are *resolved* ids: a value the parser refused has already been
- * replaced by its default, so nothing downstream validates them again. An id the operator turned off is
- * spelled `null`, never `undefined` — `off` and "unset" are different answers and the type keeps them
- * apart — and a hand-built configuration leaves both members out entirely.
+ * "exact shortcut keys" gap, and `panel` is the resting state pins v2-4 added). They are *resolved*
+ * values: a value the parser refused has already been replaced by its default, so nothing downstream
+ * validates them again. An id the operator turned off is spelled `null`, never `undefined` — `off` and
+ * "unset" are different answers and the type keeps them apart — and a hand-built configuration leaves both
+ * members out entirely. `panel` is the opposite: always one of the two resting modes, because a resting
+ * state has no "unset" for a surface to answer differently.
  */
+import type { PanelResting } from "./panel-resting.ts";
+
 export interface StickyConfig {
   disabled: boolean;
   maxPins: number;
@@ -86,6 +90,13 @@ export interface StickyConfig {
   maxWidgetLines: number;
   toggleKey?: KeyId | null;
   focusKey?: KeyId | null;
+  /**
+   * How a shown panel rests when nothing has earned an open: the three-row peek, or the full panel. Read
+   * only by `panel-mode.ts`' `restMode`, and ignored in `rpc`, `print` and `json`, where there is no
+   * overlay for either state to exist in. Optional so a hand-built config may leave it out — `undefined`
+   * rests as the documented default does.
+   */
+  panel?: PanelResting;
 }
 
 /** Widget and status key. */
