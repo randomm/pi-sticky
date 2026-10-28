@@ -227,3 +227,37 @@ describe("applyAction unpin", () => {
     expect(result.ok && result.state.removed[19]?.id).toBe(20);
   });
 });
+
+describe("applyAction owns every array it stores", () => {
+  test("mutating the action's options array after the call cannot change the stored pin", () => {
+    // The published snapshot is the only copy of the pins on the branch, so no array inside it may be
+    // the one the caller still holds: `acceptedFields` copies the list a `pin` stores and `mergeFields`
+    // copies the one an `update` carries forward, so neither the action nor the previous snapshot can be
+    // reached through it. A session read-back re-copies and cannot catch this aliasing.
+    const sent = ["yes", "no"];
+    const pinned = applyAction(
+      EMPTY_STATE,
+      { op: "pin", text: "t", level: "info", source: "agent", now: NOW, options: sent },
+      limits(),
+    );
+    expect(pinned.ok).toBe(true);
+    if (!pinned.ok) return;
+    expect(pinned.state.pins[0]?.options).not.toBe(sent);
+
+    sent[0] = "mutated";
+    sent.push("and another");
+    expect(pinned.state.pins[0]?.options).toEqual(["yes", "no"]);
+
+    // A later update that names none of the three fields carries the old list forward; the copy it
+    // stores is the new pin's own, not the array of the snapshot the previous call published.
+    const renamed = applyAction(
+      pinned.state,
+      { op: "update", id: 1, source: "agent", now: LATER, text: "later" },
+      limits(),
+    );
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.state.pins[0]?.options).toEqual(["yes", "no"]);
+    expect(renamed.state.pins[0]?.options).not.toBe(pinned.state.pins[0]?.options);
+  });
+});

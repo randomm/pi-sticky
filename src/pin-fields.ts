@@ -133,9 +133,7 @@ export function cleanOptionsOrUndefined(
     if (cleaned.includes(one)) return null;
     cleaned.push(one);
   }
-  // Duplicates can leave fewer than MIN_OPTIONS real choices behind, which is still the refusal the
-  // count rule means.
-  return cleaned.length >= MIN_OPTIONS ? cleaned : null;
+  return cleaned;
 }
 
 /**
@@ -252,7 +250,10 @@ export function checkPinFields(
 export function acceptedFields(action: PinFields): PinFields {
   const applied: PinFields = {};
   if (action.group !== undefined && action.group !== "") applied.group = action.group;
-  if (action.options !== undefined && action.options.length > 0) applied.options = action.options;
+  // A copy, never the caller's array: the published snapshot is the only copy of the pins on the branch,
+  // and one it shares with an action would be changed underneath it by whoever still holds the original.
+  if (action.options !== undefined && action.options.length > 0)
+    applied.options = [...action.options];
   if (action.compact !== undefined) applied.compact = action.compact;
   return applied;
 }

@@ -155,7 +155,7 @@ function mergeFields(
   const options =
     action.options !== undefined && action.options.length === 0
       ? undefined
-      : (applied.options ?? pin.options);
+      : (applied.options ?? (pin.options === undefined ? undefined : [...pin.options]));
   const fields: PinFields = {};
   if (group !== undefined) fields.group = group;
   if (options !== undefined) fields.options = options;
