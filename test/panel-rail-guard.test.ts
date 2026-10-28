@@ -10,25 +10,24 @@
 import { expect, test } from "bun:test";
 
 import type { PanelDeps } from "../src/panel-deps.ts";
-import { createPanelMode } from "../src/panel-mode.ts";
 import { createRailHandoff } from "../src/panel-rail-handoff.ts";
 import { RailGuard } from "../src/panel-rail.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 
-/** The deps the guard reads: the view it stamps and the flag it puts in the key, nothing else. */
-function railDeps(state: { view: PinView; shown: boolean }): PanelDeps {
-  // The cell the guard reads for the handoff. `state.shown` drives it because these cases are about the
-  // answer the key spells, not about the verbs: `settle` is the one member that moves the screen.
-  const cell = createPanelMode({ panel: "open" });
-  return {
-    getView: () => state.view,
-    panelMode: () => {
-      cell.settle(state.shown);
-      return cell;
-    },
-  } as unknown as PanelDeps;
+/** The deps the guard reads: the view it stamps, and nothing else. */
+function railDeps(state: { view: PinView }): PanelDeps {
+  return { getView: () => state.view } as unknown as PanelDeps;
 }
+
+/**
+ * The owner's verdict the guard spells into its key.
+ *
+ * These cases are about the *cache*, so the verdict is a value the test moves rather than a cell it has to
+ * drive: `panel-owner.test.ts` pins the case where the verdict is what saves the pins (a failed open), and
+ * this file pins what the guard does with the answer it is given.
+ */
+const OWNS = () => true;
 
 /** The minute the caller aged its view at; these cases move everything *but* the age. */
 const MINUTE = 1_000;
@@ -46,12 +45,12 @@ const ONE = (marks: Partial<ReturnType<typeof pin>> = {}): PinView => ({
 });
 
 test("a panel that is open asks for a draw once per distinct answer, and no more", () => {
-  const state = { view: ONE(), shown: true };
+  const state = { view: ONE() };
   const guard = new RailGuard();
   const deps = railDeps(state);
   const draws: string[] = [];
-  const consider = (open: boolean) =>
-    guard.consider(deps, 120, () => void draws.push("draw"), open, MINUTE);
+  const consider = (open: boolean, owns = OWNS) =>
+    guard.consider(deps, 120, () => void draws.push("draw"), open, MINUTE, owns);
 
   consider(true);
   expect(draws).toEqual(["draw"]);
@@ -61,34 +60,43 @@ test("a panel that is open asks for a draw once per distinct answer, and no more
   consider(true);
   expect(draws).toEqual(["draw"]);
 
-  // Each of the three things the key spells, moved one at a time: a width the frame measured, the user's
-  // flag, and what the view draws.
-  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE);
+  // Each of the four things the key spells, moved one at a time: a width the frame measured, the owner's
+  // verdict, what the view draws, and (below) the minute the rows were aged at.
+  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE, OWNS);
   expect(draws).toHaveLength(2);
-  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE);
+  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE, OWNS);
   expect(draws).toHaveLength(2);
-  state.shown = false;
-  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE);
+  guard.consider(
+    deps,
+    100,
+    () => void draws.push("draw"),
+    true,
+    MINUTE,
+    () => false,
+  );
   expect(draws).toHaveLength(3);
+  // …and back to the verdict it started with is a new answer again, not a cache hit on the first one.
+  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE, OWNS);
+  expect(draws).toHaveLength(4);
   // A *fresh array of the same pins* is not a change — `commit`/`reconstruct` publish one on every edit —
   // but a view that draws differently is, and that is the case a key that counted pins could not see.
-  guard.consider(deps, 100, () => void draws.push("same"), true, MINUTE);
-  expect(draws).toHaveLength(3);
-  state.view = ONE({ updatedAt: "2027-01-01T00:00:00.000Z" });
-  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE);
+  guard.consider(deps, 100, () => void draws.push("same"), true, MINUTE, OWNS);
   expect(draws).toHaveLength(4);
+  state.view = ONE({ updatedAt: "2027-01-01T00:00:00.000Z" });
+  guard.consider(deps, 100, () => void draws.push("draw"), true, MINUTE, OWNS);
+  expect(draws).toHaveLength(5);
 });
 
 test("`open: false` forgets the installed answer without drawing, so the next frame must draw again", () => {
   // The two lifecycle edges — `open()` publishing a fresh record, `close()` dropping it — have just
   // destroyed the answer. A guard that *compared* against the stale one would keep the rail standing down
   // for a panel that no longer exists, which is the pins on neither surface.
-  const state = { view: ONE(), shown: true };
+  const state = { view: ONE() };
   const guard = new RailGuard();
   const deps = railDeps(state);
   const draws: string[] = [];
   const consider = (open: boolean) =>
-    guard.consider(deps, 120, () => void draws.push("draw"), open, MINUTE);
+    guard.consider(deps, 120, () => void draws.push("draw"), open, MINUTE, OWNS);
 
   consider(true);
   consider(false);
@@ -100,22 +108,22 @@ test("`open: false` forgets the installed answer without drawing, so the next fr
   // a session that never opened a panel.
   const cold = new RailGuard();
   const coldDraws: string[] = [];
-  cold.consider(deps, 120, () => void coldDraws.push("draw"), false, MINUTE);
+  cold.consider(deps, 120, () => void coldDraws.push("draw"), false, MINUTE, OWNS);
   expect(coldDraws).toEqual([]);
 });
 
 test("the draw the guard asks for is the caller's own callback, invoked exactly once per decision", () => {
   // The owner hands this arrow `() => this.#wiring.redrawRail()`, so the callback is the only observable
   // consequence of a decision, and a guard that drew twice per change would install the widget twice.
-  const state = { view: ONE(), shown: true };
+  const state = { view: ONE() };
   const guard = new RailGuard();
   const deps = railDeps(state);
   let calls = 0;
   const redraw = () => {
     calls += 1;
   };
-  guard.consider(deps, 120, redraw, true, MINUTE);
-  guard.consider(deps, 120, redraw, true, MINUTE);
+  guard.consider(deps, 120, redraw, true, MINUTE, OWNS);
+  guard.consider(deps, 120, redraw, true, MINUTE, OWNS);
   expect(calls).toBe(1);
   // The callback is read at call time and never stored: the second decision has to reach *that* callback,
   // not the one it was first handed — which is what lets the owner's arrow close over live state.
@@ -123,7 +131,7 @@ test("the draw the guard asks for is the caller's own callback, invoked exactly 
   const tallied = () => {
     calls += 10;
   };
-  guard.consider(deps, 120, tallied, true, MINUTE);
+  guard.consider(deps, 120, tallied, true, MINUTE, OWNS);
   expect(calls).toBe(11);
 });
 
@@ -133,12 +141,12 @@ test("the minute the view was aged at is part of the answer, and one that did no
   // installed" to the one frame whose whole job was to move `3m` to `4m`, and the age froze at whatever the
   // first install drew. The other half is the cost: pi-tui asks on every render cycle, and a minute that did
   // not move must stay a comparison, so the bucket goes in as a value rather than as a redraw of its own.
-  const state = { view: ONE(), shown: true };
+  const state = { view: ONE() };
   const guard = new RailGuard();
   const deps = railDeps(state);
   const draws: number[] = [];
   const consider = (minute: number) =>
-    guard.consider(deps, 80, () => void draws.push(minute), true, minute);
+    guard.consider(deps, 80, () => void draws.push(minute), true, minute, OWNS);
 
   consider(MINUTE);
   expect(draws).toEqual([MINUTE]);
@@ -153,7 +161,7 @@ test("the minute the view was aged at is part of the answer, and one that did no
   // time would answer that second `true` against the minute above and install nothing for a record that had
   // just been published.
   const edge = (open: boolean) =>
-    guard.consider(deps, 80, () => void draws.push(MINUTE), open, MINUTE);
+    guard.consider(deps, 80, () => void draws.push(MINUTE), open, MINUTE, OWNS);
   edge(false);
   edge(false);
   expect(draws).toHaveLength(1);
@@ -174,7 +182,7 @@ test("the handoff adds one term the guard cannot see — the minute the draw rep
   // contract and wrong for this one: the only thing this object over and above `RailGuard` is the minute it
   // records, and the only way to show a term is in the key is to move that term alone. The guard's own three
   // terms — width, flag, view — are held still here so the age is the only thing that can answer.
-  const state = { view: ONE(), shown: true };
+  const state = { view: ONE() };
   const drawn: number[] = [];
   const wiring = {
     deps: railDeps(state) as unknown as Parameters<RailGuard["consider"]>[0] & {
@@ -187,7 +195,7 @@ test("the handoff adds one term the guard cannot see — the minute the draw rep
   (wiring.deps as unknown as { now: () => string }).now = () => NOW;
   const LATER_ISO = "2027-01-01T00:00:00.000Z";
   const handoff = createRailHandoff();
-  const consider = (open = true) => handoff.consider(wiring, 80, open);
+  const consider = (open = true) => handoff.consider(wiring, 80, open, OWNS);
 
   // Nothing has reported a minute, so the deps' clock answers and one answer is installed once.
   consider();

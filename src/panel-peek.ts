@@ -119,6 +119,9 @@ export function buildPeekLines(content: PeekContent, width: number, style: Panel
   // The reserve the tail owns, measured the way the open frame measures it — over the *view*, not the one
   // pin drawn, so a peek and the panel it opens into pay the same columns for the same widest id.
   const metaColumns = widestMetaColumns(pins, style.dim, content.ageNow);
+  // The best-ranked pin: `flat` is non-empty above, so this read narrows rather than asserts.
+  const head = pins[0];
+  if (head === undefined) return [];
   return [
     borderLine(
       frameTitle(content.sections.order),
@@ -128,7 +131,7 @@ export function buildPeekLines(content: PeekContent, width: number, style: Panel
       width,
       frame,
     ),
-    peekPinRow(pins[0] as ViewPin, inner, style, metaColumns, content.ageNow, gutterAt),
+    peekPinRow(head, inner, style, metaColumns, content.ageNow, gutterAt),
     borderLine(content.replyHint, style.dim, FRAME_BOTTOM_LEFT, FRAME_BOTTOM_RIGHT, width, frame),
   ];
 }

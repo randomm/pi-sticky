@@ -30,6 +30,7 @@ test("a frame that changed nothing does not reinstall the rail, and a change to 
   h.panel.refresh();
   expect(h.railDraws.length).toBe(installed);
 
+  // The width the frame just measured moves the answer, so the rail is asked for again.
   h.terminal.note(120);
   h.panel.refresh();
   expect(h.railDraws.length).toBeGreaterThan(installed);
@@ -38,13 +39,13 @@ test("a frame that changed nothing does not reinstall the rail, and a change to 
   h.panel.refresh();
   expect(h.railDraws.length).toBe(afterResize);
 
-  h.state.shown = false;
-  h.panel.refresh();
+  // The user's hide — through the owner's own verb, the one that moves the cell the guard asks.
+  h.panel.hide();
   expect(h.railDraws.length).toBe(afterResize + 1);
 
   // A pin appearing changes the *count* and the stamped view, both of which are in the key.
   const afterToggle = h.railDraws.length;
-  h.state.view = { pins: [pin(2, "Another"), pin(3, "Yet more")], removed: [] };
+  h.screen.view = { pins: [pin(2, "Another"), pin(3, "Yet more")], removed: [] };
   h.panel.refresh();
   expect(h.railDraws.length).toBe(afterToggle + 1);
 
@@ -67,7 +68,7 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
   const installed = h.railDraws.length;
   expect(installed).toBeGreaterThan(0);
 
-  h.state.view = { pins: [pin(1, "Decide X")], removed: [] };
+  h.screen.view = { pins: [pin(1, "Decide X")], removed: [] };
   h.panel.refresh();
   // A *fresh* array of identical pins still counts as the same view: what the key must catch is a view
   // that draws differently, not one that was merely re-published — and `commit`/`reconstruct` publish a
@@ -76,12 +77,12 @@ test("a same-count change of *which* pins the view holds still reinstalls the ra
 
   // …and the reply suffix the rail dims a pin with is a drawn change, so a same-id/same-stamp view
   // whose pin now reads as replied is not the frame the installed component drew.
-  h.state.view = { pins: [{ ...pin(1, "Decide X"), repliedAt: NOW }], removed: [] };
+  h.screen.view = { pins: [{ ...pin(1, "Decide X"), repliedAt: NOW }], removed: [] };
   h.panel.refresh();
   expect(h.railDraws.length).toBe(installed + 1);
 
   // Same width, same flag, same count — different pins, which is the case the count cannot see.
-  h.state.view = { pins: [pin(7, "Something else")], removed: [] };
+  h.screen.view = { pins: [pin(7, "Something else")], removed: [] };
   h.panel.refresh();
   expect(h.railDraws.length).toBe(installed + 2);
 
@@ -120,7 +121,7 @@ test("a minute that moved re-installs the rail, and a frame or a keypress does n
   // cannot read the age itself and get the right answer — the instant belongs to the draw, not to the frame
   // that asked for it — so the test drives the two calls in the order `extension.ts` does.
   const tickTheRail = (at: string) => {
-    h.state.clock = at;
+    h.screen.clock = at;
     h.panel.railDrawn?.(at);
     h.panel.refresh();
   };

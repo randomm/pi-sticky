@@ -30,7 +30,7 @@ function frame(over: Partial<PanelFrame> = {}): PanelFrame {
     selection: 0,
     focused: false,
     // The state the frame was drawn for: `open` is what every case below draws, and the one case that needs
-    // the peek's rows names it. `undefined` means "a host with no mode cell", which also draws the open frame.
+    // the peek's rows names it.
     mode: "open",
     replyHint: "",
     ageNow: 29_725_800,

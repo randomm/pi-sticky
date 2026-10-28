@@ -7,9 +7,15 @@ import { railStamp } from "./panel-geometry.ts";
  * pi's `setExtensionWidget` disposes the old component, builds a new one and re-renders every widget, so
  * reinstalling on every overlay frame re-wraps every pin to draw the strip that is already there. The owner
  * asks this object whether to draw — and tells it to forget the answer when it opens or closes a panel — and
- * it answers from the exact terms `PanelOwner.isVisible()` and `drawPins` read to make that call: the width,
- * what the mode cell says about the panel, what the view draws, and the minute the ages in that view are
- * drawn at. So the cache cannot hold an answer the predicate has moved away from.
+ * it answers from the exact terms the owner uses to decide who owns the pins: the width, the owner's own
+ * visibility verdict (`PanelOwner.isVisible`), what the view draws, and the minute the ages in that view are
+ * drawn at. So the cache cannot hold an answer the predicate has moved away from, and the two surfaces are
+ * never handed two answers to the one question.
+ *
+ * The ownership term is the **owner's** answer rather than a reading of the mode cell: a failed open has
+ * forgotten its record and still leaves the cell saying *shown*, and a guard that re-derived ownership from
+ * the cell would stand the rail down for a panel that is not on screen — the pins on neither surface. One
+ * question, one answerer.
  *
  * The view is in the key by *what it draws* rather than by reference (`railStamp`, in
  * `panel-geometry.ts`): `RailComponent` snapshots the view it was built with, so a same-count change to
@@ -24,7 +30,6 @@ import { railStamp } from "./panel-geometry.ts";
  * The owner hands the key the bucket it read its own view at, so the age in the key is the age the rows
  * print — and a minute that did not move costs a comparison, exactly as a frame that changed nothing does.
  */
-import { panelOpensPins } from "./panel-mode.ts";
 
 export class RailGuard {
   /** The last answer the rail was installed for, or `undefined` when nothing is installed. */
@@ -39,9 +44,11 @@ export class RailGuard {
    * report, because a throw here escapes the frame or the refresh that asked for the draw.
    *
    * `columns` is the width `isVisible()` was measured at, passed in rather than re-read: the caller is
-   * the frame that asked, and its measurement is the answer's subject. `ageBucket` is the minute that
-   * caller aged its view at, for the reason the frame cache carries it: two calls that read the clock
-   * twice could disagree about the age of a view they agreed about in every other respect. `open` is the
+   * the frame that asked, and its measurement is the answer's subject. `ownsPins` is the **owner's** own
+   * verdict on whether the panel holds the pins right now (`PanelOwner.isVisible`): a peek stands the rail
+   * down exactly as an open panel does, and a failed open does not. `ageBucket` is the minute that caller
+   * aged its view at, for the reason the frame cache carries it: two calls that read the clock twice could
+   * disagree about the age of a view they agreed about in every other respect. `open` is the
    * caller's own verdict on whether a panel is open at all: `false` on the two lifecycle edges that have
    * just destroyed the answer (an `open()` publishing a fresh record, a `close()` dropping it), where the
    * next frame must be compared against nothing, and `true` on every change that may have moved the answer
@@ -59,14 +66,11 @@ export class RailGuard {
     redraw: () => void,
     open: boolean,
     ageBucket: number,
+    ownsPins: () => boolean,
   ): void {
     if (this.#settled(open)) return;
     const view = deps.getView();
-    // The mode cell answers the handoff's question: a peek must stand the rail down exactly as an open
-    // panel does, or the same pin is drawn twice, and the screen alone would say otherwise — it knows the
-    // panel is drawn, not that the panel owns these pins.
-    const owns = panelOpensPins(deps.panelMode().mode());
-    const key = `${columns}|${owns}|${railStamp(view.pins)}|${ageBucket}`;
+    const key = `${columns}|${ownsPins()}|${railStamp(view.pins)}|${ageBucket}`;
     if (this.#same(key)) return;
     this.#install(key, redraw);
   }

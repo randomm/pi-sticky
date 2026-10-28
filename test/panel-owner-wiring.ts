@@ -55,9 +55,22 @@ export function wiring(
   const railDraws: number[] = [];
   /** What each rail draw was asked to draw, so the callback's argument is observable. */
   const railKeys: string[] = [];
+  /**
+   * The ownership answer the guard was handed for each install — the owner's *own* verdict, read at draw
+   * time. `railKeys` records the fixture's own view of the answer (the cell it drives), so a test that has
+   * to see what `PanelOwner.isVisible()` said for the same install — a failed open, for one — reads this.
+   */
+  const railOwns: boolean[] = [];
+  /** The verdict the guard is handed; installed as `() => panel.isVisible()` once the owner exists. */
+  let owns: () => boolean = () => false;
   /** The `recordPanelShown` calls, so a test can see which half of the setter pair ran. */
   const records: boolean[] = [];
-  const state: { view: PinView; shown: boolean; rpc?: boolean; clock?: string } = {
+  /**
+   * The user's recorded choice, as the verbs left it. A test reads it; it does not write it — the screen
+   * moves through `hide`, `show`/`toggle` or `setShown`, the same verbs the extension's own wiring exposes,
+   * so nothing can leave the flag and the cell disagreeing about what is drawn.
+   */
+  const screen: { view: PinView; shown: boolean; rpc?: boolean; clock?: string } = {
     view: opts.view ?? ONE,
     shown: opts.shown ?? true,
     // The instant the owner ages a rail it is about to install. Fixed at `NOW` so a guard whose key ignored
@@ -84,33 +97,30 @@ export function wiring(
   // assert on.
   const cell = createPanelMode({ panel: "open" });
   const deps = {
-    getView: () => state.view,
-    // The cell the surfaces read, driven by the owner's own verbs: a `setPanelShown`/`recordPanelShown`
-    // settles it, and the guard's key and `isVisible` answer from it — the same cell the extension hands.
-    // Read at call time, and settled from `state.shown` on the way: several tests move that flag directly
-    // to model a hide the user made, and the surfaces must answer it the way the extension's cell would.
-    panelMode: () => {
-      cell.settle(state.shown);
-      return cell;
-    },
+    getView: () => screen.view,
+    // The surfaces' one cell, read as it is: a pure read, with no write folded into it. Every state change
+    // goes through the verbs below — `setPanelShown` / `recordPanelShown` — which is what makes the cell
+    // observable rather than re-settled by whoever happens to ask it a question.
+    panelMode: () => cell,
     // The owner's `replyHint` reaches `config` through the real deps, and these files are about the
     // guard's key, not the border's label: the component reads this every candidate frame, so an absent
     // `config` is an exception out of `update()` rather than an inert stub.
     config: { focusKey: "ctrl+alt+p", maxWidgetLines: 12 },
     // The same reason: the component asks the host for the instant its ages are measured at, and a
     // hand-built deps that cannot answer one is an exception in the draw path rather than a stub.
-    now: () => state.clock ?? NOW,
-    // The one caller is `PanelOwner.focusFromShortcut`, which settles the flag to shown and records nothing;
-    // a `false` through this member is unrepresentable in the owner, so a branch for it here would be a
-    // closure no test can reach (that is the `panel-wiring.test.ts` setter-pair case's job, not this one's).
+    now: () => screen.clock ?? NOW,
+    // The one caller is `PanelOwner.focusFromShortcut` — which now asks the cell for the earned open
+    // outright (`autoOpen`) and never reaches a setter here: reading a pin records nothing and settles
+    // nothing, so a branch for it would be a closure no test can reach (that is the
+    // `panel-wiring.test.ts` setter-pair case's job, not this one's). Kept because `PanelDeps` declares it.
     setPanelShown: (shown: boolean) => {
       cell.settle(shown);
-      state.shown = shown;
+      screen.shown = shown;
     },
+    // The recording `shown` below is the flag the owner's verbs leave behind, and the `/pins` verbs are
+    // expected to settle it — so a recorded entry is what proves the recording half of the pair ran.
     recordPanelShown: (shown: boolean) => {
-      // The recording `shown` below is the flag the owner answers from, and the `/pins` verbs are
-      // expected to settle it — so a recorded entry is what proves the recording half of the pair ran.
-      state.shown = shown;
+      screen.shown = shown;
       cell.settle(shown);
       records.push(shown);
     },
@@ -121,15 +131,22 @@ export function wiring(
     terminal,
     themeStyle: () => panelStyle,
     onDispose: () => {},
-    rpc: () => state.rpc ?? false,
+    rpc: () => screen.rpc ?? false,
     redrawRail: () => {
-      // Read at draw time: the record has to say what the rail was asked to install, not what the view
-      // happens to hold when the test finally looks at it. One push per call is also what proves the
-      // guard's decision happened once — a guard that drew twice would double this and the count.
-      railKeys.push(`${terminal.columns()}|${state.shown}|${state.view.pins.length}`);
+      // Read at draw time, and from the source the answer is actually made of: the cell, not the flag the
+      // recording verbs leave behind — an `autoOpen` puts a panel on screen without moving that flag, and a
+      // record that disagreed with the cell would be a mirror nobody could trust. The record has to say what
+      // the rail was asked to install, not what the view happens to hold when the test finally looks at it.
+      // One push per call is also what proves the guard's decision happened once — a guard that drew twice
+      // would double this and the count.
+      railKeys.push(`${terminal.columns()}|${cell.mode() !== "hidden"}|${screen.view.pins.length}`);
+      railOwns.push(owns());
       railDraws.push(railKeys.length);
     },
   });
+  // The guard's ownership term is the owner's own answer — the one member the fixture cannot build before
+  // the owner exists, so it is wired in here rather than in the literal above.
+  owns = () => panel.isVisible();
   // A context built for a test has a recorder's `custom`; the override is what makes it fail.
   if (opts.custom !== undefined) {
     (ctx as unknown as { ui: Record<string, unknown> }).ui.custom = opts.custom;
@@ -140,7 +157,8 @@ export function wiring(
     railDraws,
     railKeys,
     records,
-    state,
+    screen,
+    railOwns,
     ctx,
     /** State a width the way pi-tui does — the overlay's per-frame `visible()` — and reconsider the rail. */
     frame: (columns: number) => {
@@ -148,5 +166,13 @@ export function wiring(
       const visible = typeof options === "function" ? undefined : options?.visible;
       visible?.(columns, 24);
     },
+    /**
+     * Move the screen the way the extension's non-recording setter does: settle the cell, leave the record
+     * where it is. A test that needs a panel on (or off) screen without the user having spoken uses this;
+     * one that needs the user's own verb uses `panel.show`/`panel.hide`/`panel.toggle`.
+     */
+    setShown: (shown: boolean) => deps.setPanelShown(shown),
+    /** The surfaces' one cell, for a test that asks the panel what frame it is drawing. */
+    panelMode: () => cell,
   };
 }
