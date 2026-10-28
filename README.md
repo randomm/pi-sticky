@@ -318,7 +318,8 @@ Notes:
   made inside the cached clone are discarded.
 - The scripts those skills run need noni's own modules importable in the environment the agent runs in —
   `PYTHONPATH=<clone>/src` is the direct route (the package lives under `src/`), or install it from your
-  clone with `pip install -e <clone>`. Noni's README also documents `pip install noni`, and that name is
+  clone with `pip install -e ".[dev]"` from the clone root (noni's own documented form). Noni's README
+  also documents `pip install noni`, and that name is
   taken on PyPI by an unrelated project — check what you actually got before trusting it.
 - noni's scripts run with the agent's own permissions over the target repo, and the census reads
   attacker-influenceable files under the target's `noni/`. Install noni from a source you trust as much

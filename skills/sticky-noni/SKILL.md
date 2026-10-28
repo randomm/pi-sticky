@@ -84,14 +84,15 @@ that skill:
 Run noni's census — `python3 <noni>/skills/census/scripts/census.py --repo .` (that script's own `--repo`
 flag) from the target project, or `noni census` where the package is installed — once per bridged
 session, and again after a batch of order changes or a steering commit, or when a check needs
-confirming. `--only <check>` (the same script's flag) narrows what was evaluated, so it reuses the
-previous full run's verdict rather than re-scanning per check. It is the arbiter.
+confirming. `--only <check>` (the same script's flag) narrows what was evaluated: it evaluates only the
+named checks, so it cannot vouch for the others. It is the arbiter.
 
 Its exit codes are its own table: `0` clean, `2` usage error, `3` a required tool missing, then one code
 per failing class — `10` ledger-record, `12` ledger-edited, `15` ordering-malformed, `20` ledger-chain,
 `30` session-double, `31` session-claim, `32` session-malformed, `40` session-stalled, `41` probe,
 `42` ledger-empty, `43` session-same-identity, `44` session-deleted, `45` ordering-stale, `46`
-ordering-closed, `50` hygiene — and the lowest failing code wins. There is no exit `1`.
+ordering-closed, `50` hygiene — and the lowest failing code wins. The census has no exit `1` (other
+noni writers — `register`, `claim`, `close`, `release` — do use `1`).
 
 - Read the verdict the census printed rather than the shape of the run: exit `0` with `summary: clean; …`
   on stdout is clean — warnings included — and gets no pin, so unpin any census warning you have. Exit
@@ -104,8 +105,8 @@ ordering-closed, `50` hygiene — and the lowest failing code wins. There is no 
   no check is named as failed and no repair owner is named.
 - Exit `2` with no row is a bad argument (an unknown `--only` name, an unparseable `--now` or
   `--stale-after`, a `--repo` that does not exist): quote what the census wrote on stderr and never
-  guess a missing binary. Exit `3` is census's own "required tool missing" (it names `git` on stderr), and
-  an unimportable `noni` package is a `3` from the in-place wrapper that names itself the same way.
+  guess a missing binary. Two things exit `3`, and stderr tells them apart: census's own `3` names `git`
+  on stderr (git is missing); the in-place wrapper's `3` says the `noni` package is not importable.
   Exit `3`, or any exit outside that table — the script not found, `python3` missing, the run killed —
   means **the census did not run**, so it is not a verdict: pin a
   `warning` saying the census did not run and what is missing.
