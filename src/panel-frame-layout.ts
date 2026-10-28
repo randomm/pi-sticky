@@ -129,7 +129,7 @@ function panelOwnedRows(
   let offset = 0;
   for (const section of sections.order) {
     owned.push({
-      row: { text: headingCell(headingRow(section), headingWidth), tail: "" },
+      row: { text: headingCell(headingRow(section), headingWidth, style, section.kind), tail: "" },
       pin: null,
     });
     owned.push(...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset));

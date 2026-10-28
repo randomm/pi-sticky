@@ -35,8 +35,15 @@ import { GUTTER_COLUMNS } from "./panel-tail.ts";
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
 
-/** The character drawn in front of a pin; the rail quotes the same three. */
-const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
+/**
+ * The one level→glyph table of the panel: the character drawn in front of a pin, and the one drawn in
+ * front of that level's section heading. The rail quotes the same three from its own copy in `render.ts`.
+ *
+ * Exported, because a heading that invented a fourth glyph would say one thing above its pins and another
+ * on them: `panel-section-headings.ts` reads the mark off this table and colours it the way `panelPinRows`
+ * colours a pin row's marker, so one kind has one glyph wherever it appears.
+ */
+export const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
 
 /**
  * The instant an age is measured against when the caller has none: `new Date()` at the moment the rows are
@@ -150,6 +157,19 @@ export function panelAllRows(
  * The window's start for a selection, given every row of the table in order and the start of the
  * selected pin: never past the end of the table, so the last pin is always on screen.
  *
+ * A row that belongs to no pin is a section heading, and a heading is read for its position rather than its
+ * text — which rows are headings is stamped by the builder of the table, `panelOwnedRows`
+ * (`panel-frame-layout.ts`). One such row directly above the selected pin is the heading over it, and the
+ * window opens **one row earlier** so the user reads the level of the pin the bar is on rather than inferring
+ * it — but only while that heading and every row of the selected pin still fit in the window: a heading whose
+ * section has a two-row pin under it would push the rest of that pin out and trade the label for the text.
+ * When they do not fit, or when the row above is another pin's, the window opens on the pin's first row as
+ * before. A single-section table has no heading rows at all, so its window is byte-for-byte the one it drew
+ * before sections existed.
+ *
+ * Focus plays no part: the same selection at the same terminal draws the same rows whether or not the panel
+ * holds the keyboard, and only the bar differs.
+ *
  * `buildPanelLines` goes through this with the table and the start `panelLayoutSections` built, so drawing a
  * window of the pins costs one wrap of each pin rather than three.
  */
@@ -158,9 +178,23 @@ export function panelWindowOffset(
   selection: number,
   all: readonly PanelRow[],
   start: number,
+  /** The pin each row of `all` belongs to, or `null` for a heading — `PanelOwned.pin` of the same table. */
+  owners: readonly (number | null)[],
 ): number {
   const total = all.length;
   if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
   if (start < 0) return total - contentRows;
-  return Math.min(start, total - contentRows);
+  const capped = Math.min(start, total - contentRows);
+  const rowsOfSelected = countRowsOf(owners, selection);
+  if (rowsOfSelected > 0 && start - 1 >= 0 && owners[start - 1] === null) {
+    if (contentRows - rowsOfSelected >= 1) return Math.min(start - 1, total - contentRows);
+  }
+  return capped;
+}
+
+/** Rows of the table the pin at `index` owns; zero when the table tags no row with it. */
+function countRowsOf(owners: readonly (number | null)[], index: number): number {
+  let count = 0;
+  for (const owner of owners) if (owner === index) count++;
+  return count;
 }

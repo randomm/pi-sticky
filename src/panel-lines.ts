@@ -236,6 +236,9 @@ export function buildPanelLines(
     content.selection,
     owned.map((entry) => entry.row),
     layout.start,
+    // The same owners the bar below is matched on: a heading owns a row and no pin, and this is how the
+    // window knows to open one row earlier and keep the heading over the selected pin on screen.
+    owned.map((entry) => entry.pin),
   );
 
   // The row of the window the bar sits on, in the window's own numbering.

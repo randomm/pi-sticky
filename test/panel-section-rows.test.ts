@@ -14,9 +14,11 @@
  * and `d` or `Enter` would then dismiss the pin the user was never looking at.
  */
 import { expect, test } from "bun:test";
+import type { TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { PanelComponent } from "../src/panel-component.ts";
+import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
@@ -126,6 +128,94 @@ test("the bar can never be drawn on a heading, whatever the selection", () => {
   // A selection past the end draws no bar at all rather than one on whatever row lands there.
   const past = contentRows(frameOf(view, 99)).filter((row) => row.includes("["));
   expect(past).toHaveLength(0);
+});
+
+/**
+ * The terminal these sweeps draw against. `panelMaxRows` halves it and `panelFrameRows` puts the two border
+ * rows over the table, so eighteen rows leave a seven-row window over this fixture's ten-row table: three
+ * rows of the table are always scrolled away, which is the only case in which a heading can be lost.
+ */
+const SHORT_TERMINAL = 18;
+
+/** The frame, its table and its drawn rows for `selection` at that short terminal. */
+function windowAt(view: ViewPin[], selection: number) {
+  const { lines, layout } = framed(
+    { pins: view, selection, focused: true, replyHint: "", ageNow: LATER },
+    WIDTH,
+    style,
+    SHORT_TERMINAL,
+  );
+  return { lines, layout, rows: contentRows(lines) };
+}
+
+/**
+ * A focused component over `pins` with the bar on `selection`, drawn at the short terminal.
+ *
+ * The component's own path rather than the helper's, because the two destructive keys are the thing under
+ * test and they live on the component: `d` and `Enter` index the drawn pin list, so the frame they are checked
+ * against must be the frame that very component drew.
+ */
+function keySweepAt(view: ViewPin[], selection: number) {
+  const h = host(view);
+  h.stub.style = () => style;
+  // Named rather than spread onto the host's stub, which has no `terminal` at all: the component reads a
+  // missing one as "no terminal to ask" and sizes the frame from `panelMaxRows`'s fallback instead.
+  const tui = { ...h.tui, terminal: { columns: 80, rows: SHORT_TERMINAL } } as TUI;
+  const c = new PanelComponent(h.stub, tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  c.focus();
+  c.select(selection);
+  const lines = c.render(WIDTH);
+  return { h, c, lines, rows: contentRows(lines), drawn: panelSections(view).flat };
+}
+
+test("the bar's row is the selected pin's first row, not a continuation of it", () => {
+  // The other half of the heading rule: opening the window a row early is only right if the bar still lands
+  // on the pin's *first* row — the one carrying its id — and not on a continuation line cut from the same pin.
+  const view = mixedView();
+  for (let selection = 0; selection < view.length; selection++) {
+    const { rows, drawn } = keySweepAt(view, selection);
+    const pin = drawn[selection] as ViewPin;
+    const bar = rows.findIndex((row) => row.includes("["));
+    expect(bar, `a bar for selection ${selection}`).toBeGreaterThanOrEqual(0);
+    expect(rows[bar]).toContain(`#${pin.id}`);
+    // Not a continuation row: those open under the text column, with the row's first three columns blank.
+    expect(rows[bar]?.replace(/^[│ ]+/, "").startsWith("   ")).toBe(false);
+  }
+});
+
+test("d and Enter act on the pin under the bar, whatever row of the table that is", () => {
+  // The other half of the sweep: the bar is only worth its position if the two destructive keys answer to the
+  // pin drawn under it. `d` and `Enter` index the *pin* list and the bar indexes the *table*; the heading rows
+  // are exactly where those two numberings part company.
+  const view = mixedView();
+  const drawn = panelSections(view).flat;
+  for (let selection = 0; selection < view.length; selection++) {
+    const { rows } = windowAt(view, selection);
+    const bar = rows.findIndex((row) => row.includes("["));
+    const underBar = drawn[selection] as ViewPin;
+
+    const dismissed = host(view);
+    dismissed.stub.style = () => style;
+    const d = new PanelComponent(dismissed.stub, dismissed.tui);
+    d.focus();
+    d.select(selection);
+    d.handleInput("d");
+    expect(dismissed.state.dismissals, `d at selection ${selection}`).toEqual([underBar.id]);
+
+    const answered = host(view);
+    answered.stub.style = () => style;
+    const enter = new PanelComponent(answered.stub, answered.tui);
+    enter.focus();
+    enter.select(selection);
+    enter.handleInput("\r");
+    expect(answered.state.replies, `Enter at selection ${selection}`).toEqual([underBar.id]);
+
+    // What the user looked at is what was acted on: the bar's own row names that pin's id.
+    expect(rows[bar]).toContain(`#${underBar.id}`);
+  }
 });
 
 test("a replied-before-unreplied view draws the unanswered pin's row under the bar", () => {
