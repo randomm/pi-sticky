@@ -171,3 +171,33 @@ test("a theme whose marker adds visible bytes still draws the heading at the fra
     "Warnings",
   );
 });
+
+test("a cut heading cell carries no escape bytes of its own at any width", () => {
+  // The cell is returned to its caller, which pads and joins it — so it must be safe at *this* boundary, the
+  // way `glyph` (`panel-frame.ts`) returns one. `truncateToWidth` injects a reset around its ellipsis, and a
+  // theme whose `marker` added visible bytes forces the cut branch at a narrow column: without the strip the
+  // cell reached the frame carrying `\u001b[0m` for nothing to consume.
+  const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
+  for (const kind of KINDS) {
+    for (const textWidth of [1, 2, 3, 5, 6, 7, 12, 30]) {
+      const cell = headingCell(headingRow(sectionOfKind(kind)), textWidth, wrapping, kind);
+      expect(stripSequences(cell)).not.toContain("\u{1b}");
+      expect(visibleWidth(cell)).toBeLessThanOrEqual(textWidth);
+    }
+  }
+});
+
+test("a theme whose marker adds visible bytes cuts the pin row's marker the same way", () => {
+  // One marker policy for the whole panel, so that the glyph the heading draws and the glyph the row under it
+  // draws are the same bytes. Before the row cut its marker the two diverged — the heading drew ` < ` and the
+  // pin row ` <m` — and the divergence reached the screen, because each string is closed to the width by
+  // itself and neither one measures the other's marker.
+  const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
+  for (const kind of KINDS) {
+    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping, kind);
+    const rows = panelPinRows(levelPin(1, "text", kind), 30, wrapping, LATER);
+    expect(rows[0]?.text.slice(0, 3)).toBe(cell.slice(0, 3));
+    // ...and neither string carries the wrapper's bytes.
+    for (const drawn of [cell, rows[0]?.text ?? ""]) expect(drawn).not.toContain("<m:");
+  }
+});

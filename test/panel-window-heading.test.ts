@@ -14,19 +14,17 @@
  * the two numberings part company at every heading above the selection.
  */
 import { expect, test } from "bun:test";
-import type { TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { PanelComponent } from "../src/panel-component.ts";
 import { panelContentRows, panelWindowOffset } from "../src/panel-rows.ts";
+import type { PanelRow } from "../src/panel-rows.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
-import { createOverlayHandle } from "./harness.ts";
-import { host } from "./panel-component-host.ts";
 import { framed } from "./panel-frame.ts";
 import { mixedView } from "./panel-sections-fixture.ts";
+import { SHORT_TERMINAL, componentAt } from "./panel-window-fixture.ts";
 
 /** Identity colours with a bar that is visible in the drawn string. */
 const style: RenderPanelStyle = {
@@ -41,37 +39,12 @@ const style: RenderPanelStyle = {
 const WIDTH = 60;
 
 /**
- * The terminal these sweeps draw against. `panelMaxRows` halves it and `panelFrameRows` puts the two border
- * rows over the table, so eighteen rows leave a seven-row window over this fixture's ten-row table: three
- * rows of the table are always scrolled away, which is the only case in which a heading can be lost.
- */
-const SHORT_TERMINAL = 18;
-
-/** The frame's content rows — the two borders taken off, so row 0 is the first row inside the frame. */
-function contentRows(lines: string[]): string[] {
-  return lines.slice(1, -1);
-}
-
-/**
- * A focused component over `view` with the bar on `selection`, drawn at the short terminal.
- *
- * The component's own path rather than the helper's, because the window the user sees is the one the
- * component drew: the helper and the component must agree, and this is where that agreement is checked.
+ * A focused component over `view` with the bar on `selection`, drawn at the short terminal by the component
+ * itself — the window the user sees is the one the component drew, and this is where that agreement with the
+ * helper's `framed` is checked (`panel-window-fixture.ts`).
  */
 function keySweepAt(view: ViewPin[], selection: number) {
-  const h = host(view);
-  h.stub.style = () => style;
-  // Named rather than spread onto the host's stub, which has no `terminal` at all: the component reads a
-  // missing one as "no terminal to ask" and sizes the frame from `panelMaxRows`'s fallback instead.
-  const tui = { ...h.tui, terminal: { columns: 80, rows: SHORT_TERMINAL } } as TUI;
-  const c = new PanelComponent(h.stub, tui);
-  const handle = createOverlayHandle();
-  handle.unfocus();
-  c.setHandle(handle);
-  c.focus();
-  c.select(selection);
-  const lines = c.render(WIDTH);
-  return { h, c, lines, rows: contentRows(lines), drawn: panelSections(view).flat };
+  return componentAt(view, selection, WIDTH, style);
 }
 
 /** The drawn index of each section's first pin — the only pins with a heading directly above them. */
@@ -156,4 +129,37 @@ test("the window scrolls for these frames: three rows of the table are always of
     expect(lines).toHaveLength(9);
     expect(rows.filter((row) => row.includes("[")).length).toBe(1);
   }
+});
+
+/** A table of `total` dummy rows owned as `owners`, for the offset's own arithmetic. */
+function table(owners: readonly (number | null)[]): PanelRow[] {
+  return owners.map(() => ({ text: "row", tail: "" }));
+}
+
+test("the heading is kept exactly while it and the whole pin fit, and dropped one row after that", () => {
+  // The seam of the fit rule, at the row-table level where the budget can be named: a one-row pin under a
+  // heading in a two-row window is *exactly* the window — heading and pin fill it and nothing is lost, so the
+  // heading stays. Give that same pin one more row and the heading is now the thing that does not fit, and the
+  // window opens on the pin instead. The two cases differ by one row of the pin and one row of the budget, so
+  // a comparison off by one anywhere in the rule shows up here rather than in a frame two layers up.
+  const exact = [null, 0, 1, 1, 2]; // heading, one-row pin 0, …
+  const overflows = [null, 0, 0, 1, 1, 2]; // heading, two-row pin 0, …
+  expect(panelWindowOffset(2, 0, table(exact), 1, exact), "heading + 1 row = 2-row window").toBe(0);
+  expect(
+    panelWindowOffset(2, 0, table(overflows), 1, overflows),
+    "heading + 2 rows > 2-row window",
+  ).toBe(1);
+  // A budget of five over a three-row pin leaves two rows over: the heading is kept with room to spare.
+  const generous = [null, 0, 0, 0, 1, 1, 2, 3, 4];
+  expect(panelWindowOffset(5, 0, table(generous), 1, generous)).toBe(0);
+  // A pin the table tags with no row at all owns nothing to keep, so there is no heading to open on.
+  expect(
+    panelWindowOffset(
+      3,
+      0,
+      table(generous),
+      1,
+      generous.map(() => 1),
+    ),
+  ).toBe(1);
 });

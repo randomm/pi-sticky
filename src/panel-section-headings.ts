@@ -36,8 +36,10 @@ const HEADINGS: Record<SectionKind, string> = {
 /**
  * One glyph, cut to the columns it draws: a theme whose `marker` wrapped it in visible bytes is cut back to
  * the plain glyph's own width, exactly as `fitLine` (`panel-lines.ts`) re-cuts a drawn line that still
- * measures too wide after the first cut. Stripped first, because the cut alone leaves the theme's bytes in the
- * string; padded, because a colour that costs nothing must not leave the glyph short of its column.
+ * measures too wide after the first cut. Stripped on both branches, because the cut alone leaves both the
+ * theme's bytes and its own `…`-sandwiched reset in the string — a cell is returned to its caller unpainted,
+ * the way `glyph` (`panel-frame.ts`) returns one; padded, because a colour that costs nothing must not leave
+ * the glyph short of its column.
  */
 function cutToWidth(marked: string, columns: number): string {
   const stripped = stripSequences(marked);
@@ -98,8 +100,10 @@ export function headingCell(
   const cell = ` ${mark} ${row.label}`;
   if (textWidth <= 0) return "";
   // In practice the padding branch is the one that runs: the three fixed headings are far shorter than any
-  // frame the builder closes, so the cut is the guard rather than the path.
+  // frame the builder closes, so the cut is the guard rather than the path. Stripped after the cut rather
+  // than before it, because the theme's colour is meant to survive a cell that fits — only the bytes the cut
+  // itself injects are refused here, and `fitLine` (`panel-lines.ts`) is where the rest are.
   return visibleWidth(cell) > textWidth
-    ? truncateToWidth(cell, textWidth, "")
+    ? padPlain(stripSequences(truncateToWidth(cell, textWidth, "")), textWidth)
     : padPlain(cell, textWidth);
 }

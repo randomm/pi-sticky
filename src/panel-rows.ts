@@ -17,9 +17,12 @@
  * for the reserve the text column gives up, so a theme whose `dim` adds columns is paid for by the layout
  * that wrapped the row.
  */
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+
+import { stripSequences } from "./escape.ts";
 
 import { widestMetaColumns } from "./panel-frame-geometry.ts";
+import { padPlain } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
@@ -105,12 +108,16 @@ export function panelPinRows(
   metaColumns: number = widestMetaColumns([pin], style.dim, now),
 ): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
+  const glyph = MARKER[pin.level];
   if (textWidth <= 0) {
     // No text column is the degenerate frame: the row is the marker and nothing else, and there is no row
     // below it for the age to live on, so the one row carries the whole tail: id and age, whichever half the
     // layout would otherwise have split between two lines — stamped whole rather than through `pinTails`,
     // which decides which of its two rows gets which half and has no second row to give one to here.
-    return [{ text: ` ${marker} `, tail: fullStamp(pin, style.dim, now) }];
+    // Cut to the one column the marker owns before it is joined, the same policy as `drawnMarker` below — a
+    // theme whose `marker` wrapped the glyph would otherwise widen the only row this frame has past the column
+    // the frame set aside for it, and this branch never reaches `fitLine`.
+    return [{ text: ` ${drawnMarker(marker, glyph)} `, tail: fullStamp(pin, style.dim, now) }];
   }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
   // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks like.
@@ -123,10 +130,25 @@ export function panelPinRows(
   const count = wrapped.length > 0 ? wrapped.length : 1;
   const tails = pinTails(pin, count, metaColumns, now, style.dim);
   const rows = wrapped.map((line, index) => ({
-    text: index === 0 ? ` ${marker} ${line}` : `   ${line}`,
+    text: index === 0 ? ` ${drawnMarker(marker, glyph)} ${line}` : `   ${line}`,
     tail: index === 0 ? tails.first : index === 1 ? (tails.second ?? "") : "",
   }));
-  return rows.length > 0 ? rows : [{ text: ` ${marker} `, tail: tails.first }];
+  return rows.length > 0 ? rows : [{ text: ` ${drawnMarker(marker, glyph)} `, tail: tails.first }];
+}
+
+/**
+ * The theme-coloured marker as it is drawn: cut to the columns the plain glyph owns, then padded back to
+ * them. `fitLine` (`panel-lines.ts`) closes the *line*, and a row whose marker was padded would be measured
+ * with the theme's bytes counted, so one policy is applied to the marker alone here — the same one
+ * `cutToWidth` (`panel-section-headings.ts`) applies to a heading's glyph, so a `marker` that wrapped the
+ * glyph draws the same cut in the heading and on the pin row under it rather than two different versions of
+ * it, and the row never asks the frame for columns the glyph does not own.
+ */
+function drawnMarker(marked: string, glyph: string): string {
+  const stripped = stripSequences(marked);
+  const columns = visibleWidth(glyph);
+  if (visibleWidth(stripped) <= columns) return padPlain(stripped, columns);
+  return padPlain(stripSequences(truncateToWidth(stripped, columns, "")), columns);
 }
 
 /**
@@ -186,8 +208,14 @@ export function panelWindowOffset(
   if (start < 0) return total - contentRows;
   const capped = Math.min(start, total - contentRows);
   const rowsOfSelected = countRowsOf(owners, selection);
-  if (rowsOfSelected > 0 && start - 1 >= 0 && owners[start - 1] === null) {
-    if (contentRows - rowsOfSelected >= 1) return Math.min(start - 1, total - contentRows);
+  // The heading **plus every row of the pin**, which is the fit the rule asks for: the window must hold the
+  // heading and the whole pin, so the heading opens only while at least one row is left over after them. At
+  // one row left over the heading and the pin are exactly the window, which is a fit; at none the heading would
+  // cost the pin its last row, and the label is not worth the text. So the arithmetic is spelled out rather
+  // than folded into one subtraction — folding it invites the off-by-one this rule turns on.
+  const fitsHeadingAndPin = contentRows - 1 >= rowsOfSelected;
+  if (rowsOfSelected > 0 && start - 1 >= 0 && owners[start - 1] === null && fitsHeadingAndPin) {
+    return Math.min(start - 1, total - contentRows);
   }
   return capped;
 }
