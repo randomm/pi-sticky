@@ -11,7 +11,7 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { headingCell, headingRow, headingText } from "../src/panel-section-headings.ts";
+import { headingCell, headingRow } from "../src/panel-section-headings.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { SectionKind } from "../src/panel-sections.ts";
 import { mixedView } from "./panel-sections-fixture.ts";
@@ -26,9 +26,18 @@ function sectionOfKind(kind: SectionKind) {
 const KINDS: readonly SectionKind[] = ["warning", "action", "info"];
 
 test("the three headings are the fixed strings the user is taught to read", () => {
-  expect(headingText("warning")).toBe("⚠ Warnings");
-  expect(headingText("action")).toBe("? Needs you");
-  expect(headingText("info")).toBe("· FYI");
+  // The three strings live in the module's table and reach the screen only through `headingRow`, so the
+  // strings are pinned by what the row prints: glyph and word spelled out per kind, and nothing derived from
+  // a pin. A heading the model could word would be a heading a pin could forge.
+  const heads: Record<SectionKind, string> = {
+    warning: "⚠ Warnings",
+    action: "? Needs you",
+    info: "· FYI",
+  };
+  for (const kind of KINDS) {
+    const row = headingRow(sectionOfKind(kind));
+    expect(`${row.mark} ${row.label}`).toBe(heads[kind]);
+  }
 });
 
 test("a heading row carries its glyph apart from its word, for the marker colour", () => {
@@ -42,8 +51,10 @@ test("a heading row carries its glyph apart from its word, for the marker colour
     const row = headingRow(sectionOfKind(kind));
     expect(row.mark).toBe(marks[kind]);
     expect(row.label).toBe(labels[kind]);
-    // The glyph is the head of the heading's own text, which is the only reason `slice` can split it.
-    expect(headingText(kind).startsWith(`${row.mark} `)).toBe(true);
+    // The glyph is the head of the heading, split from the word at its one space: a heading whose glyph was
+    // baked into its text could not be coloured through `style.marker` the way a pin row's marker is.
+    expect(row.mark.length).toBeGreaterThan(0);
+    expect(row.label.startsWith(row.mark)).toBe(false);
   }
 });
 

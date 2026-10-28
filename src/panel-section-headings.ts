@@ -53,16 +53,6 @@ export function headingRow(section: PanelSection): HeadingRow {
 }
 
 /**
- * The heading of `kind`, spelled once for whoever asks — the rail and `/pins` never do (resolution 6).
- *
- * Reserved for the group-section API (v2-6), which needs a heading for a section the table does not yet build;
- * nothing in the drawn frame reads it today — `headingRow` is what the layout asks for.
- */
-export function headingText(kind: SectionKind): string {
-  return HEADINGS[kind];
-}
-
-/**
  * The heading of `kind` as the row table prints it: ` ` + marker + ` ` + label, fitted to `textWidth`.
  *
  * Three cases, and the width decides which: with no column at all (`textWidth` at or below zero) the cell is
