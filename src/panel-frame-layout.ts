@@ -37,6 +37,59 @@ import type { ViewPin } from "./types.ts";
  */
 const atOnce = (): string => new Date().toISOString();
 
+/** Rows of the table the pin at `index` owns; zero when the table tags no row with it. */
+function countRowsOf(all: readonly PanelOwned[], index: number): number {
+  let count = 0;
+  for (const entry of all) if (entry.pin === index) count++;
+  return count;
+}
+
+/**
+ * The window's start for a selection, given the table `panelLayoutSections` built and the start of the
+ * selected pin: never past the end of the table, so the last pin is always on screen.
+ *
+ * The table is passed rather than its rows and a parallel list of owners, because the two are one question —
+ * which rows belong to which pin — and `PanelOwned.pin` is the only copy of that answer. A second, derived
+ * list can drift from the table it was mapped out of, and nothing would notice.
+ *
+ * A row that belongs to no pin is a section heading, and a heading is read for its position rather than its
+ * text — which rows are headings is the `null` the builder stamped on the entry. One such row directly above
+ * the selected pin is the heading over it, and the window opens **one row earlier** so the user reads the
+ * level of the pin the bar is on rather than inferring it — but only while that heading and every row of the
+ * selected pin still fit in the window: a heading whose section has a two-row pin under it would push the
+ * rest of that pin out and trade the label for the text. When they do not fit, or when the row above is
+ * another pin's, the window opens on the pin's first row as before. A single-section table has no heading
+ * rows at all, so its window is byte-for-byte the one it drew before sections existed.
+ *
+ * Focus plays no part: the same selection at the same terminal draws the same rows whether or not the panel
+ * holds the keyboard, and only the bar differs.
+ *
+ * `buildPanelLines` goes through this with the very table `panelLayoutSections` built, so drawing a window of
+ * the pins costs one wrap of each pin rather than three.
+ */
+export function panelWindowOffset(
+  contentRows: number,
+  selection: number,
+  all: readonly PanelOwned[],
+  start: number,
+): number {
+  const total = all.length;
+  if (contentRows <= 0 || total <= contentRows || selection < 0) return 0;
+  if (start < 0) return total - contentRows;
+  const capped = Math.min(start, total - contentRows);
+  const rowsOfSelected = countRowsOf(all, selection);
+  // The heading **plus every row of the pin**, which is the fit the rule asks for: the window must hold the
+  // heading and the whole pin, so the heading opens only while at least one row is left over after them. At
+  // one row left over the heading and the pin are exactly the window, which is a fit; at none the heading would
+  // cost the pin its last row, and the label is not worth the text. So the arithmetic is spelled out rather
+  // than folded into one subtraction — folding it invites the off-by-one this rule turns on.
+  const fitsHeadingAndPin = contentRows - 1 >= rowsOfSelected;
+  if (rowsOfSelected > 0 && start - 1 >= 0 && all[start - 1]?.pin === null && fitsHeadingAndPin) {
+    return Math.min(start - 1, total - contentRows);
+  }
+  return capped;
+}
+
 /**
  * The pin a row of the table belongs to, or `null` for a row that belongs to no pin: the heading over a
  * level section. `null` rather than an out-of-range sentinel, because "no pin" is what a heading is and an
@@ -129,7 +182,7 @@ function panelOwnedRows(
   let offset = 0;
   for (const section of sections.order) {
     owned.push({
-      row: { text: headingCell(headingRow(section), headingWidth, style, section.kind), tail: "" },
+      row: { text: headingCell(headingRow(section), headingWidth, style), tail: "" },
       pin: null,
     });
     owned.push(...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset));

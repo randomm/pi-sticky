@@ -16,9 +16,9 @@
  * inner width of less than one column, or a height with no room for both borders, cannot be a *closed*
  * box, and an open one is worse than none.
  *
- * The rows themselves — how many a pin contributes and where the window starts — are `panel-rows.ts`;
- * this module draws them, and owns the frame, the borders and the one escape policy every drawn line
- * goes through. Each pin's text is wrapped at the text column `panelTextColumns` computes for the frame —
+ * The rows themselves — how many a pin contributes — are `panel-rows.ts`, and where the window over them
+ * starts is `panelWindowOffset` (`panel-frame-layout.ts`, beside the table it is read off); this module draws
+ * them, and owns the frame, the borders and the one escape policy every drawn line goes through. Each pin's text is wrapped at the text column `panelTextColumns` computes for the frame —
  * the inner width less the widest id/time tail the view carries — and every produced line is padded or cut
  * here, because `wrapTextWithAnsi` breaks on words and a single word wider than the panel comes back whole.
  * A row draws its text and its tail as two parts, so it is the text that is cut and the tail that is
@@ -32,6 +32,7 @@ import { stripSequences } from "./escape.ts";
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
 import type { PanelLayout } from "./panel-frame-layout.ts";
+import { panelWindowOffset } from "./panel-frame-layout.ts";
 import { frameTitle } from "./panel-frame-title.ts";
 import {
   ELLIPSIS,
@@ -44,7 +45,7 @@ import {
   padPlain,
 } from "./panel-frame.ts";
 import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
-import { panelContentRows, panelWindowOffset } from "./panel-rows.ts";
+import { panelContentRows } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSection } from "./panel-sections.ts";
 import { GUTTER_COLUMNS, drawnTail, tailReserve } from "./panel-tail.ts";
@@ -231,15 +232,10 @@ export function buildPanelLines(
   // The window is cut from the table the height was counted from, so `min(budget, owned.length - start)`
   // rows are always reachable: the offset stops at the last window that fits inside the table, and the
   // loop below stops at a row that does not exist rather than padding one in.
-  const offset = panelWindowOffset(
-    budget,
-    content.selection,
-    owned.map((entry) => entry.row),
-    layout.start,
-    // The same owners the bar below is matched on: a heading owns a row and no pin, and this is how the
-    // window knows to open one row earlier and keep the heading over the selected pin on screen.
-    owned.map((entry) => entry.pin),
-  );
+  // The table itself is handed over — its rows and its owners are one question, and `PanelOwned.pin` is the
+  // only copy of the answer, which is how the window knows to open one row earlier for the heading over the
+  // selected pin.
+  const offset = panelWindowOffset(budget, content.selection, owned, layout.start);
 
   // The row of the window the bar sits on, in the window's own numbering.
   //

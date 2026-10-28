@@ -16,8 +16,9 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { panelContentRows, panelWindowOffset } from "../src/panel-rows.ts";
-import type { PanelRow } from "../src/panel-rows.ts";
+import { panelWindowOffset } from "../src/panel-frame-layout.ts";
+import type { PanelOwned } from "../src/panel-frame-layout.ts";
+import { panelContentRows } from "../src/panel-rows.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -38,15 +39,6 @@ const style: RenderPanelStyle = {
 
 const WIDTH = 60;
 
-/**
- * A focused component over `view` with the bar on `selection`, drawn at the short terminal by the component
- * itself — the window the user sees is the one the component drew, and this is where that agreement with the
- * helper's `framed` is checked (`panel-window-fixture.ts`).
- */
-function keySweepAt(view: ViewPin[], selection: number) {
-  return componentAt(view, selection, WIDTH, style);
-}
-
 /** The drawn index of each section's first pin — the only pins with a heading directly above them. */
 function sectionHeads(view: ViewPin[]): number[] {
   const sections = panelSections(view);
@@ -61,7 +53,7 @@ test("each section's first pin draws its own heading directly above the bar's ro
   const heads = sectionHeads(view);
   expect(heads.length).toBe(3);
   for (const selection of heads) {
-    const { lines, rows, drawn } = keySweepAt(view, selection);
+    const { lines, rows, drawn } = componentAt(view, selection, WIDTH, style);
     const pin = drawn[selection] as ViewPin;
     const bar = rows.findIndex((row) => row.includes("["));
     expect(bar, `a bar for selection ${selection}`).toBeGreaterThanOrEqual(0);
@@ -91,15 +83,14 @@ test("the offset opens the window on the heading above the selected pin, one row
     SHORT_TERMINAL,
   );
   const budget = panelContentRows(layout.height);
-  const rows = layout.owned.map((entry) => entry.row);
-  const owners = layout.owned.map((entry) => entry.pin);
+  const rows = layout.owned;
   const lastWindow = layout.owned.length - budget;
   for (const head of sectionHeads(view)) {
     const tableRow = layout.owned.findIndex((entry) => entry.pin === head);
-    expect(owners[tableRow - 1], `row above the head pin ${head} is its heading`).toBeNull();
+    expect(rows[tableRow - 1]?.pin, `row above the head pin ${head} is its heading`).toBeNull();
     // The window this offset opens has the heading on its first row and the pin next to it. Capped at the
     // last window that fits the table, which is the bound the offset itself obeys.
-    const offset = panelWindowOffset(budget, head, rows, tableRow, owners);
+    const offset = panelWindowOffset(budget, head, rows, tableRow);
     expect(offset, `window opens on the heading above pin ${head}`).toBe(
       Math.min(tableRow - 1, lastWindow),
     );
@@ -111,10 +102,10 @@ test("the offset opens the window on the heading above the selected pin, one row
   const secondIndex = sections.flat.indexOf(second as ViewPin);
   const secondRow = layout.owned.findIndex((entry) => entry.pin === secondIndex);
   expect(
-    owners[secondRow - 1],
+    rows[secondRow - 1]?.pin,
     `row above pin ${secondIndex} is a sibling, not a heading`,
   ).not.toBeNull();
-  expect(panelWindowOffset(budget, secondIndex, rows, secondRow, owners)).toBe(
+  expect(panelWindowOffset(budget, secondIndex, rows, secondRow)).toBe(
     Math.min(secondRow, lastWindow),
   );
 });
@@ -124,16 +115,16 @@ test("the window scrolls for these frames: three rows of the table are always of
   // scrolled away and the assertion above is not satisfied by a frame tall enough to draw everything.
   const view = mixedView();
   for (let selection = 0; selection < view.length; selection++) {
-    const { lines, rows } = keySweepAt(view, selection);
+    const { lines, rows } = componentAt(view, selection, WIDTH, style);
     expect(rows).toHaveLength(7);
     expect(lines).toHaveLength(9);
     expect(rows.filter((row) => row.includes("[")).length).toBe(1);
   }
 });
 
-/** A table of `total` dummy rows owned as `owners`, for the offset's own arithmetic. */
-function table(owners: readonly (number | null)[]): PanelRow[] {
-  return owners.map(() => ({ text: "row", tail: "" }));
+/** A table of dummy rows owned as `owners`, for the offset's own arithmetic — the table is one array now. */
+function table(owners: readonly (number | null)[]): PanelOwned[] {
+  return owners.map((pin) => ({ row: { text: "row", tail: "" }, pin }));
 }
 
 test("the heading is kept exactly while it and the whole pin fit, and dropped one row after that", () => {
@@ -144,22 +135,11 @@ test("the heading is kept exactly while it and the whole pin fit, and dropped on
   // a comparison off by one anywhere in the rule shows up here rather than in a frame two layers up.
   const exact = [null, 0, 1, 1, 2]; // heading, one-row pin 0, …
   const overflows = [null, 0, 0, 1, 1, 2]; // heading, two-row pin 0, …
-  expect(panelWindowOffset(2, 0, table(exact), 1, exact), "heading + 1 row = 2-row window").toBe(0);
-  expect(
-    panelWindowOffset(2, 0, table(overflows), 1, overflows),
-    "heading + 2 rows > 2-row window",
-  ).toBe(1);
+  expect(panelWindowOffset(2, 0, table(exact), 1), "heading + 1 row = 2-row window").toBe(0);
+  expect(panelWindowOffset(2, 0, table(overflows), 1), "heading + 2 rows > 2-row window").toBe(1);
   // A budget of five over a three-row pin leaves two rows over: the heading is kept with room to spare.
   const generous = [null, 0, 0, 0, 1, 1, 2, 3, 4];
-  expect(panelWindowOffset(5, 0, table(generous), 1, generous)).toBe(0);
+  expect(panelWindowOffset(5, 0, table(generous), 1)).toBe(0);
   // A pin the table tags with no row at all owns nothing to keep, so there is no heading to open on.
-  expect(
-    panelWindowOffset(
-      3,
-      0,
-      table(generous),
-      1,
-      generous.map(() => 1),
-    ),
-  ).toBe(1);
+  expect(panelWindowOffset(3, 0, table(generous.map(() => 1)), 1)).toBe(1);
 });

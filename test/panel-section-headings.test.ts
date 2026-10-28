@@ -32,7 +32,7 @@ const style: RenderPanelStyle = {
 
 /** The cell of `kind` padded to `textWidth`, as the row table asks for it. */
 function cellOf(kind: SectionKind, textWidth: number): string {
-  return headingCell(headingRow(sectionOfKind(kind)), textWidth, style, kind);
+  return headingCell(headingRow(sectionOfKind(kind)), textWidth, style);
 }
 
 /** The one section of `kind` the mixed view produces, which is the section the headings are read off. */
@@ -76,7 +76,7 @@ test("a heading row carries its glyph apart from its word, for the marker colour
     expect(row.mark.length).toBeGreaterThan(0);
     expect(row.label.startsWith(row.mark)).toBe(false);
     // The word follows the glyph at the cell's one space, spelled the way `headingCell` joins it.
-    expect(` ${row.mark} ${row.label}`).toBe(headingCell(row, 30, style, kind).trimEnd());
+    expect(` ${row.mark} ${row.label}`).toBe(headingCell(row, 30, style).trimEnd());
   }
 });
 
@@ -94,7 +94,7 @@ test("a heading never reads a pin's text (untrusted input)", () => {
 test("the heading cell fills the text column its section's pins are laid out at", () => {
   const row = headingRow(sectionOfKind("action"));
   for (const textWidth of [30, 40, 60]) {
-    const cell = headingCell(row, textWidth, style, "action");
+    const cell = headingCell(row, textWidth, style);
     expect(visibleWidth(cell)).toBe(textWidth);
     expect(cell.startsWith(" ? Needs you")).toBe(true);
     expect(cell.trimEnd()).toBe(" ? Needs you");
@@ -109,13 +109,13 @@ test("a heading is measured with visibleWidth, so a CJK label would cost what it
   // chat behind it. The claim is checked against `visibleWidth` itself, not a hard-coded column count that
   // would rot if pi-tui's table changed.
   const width = 24;
-  const wide = { mark: "决", label: "决定" };
-  const cell = headingCell(wide, width, style, "info");
+  const wide = { mark: "决", label: "决定", kind: "info" as const };
+  const cell = headingCell(wide, width, style);
   expect(visibleWidth(cell)).toBe(width);
   expect(cell.length).toBeLessThan(width);
   // ...and the row is still cut, not spilled: one CJK column gives way to the cut's ellipsis, so the
   // heading never draws past the column the frame set aside for it.
-  const narrow = headingCell(wide, 6, style, "info");
+  const narrow = headingCell(wide, 6, style);
   expect(visibleWidth(narrow)).toBeLessThanOrEqual(6);
   expect(visibleWidth(narrow)).toBeGreaterThan(0);
 });
@@ -138,14 +138,14 @@ test("a heading's glyph is its level's MARKER, coloured through the theme's mark
       return s;
     },
   };
-  for (const kind of KINDS) headingCell(headingRow(sectionOfKind(kind)), 30, recording, kind);
+  for (const kind of KINDS) headingCell(headingRow(sectionOfKind(kind)), 30, recording);
   expect(asked).toEqual(["warning:!", "action:?", "info:•"]);
 
   // The byte the heading opens with is the byte the pin row of the same level opens with — marker and the
   // three columns that open a row, compared before either string reaches its own word.
   const prefixOf = (text: string): string => text.slice(0, 3);
   for (const kind of KINDS) {
-    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, style, kind);
+    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, style);
     const pinRow = panelPinRows(levelPin(1, "x", kind), 30, style, LATER)[0]?.text ?? "";
     expect(prefixOf(cell)).toBe(prefixOf(pinRow));
   }
@@ -161,15 +161,13 @@ test("a theme whose marker adds visible bytes still draws the heading at the fra
     marker: (_level, s) => `<m:\u{1b}[31m${s}\u{1b}[0m>`,
   };
   for (const kind of KINDS) {
-    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping, kind);
+    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping);
     expect(visibleWidth(cell)).toBe(30);
     expect(cell).not.toContain("<m:");
     expect(stripSequences(cell)).not.toContain("\u{1b}");
   }
   // The plain glyph under the wrapper is what the cell keeps, so the level still reads.
-  expect(headingCell(headingRow(sectionOfKind("warning")), 30, wrapping, "info")).toContain(
-    "Warnings",
-  );
+  expect(headingCell(headingRow(sectionOfKind("warning")), 30, wrapping)).toContain("Warnings");
 });
 
 test("a cut heading cell carries no escape bytes of its own at any width", () => {
@@ -180,7 +178,7 @@ test("a cut heading cell carries no escape bytes of its own at any width", () =>
   const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
   for (const kind of KINDS) {
     for (const textWidth of [1, 2, 3, 5, 6, 7, 12, 30]) {
-      const cell = headingCell(headingRow(sectionOfKind(kind)), textWidth, wrapping, kind);
+      const cell = headingCell(headingRow(sectionOfKind(kind)), textWidth, wrapping);
       expect(stripSequences(cell)).not.toContain("\u{1b}");
       expect(visibleWidth(cell)).toBeLessThanOrEqual(textWidth);
     }
@@ -194,7 +192,7 @@ test("a theme whose marker adds visible bytes cuts the pin row's marker the same
   // itself and neither one measures the other's marker.
   const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
   for (const kind of KINDS) {
-    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping, kind);
+    const cell = headingCell(headingRow(sectionOfKind(kind)), 30, wrapping);
     const rows = panelPinRows(levelPin(1, "text", kind), 30, wrapping, LATER);
     expect(rows[0]?.text.slice(0, 3)).toBe(cell.slice(0, 3));
     // ...and neither string carries the wrapper's bytes.

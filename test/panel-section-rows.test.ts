@@ -117,21 +117,12 @@ test("the bar can never be drawn on a heading, whatever the selection", () => {
   expect(past).toHaveLength(0);
 });
 
-/**
- * A focused component over `pins` with the bar on `selection`, drawn at the short terminal by the component
- * itself — the path the two destructive keys live on, so the frame checked here is the frame that component
- * drew (`componentAt`, `panel-window-fixture.ts`).
- */
-function keySweepAt(view: ViewPin[], selection: number) {
-  return componentAt(view, selection, WIDTH, style);
-}
-
 test("the bar's row is the selected pin's first row, not a continuation of it", () => {
   // The other half of the heading rule: opening the window a row early is only right if the bar still lands
   // on the pin's *first* row — the one carrying its id — and not on a continuation line cut from the same pin.
   const view = mixedView();
   for (let selection = 0; selection < view.length; selection++) {
-    const { rows, drawn } = keySweepAt(view, selection);
+    const { rows, drawn } = componentAt(view, selection, WIDTH, style);
     const pin = drawn[selection] as ViewPin;
     const bar = barRowOf(rows);
     expect(bar, `a bar for selection ${selection}`).toBeGreaterThanOrEqual(0);

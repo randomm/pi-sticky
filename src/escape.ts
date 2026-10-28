@@ -51,6 +51,9 @@ function isC1Control(code: number): boolean {
  */
 const BREAK_SHAPES = `${String.fromCodePoint(0x0a, 0x0b, 0x0c, 0x0d, 0x85, 0x2028, 0x2029)}`;
 
+/** Tab: the one control character a drawn surface keeps. */
+const TAB = 0x09;
+
 /**
  * Every run of line breaks in `text` replaced by a single space. Shared by the two surfaces that
  * owe their reader exactly one line per record — the rail and the model-facing listing — so neither
@@ -58,6 +61,25 @@ const BREAK_SHAPES = `${String.fromCodePoint(0x0a, 0x0b, 0x0c, 0x0d, 0x85, 0x202
  */
 export function foldBreaks(text: string): string {
   return text.replace(new RegExp(`[${BREAK_SHAPES}]+`, "g"), " ");
+}
+
+/**
+ * Every C0 control, C1 control and DEL dropped, TAB kept — the removal the sanitizer runs over a pin's
+ * text, exported for the two surfaces that draw a *theme's* bytes and owe the same promise. A theme's
+ * `marker` that folded a line break in around a glyph would otherwise put an LF or CR on the screen, where
+ * nothing between the panel's gutters consumes it. TAB stays because it aligns text rather than breaking a
+ * line — the same reasoning `BREAK_SHAPES` gives for leaving it alone — and `padPlain` may still pad after
+ * this pass, so a row cannot come back short.
+ */
+export function dropControls(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code === TAB || (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xfffd)) {
+      out += text[i];
+    }
+  }
+  return out;
 }
 
 /** Is code one of the six introducers in their 8-bit form? */
