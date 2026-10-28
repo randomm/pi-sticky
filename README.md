@@ -40,6 +40,20 @@ Install with `pi install` only. Never symlink or copy this repository into
 `~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
 isolation).
 
+## Getting started
+
+1. Ask the agent: *pin a reminder for me to rotate the API key tomorrow*. The pin appears at the top
+   right of the terminal (or in the rail above the editor below 100 columns), and stays there until
+   the agent unpins it or you dismiss it.
+2. Focus the panel with `ctrl+alt+p`. `↑`/`↓` move the bar; `Enter` puts `Re #<id>: ` in the editor
+   and a number `1`–`4` puts one of the pin's options there after the marker — either way you press
+   Enter yourself. `d` dismisses the pin under the bar, `Esc` hands the keyboard back.
+3. Ask the agent to pin a question you have to answer. An `action` or `warning` pin earns the full
+   frame; a plain `info` pin rests as a three-row peek beside your transcript.
+
+The extension also ships three skills the agent loads when they fit the task — see
+[Skills](#skills). To start a long run with a Now/Backlog board, run `/skill:sticky-run-board`.
+
 ## Why
 
 Agentic runs take hours, and the message the user actually needs — "which provider should I keep?",
@@ -78,9 +92,23 @@ Once focused:
 - `Enter` puts `Re #<id>: ` at the start of the editor, keeps the draft that was already there, and
   hands focus back to the main editor. It counts as a reply only as a bare carriage return or line
   feed, so under the Kitty keyboard protocol type `Re #<id>: ` by hand.
+- `1`–`4` answer one of the selected pin's `options`: the label of that position goes into the editor
+  after the marker (`Re #3: Keep provider A `) and focus comes back to you. `0`, a digit past the
+  pin's list, and any digit on a pin with no options do nothing at all. Nothing is sent: you read the
+  draft and press Enter. While the pin under the bar has options its row's border says `1–4 answer`.
 - `d` dismisses the selected pin. The dismissal is recorded on the session, so it sticks across
   `/tree` and a reload.
 - `Esc` returns to the editor. The panel stays open.
+
+The frame's title counts what is pinned rather than just naming it: `📌 Pinned · 2 warnings · 1 needs
+you`, with `· <n> more` for the facts and a bare `📌 Pinned · 3` when there is nothing but facts. The
+counts are always by level, never by group, so a `Now` group holding your only warning still titles
+`1 warning`.
+
+The frame is divided into **sections**, each with a heading row over its pins. The three level headings
+are fixed words the model cannot write — `Warnings`, `Needs you`, `FYI` — and a group's heading is the
+name the agent gave the group. Headings are drawn when there is more than one section, or when any
+section is a group: one level and no group is the ordinary case, and that frame has no headings at all.
 
 The panel has **three resting states**, and one question decides which one you are looking at: *does
 something here need you to act?* A shown panel rests as a **peek** — three rows: the counts title, the
@@ -166,6 +194,84 @@ depends on the surface: the rail and the panel dim the whole row and open its te
 `↩ `, while `/pins` and the `pin_for_user` tool result have no colour and say
 `(replied by the user at HH:MM)` after the text instead.
 
+## Tool reference
+
+`pin_for_user` is the only tool pi-sticky registers. Four actions, and the fields each takes:
+
+| Action | Fields | Does |
+| --- | --- | --- |
+| `pin` | `text` (required), `level`, `group`, `options`, `compact` | Adds a pin. `level` is `info` (the default), `action` or `warning`. |
+| `update` | `id` (required) plus any of `text`, `level`, `group`, `options`, `compact` | Changes those fields on one pin; a field it does not name keeps its value. |
+| `unpin` | `ids` — a list of ids, or `"all"` (`id` alone is accepted too) | Removes pins. An id that matches nothing is named and the rest still apply. |
+| `list` | — | Returns the current listing. |
+
+Every result carries the whole current state in its `details`, which is where the pins live on the
+session branch. A refusal is returned with `isError` and the same `details`, never thrown.
+
+What the tool refuses rather than quietly fixes — each answer names the field and the rule:
+
+- `text` is sanitized and cut to `PI_STICKY_MAX_CHARS`, with the cut named back to the model. Text
+  that cleans to nothing is refused.
+- A pin whose text and level match one already shown is not added: `Already pinned as #<id>.`
+- A list already at `PI_STICKY_MAX_PINS` is refused, with the current listing quoted.
+- `group` is one line of at most 24 graphemes after sanitizing; a longer one is refused, not cut with
+  an ellipsis. `group: ""` on an `update` clears it.
+- `options` is 2 to 4 entries, each at most 24 graphemes after sanitizing, unique once cleaned. `[]`
+  on an `update` clears them.
+- `compact` is a boolean.
+- An `update` that names none of the six fields is refused: `update needs text, level, group, options
+  or compact`.
+
+## Skills
+
+pi-sticky ships three skills (`skills/` in this repo, declared under `pi.skills` in `package.json`).
+Pi advertises each by name and description at startup and loads its full instructions only when the
+agent decides the task fits, so a skill costs almost nothing until it is used.
+
+| Skill | For |
+| --- | --- |
+| `sticky-basics` | What deserves a pin, which level to pick, one pin per topic, answering a reply, and when to use `options` or `compact`. The tool's own prompt points here. |
+| `sticky-decisions` | Asking a question: one question per `action` pin, 2–4 answerable `options`, never inventing an answer, closing the pin when the reply arrives. |
+| `sticky-run-board` | A Now/Backlog board for a long run: one compact `Now` pin updated in place, a small `Backlog` copied from the tracker, and unpinning it all at the end. |
+
+The agent loads them itself when they fit. To force one, run it as a command — the text after the
+name goes along as your request:
+
+```text
+/skill:sticky-run-board start a board for the migration
+```
+
+To load none of them, narrow the package in your pi settings — `[]` means none of that type:
+
+```json
+{
+  "packages": [
+    { "source": "git:github.com/randomm/pi-sticky", "skills": [] }
+  ]
+}
+```
+
+Skills are the policy layer; the tool and the panel are the primitives. The cardinality a skill asks
+for — exactly one `Now`, at most five `Backlog` — is instruction, enforced by nothing in the tool.
+
+To write your own, add a directory containing `SKILL.md` anywhere pi discovers skills (a user or
+project skills directory, `.agents/skills/`, or a package like this one):
+
+```markdown
+---
+name: my-review-pins
+description: Pin review findings for the user with pin_for_user. Use when reviewing a branch.
+---
+
+# Review pins
+
+One pin per finding, `warning` for anything that blocks the merge, and never unpin a finding the user
+has not answered.
+```
+
+The `description` is what the model reads when deciding whether to load the skill, so say what it does
+and when it applies. Run `/reload` after editing a skill.
+
 ## Keys
 
 | Key | Effect |
@@ -175,6 +281,7 @@ depends on the surface: the rail and the panel dim the whole row and open its te
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
 | `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |
+| `1`–`4` | On a pin with `options`, put `Re #<id>: <that option> ` in the editor and return focus to it. The digit is the position the keycap row numbered. `0` and a digit past the list do nothing. |
 | `d` | Dismiss the selected pin. |
 | `Esc` | Back to the editor; the panel stays open. |
 
@@ -229,7 +336,7 @@ panel's focus back.
 
 | Mode | What you get |
 | --- | --- |
-| `tui` | The panel and the rail: the panel when it has room, otherwise the rail above the editor. |
+| `tui` | The panel and the rail: the panel when it has room, otherwise the rail above the editor. The panel owns the pins in the peek and in the full frame alike, so a pin is drawn by one surface at a time; the rail never draws sections, options or `compact`. |
 | `rpc` | The rail as plain text (no colours), 100 columns wide, at most 10 lines. No panel: RPC has no overlays, focus or key input. |
 | `print`, `json` | No UI. The tool still works, and the state travels in the tool result's `details`. |
 
@@ -244,7 +351,10 @@ full list of guarantees is the jsdoc header of `src/sanitize.ts`.
 
 A pin never runs anything: pi-sticky registers no command or shortcut that acts on pin content, and
 only the user acts on a pin. The listing the model sees is one line per pin (`#<id> [<level>] <text>`,
-plus a replied suffix) — nothing a pin says is followed. See [SECURITY.md](SECURITY.md) for the threat
+plus a replied suffix and the `group`, `options` and `compact` fields) — nothing a pin says is
+followed. A `group` is the one heading a pin can influence, so the name is stored only after the
+same sanitizing and a bound of 24 graphemes; a level heading is one of three fixed strings this repo
+spells. See [SECURITY.md](SECURITY.md) for the threat
 model and how to report a vulnerability.
 
 ## Disabling and subagent isolation

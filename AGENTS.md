@@ -39,7 +39,19 @@ run the manual acceptance checklist in the README ("The panel", "The rail", "Rep
 short: install the extension with `pi install` (never a symlink), start a session and ask the agent to
 pin a message, then check the right-hand panel at ≥ 100 columns and the rail below 100, focus the panel
 with the focus key, reply with `Re #<id>:`, and exercise `/pins`, `/unpin` and a `/reload` — the pins
-must survive all of it, including the `/reload`. (`docs/plan.md` Task 11 is the original 2026-10-23 checklist; steps 1 and 3
+must survive all of it, including the `/reload`. Then walk the pins v2 surfaces:
+
+- a shown panel rests as the three-row peek and its title carries the counts (`📌 Pinned · 1 warning ·
+  2 more`); a panel of facts alone titles `📌 Pinned · 3`;
+- focus it, press `1` on a pin with options and the editor opens `Re #<id>: <that option> `;
+- hide the panel, pin an `info` message (it stays hidden and the rail keeps drawing it) and then an
+  `action` or `warning` one (it opens the full frame);
+- `/skill:sticky-run-board` produces a `Now` group and a `Backlog` group with their headings drawn;
+- narrow the terminal below 100 columns and the rail is ranked warning → action → info with each pin's
+  age beside its id;
+- `/reload` keeps the groups, the options and the panel's show/hide state.
+
+(`docs/plan.md` Task 11 is the original 2026-10-23 checklist; steps 1 and 3
 name surfaces that were cut before release, so never run them.)
 
 ## Isolation from pi-rukas subagents
