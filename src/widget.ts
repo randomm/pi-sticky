@@ -23,7 +23,8 @@ import type { Component, TUI } from "@earendil-works/pi-tui";
 
 import type { AgeClock } from "./panel-age.ts";
 import { ageAt } from "./panel-age.ts";
-import { type Style, plainStyle, renderRailLines, themeStyle } from "./render.ts";
+import { renderRailLines } from "./rail-lines.ts";
+import { type Style, plainStyle, themeStyle } from "./render.ts";
 import { KEY } from "./types.ts";
 import type { PinView, StickyConfig } from "./types.ts";
 

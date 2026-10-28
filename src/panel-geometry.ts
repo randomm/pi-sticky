@@ -125,6 +125,12 @@ export function judgeColumns(status: TerminalStatus): number {
  * or one the user replied to (the dimming the rail renders). None is the text itself, and this runs on
  * every overlay frame, so it stays a handful of appends per pin. An empty view stamps the empty string,
  * which is why the count is not needed separately.
+ *
+ * `group`, `options` and `compact` are **not** in it, deliberately: the rail draws none of them (its rows
+ * are `rail-lines.ts`'s marker, id, age and text), so a change to one of the three alone cannot make the
+ * installed rail wrong, and the guard would reinstall a strip that draws the same bytes. The panel's half
+ * of the same change does repaint, because the reducer publishes a *new pins array* for it and the frame
+ * cache keys on that array's identity (`panel-frame-cache.ts`).
  */
 export function railStamp(pins: readonly ViewPin[]): string {
   let stamp = "";

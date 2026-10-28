@@ -10,7 +10,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { hasMultipleSections, panelSections } from "../src/panel-sections.ts";
+import { hasHeadings, panelSections } from "../src/panel-sections.ts";
 import { orderPins } from "../src/render.ts";
 import { infoView, levelPin, mixedView } from "./panel-sections-fixture.ts";
 
@@ -61,7 +61,7 @@ test("a section of nothing but replied pins still forms (resolution 5)", () => {
   const sections = panelSections([...repliedOnly, levelPin(3, "c", "info")]);
   expect(sections.order.map((section) => section.kind)).toEqual(["action", "info"]);
   expect(sections.order.map((section) => section.pins.length)).toEqual([2, 1]);
-  expect(hasMultipleSections(sections.order)).toBe(true);
+  expect(hasHeadings(sections.order)).toBe(true);
   // Both replied actions are addressable: their indices are 0 and 1 of the flattened list, so `d` and `Enter`
   // reach them exactly as they reach an unreplied pin.
   expect(ids(sections.flat)).toEqual([2, 1, 3]);
@@ -79,13 +79,13 @@ test("a single-level view is one section and one flat run", () => {
   const sections = panelSections(infoView(4));
   expect(sections.order.map((section) => section.kind)).toEqual(["info"]);
   expect(ids(sections.flat)).toEqual([4, 3, 2, 1]);
-  expect(hasMultipleSections(sections.order)).toBe(false);
+  expect(hasHeadings(sections.order)).toBe(false);
 });
 
 test("two levels is multiple sections; one is not (resolution 1)", () => {
-  expect(hasMultipleSections(panelSections(mixedView()).order)).toBe(true);
-  expect(hasMultipleSections(panelSections(infoView(3)).order)).toBe(false);
-  expect(hasMultipleSections(panelSections([]).order)).toBe(false);
+  expect(hasHeadings(panelSections(mixedView()).order)).toBe(true);
+  expect(hasHeadings(panelSections(infoView(3)).order)).toBe(false);
+  expect(hasHeadings(panelSections([]).order)).toBe(false);
 });
 
 test("an empty view has no sections, no pins and no title counts to print", () => {

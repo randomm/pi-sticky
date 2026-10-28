@@ -24,6 +24,7 @@ import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
+import { toOneLine } from "./render.ts";
 /**
  * The columns the two gutters own, re-exported so the callers that lay these rows out keep naming the module
  * whose rows they lay out. The tail's format is *not* re-exported: `panel-tail.ts` is its owner and the two
@@ -115,13 +116,23 @@ export function panelPinRows(
     // Cut to the one column the marker owns before it is joined, the policy of `markerCell`
     // (`panel-frame.ts`): a theme whose `marker` wrapped the glyph would otherwise widen the only row this
     // frame has past the column the frame set aside for it, and this branch never reaches `fitLine`.
-    return [{ text: ` ${markerCell(marker, glyph)} `, tail: fullStamp(pin, style.dim, now) }];
+    // The options row is reserved here too: the degenerate frame is a frame whose *pins* own one row each,
+    // and a pin the table gave no options row to is a pin whose options are silently never drawn.
+    return [
+      { text: ` ${markerCell(marker, glyph)} `, tail: fullStamp(pin, style.dim, now) },
+      ...optionRows(pin),
+    ];
   }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
   // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks like.
   // The wrap happens *after* the mark is added, so a row cut to the width cannot lose it.
   const body = pin.repliedAt === undefined ? pin.text : style.dim(`↩ ${pin.text}`);
-  const wrapped = wrapTextWithAnsi(body, textWidth);
+  // A `compact` pin is one row: the wrap is skipped and the text takes the single line it will be cut to.
+  // It is collapsed here, in the table, rather than cut by the drawer: the window scrolls, the bar sits and
+  // `d`/`Enter` index *this* row count, so a pin that wrapped into four rows and was trimmed afterwards
+  // would leave three rows counted for a pin that shows one. `toOneLine` folds what breaks the model put in,
+  // and the drawer's `fitLine` spends the ellipsis on the tail of it.
+  const wrapped = pin.compact === true ? [toOneLine(body)] : wrapTextWithAnsi(body, textWidth);
   // Which row carries the age is decided by how many rows the wrap produced, so the wrap runs first and the
   // tails are stamped against its answer: a pin that fits on one line is the case the id/age pair belongs
   // to. `count` below is that count, and the empty-text fallback is one row for the same reason.
@@ -131,9 +142,43 @@ export function panelPinRows(
     text: index === 0 ? ` ${markerCell(marker, glyph)} ${line}` : `   ${line}`,
     tail: index === 0 ? tails.first : index === 1 ? (tails.second ?? "") : "",
   }));
-  return rows.length > 0 ? rows : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first }];
+  // The options row is part of the pin's entry: it belongs to the pin, the window scrolls it with the pin
+  // and the pin owns the bar's row. Reserved rather than drawn, so one row covers any number of options.
+  return [
+    ...(rows.length > 0 ? rows : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first }]),
+    ...optionRows(pin),
+  ];
 }
 
+/**
+ * The options row `pin` owns: one when it has options and they can be named, none when it has none.
+ *
+ * The single place the count is decided, so the degenerate frame and the wrapped one cannot disagree about
+ * how many rows a pin with options owns.
+ */
+function optionRows(pin: ViewPin): PanelRow[] {
+  return pin.options !== undefined && pin.options.length > 0 ? [optionRow()] : [];
+}
+
+/**
+ * The row the frame draws a pin's options into, and the one `panelPinRows` reserves for it.
+ *
+ * Its text is a pad character: how many rows a pin owns is decided before anything is drawn (the window
+ * scrolls and the bar sits on that count), so the entries are filled in at the frame's own width by the
+ * drawer (`panel-lines.ts`), which drops whole entries from the end rather than truncating one. The row owns
+ * no tail — it names no id, and the pin's first row carries it.
+ */
+export function optionRow(): PanelRow {
+  return { text: OPTION_PAD, tail: "" };
+}
+
+/** The pad character an option row reserves its row with before the drawer fills it. */
+const OPTION_PAD = " ";
+
+/** Whether the row is the reserved one, and so the one the drawer still has to fill. */
+export function isOptionRow(row: PanelRow): boolean {
+  return row.tail === "" && row.text === OPTION_PAD;
+}
 /**
  * Rows of every pin in `pins`, which must be the panel's *drawn* order (`panelSections`'s `flat`),
  * flattened: the rows a frame's window is cut from.

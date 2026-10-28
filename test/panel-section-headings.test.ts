@@ -17,6 +17,7 @@ import { headingCell, headingRow } from "../src/panel-section-headings.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { SectionKind } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
+import type { PinLevel } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 
@@ -42,14 +43,14 @@ function sectionOfKind(kind: SectionKind) {
   return section;
 }
 
-const KINDS: readonly SectionKind[] = ["warning", "action", "info"];
+const KINDS: readonly PinLevel[] = ["warning", "action", "info"];
 
 test("the three headings are the fixed strings the user is taught to read", () => {
   // The three strings live in the module's table and reach the screen only through `headingRow`, so the
   // strings are pinned by what the row prints: glyph and word spelled out per kind, and nothing derived from
   // a pin. A heading the model could word would be a heading a pin could forge. The glyph is the level's own
   // — the one the pin rows under the heading carry — so a heading says the same thing as its rows.
-  const heads: Record<SectionKind, string> = {
+  const heads: Record<PinLevel, string> = {
     warning: "! Warnings",
     action: "? Needs you",
     info: "• FYI",
@@ -61,8 +62,8 @@ test("the three headings are the fixed strings the user is taught to read", () =
 });
 
 test("a heading row carries its glyph apart from its word, for the marker colour", () => {
-  const marks: Record<SectionKind, string> = { warning: "!", action: "?", info: "•" };
-  const labels: Record<SectionKind, string> = {
+  const marks: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
+  const labels: Record<PinLevel, string> = {
     warning: "Warnings",
     action: "Needs you",
     info: "FYI",

@@ -17,9 +17,9 @@
  *   and its first element is the same pin the open panel draws at the top and the bar starts on.
  *
  * The pin row is the open panel's own first row for this pin and this width: `panelPinRows` produces it and
- * `pinRow` (`panel-lines.ts`) draws it, so the marker, the wrap, the tail's reserve and the `#id`/age stamp
+ * `pinRow` (`panel-draw.ts`) draws it, so the marker, the wrap, the tail's reserve and the `#id`/age stamp
  * are laid out by the same arithmetic the open panel pays for (`widestMetaColumns` for the reserve), and the
- * shared `fitLine` (`panel-lines.ts`) then guarantees the row the frame draws closes at the width it was
+ * `fitLine` (`panel-draw.ts`) then guarantees the row the frame draws closes at the width it was
  * given. The text is untrusted — a model wrote it — so it goes through that policy and its cut, exactly as
  * every row `panel-lines.ts` draws goes through them, and it never reaches a border.
  *
@@ -27,6 +27,7 @@
  * borrowed here: too narrow for a closed box, or no pins to draw, and there is nothing to show.
  */
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
+import { pinRow } from "./panel-draw.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
 import { frameTitle } from "./panel-frame-title.ts";
 import {
@@ -36,7 +37,7 @@ import {
   FRAME_TOP_RIGHT,
   glyph,
 } from "./panel-frame.ts";
-import { isPanelFrameSize, pinRow } from "./panel-lines.ts";
+import { isPanelFrameSize } from "./panel-lines.ts";
 import { panelPinRows } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSections } from "./panel-sections.ts";

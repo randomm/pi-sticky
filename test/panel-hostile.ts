@@ -15,7 +15,16 @@
  * The terminal rows a panel test sizes a frame against: an explicit terminal, not the height of the
  * frame it is drawing. A frame drawn at this height is `TERMINAL_ROWS / 2` rows tall.
  */
+import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
+
 export const TERMINAL_ROWS = 40;
+
+/**
+ * The smallest size at which the frame builder closes a frame at all: the overlay's own `minWidth`, spelled
+ * as `PANEL_MIN_FRAME_COLUMNS` so the two cannot drift apart silently. A sweep that walks the widths names
+ * this as its floor.
+ */
+export const MIN_FRAME_WIDTH = PANEL_MIN_FRAME_COLUMNS;
 
 /** The escapes pi-tui itself recognises, so a pin that survives them would be parsed as input. */
 export const ESC = String.fromCharCode(0x1b);

@@ -18,7 +18,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
-import { plainStyle, renderRailLines } from "../src/render.ts";
+import { renderRailLines } from "../src/rail-lines.ts";
+import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";

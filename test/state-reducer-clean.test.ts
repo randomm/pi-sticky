@@ -11,11 +11,12 @@
  */
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { renderRailLines } from "../src/rail-lines.ts";
 
 import type { ActionInput } from "../src/action.ts";
 import { updateOp } from "../src/reducer-ops.ts";
 import { type ApplyLimits, applyAction } from "../src/reducer.ts";
-import { plainStyle, renderList, renderRailLines } from "../src/render.ts";
+import { plainStyle, renderList } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { isPinState } from "../src/state-guards.ts";
 import { EMPTY_STATE } from "../src/state.ts";

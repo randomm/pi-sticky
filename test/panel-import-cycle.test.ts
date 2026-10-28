@@ -25,6 +25,17 @@ const COLD_MODULES = [
   "src/panel-frame-geometry.ts",
   "src/panel-lines.ts",
   "src/panel-tail.ts",
+  // The two drawing primitives every frame is closed with, cold because the builder and the peek both reach
+  // them and neither may read the other's constants before they exist.
+  "src/panel-draw.ts",
+  // The options row's drawer, which the frame fills at its own width.
+  "src/panel-options-row.ts",
+  // The frame's title counts levels over the sections, and reads `isLevelSection` out of the sectioning.
+  "src/panel-frame-title.ts",
+  // The two text surfaces' rows, which reach `render.ts` for the fold and `time.ts` for the stamp.
+  "src/pin-rows-text.ts",
+  "src/render.ts",
+  "src/rail-lines.ts",
   // The frame path evaluates it: `panel-frame-layout.ts` builds each heading through it, and it reaches
   // `panel-rows.ts` for the level glyph — so it is on the graph whose import order used to matter.
   "src/panel-section-headings.ts",
@@ -73,6 +84,24 @@ function COLD_PROBE(modulePath: string, target: string): string {
     // The headings of the frame path: both of its exported builders must survive a cold load, since
     // `panel-frame-layout.ts` builds a heading row and its cell on every frame it lays out.
     return `import("${target}").then((m)=>{if(typeof m.headingRow!=="function"||typeof m.headingCell!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-draw.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.fitLine!=="function"||typeof m.pinRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-options-row.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.drawOptionRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-frame-title.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.frameTitle!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("render.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.renderList!=="function"||typeof m.renderPinsText!=="function"||typeof m.orderPins!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("rail-lines.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.renderRailLines!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("pin-rows-text.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.modelRow!=="function"||typeof m.pinsTextRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   // The builder: the module that reads both halves of the arithmetic, so it is the one whose import order
   // a future edit is most likely to change.

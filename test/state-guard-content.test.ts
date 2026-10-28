@@ -12,7 +12,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { plainStyle, renderList, renderRailLines } from "../src/render.ts";
+import { renderRailLines } from "../src/rail-lines.ts";
+import { plainStyle, renderList } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { isPinState } from "../src/state-guards.ts";
 import { reconstruct } from "../src/state.ts";
