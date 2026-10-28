@@ -51,8 +51,9 @@ isolation).
 3. Ask the agent to pin a question you have to answer. An `action` or `warning` pin earns the full
    frame; a plain `info` pin rests as a three-row peek beside your transcript.
 
-The extension also ships three skills the agent loads when they fit the task — see
-[Skills](#skills). To start a long run with a Now/Backlog board, run `/skill:sticky-run-board`.
+The extension also ships the skills the agent loads when they fit the task — see
+[Skills](#skills). To start a long run with a Now/Backlog board, run `/skill:sticky-run-board`. With
+[noni](https://github.com/randomm/noni) attached, see [Using with noni](#using-with-noni).
 
 ## Why
 
@@ -224,7 +225,7 @@ What the tool refuses rather than quietly fixes — each answer names the field 
 
 ## Skills
 
-pi-sticky ships three skills (`skills/` in this repo, declared under `pi.skills` in `package.json`).
+pi-sticky ships four skills (`skills/` in this repo, declared under `pi.skills` in `package.json`).
 Pi advertises each by name and description at startup and loads its full instructions only when the
 agent decides the task fits, so a skill costs almost nothing until it is used.
 
@@ -233,6 +234,7 @@ agent decides the task fits, so a skill costs almost nothing until it is used.
 | `sticky-basics` | What deserves a pin, which level to pick, one pin per topic, answering a reply, and when to use `options` or `compact`. The tool's own prompt points here. |
 | `sticky-decisions` | Asking a question: one question per `action` pin, 2–4 answerable `options`, never inventing an answer, closing the pin when the reply arrives. |
 | `sticky-run-board` | A Now/Backlog board for a long run: one compact `Now` pin updated in place, a small `Backlog` copied from the tracker, and unpinning it all at the end. |
+| `sticky-noni` | The [noni](https://github.com/randomm/noni) bridge: pin each steering question at `action` level with its own `options`, build the `Backlog` group from the top of `noni/direction/order.json`, and keep one `warning` for a failing census. Only applies in a project that has a `noni/` directory — see [Using with noni](#using-with-noni). |
 
 The agent loads them itself when they fit. To force one, run it as a command — the text after the
 name goes along as your request:
@@ -271,6 +273,51 @@ has not answered.
 
 The `description` is what the model reads when deciding whether to load the skill, so say what it does
 and when it applies. Run `/reload` after editing a skill.
+
+## Using with noni
+
+[noni](https://github.com/randomm/noni) is an attachable direction layer: a steering ledger of committed
+decision records under `noni/decisions/`, one ordered backlog in `noni/direction/order.json`, and one
+read-only census that reports where the work has drifted from either. pi-sticky does not read or write
+any of it. The `sticky-noni` skill tells the agent how to *surface* those three: the committed record
+stays the truth and the pin is only how you see it.
+
+Install noni's skills alongside this extension — from a clone of noni:
+
+```sh
+pi install /path/to/noni
+```
+
+**Verified:** `pi install` of a noni clone does expose its skills with no manifest. noni's repo has no
+`package.json` at all, and pi discovers a conventional top-level `skills/` directory for a package with
+no `pi` manifest, so the skills load from that one command. Verified with pi 1.4.0 against a clone of
+noni's `main`, which ships four (`steering-ledger`, `direction`, `census`, `sessions-claims`). Use
+`pi install` rather than a symlink into `~/.pi/agent/extensions/` for the same reason as the extension
+itself (see Disabling and subagent isolation).
+
+If you would rather not install noni as a package, add its skills directory to the `skills` list in
+your pi settings instead (`~/.pi/agent/settings.json`, or `.pi/settings.json` for one project):
+
+```json
+{
+  "skills": ["/path/to/noni/skills"]
+}
+```
+
+Either route needs a restart to pick the skills up. Noni ships no `SKILL.md` at its root, so pointing
+the setting at the clone root loads nothing — it has to name `noni/skills` (or one skill directory
+under it). To confirm both halves are loaded, ask the agent to run the census and check it reaches
+noni's `skills/census/scripts/census.py`, then force each skill by name:
+
+```text
+/skill:steering-ledger run the census and tell me what fails
+/skill:sticky-noni pin what the census reported
+```
+
+The bridge does nothing without noni: in a project with no `noni/` directory `sticky-noni` declines and
+says so, rather than inventing a ledger or an order. See `skills/sticky-noni/SKILL.md` for the policy —
+one `action` pin per question, the `Backlog` group rebuilt from the first five entries of the order, and
+never more than one census warning on screen.
 
 ## Keys
 
