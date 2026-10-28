@@ -31,7 +31,8 @@ import { frameCandidate } from "./panel-component-frame.ts";
 import type { PanelComponentState } from "./panel-component-state.ts";
 import { createPanelComponentState } from "./panel-component-state.ts";
 import { PanelMemory, sameFrame } from "./panel-frame-cache.ts";
-import { drawFrame } from "./panel-frame-draw.ts";
+import { clampSelection, drawFrame } from "./panel-frame-draw.ts";
+import type { PanelDraw } from "./panel-frame-draw.ts";
 import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
 import { containKey } from "./panel-input.ts";
@@ -56,8 +57,12 @@ export class PanelComponent implements Component {
    * both. `PanelMemory` (`panel-frame-cache.ts`) owns the key it obeys and why the halves clear together.
    */
   #memory = new PanelMemory();
-  /** The bar and the focus flag, and the invalidation that has to follow either write. */
-  #state = createPanelComponentState(this.#memory);
+  /**
+   * The bar and the focus flag, and the invalidation that has to follow either write. The state is handed
+   * the frame's door only (`invalidateFrame`), not the memory: moving the bar or taking the keyboard changes
+   * no sectioning, so it must not pay for a re-sort of a view that did not move.
+   */
+  #state = createPanelComponentState(() => this.#memory.invalidateFrame());
 
   constructor(host: PanelHost, tui?: TUI, theme?: Theme) {
     this.#host = host;
@@ -96,21 +101,23 @@ export class PanelComponent implements Component {
    */
   update(): void {
     const pins = this.#drawn();
-    // The clamp moves the bar through the state's own setter, so the frame cannot outlive the selection.
-    if (this.#state.selection >= pins.length) {
-      this.#state.setSelection(Math.max(0, pins.length - 1));
+    // The clamp moves the bar through the state's own setter, so the frame cannot outlive the selection —
+    // and it is the same clamp `render()` applies, so the two entry points cannot disagree about the floor.
+    const selection = clampSelection(this.#state.selection, pins.length);
+    if (selection !== this.#state.selection) this.#state.setSelection(selection);
+    // One comparison, through the cache's own test, over the candidate `panel-component-frame.ts` spells
+    // with the very builder `render()` memorises: `width` and `lines` are the two members `sameFrame`
+    // ignores, which is what lets a redraw (not a resize) hit.
+    if (
+      sameFrame(
+        this.#memory.frame,
+        frameCandidate(pins, this.#state.focused, selection, this.#host),
+      )
+    ) {
+      return;
     }
-    if (this.#sameFrame(pins)) return;
     this.invalidate();
     this.#host.requestRender();
-  }
-
-  /** Whether the frame cached right now is the frame the view, bar, focus, resting label and age would draw. */
-  #sameFrame(pins: readonly ViewPin[]): boolean {
-    return sameFrame(
-      this.#memory.frame,
-      frameCandidate(pins, this.#state.focused, this.#state.selection, this.#host),
-    );
   }
 
   /**
@@ -139,7 +146,12 @@ export class PanelComponent implements Component {
     return this.#state.focused;
   }
 
-  /** Set the focus flag and invalidate the frame — the half both focus verbs share. */
+  /**
+   * Set the focus flag and drop the frame: the dispatcher's door, the one `containKey`'s catch calls when a
+   * key's host call threw and the panel may not be left holding the keyboard. The focus verbs move the same
+   * flag through `#interactive()`'s `state` (`panel-component-focus.ts`) as part of taking or ending the
+   * interaction; the two are not interchangeable entry points, and this is the one that only moves the flag.
+   */
   setFocused(focused: boolean): void {
     this.#state.setFocused(focused);
   }
@@ -190,14 +202,15 @@ export class PanelComponent implements Component {
 
   /** The frame for this width: `panel-frame-draw.ts` compares the key and, on a miss, lays the rows out. */
   render(width: number): string[] {
-    return drawFrame(this.#memory, this.#host, this.#drawFor(width), {
-      selection: () => this.#state.selection,
-      focused: () => this.#state.focused,
-    });
+    return drawFrame(this.#memory, this.#host, this.#drawFor(width), this.#state);
   }
 
-  /** What one frame needs: the sectioning, the width pi-tui asked for, and this component's colours. */
-  #drawFor(width: number) {
+  /**
+   * What one frame is built from (`PanelDraw`): the sectioning, the width pi-tui asked for, and this
+   * component's colours. `terminalRows` is a *height* — what the component's TUI stated, or `undefined` for
+   * a component built without one, which is the case the layout's fallback ceiling answers for.
+   */
+  #drawFor(width: number): PanelDraw {
     return {
       sections: this.#sections(),
       width,

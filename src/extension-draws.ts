@@ -13,13 +13,19 @@
  * - The rail's teardown is reported, not obeyed: pi replaces the key's component on every install, so a
  *   surface going away re-asks the hand rather than stopping it — stopping it here would stop the minute on
  *   the tick that re-ages this very rail.
+ *
+ * One rule about what they do *not* do, and it is a constraint rather than an omission: `drawRail` runs
+ * through `RailGuard.consider`'s `redraw` callback, which that guard invokes detached and cannot report on
+ * (`panel-rail.ts`), so a throw from here escapes the frame or the refresh that asked for the draw. Nothing
+ * in this module catches, and nothing here may throw beyond `ctx.ui.setWidget` — which pi tolerates — so the
+ * cells it reads stay plain reads of what the instance holds. `test/panel-rail-guard.test.ts` drives the
+ * guard's own paths; a failure of this rule would be a refresh that died with the rail half-installed.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { AgeClock } from "./panel-age.ts";
 import type { PanelOwner } from "./panel.ts";
-import type { StickyConfig } from "./types.ts";
-import type { PinView } from "./types.ts";
+import type { PinView, StickyConfig } from "./types.ts";
 import type { LiveRail } from "./widget.ts";
 import { drawPins } from "./widget.ts";
 
@@ -30,7 +36,11 @@ export interface DrawCells {
   clock: AgeClock;
   /** The live context, for a redraw that came with no context of its own. */
   live(): ExtensionContext | undefined;
-  /** The owner, in the cell its wiring and `drawRail` are mutually recursive through. */
+  /**
+   * The owner, read per boundary rather than taken once: `extension.ts` holds it in a field that
+   * `session_shutdown` closes and a later session replaces, so the read has to happen at the draw — which
+   * is a different reason from the `live()` cell beside it, whose value can become `undefined` outright.
+   */
   owner(): PanelOwner | undefined;
   /** The instance's live rail, so its teardown reports itself to the right hand (`widget.ts`). */
   rail: LiveRail;
@@ -40,15 +50,20 @@ export interface DrawCells {
 
 /** The pair of draws, over one instance's cells. */
 export interface SurfaceDraws {
-  /** Install the rail for the current view and the open panel, at the context that asked. */
-  drawRail(ctx: ExtensionContext | undefined): void;
+  /**
+   * Install the rail for the current view and the open panel, at the context that asked.
+   *
+   * Part of the seam, not just this module's private half: the extension hands it to the panel's wiring as
+   * `redrawRail` and to the minute's hand, so the owner and the tick ask the rail from here too.
+   */
+  drawRail(ctx?: ExtensionContext): void;
   /** Draw both surfaces — the one idiom every change ends in. */
-  redrawAll(ctx: ExtensionContext | undefined): void;
+  redrawAll(ctx?: ExtensionContext): void;
 }
 
 /** Build the pair. Nothing here holds state: both draws read the cells at call time. */
 export function createSurfaceDraws(cells: DrawCells): SurfaceDraws {
-  function drawRail(ctx: ExtensionContext | undefined): void {
+  function drawRail(ctx?: ExtensionContext): void {
     if (ctx)
       drawPins(
         ctx,

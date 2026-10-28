@@ -11,10 +11,10 @@
  * the frame cache (`panel-frame-cache.ts`) keys on the selection and on focus, so a caller that moved either
  * without dropping the frame would be handed the frame of the bar it just left — the pin under a stale bar is
  * the pin `d` dismisses. `PanelComponent` is the only owner of a state of this shape and builds one per
- * instance; `invalidate()` is the component's own, so nothing else can drop the frame from here.
+ * instance. It calls `invalidateFrame` beside each write; `PanelComponent.invalidate()` is the
+ * component's own door to the same drop, and the only other one — nothing else can clear a frame from here.
  */
-import type { PanelMemory } from "./panel-frame-cache.ts";
-
+import type { InvalidatesFrame } from "./panel-frame-cache.ts";
 /** The selection, the focus flag, and the invalidation that has to follow either write. */
 export interface PanelComponentState {
   /** The selected pin's index in the component's drawn order. */
@@ -27,8 +27,14 @@ export interface PanelComponentState {
   setFocused(focused: boolean): void;
 }
 
-/** The one writer of the two, over the frame cache whose answer both of them move. */
-export function createPanelComponentState(memory: PanelMemory): PanelComponentState {
+/**
+ * The one writer of the two, over the frame the state's writes move.
+ *
+ * `invalidateFrame` rather than the whole `PanelMemory`: the rule this factory enforces is write-plus-drop-
+ * the-frame, and taking the memory's other half (the memoised drawn order) would make every bar move re-
+ * section the view for a fact the bar did not change.
+ */
+export function createPanelComponentState(invalidateFrame: InvalidatesFrame): PanelComponentState {
   let selection = 0;
   let focused = false;
   return {
@@ -40,11 +46,11 @@ export function createPanelComponentState(memory: PanelMemory): PanelComponentSt
     },
     setSelection: (index) => {
       selection = index;
-      memory.invalidate();
+      invalidateFrame();
     },
     setFocused: (value) => {
       focused = value;
-      memory.invalidate();
+      invalidateFrame();
     },
   };
 }

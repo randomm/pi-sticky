@@ -136,3 +136,40 @@ test("a minute that moved re-installs the rail, and a frame or a keypress does n
   tickTheRail(LATER2);
   expect(h.railDraws.length).toBe(installed + 2);
 });
+
+test("a redrawRail that throws still leaves the owner's state consistent", async () => {
+  // `RailGuard.consider` invokes its `redraw` callback detached and cannot report on it (`panel-rail.ts`),
+  // so the throw this case injects is the one the guard cannot contain: it escapes the refresh that asked
+  // for the draw. What the owner still owes the user is its *own* state — a refresh that died halfway must
+  // not leave it answering `isVisible()` for a panel that has stopped holding the pins, which is the pins
+  // drawn on neither surface. The record and the cell are the owner's to keep straight, and neither is the
+  // rail's: the guard was the last thing refresh() did, so the halves above it have already moved together.
+  const ctx = contextWith([]);
+  const h = wiring(ctx);
+  h.panel.open(ctx);
+  h.terminal.note(120);
+  h.panel.refresh();
+  const installed = h.railDraws.length;
+  expect(installed).toBeGreaterThan(0);
+
+  // The guard's callback is the seam through which the extension's own `drawRail` reaches the install
+  // (`panel-owner-wiring.ts`), so failing it is what a host whose ui has gone does to a refresh.
+  const before = h.railDraws.length;
+  // Move part of the answer — the instant the rows are stamped at, the member the tick moves — so the guard
+  // really does decide to install, and the install is the callback this case fails.
+  h.screen.clock = LATER;
+  h.panel.railDrawn?.(LATER);
+  h.failNextRailDraw();
+  expect(() => h.panel.refresh()).toThrow("rail host is gone");
+
+  // Nothing the failed draw did can leave the owner claiming pins it has forgotten: `refresh()` moved the
+  // component and only then asked the guard, so the throw came after every move the owner makes. The next
+  // refresh is answered "already installed" — the answer the guard had already recorded — and the one after
+  // a real change installs again, which is what the user needs after a draw that died.
+  expect(h.panel.isVisible()).toBe(true);
+  h.panel.refresh();
+  expect(h.railDraws.length).toBe(before);
+  h.screen.view = { pins: [pin(7, "Later still")], removed: [] };
+  h.panel.refresh();
+  expect(h.railDraws.length).toBeGreaterThan(before);
+});

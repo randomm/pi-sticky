@@ -1,4 +1,3 @@
-import type { PanelWiring } from "./panel-deps.ts";
 /**
  * The owner's one seam to the rail: the pair the rail guard is consulted through, and the pair's rules.
  *
@@ -11,11 +10,15 @@ import type { PanelWiring } from "./panel-deps.ts";
  * - A lifecycle edge (`open === false`) forgets both halves at once, which is what an `open()` publishing a
  *   fresh record or a `close()` dropping one owes the next frame: nothing to compare against.
  *
- * The two verdicts it needs are read at call time rather than taken as arguments: `columns` from the width
- * this instance's terminal holder was last told (see `panel-width.ts`), and `ownsPins` from the *owner's*
+ * What the guard is asked about is read at call time and what it is handed is not: `columns` comes from the
+ * width this instance's terminal holder was last told (see `panel-width.ts`) and `ownsPins` from the *owner's*
  * `isVisible()` rather than the mode cell — a record the owner has forgotten, as a failed open leaves it, is
- * not a panel the rail should stand down for. See `panel-rail.ts` for why the guard trusts the owner.
+ * not a panel the rail should stand down for. Both are cells because both answers move. `wiring` is a plain
+ * field: the owner builds one for its life and never replaces it, and `RailHandoff.consider` takes the
+ * dependencies as a value, so a read-at-call-time thunk here would advertise a second answer it cannot give.
+ * See `panel-rail.ts` for why the guard trusts the owner.
  */
+import type { PanelWiring } from "./panel-deps.ts";
 import type { RailHandoff } from "./panel-rail-handoff.ts";
 
 /** The owner's calls into the rail's handoff, with both verdicts read from its own cells. */
@@ -33,7 +36,8 @@ export interface RailConsider {
 
 /** The two verdicts, read from the owner's cells at the moment the answer is decided. */
 export interface RailConsiderCells {
-  wiring(): PanelWiring;
+  /** The deps the guard spells its key from — the owner's own, held for its whole life. */
+  wiring: PanelWiring;
   /** The width the visibility question is measured at — the frame that asked is the one that measured it. */
   columns(): number;
   /** The owner's own visibility verdict, not a re-derivation of it from the mode cell. */
@@ -44,7 +48,7 @@ export interface RailConsiderCells {
 export function createRailConsider(handoff: RailHandoff, cells: RailConsiderCells): RailConsider {
   return {
     consider(open: boolean): void {
-      handoff.consider(cells.wiring(), cells.columns(), open, cells.ownsPins);
+      handoff.consider(cells.wiring, cells.columns(), open, cells.ownsPins);
     },
     drawn: (iso) => handoff.drawn(iso),
   };

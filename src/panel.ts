@@ -64,7 +64,7 @@ export class PanelOwner {
     // answer is decided: the width is the one the frame that asked measured, and the ownership answer is the
     // owner's own rather than the cell's (a failed open has forgotten its record and still says "shown").
     this.#consider = createRailConsider(this.#rail, {
-      wiring: () => this.#wiring,
+      wiring: this.#wiring,
       columns: () => this.#columns(),
       ownsPins: () => this.isVisible(),
     });
@@ -257,6 +257,7 @@ export class PanelOwner {
       wiring: this.#wiring,
       component: () => this.#record?.component,
       refresh: () => this.refresh(),
+      columns: () => this.#columns(),
     };
   }
 

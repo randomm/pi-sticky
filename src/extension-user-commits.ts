@@ -17,9 +17,9 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { HostContext } from "./context.ts";
 import type { PanelModeState } from "./panel-mode.ts";
 import type { CommitLedger } from "./session-commits.ts";
-import type { RebuildCells } from "./session-rebuild.ts";
+import type { RebuildCells, Rebuilt } from "./session-rebuild.ts";
 import { rebuildSession } from "./session-rebuild.ts";
-import type { PinState, PinView, UserAction } from "./types.ts";
+import type { PinState, UserAction } from "./types.ts";
 
 /** What one extension instance answers for a rebuild, and what the user's path reaches for. */
 export interface UserCommitCells {
@@ -30,9 +30,9 @@ export interface UserCommitCells {
   /** Whether either surface is on screen right now — the reason an entry is not an argument. */
   surfacesDrawn(): boolean;
   /** Re-read the branch and the entries (the extension's `reconstruct`, which it owns). */
-  reconstruct(ctx: HostContext): { state: PinState; view: PinView };
+  reconstruct(ctx: HostContext): Rebuilt;
   /** Publish the rebuilt state and view as the live ones. */
-  publish(rebuilt: { state: PinState; view: PinView }): void;
+  publish(rebuilt: Rebuilt): void;
   /** Append the entry, at the extension's own type and version. */
   append(action: UserAction): void;
   /** The live context, read at call time — the one the rebuild reads the branch through. */
@@ -41,7 +41,13 @@ export interface UserCommitCells {
   redraw(): void;
 }
 
-/** The cells `rebuildSession` reads and writes, as one extension instance answers them. */
+/**
+ * The cells `rebuildSession` reads and writes, as one extension instance answers them.
+ *
+ * `Rebuilt` (`session-rebuild.ts`) is named rather than re-spelled here and at the extension's call site:
+ * it is the canonical shape of a rebuild's output, and the array identity the frame cache's `pins` comparison
+ * trusts comes out of it.
+ */
 export function createRebuildCells(cells: UserCommitCells): RebuildCells {
   return {
     reconstruct: cells.reconstruct,
@@ -57,13 +63,19 @@ export function createRebuildCells(cells: UserCommitCells): RebuildCells {
  *
  * The redraw follows the rebuild rather than preceding it, because the dismissal the user just made is what
  * both surfaces must draw, and it is on the session only after the append.
+ *
+ * The redraw is owed by a `finally`, the way `settlePanel` (`panel-settle.ts`) owes its own: the entry that
+ * `append` reached the session with is on the branch whether or not the rebuild that follows survives, and a
+ * screen still drawing a pin the session no longer holds is the pins-drawn-twice failure this path exists to
+ * prevent. The throw propagates — the caller hears — but it never skips the draw. The rebuild cells are
+ * derived from the same object the append reads, so the ledger, the append and the screen cannot be split
+ * across two cell objects.
  */
-export function appendUserAction(
-  cells: UserCommitCells,
-  rebuild: RebuildCells,
-  action: UserAction,
-): void {
-  cells.append(action);
-  rebuildSession(cells.live(), rebuild);
-  cells.redraw();
+export function appendUserAction(cells: UserCommitCells, action: UserAction): void {
+  try {
+    cells.append(action);
+    rebuildSession(cells.live(), createRebuildCells(cells));
+  } finally {
+    cells.redraw();
+  }
 }

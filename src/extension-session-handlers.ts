@@ -21,35 +21,36 @@
  * - The panel closes last: pi's teardown has already popped the overlay, so its `close()` is a no-op against
  *   an entry that is gone.
  */
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import type { PanelOwner } from "./panel.ts";
-import type { SessionDraw } from "./session-draw.ts";
 import { drawFrom, drawSession, settleSession } from "./session-draw.ts";
-import type { SessionTick } from "./session-tick.ts";
+import type { SessionDraw } from "./session-draw.ts";
 
-/** What the boundaries reach, all through the extension instance's own cells. */
-export interface SessionHandlerCells {
-  /** Adopt the context of the boundary that fired, so a later redraw has one to draw through. */
-  adopt(ctx: ExtensionContext): void;
-  /** Re-read the branch and the entries into the live state and view. */
-  rebuild(ctx: ExtensionContext): void;
-  /** Draw both surfaces, at whichever context is still live. */
-  redraw(ctx: ExtensionContext | undefined): void;
-  /** The owner, in the cell its wiring and the rail's draw are mutually recursive through. */
-  panel(): PanelOwner | undefined;
-  /** The minute hand, whose lifetime is the session's. */
-  tick: SessionTick;
+/**
+ * What the boundaries reach, all through the extension instance's own cells.
+ *
+ * The five draw members are `SessionDraw`'s, extended here rather than re-declared field by field, so the
+ * boundary order has one owner (`session-draw.ts`) and a change to it is a type error rather than a drift
+ * between two copies.
+ *
+ * Two of them are cells for two different reasons, and the distinction matters to the next editor:
+ * `adopt`/`rebuild`/`redraw` reach the live context, which `session_shutdown` drops to `undefined` outright,
+ * while `panel()` reads a holder whose field is *reassigned* — `surfaces.panel.current` is set again by a
+ * later session, so the read has to happen at each boundary rather than once at registration. `tick` is the
+ * hand itself, whose lifetime is the session's.
+ */
+export interface SessionHandlerCells extends SessionDraw {
   /** Stop the hand, drop the live context, and empty the state, the cell's transience and the width. */
   shutdown(): void;
 }
 
 /**
  * Register the four boundaries. Each handler is one call: the order lives in `session-draw.ts` for the two
- * that draw, and in the extension's own `shutdown` closure for the one that tears down.
+ * that draw, and in the `shutdown` closure the extension supplies — written beside the state it clears — for
+ * the one that tears down.
  */
 export function registerSessionHandlers(pi: ExtensionAPI, cells: SessionHandlerCells): void {
-  const draw: SessionDraw = drawFrom({
+  const draw = drawFrom({
     adopt: cells.adopt,
     rebuild: cells.rebuild,
     redraw: cells.redraw,

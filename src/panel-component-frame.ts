@@ -1,48 +1,48 @@
 /**
- * The candidate frame: everything the panel's next frame depends on, built in the one place both callers
- * of the cache ask for it.
+ * The candidate frame: the panel's next frame, spelled by the one builder the cache has.
  *
- * `PanelComponent` caches the frame it drew (`panel-frame-cache.ts`) and asks this whether the cached one is
+ * `PanelComponent` caches the frame it drew (`panel-frame-cache.ts`) and asks whether the cached one is
  * still the frame it would draw. Two entry points ask that question — `update()`, which the extension's
- * `redraw()` calls, and `render()`, which pi-tui calls on every frame request (`panel-frame-draw.ts`) — and
- * the whole correctness of the cache is that the two build the key *identically*. A candidate one of them
- * built differently is a cache that hits for one caller and silently misses for the other, which is invisible
- * until someone notices a redraw that repaints a byte-identical panel or a frame that never updates.
+ * `redraw()` calls, and `render()`, which pi-tui calls on every frame request — and the whole correctness of
+ * the cache is that the two compare *the same fields*. They do because both hand `sameFrame` a frame built
+ * by `frameOf` (`panel-frame-draw.ts`): `render()` builds its candidate and its memorised frame with that
+ * call, and `update()` asks this one, which delegates to the same function. A field added to the key is one
+ * edit in `frameOf`, not two hand-written field lists that can drift until someone notices a redraw that
+ * repaints a byte-identical panel or a frame that never updates.
  *
- * So the candidate is built here, from the three things the component holds and the three the host supplies,
- * rather than at either call site. `lines` and `width` are named but never compared (`sameFrame` ignores
- * them): a candidate has no lines to name before it is built, and its width is the width the caller asked
- * for, which follows from the rest.
+ * `lines` and `width` come back named but never compared (`sameFrame` ignores them): a candidate has no
+ * lines to name before it is built, and its width is the width the caller asked for, which follows from the
+ * rest — except at `render()`, the one caller that knows the width it was given and compares it too.
  *
  * The age is the odd member of the key: the *minute* rather than the instant, because pi-tui asks for frames
- * far more often than the ages on screen can move, and a key of raw instants misses every time. `ageInstant`
- * is the other half of the same seam — the instant that minute was read at, which is what the rows themselves
- * print — so the key and the content come from one read of one clock.
+ * far more often than the ages on screen can move, and a key of raw instants misses every time. The instant
+ * is read in the same breath as the bucket, so a candidate's minute and the rows' ages cannot come from two
+ * reads of one clock.
  */
 import { ageAt, ageBucket } from "./panel-age.ts";
 import type { PanelFrame } from "./panel-frame-cache.ts";
+import type { FrameKey, PanelDraw } from "./panel-frame-draw.ts";
+import { frameOf } from "./panel-frame-draw.ts";
+import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
-import type { PanelMode } from "./panel-mode.ts";
+import type { PanelSections } from "./panel-sections.ts";
 import type { ViewPin } from "./types.ts";
 
-/**
- * The state the next frame would be drawn for.
- *
- * Read beside the label and the age rather than cached on the component: the two frames of one view are not
- * the same bytes, so a key that did not name the state could answer an auto-open with the peek's three rows.
- */
-export function frameMode(host: PanelHost): PanelMode {
-  return host.mode();
+/** The sections a candidate names: the drawn order, and no grouping for it, which `sameFrame` never reads. */
+function candidateSections(pins: readonly ViewPin[]): PanelSections {
+  return { order: [], flat: pins };
 }
 
 /**
  * The frame-shaped read of "right now": the pins by identity, the bar and focus by value, and the label,
- * state and age-minute the host is asked for at this instant.
+ * mode and age-minute the host is asked for at this instant.
  *
- * `pins` is passed in rather than read from the host because both callers already have the drawn array in
- * hand — `update()` from the component's own drawn order, `render()` from the sectioning it is about to lay
- * out — and reading it twice would make the identity comparison compare two reads of the host instead of the
- * one array the frame is built from.
+ * `pins` is passed in rather than read from the host because the caller already has the drawn array in
+ * hand — `update()` from the component's own drawn order — and reading it twice would make the identity
+ * comparison compare two reads of the host instead of the one array the frame is built from.
+ *
+ * The members a candidate cannot mean anything by carry the values they are never read at: no colours (a
+ * candidate colours nothing) and no terminal (a candidate sizes nothing).
  */
 export function frameCandidate(
   pins: readonly ViewPin[],
@@ -50,25 +50,21 @@ export function frameCandidate(
   selection: number,
   host: PanelHost,
 ): PanelFrame {
+  return frameOf([], candidateDraw(pins), candidateKey(host), focused, selection);
+}
+
+/** The candidate's stand-in for "what one frame is drawn from": the drawn order, and nothing drawn at. */
+function candidateDraw(pins: readonly ViewPin[]): PanelDraw {
   return {
-    lines: [],
+    sections: candidateSections(pins),
     width: 0,
-    pins,
-    selection,
-    focused,
-    replyHint: host.replyHint(),
-    mode: frameMode(host),
-    ageNow: ageBucket(ageInstant(host)),
+    style: NO_PANEL_COLOUR,
+    terminalRows: undefined,
   };
 }
 
-/** The instant the host's clock says it is — what the rows age against, and what the bucket is taken from. */
-export function ageInstant(host: PanelHost): string {
-  const clock = host.ageNow;
-  return ageAt(clock === undefined ? undefined : () => clock());
-}
-
-/** The minute `ageInstant` falls in — the figure the frame cache and the tick's minute hand both compare. */
-export function ageBucketOf(host: PanelHost): number {
-  return ageBucket(ageInstant(host));
+/** The candidate's host reads, each taken once: the label, the mode, and the age instant its bucket is cut from. */
+function candidateKey(host: PanelHost): FrameKey {
+  const ageNow = ageAt(host.ageNow);
+  return { replyHint: host.replyHint(), mode: host.mode(), ageNow, ageKey: ageBucket(ageNow) };
 }

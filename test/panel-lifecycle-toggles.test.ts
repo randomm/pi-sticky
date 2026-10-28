@@ -87,6 +87,42 @@ test("the nothing-pinned refusal is what ctrl+alt+p says when the terminal is wi
   expect(ctx.recorder.notifications).toEqual([{ message: NOTHING_PINNED, type: "warning" }]);
 });
 
+test("a hide whose host teardown throws ends the interaction and says so, without throwing", async () => {
+  // `/pins hide` and `ctrl+alt+t` run where pi-tui has no try/catch above them, and the ending
+  // (`unfocus()`) is a host-facing path — the handle, the owner's `onUnfocus`, a `requestRender()`. An
+  // escaping throw was an `extension_error` out of a command; and worse, a panel left believing it held the
+  // keyboard is a modal whose every key routes through the member that just threw. So: the flag goes down,
+  // the user hears one line, and the verb itself does not throw.
+  const { stub, ctx } = await boot(PINNED, 120);
+  const built = ctx.recorder.customCalls[0]?.component;
+  if (!built) throw new Error("no panel was opened to hide");
+  // The recorder keeps a plain `Component`; this is the component the factory built (`PanelComponent`),
+  // reached the way `panelComponent()` reaches it — through `unknown`, since the recorder's own type is.
+  const component = built as unknown as {
+    focus(): void;
+    isFocused(): boolean;
+    setHandle(handle: { focus(): void; unfocus(): void }): void;
+  };
+  // The handle the owner handed the component, replaced with the one member this case makes fail. A
+  // `focus()` on a handle that cannot answer it is what the focus key does first, so the seam is complete.
+  component.setHandle({
+    focus: () => {},
+    unfocus: () => {
+      throw new Error("handle is gone");
+    },
+  });
+  component.focus();
+  expect(component.isFocused()).toBe(true);
+
+  expect(() => stub.commands.get("pins")?.handler("hide", ctx)).not.toThrow();
+  // The panel no longer believes it holds the keyboard, whatever the ending could not finish.
+  expect(component.isFocused()).toBe(false);
+  // And the failure is reported, once, as a warning rather than as an extension error.
+  expect(ctx.recorder.notifications).toEqual([
+    { message: "The panel could not be closed cleanly.", type: "warning" },
+  ]);
+});
+
 test("both shortcuts are registered, and ctrl+alt+t toggles with an entry on each side", async () => {
   const { stub, ctx } = await boot(PINNED);
   expect([...stub.shortcuts.keys()].sort()).toEqual(["ctrl+alt+p", "ctrl+alt+t"]);

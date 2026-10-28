@@ -49,6 +49,7 @@ import { registerReminder } from "./reminder.ts";
 import { registerReply } from "./reply.ts";
 import { createCommitLedger } from "./session-commits.ts";
 import { rebuildSession } from "./session-rebuild.ts";
+import type { Rebuilt } from "./session-rebuild.ts";
 import { createSessionSurfaces } from "./session-surfaces.ts";
 import { createSessionTick } from "./session-tick.ts";
 import { EMPTY_STATE, reconstruct } from "./state.ts";
@@ -101,7 +102,8 @@ export function createStickyExtension(
      * The minute hand: owned by this instance, started afresh at each session boundary so none carries a
      * dead session's state into its successor. Its wiring reads the live cells, not their values, and both
      * questions go to the owner that installs the surfaces (`surfaces`), never a width `TerminalWidth` guessed.
-     * The guard's one line goes through the session's own ui, read at report time through the live cell.
+     * The guard's one line goes through the session's own ui, read at report time through the live cell —
+     * without it the wiring has no way to speak and a broken minute is contained in silence.
      */
     const tick = createSessionTick(
       {
@@ -147,7 +149,7 @@ export function createStickyExtension(
       surfacesDrawn: () => surfaces.surfacesDrawn(),
       reconstruct: (ctx: HostContext) =>
         reconstruct(ctx.sessionManager.getBranch(), ctx.sessionManager.getEntries()),
-      publish: (rebuilt: { state: PinState; view: PinView }) => {
+      publish: (rebuilt: Rebuilt) => {
         state = rebuilt.state;
         view = rebuilt.view;
       },
@@ -164,14 +166,15 @@ export function createStickyExtension(
       commits,
       state: () => state,
       view: () => view,
-      publish: userCommits.publish,
+      // The other writer of `state`/`view` besides `userCommits.publish` above: a commit publishes its own
+      // snapshot, and a rebuild publishes what the branch holds. Nothing else replaces the pair.
       commit: (next) => {
         state = next;
         view = { pins: next.pins, removed: next.removed };
       },
       redraw: redrawAll,
       component: () => surfaces.panel.current?.component(),
-      appendUserAction: (action) => appendUserAction(userCommits, rebuildCells, action),
+      appendUserAction: (action) => appendUserAction(userCommits, action),
     });
 
     // The panel's deps are the tool's, plus the things only the panel needs, built by the panel's own

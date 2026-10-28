@@ -71,3 +71,31 @@ test("a view swap without an update() rebuilds the frame at the same width", () 
   const cached = c.render(44);
   expect(c.render(44)).toBe(cached);
 });
+
+test("a render() alone pulls an out-of-range bar back onto the list it just drew", () => {
+  // The clamp used to be local to `drawFrame`, so the *component* kept an index its own rows did not draw
+  // whenever the view swapped without an `update()` — and `panel-input.ts` reads `pins[target.selection]`, so
+  // `d` and Enter then resolved to `undefined` and did nothing at all, with the user looking at a bar that
+  // answered no key. The clamp now goes back through the state's setter.
+  const h = host(pins("One", "Two", "Three"));
+  const c = new PanelComponent(h.stub, h.tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  c.focus();
+  c.select(2);
+  expect(c.selection).toBe(2);
+  h.state.view = { pins: pins("One"), removed: [] };
+  // `render()` is the only thing that ran: no `update()`, and pi-tui asks for frames on its own schedule.
+  c.render(44);
+  expect(c.selection).toBe(0);
+  // …and the frame the cache now holds is the one the bar sits on, so the next request is a hit rather than
+  // a second layout for the byte the clamp just moved.
+  const clamped = c.render(44);
+  expect(c.render(44)).toBe(clamped);
+  // An empty view lands the bar at its floor rather than below it, which is the case `Math.max` is for.
+  c.select(2);
+  h.state.view = { pins: [], removed: [] };
+  c.render(44);
+  expect(c.selection).toBe(0);
+});

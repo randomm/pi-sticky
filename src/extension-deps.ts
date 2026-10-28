@@ -38,9 +38,10 @@ export interface ExtensionDepsCells {
   /** The live state and view, read at call time through the extension's own cells. */
   state(): PinState;
   view(): PinView;
-  /** Publish a rebuilt state and view as the live ones (the only writer besides `commit`). */
-  publish(rebuilt: { state: PinState; view: PinView }): void;
-  /** Adopt a committed snapshot as the live state and view. */
+  /**
+   * Adopt a committed snapshot as the live state and view — the only writer of the two besides the rebuild
+   * cells the extension hands `rebuildSession` (`extension-user-commits.ts`).
+   */
   commit(next: PinState): void;
   /** The extension's `redrawAll`: the rail, then the panel, at whichever context is still live. */
   redraw(ctx?: ExtensionContext): void;

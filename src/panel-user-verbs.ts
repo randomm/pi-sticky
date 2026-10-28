@@ -21,11 +21,15 @@
  *
  * `refresh()` is asked for after `autoOpen` and not left to the extension's own setters: a rail still
  * standing over the pins the panel has just taken is the pins drawn twice.
+ *
+ * Every host call this file makes is either guarded or a plain read. `hidePanel` contains the one ending
+ * that can throw; `refuse()` reads the owner's width and the deps' view, both pure reads, and notifies
+ * through the caller's own context — the ui the command arrived on, not the extension's live cell, which is
+ * the difference between a refusal the user sees and one that lands on a session that has ended.
  */
 import type { HostContext } from "./context.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelWiring } from "./panel-deps.ts";
-import { judgeColumns } from "./panel-geometry.ts";
 import { refusalToShow } from "./panel-refusals.ts";
 
 /**
@@ -40,6 +44,11 @@ export interface PanelVerbCells {
   component(): PanelComponent | undefined;
   /** Tell the component the view changed and ask for the rail to be reconsidered. */
   refresh(): void;
+  /**
+   * How wide this terminal is, in the reading the *owner* holds — the same figure `isVisible()` measures
+   * the panel against, so a refusal and the overlay on screen cannot disagree about the terminal.
+   */
+  columns(): number;
 }
 
 /**
@@ -54,10 +63,36 @@ export function showPanel(cells: PanelVerbCells, ctx: HostContext | undefined): 
   cells.wiring.deps.recordPanelShown(true);
 }
 
-/** Hide the panel. Silent — a hide has no dead end to warn about — and always records. */
+/**
+ * Hide the panel. Silent — a hide has no dead end to warn about — and always records.
+ *
+ * The ending is contained the way `containKey` (`panel-input.ts`) contains a failing key. `unfocus()` is
+ * itself a host-facing path — the handle, the owner's `onUnfocus`, and a `requestRender()` — and unlike a
+ * key it runs on `/pins hide` and the toggle shortcut, where pi-tui has no try/catch above it, so an
+ * escaping throw would surface as an `extension_error` out of a command. The flag goes down first: a panel
+ * left believing it holds the keyboard is a modal whose every key routes through the member that just threw.
+ *
+ * It does not rethrow, unlike `settlePanel` (`panel-settle.ts`), whose skipped record would be the user's
+ * own choice lost: here the skipped work is the host's, and the state the user can live with is the one the
+ * `catch` leaves behind.
+ */
 export function hidePanel(cells: PanelVerbCells): void {
   cells.wiring.deps.recordPanelShown(false);
-  cells.component()?.unfocus();
+  const component = cells.component();
+  if (!component) return;
+  try {
+    component.unfocus();
+  } catch {
+    // The flag is moved apart from the ending, and before it: `unfocus()` is the member most likely to have
+    // thrown, and taking the panel out of the key path is what this verb owes the user. The report is
+    // best-effort for the same reason the tick guard's is — `notify` belongs to the ui that just threw.
+    component.setFocused(false);
+    try {
+      cells.wiring.deps.notify("The panel could not be closed cleanly.", "warning");
+    } catch {
+      /* A notice the user never saw is not worth a throw out of the command. */
+    }
+  }
 }
 
 /** Whichever way a toggle lands it was the user's choice, so it is recorded either way. */
@@ -87,10 +122,7 @@ export function focusFromShortcut(cells: PanelVerbCells, ctx: HostContext | unde
  * spoke, which is what lets `focusFromShortcut` stop and `showPanel` carry on and record anyway.
  */
 function refuse(cells: PanelVerbCells, ctx: HostContext | undefined): boolean {
-  const refusal = refusalToShow(
-    judgeColumns(cells.wiring.terminal.status()),
-    cells.wiring.deps.getView(),
-  );
+  const refusal = refusalToShow(cells.columns(), cells.wiring.deps.getView());
   if (refusal === undefined) return false;
   ctx?.ui.notify(refusal, "warning");
   return true;
