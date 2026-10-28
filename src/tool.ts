@@ -58,6 +58,21 @@ const Params = Type.Object({
       Type.Literal("all", { description: 'Unpin every pin: ids: "all".' }),
     ]),
   ),
+  group: Type.Optional(
+    Type.String({
+      description:
+        'A short section name that groups related pins, for pin and update; "" clears it.',
+    }),
+  ),
+  options: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        "Two to four short choices the user can act on, for pin and update; [] clears them.",
+    }),
+  ),
+  compact: Type.Optional(
+    Type.Boolean({ description: "Marks the pin as compact, for pin and update." }),
+  ),
 });
 
 /** The call body as the wire delivered it: every field is still a claim for the reducer to check. */
@@ -67,6 +82,9 @@ interface ToolBody {
   level?: unknown;
   id?: unknown;
   ids?: unknown;
+  group?: unknown;
+  options?: unknown;
+  compact?: unknown;
 }
 
 /** An ok result narrowed to what the outcome line reads. */
@@ -123,6 +141,9 @@ function actionInput(body: ToolBody, op: unknown, text: string | undefined, now:
     level: op === "pin" ? (level ?? "info") : level,
     id: body.id,
     ids: idsOf(body),
+    group: body.group,
+    options: body.options,
+    compact: body.compact,
     source: "agent",
     now,
   };

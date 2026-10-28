@@ -8,20 +8,42 @@
  * whole shape, and returns a copy of it rather than the object inside the entry: fresh arrays,
  * fresh pin and removal objects, and the strings that are drawn run through the sanitizer's passes
  * (`cleanPinText`) — pin text, and the timestamps an error message or the rail prints. No grapheme
- * budget: a rebuild has no config to read.
+ * budget: a rebuild has no config to read. Cleaning can empty a value; an emptied `group` or option is
+ * dropped rather than stored, so what comes back is a snapshot the guard still vouches for.
  *
  * `uid` is deliberately *not* cleaned. It never reaches the screen or the model — only `id` is
  * drawn, and a `uid` is an opaque address matched by `===` against a `pi-sticky.user` entry — and
  * an address rewritten on the way in matches nothing on the way out, so a pin with a
  * hostile-looking uid could never be dismissed or replied to.
  */
+import { MAX_OPTIONS, MIN_OPTIONS } from "./pin-fields.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
 
 import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
 import { STATE_TYPE, TOOL_NAME, UI_TYPE, USER_TYPE } from "./types.ts";
 
+/** The `group` as the copy may carry it: cleaned, or absent when cleaning left nothing to carry. */
+function copiedGroup(group: string | undefined): string | undefined {
+  if (group === undefined) return undefined;
+  return cleanPinText(group) || undefined;
+}
+
+/**
+ * The `options` as the copy may carry them, or `undefined` when the pin had none. An entry the
+ * sanitizer empties is dropped rather than stored, and a list whose real choices fell outside the
+ * 2–4 the snapshot is held to is no list at all — `isPinState` refuses both shapes, and minting one
+ * here would hand back a snapshot this module only returns once the guard has vouched for it.
+ */
+function copiedOptions(options: string[] | undefined): string[] | undefined {
+  if (options === undefined) return undefined;
+  const cleaned = options.map((option) => cleanPinText(option)).filter((option) => option !== "");
+  return cleaned.length >= MIN_OPTIONS && cleaned.length <= MAX_OPTIONS ? cleaned : undefined;
+}
+
 function copyPin(pin: Pin): Pin {
+  const group = copiedGroup(pin.group);
+  const options = copiedOptions(pin.options);
   return {
     id: pin.id,
     uid: pin.uid,
@@ -30,6 +52,15 @@ function copyPin(pin: Pin): Pin {
     source: pin.source,
     createdAt: cleanPinText(pin.createdAt),
     updatedAt: cleanPinText(pin.updatedAt),
+    // The three optional fields are copied by name, not spread: `group` and each `options` entry owe
+    // the reader the same re-clean pin text does, and a rebuild that rewrites them must not mint a key
+    // a pre-v2 pin never had. A value the sanitizer empties is *no* key rather than an empty one —
+    // `isPinState` refuses `group: ""` and a `""` among the options, so minting either would hand back
+    // a snapshot this module's own contract says it only returns when the guard vouches for it.
+    // `compact` is copied as stored — a boolean has nothing to sanitize.
+    ...(group === undefined ? {} : { group }),
+    ...(options === undefined ? {} : { options }),
+    ...(pin.compact === undefined ? {} : { compact: pin.compact }),
   };
 }
 

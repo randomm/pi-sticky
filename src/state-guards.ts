@@ -7,6 +7,7 @@
  * reused, and the model would then be told to update one pin while acting on another.
  */
 import { MAX_PINS, MAX_TEXT_UNITS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
+import { MAX_FIELD_UNITS, MAX_OPTIONS, MIN_OPTIONS } from "./pin-fields.ts";
 import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
 
 /** A `{...}` object: enough to read an entry's own fields, never to trust its contents. */
@@ -60,8 +61,38 @@ function isPin(x: unknown): x is Pin {
     (x.level === "info" || x.level === "action" || x.level === "warning") &&
     (x.source === "agent" || x.source === "user") &&
     isBoundedString(x.createdAt) &&
-    isBoundedString(x.updatedAt)
+    isBoundedString(x.updatedAt) &&
+    optionalGroup(x.group) &&
+    optionalOptions(x.options) &&
+    optionalCompact(x.compact)
   );
+}
+
+/**
+ * The three fields pins v2-5 added, each of which an earlier snapshot simply does not have: absent is
+ * valid. The bound is in UTF-16 units like every other string here — this guard answers "could this be
+ * a snapshot", and graphemes are a property of the sanitizer's segmentation, not of a session file.
+ * `MAX_FIELD_UNITS` is the very number `cleanField` applies to what it stores, so the two sides cannot
+ * drift apart and hand back an ok snapshot this guard refuses — which would be skipped on the next
+ * rebuild, losing every pin rather than one. An empty group or an empty option list
+ * is refused: the reducer clears a field by dropping the key, never by storing one of those.
+ */
+function optionalGroup(x: unknown): boolean {
+  return x === undefined || (typeof x === "string" && x.length >= 1 && x.length <= MAX_FIELD_UNITS);
+}
+
+function optionalOptions(x: unknown): boolean {
+  if (x === undefined) return true;
+  if (!Array.isArray(x) || !isDense(x) || x.length < MIN_OPTIONS || x.length > MAX_OPTIONS) {
+    return false;
+  }
+  return x.every(
+    (entry) => typeof entry === "string" && entry.length >= 1 && entry.length <= MAX_FIELD_UNITS,
+  );
+}
+
+function optionalCompact(x: unknown): boolean {
+  return x === undefined || typeof x === "boolean";
 }
 
 function isRemoval(x: unknown): x is Removal {

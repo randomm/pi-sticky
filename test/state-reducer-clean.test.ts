@@ -13,12 +13,14 @@ import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import type { ActionInput } from "../src/action.ts";
+import { updateOp } from "../src/reducer-ops.ts";
 import { type ApplyLimits, applyAction } from "../src/reducer.ts";
 import { plainStyle, renderList, renderRailLines } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
+import { isPinState } from "../src/state-guards.ts";
 import { EMPTY_STATE } from "../src/state.ts";
 import type { PinLevel } from "../src/types.ts";
-import { NOW, pin, state, uidSource } from "./fixtures.ts";
+import { LATER, NOW, pin, state, uidSource } from "./fixtures.ts";
 
 const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
 const ESC = cp(0x1b);
@@ -106,7 +108,7 @@ describe("applyAction cleans the text it stores", () => {
     );
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe("update needs text or level");
+    expect(result.error).toBe("update needs text, level, group, options or compact");
   });
 
   test("an update stores the cleaned text", () => {
@@ -135,5 +137,155 @@ describe("applyAction cleans the text it stores", () => {
         expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       }
     }
+  });
+});
+
+/**
+ * The same promise for the three fields pins v2-5 added. The tool runs the identical checks, so an
+ * action that reaches `applyAction` past it — a session-entry replay, a fixture — must not be able to
+ * put an escape, a bidi control, a lone surrogate or a runaway mark run into a snapshot.
+ */
+const HOSTILE_FIELD = `${ESC}[2JA${ESC}]8;;https://evil${ESC}${cp(0x5c)}B${BEL}${cp(0x202e)}C${cp(0x200b)}D${cp(0xdc00)}E`;
+
+/** Six combining marks on one base: the sanitizer keeps four. */
+const MARK_FLOOD = `e${cp(0x301, 0x301, 0x301, 0x301, 0x301, 0x301)}`;
+/** A ZWJ family: one grapheme, two columns wide, and never cut in half. */
+const FAMILY = cp(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467);
+
+const pinWithFields = (fields: Record<string, unknown>) =>
+  ({ op: "pin", text: "t", level: "info", source: "agent", now: NOW, ...fields }) as ActionInput;
+
+describe("applyAction cleans the optional fields it stores", () => {
+  test("a group carrying escapes, bidi, zero-width and a lone surrogate is stored clean", () => {
+    const result = applyAction(EMPTY_STATE, pinWithFields({ group: HOSTILE_FIELD }), limits());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.pins[0]?.group).toBe("ABCDE");
+    expect(result.state.pins[0]?.group).not.toInclude(ESC);
+  });
+
+  test("every option is cleaned, and the cleaned list is what is stored", () => {
+    const result = applyAction(
+      EMPTY_STATE,
+      pinWithFields({ options: [HOSTILE_FIELD, `x${cp(0x0a, 0x0a)}y`, MARK_FLOOD] }),
+      limits(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.pins[0]?.options).toEqual(["ABCDE", "x y", cleanPinText(MARK_FLOOD)]);
+  });
+
+  test("a two-column grapheme survives cleaning whole and counts as one", () => {
+    const result = applyAction(
+      EMPTY_STATE,
+      pinWithFields({ group: FAMILY, options: [FAMILY, "no"] }),
+      limits(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.pins[0]?.group).toBe(FAMILY);
+    expect(result.state.pins[0]?.options).toEqual([FAMILY, "no"]);
+  });
+
+  test("the reducer refuses what the tool refuses, so a hand-built action cannot slip past", () => {
+    // `applyAction` is the last pure gate before the snapshot the tool publishes, so each rule is
+    // enforced here on its own: the tool layer's refusal is a convenience, never the defence.
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ group: null }, "group must be a string"],
+      [{ group: `${ESC}[2J` }, "group must be 1 to 24 characters after cleaning"],
+      [{ group: "x".repeat(25) }, "group must be 1 to 24 characters after cleaning"],
+      [{ group: FAMILY.repeat(25) }, "group must be 1 to 24 characters after cleaning"],
+      [{ options: ["a"] }, "options must be a list of 2 to 4 strings"],
+      [{ options: "a,b" }, "options must be a list of 2 to 4 strings"],
+      [{ options: ["a", "a"] }, "options must be unique after cleaning"],
+      [{ options: ["a", "a", "b"] }, "options must be unique after cleaning"],
+      [{ options: ["a", 42] }, "each option must be 1 to 24 characters after cleaning"],
+      [{ options: ["a", `${BEL}`] }, "each option must be 1 to 24 characters after cleaning"],
+      [{ options: ["a", "x".repeat(25)] }, "each option must be 1 to 24 characters after cleaning"],
+      [{ compact: "yes" }, "compact must be true or false"],
+    ];
+    for (const [fields, error] of refusals) {
+      const result = applyAction(EMPTY_STATE, pinWithFields(fields), limits());
+      expect(result.ok, JSON.stringify(fields)).toBe(false);
+      if (result.ok) return;
+      expect(result.error, JSON.stringify(fields)).toBe(error);
+    }
+  });
+
+  test("a compact pin counts toward the limit like any other", () => {
+    const start = state([pin(1, "a")], 2);
+    const result = applyAction(start, pinWithFields({ text: "b", compact: true }), limits(1));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("1 pins are already shown");
+  });
+
+  test("an update sets, keeps and clears each of the three fields", () => {
+    const filed = applyAction(
+      EMPTY_STATE,
+      pinWithFields({ text: "original", group: "Backlog", options: ["yes", "no"], compact: true }),
+      limits(),
+    );
+    expect(filed.ok).toBe(true);
+    if (!filed.ok) return;
+
+    // The two clearing sentinels are read by `updateOp` before it runs, so the action it is handed
+    // carries them: `""` and `[]` are the model's words for "remove this key".
+    const cleared = updateOp(filed.state, 1, {
+      now: LATER,
+      group: "",
+      options: [],
+      compact: false,
+    });
+    expect(cleared.ok).toBe(true);
+    if (!cleared.ok) return;
+    const keys = Object.keys(cleared.state.pins[0] ?? {});
+    // Cleared means the key is gone, not emptied: an empty group would be a section with no name and an
+    // empty option list a choice of nothing. `compact: false` is an answer rather than a clear, so that
+    // key stays with the value turned off.
+    expect(keys.filter((key) => key !== "compact")).toEqual([
+      "id",
+      "uid",
+      "text",
+      "level",
+      "source",
+      "createdAt",
+      "updatedAt",
+    ]);
+    expect(cleared.state.pins[0]?.compact).toBe(false);
+    expect(cleared.state.pins[0]?.text).toBe("original");
+    expect(isPinState(cleared.state)).toBe(true);
+
+    // An omitted field is unchanged, so the group that was cleared comes back and nothing else moves.
+    const renamed = updateOp(cleared.state, 1, { now: LATER, group: "Now" });
+    expect(renamed.ok).toBe(true);
+    if (!renamed.ok) return;
+    expect(renamed.state.pins[0]?.group).toBe("Now");
+    expect(renamed.state.pins[0]?.options).toBeUndefined();
+
+    // `compact: false` is an answer rather than a clear: the key stays, with the value turned off.
+    const off = updateOp(renamed.state, 1, { now: LATER, compact: false });
+    expect(off.ok).toBe(true);
+    if (!off.ok) return;
+    expect(off.state.pins[0]?.compact).toBe(false);
+    expect(off.state.pins[0]?.group).toBe("Now");
+    expect(isPinState(off.state)).toBe(true);
+  });
+
+  test("a pin with none of the three fields carries no extra keys", () => {
+    // The back-compat half: a snapshot from before these fields existed has no `group`, `options` or
+    // `compact` key at all, and a reducer that minted them would change every pre-v2 snapshot.
+    const result = applyAction(EMPTY_STATE, pinAction("plain"), limits());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Object.keys(result.state.pins[0] ?? {}).sort()).toEqual([
+      "createdAt",
+      "id",
+      "level",
+      "source",
+      "text",
+      "uid",
+      "updatedAt",
+    ]);
   });
 });

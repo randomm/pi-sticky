@@ -93,11 +93,34 @@ describe("applyAction update", () => {
     expect(result.ok && result.state.pins[0]?.level).toBe("warning");
   });
 
-  test("an update with neither text nor level is refused", () => {
+  test("an update with nothing to change is refused", () => {
     const result = applyAction(one, { op: "update", id: 1, source: "agent", now: LATER }, limits());
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe("update needs text or level");
+    expect(result.error).toBe("update needs text, level, group, options or compact");
+  });
+
+  test("an update that changes only group, options or compact is an update", () => {
+    // The three fields pins v2-5 added count as a change on their own: a model that only re-files a
+    // pin under a section heading is doing real work, and the refusal above is what it used to get.
+    for (const fields of [
+      { group: "Backlog" },
+      { options: ["yes", "no"] },
+      { compact: true },
+      { group: "" },
+      { options: [] },
+      { compact: false },
+    ]) {
+      const result = applyAction(
+        one,
+        { op: "update", id: 1, source: "agent", now: LATER, ...fields },
+        limits(),
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.state.pins[0]?.updatedAt).toBe(LATER);
+      expect(result.state.pins[0]?.text).toBe("original");
+    }
   });
 
   test("an unknown id reports no pin with that number", () => {

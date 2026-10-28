@@ -83,13 +83,18 @@ export interface StickyDeps {
 
 /**
  * A snapshot the caller may keep and mutate: `EMPTY_STATE` is frozen, so publishing it as a tool
- * result's `details` would hand pi a shared object that every later copy is made from.
+ * result's `details` would hand pi a shared object that every later copy is made from. The copy is
+ * one level deeper than the pin: `options` is the only field a pin holds by reference, and a `details`
+ * that shared that array would let a caller that sorted or cut it change the live state's pin too.
  */
 export function copyState(state: PinState): PinState {
   return {
     v: 1,
     nextId: state.nextId,
-    pins: state.pins.map((pin) => ({ ...pin })),
+    pins: state.pins.map((pin) => ({
+      ...pin,
+      ...(pin.options === undefined ? {} : { options: [...pin.options] }),
+    })),
     removed: state.removed.map((removal) => ({ ...removal })),
   };
 }
