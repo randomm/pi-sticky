@@ -82,6 +82,9 @@ test("focus and unfocus move the handle and ask for a frame each", () => {
   c.unfocus();
   expect([c.isFocused(), handle.isFocused()]).toEqual([false, false]);
   expect(state.renders).toBe(before + 2);
+  // The host was told, once, and only by the unfocus: the component moves its own handle, so this round trip
+  // is the only thing that puts the pins back on the rail (`panel-host.ts`).
+  expect(state.unfocusCalls).toBe(1);
 });
 
 test("up and down and j and k move the selection, and each move asks for a frame", () => {

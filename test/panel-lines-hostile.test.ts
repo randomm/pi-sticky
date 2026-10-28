@@ -15,8 +15,8 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import type { ViewPin } from "../src/types.ts";
-import { pin } from "./fixtures.ts";
-import { NOW, localTime } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 import { BEL, ESC, HOSTILE, ST, offenders } from "./panel-hostile.ts";
 
@@ -47,7 +47,7 @@ test("a dim that adds columns is charged to the text, not to the id/time tail", 
   expectUniformWidth(lines, width);
   const row = lines.slice(1, -1)[0] ?? "";
   // The tail carries the theme's own bytes and stays whole to the end of the time: `< x >`, not `< x …`.
-  expect(row).toContain(`< #1 ${localTime(NOW)}>`);
+  expect(row).toContain(`< #1 ${NOW_AGE}>`);
   // And the columns the wrapper cost came out of the text column, which is the only place they can come from.
   expect(row.indexOf("x")).toBeLessThan(row.indexOf("< #1"));
 });
@@ -58,6 +58,7 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
   // Required by `PanelContent`; these cases are about the rows, not the resting label.
   replyHint: "",
+  ageNow: LATER,
 });
 
 /** A frame drawn at the height the caller asked for, with the row table `panelLayout` built for it. */
@@ -93,21 +94,57 @@ test("a themed panel draws through all six colours", () => {
   expect(focused[1]).toContain("<m:t>");
   expect(focused[1]).toContain("<s:t>");
   // ...and the *resting* row's tail is whole. This theme's `dim` wraps — its tag is drawn, not counted away —
-  // so the tail it stamps is sixteen columns wider than the `#<id> HH:MM` an undimmed measurement saw. A
-  // reserve sized on the undimmed string handed those columns to the text and cut the time, drawing
-  // `<d:t> #1 12:0…</d:t>`. The tail is stamped once and measured once now, so the row that has room for it
-  // shows it complete — opening tag, id, time, closing tag — and the text is what gave way.
+  // so the tail it stamps is sixteen columns wider than the `#<id> <age>` an undimmed measurement saw. A
+  // reserve sized on the undimmed string handed those columns to the text and cut the age, drawing
+  // `<d:t> #1 2…</d:t>`. The tail is stamped once and measured once now, so the row that has room for it
+  // shows it complete — opening tag, id, age, closing tag — and the text is what gave way.
   // The focused row of the same theme is not that row: `<s:t>` puts its own six visible columns in front of a
   // line the frame already sized without them, so at 40 columns the whole line is cut by `fitLine` whatever
   // the tail's reserve was, and asserting an uncut tail there would be asserting the bar is free.
   const resting = built(content([one(1, "Decide X")], 0, false), 40, painted);
-  const tailRow = resting.find((line) => line.includes("<d:t>"));
-  expect(tailRow).toContain("<d:t> #1 ");
-  expect(tailRow).toContain(`${localTime(NOW)}</d:t>`);
-  expect(tailRow?.slice(tailRow?.indexOf("<d:t>") ?? 0)).not.toContain("…");
-  // The text paid for the wrapper: it is cut, and it is cut *before* the tail begins.
-  expect(tailRow).toContain("Decide…");
-  expect((tailRow ?? "").indexOf("…")).toBeLessThan((tailRow ?? "").indexOf("<d:t>"));
+  // This theme's `dim` puts sixteen *drawn* columns around whatever it stamps, and the row must carry them
+  // whole: the reserve is charged for the drawn tail, not the undimmed one, and that is what stops the
+  // wrapper's own bytes from being paid for out of the tail — the defect that drew `<d:t> #1 2…</d:t>`.
+  const tailRow = resting.find((line) => line.includes("<d:t>")) ?? "";
+  expect(tailRow).toContain(`<d:t> #1 ${NOW_AGE}</d:t>`);
+  expect(tailRow.slice(tailRow.indexOf("<d:t>"))).not.toContain("…");
+  // The text paid for the wrapper: at a width where it cannot fit the column the reserve left, it is cut,
+  // and cut *before* the tail begins — on the id's row and on the age's row alike.
+  const tight = built(
+    content([one(1, "Decide X a decision long enough to need cutting")], 0, false),
+    40,
+    painted,
+  );
+  // Where the cut lands is the promise: the ellipsis is the *text's*, and never the tail's. The marker's
+  // wrapper puts six drawn columns in front of a line the frame sized without them, so `fitLine` cuts the
+  // line — and the only columns it can take are the text's, left of the tail. The same theme with an
+  // unwrapped `dim` proves the tail is what survived: identical frame, identical text, and the tail still
+  // drawn whole with the text carrying the ellipsis.
+  // The row where the text has to give: the pin's text is one long word, so the wrap needs cutting, and the
+  // only place the ellipsis can land is the text column — the tails keep their wrapper whole whatever the
+  // frame costs. `marker` is identity here so the marker's own wrapper cannot be what pushed the line out.
+  const textOnly: RenderPanelStyle = {
+    ...painted,
+    header: (text) => text,
+    marker: (_level, text) => text,
+    selected: (text) => text,
+    dim: (text) => `<d:t>${text}</d:t>`,
+  };
+  const wrapped = built(
+    content([one(1, "Decide-X-a-decision-long-enough-to-need-cutting")], 0, false),
+    40,
+    textOnly,
+  );
+  const idRow = wrapped.find((line) => line.includes("<d:t> #1")) ?? "";
+  const ageRow = wrapped.find((line) => line.includes(`<d:t> ${NOW_AGE}`)) ?? "";
+  for (const line of [idRow, ageRow]) {
+    const tail = line.indexOf("<d:t>");
+    expect(tail).toBeGreaterThan(-1);
+    expect(line.slice(0, tail)).toContain("…");
+  }
+  // ...and neither tail was the thing that lost a column to the cut.
+  expect(idRow).toContain("<d:t> #1</d:t>");
+  expect(ageRow).toContain(`<d:t> ${NOW_AGE}</d:t>`);
   // The frame is drawn through the style's `border`/`borderFocused` members, which is what lets the theme
   // own the frame's colour: the recording-theme test in `panel-lines.test.ts` is what pins which token is
   // asked for, and the uniform-width sweeps what proves the bytes a theme adds cost no columns. The
@@ -162,8 +199,11 @@ test("hostile text drawn at a width that forces a cut carries no escape, control
         width,
         plain,
       );
-      // Three rows: the two borders and the cut row between them.
-      expect(lines.length).toBe(3);
+      // The cut rows: the two borders, plus one row for a pin whose text fits the text column and one
+      // more once the `#id`/age pair no longer fits beside it — the age takes the row below rather than
+      // the id's columns. Two rows of content at the frame's own floor, one anywhere roomier.
+      expect([3, 4]).toContain(lines.length);
+      if (width > MIN_FRAME_WIDTH) expect(lines).toHaveLength(3);
       expectUniformWidth(lines, width);
       for (const line of lines) expect(offenders(line)).toEqual([]);
     }

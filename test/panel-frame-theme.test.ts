@@ -15,7 +15,7 @@ import { expect, test } from "bun:test";
 import { panelThemeStyle } from "../src/render.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { pin } from "./fixtures.ts";
+import { LATER, pin } from "./fixtures.ts";
 import { built as builtFrame } from "./panel-frame.ts";
 
 const one = (id: number, text: string, extra: Partial<ViewPin> = {}): ViewPin => ({
@@ -29,6 +29,7 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
   // Required by `PanelContent`; these cases are about the rows, not the resting label.
   replyHint: "",
+  ageNow: LATER,
 });
 
 /**

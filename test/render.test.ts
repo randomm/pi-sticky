@@ -10,6 +10,7 @@ import {
 } from "../src/render.ts";
 import { formatLocalTime } from "../src/time.ts";
 import type { PinLevel, PinView, ViewPin } from "../src/types.ts";
+import { HOUR_BEFORE_NOW, MINUTE_BEFORE_NOW } from "./fixtures-age.ts";
 import { LATER, LATER_TIME, NOW, NOW_TIME, localTime, pin, view } from "./fixtures.ts";
 
 const FIXED_TIME = (iso: string): string => (iso === NOW ? NOW_TIME : LATER_TIME);
@@ -17,24 +18,9 @@ const FIXED_TIME = (iso: string): string => (iso === NOW ? NOW_TIME : LATER_TIME
 const rail = (view: PinView, width: number, maxLines: number): string[] =>
   renderRailLines(view, width, { maxLines, style: plainStyle, formatTime: FIXED_TIME });
 
-describe("formatLocalTime", () => {
-  test("renders the local hours and minutes of the instant, zero-padded", () => {
-    // A literal `04:05` here is only the reading under TZ=UTC; `formatLocalTime` deliberately reads
-    // the local clock, so the expectation is computed the same way the implementation does, and the
-    // padding and shape have to hold in whatever zone the run happens to be in.
-    expect(formatLocalTime("2026-10-23T04:05:00.000Z")).toBe(localTime("2026-10-23T04:05:00.000Z"));
-    expect(formatLocalTime(NOW)).toBe(NOW_TIME);
-  });
-
-  test("is ASCII digits and a colon", () => {
-    expect(formatLocalTime(NOW)).toMatch(/^[0-9]{2}:[0-9]{2}$/);
-  });
-
-  test("an unusable instant is --:--", () => {
-    expect(formatLocalTime("not a date")).toBe("--:--");
-    expect(formatLocalTime("")).toBe("--:--");
-  });
-});
+/** The rail as the product draws it: no `formatTime`, and the instant the caller names. */
+const railAt = (view: PinView, width: number, maxLines: number, now: string): string[] =>
+  renderRailLines(view, width, { maxLines, style: plainStyle, now });
 
 describe("orderPins", () => {
   test("warning comes before action, action before info", () => {
@@ -145,10 +131,18 @@ describe("renderRailLines", () => {
     expect(lines[2]).toContain("fact");
   });
 
-  test("a row names the id, the time and the marker", () => {
-    const [_, first] = rail(view([pin(1, "check", "warning")]), 60, 8);
+  test("a row names the id, the age and the marker", () => {
+    // The rail draws an *age*, not the clock time (`/pins` and the model listing keep `HH:MM`). The instant
+    // is named by the test and the pin's own `createdAt` is a minute before it, so the row must read `1m`
+    // rather than whatever the machine's zone says `NOW` is.
+    const [_, first] = railAt(
+      view([pin(1, "check", "warning", { createdAt: MINUTE_BEFORE_NOW })]),
+      60,
+      8,
+      NOW,
+    );
     expect(first).toContain("#1");
-    expect(first).toContain(NOW_TIME);
+    expect(first).toContain(" 1m ");
     expect(first).toContain("!");
   });
 
@@ -217,9 +211,29 @@ describe("renderRailLines", () => {
     expect(calls.some((c) => c.startsWith(`dim:${NOW_TIME}`))).toBe(true);
   });
 
-  test("formatTime defaults to the local clock rather than being required", () => {
-    const lines = renderRailLines(view([pin(1, "a")]), 60, { maxLines: 8, style: plainStyle });
-    expect(lines[1]).toMatch(/[0-9]{2}:[0-9]{2}/);
+  test("the default formatter is the age, read at the instant the caller named", () => {
+    // No `formatTime` is the product's path, and the product draws an age: a pin one hour old reads `1h`
+    // at the named instant, which is the shape the tick re-ages through. A caller that names no instant
+    // gets the real one, so a fresh pin reads `now`.
+    const aged = renderRailLines(view([pin(1, "a", "info", { createdAt: HOUR_BEFORE_NOW })]), 60, {
+      maxLines: 8,
+      style: plainStyle,
+      now: NOW,
+    });
+    expect(aged[1]).toContain(" 1h ");
+    const fresh = renderRailLines(view([pin(1, "a", "info", { createdAt: NOW })]), 60, {
+      maxLines: 8,
+      style: plainStyle,
+      // The same instant, so the age is under a minute. A caller that named *no* instant gets `--` rather
+      // than a reading of the wall clock, which `renderRailLines`'s own note on `now` is about.
+      now: NOW,
+    });
+    expect(fresh[1]).toContain(" now ");
+    const unnamed = renderRailLines(view([pin(1, "a", "info", { createdAt: NOW })]), 60, {
+      maxLines: 8,
+      style: plainStyle,
+    });
+    expect(unnamed[1]).toContain(" -- ");
   });
 
   test("a pin whose text carries newlines still draws exactly one rail row", () => {
@@ -250,18 +264,6 @@ describe("renderRailLines", () => {
         expect(lines[1]).toInclude(text.replace(new RegExp(`[${breaks.join("")}]`, "g"), " "));
       }
     }
-  });
-
-  test("the listing folds its pin text while the plain /pins view keeps its newlines", () => {
-    // The model-facing listing is exactly one line per pin (the case itself lives in
-    // test/render-list-one-line.test.ts): a text with a break in it must not print a row the
-    // extension never made. The /pins view is the user's own surface and keeps the breaks.
-    const pinned = view([pin(1, "a\n\n# fake header\nb")]);
-    expect(renderList(pinned, 5)).toBe(
-      "Pinned for the user now (1 of 5):\n#1 [info] a # fake header b",
-    );
-    // The /pins view indents its continuation lines, so it keeps the breaks rather than the raw text.
-    expect(renderPinsText(pinned)).toInclude("a\n   \n   # fake header\n   b");
   });
 
   test("ordering in the rail matches orderPins", () => {

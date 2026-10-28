@@ -63,8 +63,10 @@ reflowing it, and it never takes input away from the editor — you focus it wit
 Pins are drawn in **ranked order**, the same order the rail and `/pins` use: `warning` first, then
 `action`, then `info`; within a level, unreplied pins before replied ones; newest id first. The selection
 bar, the scroll window, `d` and `Enter` all follow that order, so the pin the bar sits on is the pin those
-keys act on. Every pin's first row keeps its `#<id>` and its local time in full — when the text will not
-fit, the text is what wraps or is cut, never the id.
+keys act on. Every pin's first row keeps its `#<id>` in full, and its age sits beside the id when they
+both fit and on the pin's second row otherwise — when the text will not fit, the text is what wraps or is
+cut, never the id. Surfaces you have open are re-aged every minute, so a pin that read `4m` when you looked
+away reads `5m` when you look back.
 
 While the panel is **not** focused its bottom border reads `ctrl+alt+p to reply`, so the way in is
 visible from the editor: press the focus key, move the bar, press `Enter`. The label names whatever you
@@ -95,13 +97,15 @@ When the panel is not drawn, the pins appear above the editor instead:
 
 ```text
 📌 Pinned for you (2) · /pins
- ! #2 14:40  CI is red on the replay branch
- ? #1 14:32  Decide which provider to keep
+ ! #2 4m  CI is red on the replay branch
+ ? #1 3h  Decide which provider to keep
 ```
 
 One line per pin, in ranked order: a marker for the attention level (`!` warning, `?` action, `•`
-info), the id, the local time, and the text (one line). When the pins do not all fit, the last row
-reads `+<n> more · /pins`. `PI_STICKY_MAX_LINES` is the whole budget, header included.
+info), the id, the pin's **age**, and the text (one line). The age is how long ago the pin was made,
+counted from when you see it: `now` under a minute, then whole minutes (`4m`), hours (`3h`) and days
+(`2d`). When the pins do not all fit, the last row reads `+<n> more · /pins`.
+`PI_STICKY_MAX_LINES` is the whole budget, header included.
 
 ### Replying to a pin
 

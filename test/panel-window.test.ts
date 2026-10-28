@@ -15,7 +15,7 @@ import { HINT } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS, panelAllRows, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { pin } from "./fixtures.ts";
+import { LATER, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 const style: RenderPanelStyle = {
@@ -39,6 +39,7 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
   // Required by `PanelContent`; these cases are about the rows, not the resting label.
   replyHint: "",
+  ageNow: LATER,
 });
 
 /** What `panelLayout` reserves for the id/time tail before the text column — the product's number, not a copy. */

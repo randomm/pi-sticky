@@ -27,11 +27,12 @@ import { releasePanel } from "./panel-close.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelDeps, PanelWiring } from "./panel-deps.ts";
 import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
+import { createRailHandoff } from "./panel-rail-handoff.ts";
 import type { TerminalWidth } from "./panel-width.ts";
 
 import { judgeColumns, panelIsVisible } from "./panel-geometry.ts";
-import { RailGuard } from "./panel-rail.ts";
 import { refusalToShow } from "./panel-refusals.ts";
+import { ownerHasSurface } from "./panel-surfaces.ts";
 
 /**
  * The panel owner: one record, one open call, and the toggles the commands and shortcuts share. A
@@ -41,8 +42,8 @@ export class PanelOwner {
   #wiring: PanelWiring;
   #record: PanelRecord | undefined;
   #tui: TUI | undefined;
-  /** The rail's install guard: the one cache between a frame that changed nothing and a redraw. */
-  readonly #rail = new RailGuard();
+  /** The rail's install state: the guard, and the minute its installed rows were aged at. */
+  readonly #rail = createRailHandoff();
   /**
    * Why the last close could not release its overlay, or `undefined` when it closed cleanly. Captured
    * rather than dropped: `close()` has no context to notify through, and the owner has just forgotten
@@ -55,13 +56,10 @@ export class PanelOwner {
   }
 
   /**
-   * The component of the open panel, once its factory has run — and `undefined` both before it and
-   * after the close.
-   *
-   * A caller that has to decide in the same turn as `open()` (the rail, on `session_start`) asks
-   * `isVisible()` instead, which does not wait for the component `custom()` is still building:
-   * `custom()` is a promise, so the component arrives on a later microtask, and a rail that waited for
-   * it would draw nothing in the turn that asked for it.
+   * The component of the open panel, once its factory has run — and `undefined` both before it and after the
+   * close. A caller that has to decide in the same turn as `open()` (the rail, on `session_start`) asks
+   * `isVisible()` instead: `custom()` is a promise, so the component arrives on a later microtask, and a rail
+   * that waited for it would draw nothing in the turn that asked for it.
    */
   component(): PanelComponent | undefined {
     return this.#record?.component;
@@ -161,6 +159,8 @@ export class PanelOwner {
     const record = this.#record;
     this.#record = undefined;
     this.#tui = undefined;
+    // One edge, both halves: `RailHandoff` drops the installed answer and the minute it was installed for
+    // together, so the owner cannot record one and forget the other.
     this.#railConsider(false);
     // The width is *not* dropped here, and `PanelWidth` is not cleared on a rebuild either. pi-tui
     // states a width when the terminal changes and the only thing that listens is the overlay's
@@ -185,11 +185,8 @@ export class PanelOwner {
    * that decide independently who owns the pins is how pins end up drawn by neither.
    *
    * Reads the record, the flag and the view *now*, through the wiring — which is why the rail holds the
-   * owner rather than a function captured at open time: a toggle or a resize has to be visible in the
-   * answer without anything being rebuilt. The record is part of the question because `open()` declines
-   * to publish one in a mode with no overlay (`rpc`, `print`, `json`) or on a host with no `custom()`:
-   * an overlay that was never opened cannot own the pins, and a predicate that answered from the flag
-   * alone would tell the rail to stand down for it.
+   * owner rather than a function captured at open time. The record is part of the question because
+   * `open()` publishes none in a mode with no overlay: one that was never opened cannot own the pins.
    *
    * The one answer `#railConsider` caches against: whatever this returns is what the rail was last asked
    * to yield to — the same question, spelled in the key as the width, the flag and the view it reads.
@@ -200,15 +197,28 @@ export class PanelOwner {
     return panelIsVisible(this.#columns(), deps.isPanelShown(), deps.getView().pins.length);
   }
 
+  /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
+  railDrawn?(iso: string): void {
+    this.#rail.drawn(iso);
+  }
+
   /**
-   * The width this instance was last told — what every visibility question is measured in. Asked of
-   * the wiring, not a module global: two sessions in one process have two terminals, and a width
-   * carried from the first is how the second hides its pins on neither surface. See `panel-width.ts`
-   * for the two silences and `judgeColumns` for what each is measured as.
+   * Whether either surface is on screen — the minute hand's one question, over the readers of
+   * `panel-surfaces.ts`, so a verdict is *now* and never the frame the owner opened on.
+   */
+  isAnySurfaceVisible(): boolean {
+    return ownerHasSurface(this, this.#wiring);
+  }
+
+  /**
+   * The width this instance was last told — what every visibility question is measured in. Asked of the
+   * wiring, not a module global: two sessions in one process have two terminals. See `panel-width.ts` for
+   * the two silences and `judgeColumns` for what each is measured as.
    */
   #columns(): number {
     return judgeColumns(this.#wiring.terminal.status());
   }
+
   /**
    * Tell the open component that the view changed, and ask for the rail to be reconsidered; does
    * nothing when no panel is open.
@@ -225,16 +235,12 @@ export class PanelOwner {
   }
 
   /**
-   * Reconsider the rail. `open` is the caller's verdict on whether a panel is still open: `true` on a
-   * change that may have moved the answer while the panel stayed (a frame, a toggle, a pin, a
-   * dismissal) — compare and redraw only if it moved; `false` on the two lifecycle edges that just
-   * destroyed it (a fresh record, a dropped one) — forget the answer, so the next frame compares
-   * against nothing. The answer, its cache and both verdicts are the guard's: see `panel-rail.ts`.
+   * Ask the rail to be reconsidered — the owner's one call into `RailHandoff`, which holds the guard, the
+   * recorded minute and both verdicts on `open`. The width is read here, at the moment the answer is
+   * decided, because the frame that asked is the one that measured it.
    */
   #railConsider(open: boolean): void {
-    // Bound, not wrapped: the guard calls the wiring's member itself, so the redraw has one name —
-    // `PanelWiring.redrawRail` — rather than a private arrow that only ever forwards to it.
-    this.#rail.consider(this.#wiring.deps, this.#columns(), this.#wiring.redrawRail, open);
+    this.#rail.consider(this.#wiring, this.#columns(), open);
   }
 
   /** Give the panel the keyboard. Works whether or not it is drawn at the moment. */

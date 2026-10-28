@@ -88,6 +88,21 @@ export interface PanelWiring {
    * the two moments the answer can change.
    */
   redrawRail(): void;
+  /**
+   * The panel's component was disposed — pi popped the overlay and ran the component's own teardown.
+   *
+   * The panel is one of the two surfaces the minute's redraw exists for, so the extension stops asking for it
+   * when it goes: a tick belongs to a *drawn* panel, and an overlay pi has popped is not one. Announced here
+   * rather than handled inside the component because the component has no timer and no business knowing one
+   * exists — the same shape as `redrawRail`, which is the other thing the owner cannot do for itself.
+   */
+  onDispose(): void;
+  /**
+   * Whether this session runs in pi's `rpc` mode, where the rail is a string array and there is no overlay
+   * to yield to it. Read at call time by the minute's hand, which has no context of its own: the mode
+   * belongs to the session on screen, not to the moment the wiring was built.
+   */
+  rpc(): boolean;
 }
 
 /**
@@ -126,6 +141,10 @@ export interface PanelWiringParts {
   live(): ExtensionContext | undefined;
   /** Install or clear the rail from the live view, flag and panel. */
   redrawRail(): void;
+  /** The panel's component was disposed; the extension stops the minute's redraw for it. */
+  onDispose(): void;
+  /** Whether the session runs in `rpc` mode — see `PanelWiring.rpc`. */
+  rpc(): boolean;
 }
 
 /**
@@ -169,6 +188,8 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
     // invokes it detached from the wiring object, and a bare method reference would arrive with no
     // receiver for the extension's `drawRail(live)` closure to be read against.
     redrawRail: () => parts.redrawRail(),
+    onDispose: () => parts.onDispose(),
+    rpc: () => parts.rpc(),
   };
 }
 

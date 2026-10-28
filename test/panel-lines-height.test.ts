@@ -18,6 +18,7 @@ import { BORDER_ROWS, panelMaxRows } from "../src/panel-height.ts";
 import { panelLayout } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
+import { LATER } from "./fixtures.ts";
 import type { DrawnFrame } from "./panel-frame.ts";
 import { built, framed } from "./panel-frame.ts";
 import { TERMINAL_ROWS } from "./panel-hostile.ts";
@@ -64,7 +65,7 @@ function drawn(count: number, width: number, terminalRows: number | undefined): 
   // from and not a second pass that could disagree with it. A terminal that cannot be asked is the
   // shared default, not a `0`, which would be a terminal with no rows at all.
   return framed(
-    { pins: pinsOf(count), selection: 0, focused: true, replyHint: "" },
+    { pins: pinsOf(count), selection: 0, focused: true, replyHint: "", ageNow: LATER },
     width,
     style,
     terminalRows ?? TERMINAL_ROWS,
@@ -132,7 +133,7 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
   expect(drawn(50, 40, 40).lines).toHaveLength(20);
   // The window keeps the *selected* pin on screen at the ceiling rather than dropping rows off the bottom.
   const scrolled = built(
-    { pins: pinsOf(50), selection: 49, focused: true, replyHint: "" },
+    { pins: pinsOf(50), selection: 49, focused: true, replyHint: "", ageNow: LATER },
     40,
     style,
     40,
@@ -148,6 +149,11 @@ test("a panel is only as tall as its pins and never past half the terminal", () 
   expect(drawn(1, 40, 5).layout.height).toBe(BORDER_ROWS);
   expect(drawn(1, 40, 5).lines).toEqual([]);
   expect(
-    built({ pins: [one(1, "x")], selection: 0, focused: false, replyHint: "" }, 40, style, 5),
+    built(
+      { pins: [one(1, "x")], selection: 0, focused: false, replyHint: "", ageNow: LATER },
+      40,
+      style,
+      5,
+    ),
   ).toEqual([]);
 });

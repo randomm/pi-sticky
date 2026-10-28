@@ -11,7 +11,8 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { StickyConfig } from "../src/types.ts";
-import { drawPins } from "../src/widget.ts";
+import { RailComponent, createLiveRail, drawPins } from "../src/widget.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, localTime, pin, view } from "./fixtures.ts";
 import type { ExtensionMode } from "./harness.ts";
 import { RecordingUi } from "./recording-ui.ts";
@@ -149,9 +150,118 @@ test("rpc rows carry no escape bytes whatever the pin text contains", () => {
   }
 });
 
-test("the rail stamps each pin with the local time it was created", () => {
+test("the rail stamps each pin with the age it carries", () => {
+  // The rail draws an age, not a clock time (pins v2-2): the instant is named by the test and the pin is
+  // stamped a day before it, so the row must read `1d` rather than whatever the machine's zone says.
   const { ctx, ui } = ctxFor("rpc");
-  drawPins(ctx, view([pin(1, "Decide X", "info", { createdAt: LATER })]), config);
+  const DAY = 86_400_000;
+  const dayBefore = new Date(Date.parse(LATER) - DAY).toISOString();
+  drawPins(
+    ctx,
+    view([pin(1, "Decide X", "info", { createdAt: dayBefore })]),
+    config,
+    undefined,
+    () => LATER,
+  );
   const lines = ui.widgets.get("pi-sticky")?.content as string[];
-  expect(lines[1]).toContain(localTime(LATER));
+  expect(lines[1]).toContain(" 1d ");
+});
+
+test("two rails in two holders: disposing one never speaks for the other", () => {
+  // The per-instance half of the live-rail cell (`LiveRail`). A `static` on the component is one cell for
+  // every extension instance in the process, and two of these contexts are two instances: each installed its
+  // rail into its own holder, so the teardown of one is a report only its own extension hears, and the other
+  // holder still names the rail its session is looking at. Read the three facts together — one report, the
+  // other holder untouched, and the other rail still able to report its own going.
+  let goneA = 0;
+  let goneB = 0;
+  const holderA = createLiveRail();
+  const holderB = createLiveRail();
+  const a = ctxFor("tui");
+  const b = ctxFor("tui");
+  drawPins(
+    a.ctx,
+    one,
+    config,
+    undefined,
+    undefined,
+    () => {
+      goneA += 1;
+    },
+    holderA,
+  );
+  drawPins(
+    b.ctx,
+    one,
+    config,
+    undefined,
+    undefined,
+    () => {
+      goneB += 1;
+    },
+    holderB,
+  );
+  // The host draws each rail, which is what makes its teardown a surface that went away.
+  expect(a.ui.renderWidget("pi-sticky", 80).length).toBeGreaterThan(0);
+  expect(b.ui.renderWidget("pi-sticky", 80).length).toBeGreaterThan(0);
+  const railA = holderA.current as RailComponent | undefined;
+  const railB = holderB.current as RailComponent | undefined;
+  expect(railA).toBeInstanceOf(RailComponent);
+  expect(railB).toBeInstanceOf(RailComponent);
+  expect(railA).not.toBe(railB);
+
+  railA?.dispose();
+  expect({ goneA, goneB }).toEqual({ goneA: 1, goneB: 0 });
+  expect(holderA.current).toBeUndefined();
+  // The other instance's verdict is untouched by a teardown it was not part of.
+  expect(holderB.current).toBe(railB);
+
+  railB?.dispose();
+  expect({ goneA, goneB }).toEqual({ goneA: 1, goneB: 1 });
+  expect(holderB.current).toBeUndefined();
+});
+
+test("the install names the rail, and the component it replaced reports nothing", () => {
+  // The other half of the same cell: the naming is the install's, not the component's. pi has only been
+  // *handed* the factory here and may never call it, so the component a host builds out of that stored
+  // factory (the recorder does exactly that) is one the holder does not name — and its teardown is not a
+  // report that this instance's rail went away, however often that host renders it.
+  let gone = 0;
+  const holder = createLiveRail();
+  const { ctx, ui } = ctxFor("tui");
+  drawPins(
+    ctx,
+    one,
+    config,
+    undefined,
+    undefined,
+    () => {
+      gone += 1;
+    },
+    holder,
+  );
+  const factory = ui.widgets.get("pi-sticky")?.content as unknown as (
+    tui: never,
+    theme: never,
+  ) => RailComponent;
+  expect(typeof factory).toBe("function");
+  // The factory pi was handed builds the component *and* names it, and the newest install is the rail: the
+  // second call stands in for the reinstall pi performs on every redraw (dispose the key's component, build
+  // the factory again), which is why the first component is no longer named once the second one is.
+  const replaced = factory(undefined as never, ui.theme as never);
+  const installed = factory(undefined as never, ui.theme as never);
+  expect(holder.current).toBe(installed);
+
+  // The component the reinstall replaced: it was on screen, so `#onScreen` alone would have reported; the
+  // holder's answer is what makes its teardown a reinstall rather than a surface going away.
+  replaced.render(80);
+  replaced.dispose();
+  expect({ gone, named: holder.current }).toEqual({ gone: 0, named: installed });
+
+  // And the component the cell still names does report its own going, once.
+  installed.render(80);
+  installed.dispose();
+  expect({ gone, named: holder.current }).toEqual({ gone: 1, named: undefined });
+  installed.dispose();
+  expect({ gone, named: holder.current }).toEqual({ gone: 1, named: undefined });
 });

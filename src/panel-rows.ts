@@ -20,15 +20,17 @@ import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { panelTextColumns, widestMetaColumns } from "./panel-frame-geometry.ts";
 import { BORDER_ROWS, panelFrameRows } from "./panel-height.ts";
+import { pinTails } from "./panel-row-tail.ts";
+import { fullStamp } from "./panel-tail.ts";
 /**
- * The columns the two gutters own, and the undimmed tail's format. Both are owned by `panel-tail.ts` — the
- * module that imports neither this file nor the geometry, which is what keeps the row table and the geometry
- * from importing each other — and re-exported here so the callers that lay these rows out keep naming the
- * module whose rows they lay out.
+ * The columns the two gutters own, re-exported so the callers that lay these rows out keep naming the module
+ * whose rows they lay out. The tail's format is *not* re-exported: `panel-tail.ts` is its owner and the two
+ * callers that need it name it there.
  */
-export { GUTTER_COLUMNS, pinMeta } from "./panel-tail.ts";
+export { GUTTER_COLUMNS } from "./panel-tail.ts";
 
-import { GUTTER_COLUMNS, metaStamp } from "./panel-tail.ts";
+import { META_COLUMNS } from "./panel-frame-geometry.ts";
+import { GUTTER_COLUMNS } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
@@ -36,10 +38,27 @@ import type { PinLevel, ViewPin } from "./types.ts";
 /** The character drawn in front of a pin; the rail quotes the same three. */
 const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
 
-/** One drawn row of the panel: the pin's text column and its id/time tail. */
+/**
+ * The instant an age is measured against when the caller has none: `new Date()` at the moment the rows are
+ * built. The panel's own caller passes the extension's clock (`PanelComponent` reads `ageNow()`); an absent
+ * one is a test or a direct caller drawing a frame, and for it "now" is the only honest answer.
+ */
+const atOnce = (): string => new Date().toISOString();
+
+/** One drawn row of the panel: the pin's text column, and the tail it carries whole. */
 export interface PanelRow {
+  /** The pin's text column, marker included on the first row of a pin. */
   text: string;
-  meta: string;
+  /**
+   * The row's tail, already stamped: the id (plus the age, for a one-row pin whose pair fit) on the first
+   * row, the age alone on the second, and nothing at all on a third.
+   *
+   * A whole string rather than one the drawer completes: `widestMetaColumns` measures these and `pinRow`
+   * (`panel-lines.ts`) draws these, so the columns the text gives up are the columns the tail occupies. The
+   * empty string is the builder's signal for a row that owns no tail — the continuation lines of a pin whose
+   * age already had a row of its own.
+   */
+  tail: string;
 }
 
 /**
@@ -52,32 +71,55 @@ export function panelContentRows(height: number): number {
 }
 
 /**
- * A pin's own rows: the first carries the id and the local time, the rest are continuation lines
- * under the text column. A pin whose text is empty still owns one row, so selection always has
- * something to address, and rows are never empty strings: a selected row is highlighted as a bar
- * across the panel, and an empty line would colour nothing.
+ * A pin's own rows: the first carries its id (and its age, when the pin owns one row and the pair fits), the
+ * second carries the age in the slot the first row had to leave, and the rest are continuation lines under
+ * the text column. A pin whose text is empty still owns one row, so selection always has something to
+ * address, and rows are never empty strings: a selected row is highlighted as a bar across the panel, and an
+ * empty line would colour nothing.
  *
- * The level marker is the one thing here the caller may colour, so it is drawn through `marker`
- * rather than embedded in the text column — which is what lets a selected warning still read as a
- * warning under the bar.
+ * The level marker is the one thing here the caller may colour, so it is drawn through `marker` rather than
+ * embedded in the text column — which is what lets a selected warning still read as a warning under the bar.
+ *
+ * `now` is the instant the ages are measured against; the panel passes the extension's clock so a tick
+ * re-ages every row, and leaves it out to mean this instant.
  */
-export function panelPinRows(pin: ViewPin, textWidth: number, style: PanelStyle): PanelRow[] {
-  // The tail as the row prints it: the theme's `dim` over the space and `pinMeta`. The reserve is measured
-  // on this same stamp (`panel-frame-geometry.ts`), which is what keeps a `dim` that adds columns from
-  // taking the time off the end of the row.
-  const meta = metaStamp(pin, style.dim);
+export function panelPinRows(
+  pin: ViewPin,
+  textWidth: number,
+  style: PanelStyle,
+  now: string = atOnce(),
+  /**
+   * The reserve the tail is drawn into, as `widestMetaColumns` measured it for this frame.
+   *
+   * Passed rather than measured here because it is a property of the *view* — the widest tail among all the
+   * pins — and because deciding whether `#<id> <age>` fits beside the id has to be decided against the very
+   * figure the drawer pads to. A row that guessed it would put a pair on a line the builder then cut.
+   */
+  metaColumns: number = widestMetaColumns([pin], style.dim, now),
+): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
-  if (textWidth <= 0) return [{ text: ` ${marker} `, meta }];
+  if (textWidth <= 0) {
+    // No text column is the degenerate frame: the row is the marker and nothing else, and there is no row
+    // below it for the age to live on, so the one row carries the whole tail: id and age, whichever half the
+    // layout would otherwise have split between two lines — stamped whole rather than through `pinTails`,
+    // which decides which of its two rows gets which half and has no second row to give one to here.
+    return [{ text: ` ${marker} `, tail: fullStamp(pin, style.dim, now) }];
+  }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
-  // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks
-  // like. The wrap happens *after* the mark is added, so a row cut to the width cannot lose it.
+  // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks like.
+  // The wrap happens *after* the mark is added, so a row cut to the width cannot lose it.
   const body = pin.repliedAt === undefined ? pin.text : style.dim(`↩ ${pin.text}`);
   const wrapped = wrapTextWithAnsi(body, textWidth);
+  // Which row carries the age is decided by how many rows the wrap produced, so the wrap runs first and the
+  // tails are stamped against its answer: a pin that fits on one line is the case the id/age pair belongs
+  // to. `count` below is that count, and the empty-text fallback is one row for the same reason.
+  const count = wrapped.length > 0 ? wrapped.length : 1;
+  const tails = pinTails(pin, count, metaColumns, now, style.dim);
   const rows = wrapped.map((line, index) => ({
     text: index === 0 ? ` ${marker} ${line}` : `   ${line}`,
-    meta: index === 0 ? meta : "",
+    tail: index === 0 ? tails.first : index === 1 ? (tails.second ?? "") : "",
   }));
-  return rows.length > 0 ? rows : [{ text: ` ${marker} `, meta }];
+  return rows.length > 0 ? rows : [{ text: ` ${marker} `, tail: tails.first }];
 }
 
 /**
@@ -92,9 +134,11 @@ export function panelAllRows(
   pins: readonly ViewPin[],
   textWidth: number,
   style: PanelStyle,
+  now: string = atOnce(),
+  metaColumns?: number,
 ): PanelRow[] {
   const rows: PanelRow[] = [];
-  for (const pin of pins) rows.push(...panelPinRows(pin, textWidth, style));
+  for (const pin of pins) rows.push(...panelPinRows(pin, textWidth, style, now, metaColumns));
   return rows;
 }
 
@@ -112,10 +156,13 @@ function panelRowOwners(
   pins: readonly ViewPin[],
   textWidth: number,
   style: PanelStyle,
+  now: string,
+  metaColumns: number,
 ): PanelOwned[] {
   const owned: PanelOwned[] = [];
   for (const [index, pin] of pins.entries()) {
-    for (const row of panelPinRows(pin, textWidth, style)) owned.push({ row, pin: index });
+    for (const row of panelPinRows(pin, textWidth, style, now, metaColumns))
+      owned.push({ row, pin: index });
   }
   return owned;
 }
@@ -166,11 +213,14 @@ export interface PanelLayout {
  * frame as tall as its rows and keeps a resize from sizing the box at a width it is not drawn at. The
  * builder pads each row out to the inner width when it draws it.
  *
- * The text column is what gives up width, never the id/time tail: the wrap is sized so a first row still
- * has a column of text to draw *and* room for `#<id> HH:MM` beside it, because a row whose text column is
+ * The text column is what gives up width, never the id/age tail: the wrap is sized so a first row still
+ * has a column of text to draw *and* room for its tail beside it, because a row whose text column is
  * zero collapses to a blank line `pinRow` draws without its tail — which is how a `#id` used to disappear
  * on a narrow panel. See `panel-frame-geometry.ts` for the arithmetic and `test/panel-id-never-cut.test.ts`
  * for the sweep that pins it.
+ *
+ * `now` is the instant every age in the table is measured against; the component passes the extension's
+ * clock so a minute's passage re-ages the frame.
  *
  * This is the *only* owner of a frame's height: `height` is the row count the frame draws, counted from
  * `owned` and the terminal the caller was given (`tui.terminal.rows`, or `undefined` when none can be
@@ -187,11 +237,18 @@ export function panelLayout(
   terminalRows: number | undefined,
   selection: number,
   style: PanelStyle,
+  now: string = atOnce(),
 ): PanelLayout {
+  // The reserve is measured once, before the wrap, and handed to the rows: the same figure decides how many
+  // text columns the pins get and whether a pin's `#<id> <age>` fits beside its id. Measuring it twice, or
+  // letting the rows measure their own, is how a frame came to charge the text for one tail and draw another.
+  const metaColumns = widestMetaColumns(pins, style.dim, now);
   const owned = panelRowOwners(
     pins,
-    panelTextColumns(frameWidth, widestMetaColumns(pins, style.dim)),
+    panelTextColumns(frameWidth, metaColumns),
     style,
+    now,
+    metaColumns,
   );
   // As tall as the rows it draws, never past the terminal's half: `panelFrameRows` puts the two border
   // rows over `owned` and cuts the result to the ceiling, which is the only reason a frame is ever

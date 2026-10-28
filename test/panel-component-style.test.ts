@@ -26,7 +26,11 @@ import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import type { PanelHost } from "../src/panel-host.ts";
 import { HINT } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS } from "../src/panel-rows.ts";
-import { NOW, localTime } from "./fixtures.ts";
+import { fullStamp } from "../src/panel-tail.ts";
+import { plainStyle } from "../src/render.ts";
+import { DAY_BEFORE_NOW } from "./fixtures-age.ts";
+import { NOW, pin } from "./fixtures.ts";
+
 import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { ONE } from "./panel-owner-wiring.ts";
 
@@ -50,6 +54,10 @@ import { ONE } from "./panel-owner-wiring.ts";
 function handHostStub(): PanelHost {
   return {
     getView: () => ONE,
+    // The instant the panel ages at, pinned so the row this file asserts byte-for-byte says `4d` rather
+    // than whatever minute the run happens to fall in. Absent, `#ageNow()` falls back to `new Date()` and
+    // the assertion below would be a clock reading rather than a drawing.
+    ageNow: () => NOW,
     // Nothing to give: the component must fall through to the theme it was handed, and past that to the
     // identity style — which is the whole subject of the two tests below.
     style: () => undefined,
@@ -112,14 +120,18 @@ test("the identity style draws a closed, unpainted frame in both focus states", 
   // a panel whose theme was never asked.
   expect(resting[0]).toContain("📌 Pinned for you (1)");
   expect(resting[1]?.startsWith("│  • ")).toBe(true);
-  // `dim` owns the id/time tail, the resting frame's only use for it, and the tail must come back whole:
-  // the byte-exact row is the assertion that nothing was put around it. Built from the pieces the drawer
+  // `dim` owns the pin's tail, the resting frame's only use for it, and the tail must come back whole: the
+  // byte-exact row is the assertion that nothing was put around it. Built from the pieces the drawer
   // assembles — `gutter` (`panel-frame.ts`) wraps the row as `│ <inner> │`, the text is padded to the room
-  // the tail's reserve left and the tail padded to exactly that reserve — rather than pasted, so the time
-  // comes from `localTime` and the reserve from the geometry, and neither can rot with the machine's clock.
-  const tail = ` #1 ${localTime(NOW)}`.padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
+  // the tail's reserve left and the tail padded to exactly that reserve — rather than pasted, so the age
+  // comes from the formatter and the reserve from the geometry, and neither can rot with the machine's clock.
+  const drawn = ONE.pins[0] ?? pin(1, "Decide X", "info", { createdAt: DAY_BEFORE_NOW });
+  const tail = fullStamp(drawn, plainStyle.dim, NOW).padEnd(META_COLUMNS + META_SEPARATOR_COLUMNS);
   const inner = " • Decide X".padEnd(WIDTH - GUTTER_COLUMNS - tail.length) + tail;
   expect(resting[1]).toBe(`│ ${inner} │`);
+  // `ONE`'s pin is stamped a day before the clock this host names, so the age the row reads is the
+  // fixture's and not the run's, and the row above already proves the age is drawn: this is the tail's
+  // other half, the id the row addresses the pin by.
 
   // `selected` is asked of the focused frame alone, and its answer must cost the bar nothing: a real theme
   // marks the selected row (`panelThemeStyle`'s `selectedBg`, or `inverse` where a theme gives that token

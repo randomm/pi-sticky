@@ -31,7 +31,8 @@ import { GUTTER_COLUMNS } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { NOW, localTime, pin } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 /**
@@ -59,6 +60,7 @@ const view = (id: number) => ({
   selection: 0,
   focused: false,
   replyHint: "",
+  ageNow: LATER,
 });
 
 /**
@@ -76,7 +78,10 @@ const view = (id: number) => ({
  * and only ever *below* `roomFor` — the bound where the frame can hold the tail beside a column of text.
  */
 const roomFor = (id: number): number =>
-  FRAME_COLUMNS + widestMetaColumns([at(id)], bracketingStyle.dim) + META_SEPARATOR_COLUMNS + 1;
+  FRAME_COLUMNS +
+  widestMetaColumns([at(id)], bracketingStyle.dim, LATER) +
+  META_SEPARATOR_COLUMNS +
+  1;
 
 /** The lines of a one-pin frame at `width`, drawn with the wrapping theme. */
 function frame(id: number, width: number): string[] {
@@ -89,51 +94,61 @@ function firstRow(id: number, width: number): string {
 }
 
 for (const id of IDS) {
-  test(`a wrapping dim costs the tail its own columns: #${id} keeps "#<id> HH:MM" whole from ${PANEL_MIN_FRAME_COLUMNS} to 80`, () => {
+  test(`a wrapping dim costs the tail its own columns: #${id} keeps "#<id>" and "<age>" whole from ${PANEL_MIN_FRAME_COLUMNS} to 80`, () => {
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 80; width++) {
       // The panel's contract holds whatever the theme did: every drawn line is exactly the frame's width.
       for (const line of frame(id, width)) expect(visibleWidth(line)).toBe(width);
-      const first = firstRow(id, width);
+      // The promise the wrapping theme used to break is that *both* halves of the tail arrive whole, in
+      // whichever of the two shapes the layout chose: a pin whose text fits one row carries `#<id> <age>`
+      // beside it, and a pin whose text wraps carries the id on its first row and the age on its second.
+      // The cut that frame does make is the text's, so a `…` inside either tail is the reserve having been
+      // cut rather than the text, which is the defect this file exists to catch.
+      const rows = frame(id, width)
+        .slice(1, -1)
+        .map((row) => row.replace(/│$/, ""));
+      const first = rows[0] ?? "";
+      const aged = rows[1] ?? first;
       if (width >= roomFor(id)) {
-        // The frame can hold the drawn tail beside a column of text, so the row keeps all of it: brackets,
-        // hash, id, the space, the time. The cut this frame does make is the text's — the ellipsis belongs
-        // to the text column, never to the tail, so the assertion is made on the tail's own slice rather
-        // than on the whole row (which at these widths has always cut the text).
-        const tail = first.slice(first.indexOf("< #"));
-        expect(tail.startsWith(`< #${id} ${localTime(NOW)}>`)).toBe(true);
-        expect(tail).not.toContain("…");
-      } else if (first.includes(localTime(NOW))) {
-        // Below the bound, and the time survived anyway: pi-tui charges `truncateToWidth`'s ellipsis against
-        // the reset bytes it strips, so at this reserve the tail kept every visible column it had and
-        // `padPlain` filled the rest — the row closes at `width`, names its pin, and shows a whole tail.
-        expect(first).toContain(`< #${id} ${localTime(NOW)}>`);
+        const pair = first.slice(first.indexOf("< #")).trimEnd();
+        if (pair === `< #${id}>`) {
+          // The id was drawn alone, so the age has the next row — and must be whole there.
+          expect(aged.slice(aged.indexOf("< "))).toContain(`< ${NOW_AGE}>`);
+          expect(aged.slice(aged.indexOf("< "))).not.toContain("…");
+        } else {
+          // The pair share the first row: id and age, both bracketed, neither cut.
+          expect(pair).toBe(`< #${id} ${NOW_AGE}>`);
+        }
+        expect(first.slice(first.indexOf("< #"))).not.toContain("…");
       } else {
-        // The frame cannot hold the reserved tail beside a column of text at all. The row still draws, still
-        // measures `width`, and still names the pin — and the cut sits at the tail's own right end, marked by
-        // the ellipsis where the time was, rather than taking the id that addresses the pin.
+        // Below the bound the frame cannot hold the reserved tail beside a column of text. The row still
+        // draws, still measures `width`, and still names the pin: the id survives, and any cut the reserve
+        // could not avoid sits at the *tail's* own right end, marked by the ellipsis — never at the `#id`.
         expect(first).toContain(`#${id}`);
-        expect(first.slice(first.indexOf("< #"))).toContain("…");
+        expect(first).not.toContain("#…");
       }
     }
   });
 }
 
-test("the wide reserve is charged to the text, not to the tail", () => {
+test("the wide reserve is charged to the drawn tail, so a wrapping theme never loses one", () => {
   // Same frame, same pin, two themes that differ only in what `dim` does with its argument: the wrapping one
-  // owns two more drawn columns per tail, and those columns come out of the text. Measuring the undimmed
-  // `pinMeta` made the two frames identical and left the bracketed tail cut, which is what this pair catches.
-  const plain: PanelStyle = { ...bracketingStyle, dim: (s) => s };
+  // draws two more columns per tail, and the reserve has to be measured on *that* string. Measuring the
+  // undimmed `pinMeta` charged the frame for a tail it never drew, handed the difference to the text, and
+  // the row closed by cutting the bracketed tail — so the promise is the drawn one: both halves arrive
+  // whole, the id on the pin's first row and the age on its second, with the cut landing on the text alone.
   const width = 44;
   const id = 999;
-  const kept = (style: PanelStyle): number => {
-    const row = built(view(id), width, style).slice(1, -1)[0] ?? "";
-    return /^[^<#]*/.exec(row.slice(2))?.[0].trimEnd().length ?? 0;
-  };
-  const bracketed = kept(bracketingStyle);
-  const undimmed = kept(plain);
-  expect(bracketed).toBeLessThan(undimmed);
-  expect(firstRow(id, width)).toContain(`< #${id} ${localTime(NOW)}>`);
-  expect(undimmed).toBeGreaterThan(0);
+  const rows = frame(id, width);
+  expect(rows[1]).toContain(`< #${id}>`);
+  expect(rows[2]).toContain(`< ${NOW_AGE}>`);
+  // The ellipsis belongs to the text column and appears nowhere in either tail.
+  const idLine = rows[1] ?? "";
+  const ageLine = rows[2] ?? "";
+  expect(idLine.slice(idLine.indexOf("< #"))).not.toContain("…");
+  expect(ageLine.slice(ageLine.indexOf("< "))).not.toContain("…");
+  // And the frame closed at the width it was asked for, which is what forced the text — and only the text —
+  // to give up the columns the theme's own bytes cost.
+  for (const line of rows) expect(visibleWidth(line)).toBe(width);
 });
 
 test("the gutter subtraction the row and the layout share is the one `GUTTER_COLUMNS` states", () => {

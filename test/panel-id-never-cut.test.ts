@@ -28,11 +28,12 @@ import {
 } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
-import { metaStamp } from "../src/panel-tail.ts";
+import { idStamp } from "../src/panel-tail.ts";
 import { plainStyle } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
-import { NOW, localTime, pin } from "./fixtures.ts";
+import { NOW_AGE } from "./fixtures-age.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 
 const style: PanelStyle = {
@@ -56,13 +57,13 @@ function rowsOf(lines: string[]): string[] {
 
 /**
  * The meta a first row must carry, spelled the way `panelPinRows` stamps it: the leading space and the
- * theme's `dim` included, because the row carries the *drawn* tail (`metaStamp`, `panel-tail.ts`) and the
+ * theme's `dim` included, because the row carries the *drawn* tail (`idStamp`, `panel-tail.ts`) and the
  * reserve is measured on that same string — a test that named the undimmed form here would be asserting a
  * string no row ever draws.
  */
-const metaOf = (id: number): string => metaStamp(at(id, ""), style.dim);
+const metaOf = (id: number): string => idStamp(at(id, ""), style.dim);
 
-test("every pin's first row carries its #id and time, uncut, at every width and every id", () => {
+test("every pin's rows carry its #id and its age, uncut, at every width and every id", () => {
   // 30 → 80 covers the builder's own floor (`PANEL_MIN_FRAME_COLUMNS`) through the widest frame the
   // 33%-of-a-terminal overlay reaches on a wide screen; the ids are stepped so the width-times-texts
   // cross stays inside bun's per-test budget. Every id from 1 to 999 is swept on its own below, where
@@ -72,14 +73,21 @@ test("every pin's first row carries its #id and time, uncut, at every width and 
     for (let id = 1; id <= 999; id += 7) {
       for (const text of texts) {
         const pins = [at(id, text)];
-        const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, width, style);
-        const first = rowsOf(lines)[0];
+        const lines = built(
+          { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
+          width,
+          style,
+        );
+        const rows = rowsOf(lines);
+        const first = rows[0];
         expect(first).toBeDefined();
-        // Present, in one piece, and not the ellipsis standing in for it.
-        expect(first).toContain(`#${id} `);
-        expect(first).toContain(localTime(NOW));
-        // The id is never the thing standing in for a cut: an id that lost the fight read `#…`.
+        // The id is on the pin's first row, in one piece, and not the ellipsis standing in for it.
+        expect(first).toContain(`#${id}`);
         expect(first).not.toContain("#…");
+        // The age is drawn somewhere on the pin — beside the id where the pair fit, on the row below where
+        // it did not — which is the whole of the layout's promise, and the reason the sweep reads the pin's
+        // rows rather than its first line: a text that wraps has already moved the age down.
+        expect(rows.join("|")).toContain(NOW_AGE);
       }
     }
   }
@@ -96,11 +104,11 @@ test("every id from 1 to 999 keeps its #id uncut at the widths where the tail is
     for (let id = 1; id <= 999; id++) {
       const pins = [at(id, "Decide")];
       const first = rowsOf(
-        built({ pins, selection: 0, focused: false, replyHint: "" }, width, style),
+        built({ pins, selection: 0, focused: false, replyHint: "", ageNow: LATER }, width, style),
       )[0];
       expect(first).toBeDefined();
       expect(first).toContain(`#${id} `);
-      expect(first).toContain(localTime(NOW));
+      expect(first).toContain(NOW_AGE);
       expect(first).not.toContain("#…");
     }
   }
@@ -111,13 +119,21 @@ test("a long text is what the cut takes, not the id", () => {
   // its columns and cuts the rest. The id stays; the text loses a character to `…`, which is the row
   // giving up width from the side that was always meant to give.
   const lines = built(
-    { pins: [at(999, "z".repeat(200))], selection: 0, focused: false, replyHint: "" },
+    {
+      pins: [at(999, "z".repeat(200))],
+      selection: 0,
+      focused: false,
+      replyHint: "",
+      ageNow: LATER,
+    },
     40,
     style,
   );
-  const first = rowsOf(lines)[0] as string;
+  const rows = rowsOf(lines);
+  const first = rows[0] as string;
   expect(first).toContain("#999");
-  expect(first).toContain(localTime(NOW));
+  // The age is drawn for this pin — on the row the id had to give up, since the text needed it.
+  expect(rows.join("|")).toContain(NOW_AGE);
   expect(first).not.toContain("z".repeat(200));
 });
 
@@ -125,14 +141,18 @@ test("a pin whose text needs only one column still shows its id", () => {
   // The floor case: at `MIN_COLUMNS_FOR_META` the text column is exactly one wide, and a row with no text
   // column at all is the case whose tail `fitLine` used to cut away at column zero.
   const pins = [at(999, "a")];
-  const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, MIN_ID_ROOM, style);
+  const lines = built(
+    { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
+    MIN_ID_ROOM,
+    style,
+  );
   // The frame floor is exactly this width (`MIN_COLUMNS_FOR_META === PANEL_MIN_FRAME_COLUMNS`, pinned
   // below), so this is the narrowest frame the builder will close at all: a border, one pin row, a border.
   expect(lines.length).toBe(3);
   const first = rowsOf(lines)[0] as string;
   expect(visibleWidth(first)).toBe(MIN_ID_ROOM);
   expect(first).toContain("#999");
-  expect(first).toContain(localTime(NOW));
+  expect(first).toContain(NOW_AGE);
 });
 
 test("the reservation is the widest tail the product can stamp, and the floor leaves a column for text", () => {
@@ -147,7 +167,7 @@ test("the reservation is the widest tail the product can stamp, and the floor le
   // tail is `#999 12:00`, and the sweep below proves the reservation is enough to draw it whole at the
   // frame's own floor — asserting the number against the string alone would pin a copy of the product's
   // arithmetic rather than the guarantee it is meant to buy.
-  expect(META_COLUMNS).toBeGreaterThanOrEqual(visibleWidth(`#${999} ${localTime(NOW)}`));
+  expect(META_COLUMNS).toBeGreaterThanOrEqual(visibleWidth(`#${999} ${NOW_AGE}`));
   expect(META_SEPARATOR_COLUMNS).toBe(1);
   expect(FRAME_COLUMNS).toBe(6);
   expect(MIN_COLUMNS_FOR_META).toBe(FRAME_COLUMNS + META_COLUMNS + META_SEPARATOR_COLUMNS + 1);
@@ -156,20 +176,34 @@ test("the reservation is the widest tail the product can stamp, and the floor le
 
 test("a continuation row carries no id, so the id appears exactly once per pin", () => {
   const pins = [at(42, "a decision long enough to wrap in a narrow panel somewhere")];
-  const lines = built({ pins, selection: 0, focused: false, replyHint: "" }, 34, style);
+  const lines = built(
+    { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
+    34,
+    style,
+  );
   const rows = rowsOf(lines);
   expect(rows.length).toBeGreaterThan(1);
   expect(rows.filter((line) => line.includes("#42"))).toHaveLength(1);
   for (const row of rows) expect(visibleWidth(row)).toBe(34);
 });
 
-test("the row table itself keeps the meta on the first row only, whatever the text width", () => {
-  // The drawing above is one call away from the table, and the table is where the meta is stamped: a
-  // zero-width text column is the degenerate case that used to draw a row whose tail was cut away, and
-  // the rows the layout builds must still carry it.
+test("the row table itself keeps the id on the first row and the age below it", () => {
+  // The drawing above is one call away from the table, and the table is where the tails are stamped: a
+  // zero-width text column is the degenerate case that used to draw a row whose tail was cut away, and the
+  // rows the layout builds must still carry the id. With a text column at all, the id owns the first row
+  // and the age the second, so neither is ever the thing a cut takes.
   for (const textWidth of [0, 1, 2, 5, 40]) {
-    const rows = panelPinRows(at(777, "a text that will not fit"), textWidth, style);
-    expect(rows[0]?.meta).toBe(metaOf(777));
-    for (const row of rows.slice(1)) expect(row.meta).toBe("");
+    const rows = panelPinRows(at(777, "a text that will not fit"), textWidth, style, LATER);
+    // The degenerate frame has no second row, so its one row carries the whole tail; every other width
+    // gives the age a line of its own, and the first row's tail is then the id alone — unless the frame is
+    // wide enough for the pair to share it, which is the shape a short one-row pin draws. Either way the
+    // pin's tails are exactly one id and exactly one age, and a third row carries neither.
+    const tails = rows.map((row) => row.tail);
+    expect(tails.filter((tail) => tail.includes("#777"))).toHaveLength(1);
+    expect(tails.filter((tail) => tail.includes(NOW_AGE))).toHaveLength(1);
+    // Whatever the text column is, the id owns the pin's first row: an age came up beside it only because
+    // the whole pair fit the tail's reserve, and never in place of the id.
+    expect(rows[0]?.tail).toContain("#777");
+    for (const row of rows.slice(2)) expect(row.tail).toBe("");
   }
 });
