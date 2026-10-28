@@ -89,7 +89,6 @@ function panelWiring(parts: Partial<PanelWiringParts> = {}) {
       terminal,
       // The mode cell reaches the owner through `deps`: the fixture's own cell, the same one the extension
       // builds rather than a hand-rolled stand-in.
-      setPanelShown: () => {},
       recordPanelShown: () => {},
       dismiss: () => {},
       notify: (message, type) => void notify.push(`${type}:${message}`),
@@ -167,16 +166,12 @@ test("the rail's redraw member is the one the wiring was handed", () => {
   expect(rails).toEqual([1]);
 });
 
-test("the panel's own toggles are the extension's, passed through unchanged", () => {
-  const shown: boolean[] = [];
+test("the panel's toggle is the extension's, passed through unchanged", () => {
   const recorded: boolean[] = [];
   const { wiring } = panelWiring({
-    setPanelShown: (value) => void shown.push(value),
     recordPanelShown: (value) => void recorded.push(value),
   });
-  wiring.deps.setPanelShown(false);
   wiring.deps.recordPanelShown(true);
-  expect(shown).toEqual([false]);
   expect(recorded).toEqual([true]);
 });
 

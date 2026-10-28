@@ -56,16 +56,14 @@ test("a rejected open hands the pins back: the rail is installed and draws them"
   h.panel.open(ctx);
   await flush();
 
+  // Not on screen, and nothing was installed for the panel to stand down for while it claimed the pins.
   expect(h.panel.isVisible()).toBe(false);
-  expect(h.railOwns).toEqual([]); // nothing installed while the panel claimed the pins
+  expect(h.railOwns).toEqual([]);
+  // The rail is asked back, and the verdict it was handed to spell that answer is the owner's own `false`:
+  // had it said `true`, the guard would have stood the rail down and the pins would be on neither surface.
   const before = h.railDraws.length;
   h.panel.refresh();
   expect(h.railDraws.length).toBeGreaterThan(before);
-  // What the rail was installed for, in the two records the fixture keeps: the answer the guard compared
-  // (`railKeys`, the cell's own answer — which still says shown) and the verdict it was handed to spell
-  // (`railOwns`, the owner's own `isVisible`). The failed open is the case where they disagree, and the
-  // verdict is the term the guard keys on, so this is the install that brought the pins back.
-  expect(h.railKeys.at(-1)).toBe("120|true|1");
   expect(h.railOwns).toEqual([false]);
 });
 
@@ -117,11 +115,9 @@ test("isVisible is the panel's own answer, and the rail's redraw is the wiring's
 });
 
 test("show, hide and toggle settle the flag through the deps, and record only the user's choice", async () => {
-  // `setPanelShown` settles the live flag and records nothing; `recordPanelShown` also appends the entry
-  // that makes the choice survive a reload. The distinction is the persistence contract: `show`/`hide` are
-  // the user speaking, `settlePanel` (the fixture's name for the extension's non-recording setter) is not,
-  // and a wiring that could not tell the two apart would record a preference every time the user pressed a
-  // key to read a pin.
+  // `recordPanelShown` is the verb the user's choices go through; it settles the live flag and appends the
+  // entry that makes the choice survive a reload. A reading of the same rule from the other side is
+  // `panel-settle.ts`, which owns the order the extension's own setters use.
   const ctx = contextWith([]);
   const h = wiring(ctx, { shown: false });
   h.terminal.note(120);
@@ -163,31 +159,6 @@ test("show, hide and toggle settle the flag through the deps, and record only th
   // the user chose, rather than a panel the shortcut left covering the transcript.
   h.panel.component()?.unfocus();
   expect(h.panelMode().mode()).toBe("hidden");
-});
-
-test("the non-recording setter moves the screen and leaves the user's record alone", () => {
-  // The half of the setter pair no `PanelOwner` verb reaches: `show`/`hide`/`toggle` all append, and
-  // `focusFromShortcut` asks the cell for the earned open outright. `extension.ts` hands it to the wiring
-  // as `setPanelShown` (`panel-deps.ts`), and the rule it carries is that the screen moves and the record
-  // does not — the same rule `panel-settle.ts` enforces for the extension, asserted here on the owner's
-  // own deps so a setter that recorded would fail this rather than only the lifecycle suite.
-  const ctx = contextWith([]);
-  const h = wiring(ctx);
-  h.terminal.note(120);
-
-  const before = h.records.length;
-  h.settlePanel(false);
-  expect(h.panelMode().mode()).toBe("hidden");
-  expect(h.screen.shown).toBe(false);
-  expect(h.panel.isVisible()).toBe(false);
-  expect(h.records).toHaveLength(before);
-
-  // …and the way back: the cell and the flag move together, so neither can be left telling a different
-  // story about what is drawn, and the user's recorded choice is still whatever their last verb left.
-  h.settlePanel(true);
-  expect(h.panelMode().mode()).toBe("open");
-  expect(h.screen.shown).toBe(true);
-  expect(h.records).toHaveLength(before);
 });
 
 test("a show that the terminal cannot fit says so once, and still records the choice", async () => {

@@ -36,6 +36,8 @@ export interface PanelKeyTarget {
   select(index: number): void;
   /** End the interaction: the handle, the owner, and a frame. */
   unfocus(): void;
+  /** Move the focus flag and drop the memorised frame — the half of `unfocus()` the guard below needs. */
+  setFocused(focused: boolean): void;
 }
 
 /** What the dispatch asks the host to do about a pin. */
@@ -103,8 +105,14 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
  * pi-tui calls a component's `handleInput` from its input handler with no try/catch of its own, so anything
  * that escaped — a host whose overlay handle throws on `unfocus()`, a deps callback reading a context whose
  * session is gone — would surface as an `extension_error` out of the terminal's key path. One try around the
- * whole dispatch means no future key handler can escape it, and a key that fails does nothing, which is the
- * safe answer for a panel whose destructive keys are gated on a bare press anyway.
+ * whole dispatch means no future key handler can escape it.
+ *
+ * The key that fails also *ends* the interaction, by the same `unfocus()` a refused key takes: a focused
+ * panel is a modal the user has no way out of but the focus key, so leaving one on screen after its dispatch
+ * threw would strand it over the transcript. The flag is cleared first, and apart from that call, because
+ * `unfocus()` is itself one of the members that can throw: a component that moved its flag before it reached
+ * the host stops answering keys even when the ending never completes, which is the state the user can live
+ * with. A second throw cannot strand the panel, and is swallowed with the first.
  *
  * A function beside the dispatcher rather than a `try` inside the component because the guard is about the
  * dispatch, not about the component: it belongs where the keys are, and the component is left with the one
@@ -119,5 +127,13 @@ export function containKey(
     dispatchPanelKey(data, component, host);
   } catch {
     host.notify("A panel key could not be handled.", "warning");
+    // The flag moves on its own, before the ending is attempted: `unfocus()` is itself a host-facing path,
+    // and the one thing a failed key may not leave behind is a panel that still believes it is focused.
+    component.setFocused(false);
+    try {
+      component.unfocus();
+    } catch {
+      /* The ending may be what threw; the flag above already took the panel out of the key path. */
+    }
   }
 }

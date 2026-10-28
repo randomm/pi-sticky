@@ -14,14 +14,22 @@
 import { expect, test } from "bun:test";
 
 import { PanelComponent } from "../src/panel-component.ts";
+import type { PanelHost } from "../src/panel-host.ts";
 import type { PanelMode } from "../src/panel-mode.ts";
 import { createOverlayHandle } from "./harness.ts";
 import { host, pins } from "./panel-component-host.ts";
 
 /** A component over a host that reports `mode` (or no state at all), with the handle already released. */
-function at(mode: PanelMode, texts: string[] = ["Decide X", "Watch out"]) {
+function at(
+  mode: PanelMode,
+  texts: string[] = ["Decide X", "Watch out"],
+  overrides: Partial<PanelHost> = {},
+) {
   const h = host(pins(...texts));
   h.stub.mode = () => mode;
+  // Replaced on the stub *before* the component is built: the component keeps the host object and reads its
+  // members off it, so a case that wants one to throw patches this, not the `state` it records into.
+  Object.assign(h.stub, overrides);
   const c = new PanelComponent(h.stub, h.tui);
   const handle = createOverlayHandle();
   handle.unfocus();
@@ -55,6 +63,26 @@ test("the open panel still takes its keys when the host reports its state", () =
   expect(state.dismissals).toEqual([2]);
   // …and dismissed without ending the interaction, so the bar stays where the user left it.
   expect(state.unfocusCalls).toBe(0);
+});
+
+test("a key whose host throws still ends the interaction", () => {
+  // `containKey` is what keeps a throwing host out of pi-tui's key path, and a notice is only half the
+  // answer: a panel the user opened with the focus key would otherwise sit there focused, with the escape
+  // routes (`Escape`, `Enter`, a keystroke into a peek) all reachable only through the member that just
+  // threw. So the catch ends the interaction by the same `unfocus()` a refused key takes.
+  const { c, state } = at("open", ["Decide X", "Watch out"], {
+    dismiss: () => {
+      throw new Error("host session is gone");
+    },
+  });
+  c.focus();
+
+  c.handleInput?.("d");
+
+  expect(c.isFocused()).toBe(false);
+  // The ending reached the owner — which is what puts the pins back on the rail — and no pin was dismissed.
+  expect(state.unfocusCalls).toBe(1);
+  expect(state.dismissals).toEqual([]);
 });
 
 test("a hidden panel refuses its keys whatever the mode says", () => {

@@ -217,7 +217,6 @@ export function createStickyExtension(
       createPanelWiring({
         deps,
         terminal,
-        setPanelShown: (shown) => setShown(shown, false),
         recordPanelShown: (shown) => setShown(shown, true),
         // The panel's `d` key: one id, through the same batch path the `/unpin` command uses (see
         // `commands.ts`' `dismiss`), which is where the uids are read from the state *before* the entries land.
