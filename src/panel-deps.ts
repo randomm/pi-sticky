@@ -18,11 +18,16 @@
  * something the setter knows nothing about (its own component); `show`/`hide` do not, and neither does any
  * caller of the setter.
  */
-import type { ExtensionCommandContext, Theme } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionCommandContext,
+  ExtensionContext,
+  Theme,
+} from "@earendil-works/pi-coding-agent";
 
 import type { HostContext } from "./context.ts";
 import type { StickyDeps } from "./deps.ts";
 import type { PanelModeState } from "./panel-mode.ts";
+import type { TerminalWidth } from "./panel-width.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
 import { replyMarker } from "./reply.ts";
@@ -186,7 +191,3 @@ export function createPanelWiring(parts: PanelWiringParts): PanelWiring {
     rpc: () => parts.rpc(),
   };
 }
-
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-
-import type { TerminalWidth } from "./panel-width.ts";

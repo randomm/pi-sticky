@@ -3,44 +3,38 @@
  *
  * The pins are ordered on the way in — level sections, and `orderPins` within each — by `panelSections`,
  * held by `PanelMemory` (`panel-frame-cache.ts`), and this class is the only reader of that order: the
- * frame, the bar, the clamp, the scroll window and the two destructive keys all index the same flattened
- * array, which is what makes the pin under the bar the pin `d` dismisses. The selection is an index into
- * that flattened list, never into `getView().pins`, and a section heading owns no index at all (operator
- * resolution 2 of pins v2-3).
+ * frame, the bar, the scroll window and the two destructive keys all index the same flattened
+ * array, which is what makes the pin under the bar the pin `d` dismisses. The selection itself lives in
+ * `panel-component-state.ts`, which is also what invalidates the frame whenever it moves.
  *
- * The selection and the focus flag live here, not in the deps object: they are view state of one overlay
- * instance, and a redraw that read them back from a fresh component would lose the user's place. `update()`
- * is what `redraw()` calls on the *open* panel — the view is replaced in place and the TUI is asked for a
- * frame, because pi never rebuilds an overlay it already has. A view that no longer holds the selected pin
- * re-clamps the selection, so a dismissal from `/unpin` cannot leave the bar past the end.
+ * What is left here is the object pi-tui holds: the host, the theme it colours itself with, the memory, and
+ * the members the host and the key dispatcher call. Everything about *drawing* — the cache key, the hit, the
+ * rows, the frame's content — is `panel-frame-draw.ts`; the two focus verbs are `panel-component-focus.ts`'s
+ * and the keys are dispatched by `panel-input.ts`. This class hands pi-tui its callbacks and owns the state
+ * those three read.
  *
  * Keys reach this component only while the overlay holds focus (pi-tui routes input to the focused
  * component alone), which is why the keys hint is drawn only while focused — in the bottom border, and
  * only there. While the panel rests, that same border carries the label the host's `replyHint()` gives
- * (`panel-hint.ts`), so the key that opens the panel is legible from the editor; the host decides it has
- * nothing to say and the border is plain rule. Kitty release and repeat events are swallowed, so a held
- * `j` moves once and a held `d` dismisses once.
+ * (`panel-hint.ts`). Kitty release and repeat events are swallowed, so a held `j` moves once and a held `d`
+ * dismisses once.
  *
  * `Enter` submits nothing: it puts `Re #<id>: ` at offset 0 of the raw editor buffer and hands focus back
- * to the main editor. The marker replaces one already there and the rest of the draft is kept verbatim;
- * submitting it is the reply ticket's job.
+ * to the main editor. The marker replaces one already there and the rest of the draft is kept verbatim.
  */
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
-import { ageAt, ageBucket } from "./panel-age.ts";
 import type { PanelFocus } from "./panel-component-focus.ts";
 import { focusPanel, unfocusPanel } from "./panel-component-focus.ts";
-import { frameCandidate, frameMode } from "./panel-component-frame.ts";
-import { buildOpenLines } from "./panel-component-open.ts";
+import { frameCandidate } from "./panel-component-frame.ts";
+import type { PanelComponentState } from "./panel-component-state.ts";
+import { createPanelComponentState } from "./panel-component-state.ts";
 import { PanelMemory, sameFrame } from "./panel-frame-cache.ts";
-import type { PanelFrame } from "./panel-frame-cache.ts";
+import { drawFrame } from "./panel-frame-draw.ts";
 import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
 import { containKey } from "./panel-input.ts";
-import { buildPanelLines } from "./panel-lines.ts";
-import type { PanelContent } from "./panel-lines.ts";
-import { buildPeekLines } from "./panel-peek.ts";
 import type { PanelSections } from "./panel-sections.ts";
 import { panelThemeStyle } from "./render.ts";
 import type { PanelStyle } from "./render.ts";
@@ -57,13 +51,13 @@ export class PanelComponent implements Component {
   /** Colours resolved on first draw by `#styleOf`; identity colours if nothing supplies them. */
   #style: PanelStyle | undefined;
   #handle: OverlayHandle | undefined;
-  #focused = false;
-  #selection = 0;
   /**
    * What the component has memorised — last frame and drawn order in one object, so `invalidate()` drops
    * both. `PanelMemory` (`panel-frame-cache.ts`) owns the key it obeys and why the halves clear together.
    */
   #memory = new PanelMemory();
+  /** The bar and the focus flag, and the invalidation that has to follow either write. */
+  #state = createPanelComponentState(this.#memory);
 
   constructor(host: PanelHost, tui?: TUI, theme?: Theme) {
     this.#host = host;
@@ -81,8 +75,7 @@ export class PanelComponent implements Component {
    * implies — through `panelThemeStyle`, the very mapping the rail builds, so one mapping colours both
    * surfaces — else the identity style, which keeps the frame plain rather than throwing on a missing
    * `selected`. Lazy because a test hands the theme to some components and not to others.
-   */
-  #styleOf(): PanelStyle {
+   */ #styleOf(): PanelStyle {
     if (this.#style === undefined) {
       this.#style = this.#host.style() ?? (this.#theme && panelThemeStyle(this.#theme));
     }
@@ -103,7 +96,10 @@ export class PanelComponent implements Component {
    */
   update(): void {
     const pins = this.#drawn();
-    if (this.#selection >= pins.length) this.#selection = Math.max(0, pins.length - 1);
+    // The clamp moves the bar through the state's own setter, so the frame cannot outlive the selection.
+    if (this.#state.selection >= pins.length) {
+      this.#state.setSelection(Math.max(0, pins.length - 1));
+    }
     if (this.#sameFrame(pins)) return;
     this.invalidate();
     this.#host.requestRender();
@@ -113,33 +109,17 @@ export class PanelComponent implements Component {
   #sameFrame(pins: readonly ViewPin[]): boolean {
     return sameFrame(
       this.#memory.frame,
-      frameCandidate(pins, this.#focused, this.#selection, this.#host),
+      frameCandidate(pins, this.#state.focused, this.#state.selection, this.#host),
     );
   }
 
   /**
-   * The instant this frame ages its pins at: the host's clock when it has one, else this instant. Read once
-   * per entry point — not per row — so every age in one frame agrees, and read at draw time rather than
-   * stored on the component: a component lives across the minute its own rows are aged in.
-   */
-  #ageNow(): string {
-    const clock = this.#host.ageNow;
-    return ageAt(clock === undefined ? undefined : () => clock());
-  }
-
-  /** The minute `#ageNow()` falls in — the figure the frame cache and the tick's minute hand both compare. */
-  #ageBucket(): number {
-    return ageBucket(this.#ageNow());
-  }
-
-  /**
-   * The panel's own teardown, called by pi inside the host's `close()` — the same path
-   * `panel-close.ts` documents, which fires `done()` and *then* `component.dispose?.()`.
+   * The panel's own teardown, called by pi inside the host's `close()` — the same path `panel-close.ts`
+   * documents, which fires `done()` and *then* `component.dispose?.()`.
    *
-   * The one place the panel tells the extension that its surface is going away. The minute's redraw belongs
-   * to a drawn panel, and a component pi has popped is not drawn: without this the timer would keep asking
-   * a closed overlay for a frame until the next session boundary cleared it. Optional on `PanelHost` for
-   * the same reason `ageNow` is: a hand-built host has no tick to stop.
+   * The one place the panel tells the extension that its surface is going away: the minute's redraw belongs
+   * to a drawn panel, and a component pi has popped is not drawn. Optional on `PanelHost` for the same
+   * reason `ageNow` is — a hand-built host has no tick to stop.
    */
   dispose(): void {
     this.#memory.invalidate();
@@ -156,13 +136,12 @@ export class PanelComponent implements Component {
   }
 
   isFocused(): boolean {
-    return this.#focused;
+    return this.#state.focused;
   }
 
   /** Set the focus flag and invalidate the frame — the half both focus verbs share. */
   setFocused(focused: boolean): void {
-    this.#focused = focused;
-    this.invalidate();
+    this.#state.setFocused(focused);
   }
 
   /**
@@ -175,18 +154,17 @@ export class PanelComponent implements Component {
   select(index: number): void {
     const last = this.#drawn().length - 1;
     const row = Number.isInteger(index) ? index : 0;
-    this.#selection = Math.max(0, Math.min(row, last));
-    this.invalidate();
+    this.#state.setSelection(Math.max(0, Math.min(row, last)));
     this.#host.requestRender();
   }
 
   get selection(): number {
-    return this.#selection;
+    return this.#state.selection;
   }
 
   /** The three things a focus change needs: the flag's cell, the handle, and the host. */
   #interactive(): PanelFocus {
-    return { state: this, handle: this.#handle, host: this.#host };
+    return { state: this.#state, handle: this.#handle, host: this.#host };
   }
 
   /**
@@ -210,79 +188,22 @@ export class PanelComponent implements Component {
     return this.#drawn();
   }
 
+  /** The frame for this width: `panel-frame-draw.ts` compares the key and, on a miss, lays the rows out. */
   render(width: number): string[] {
-    // The live view, the resting label, the state and the age instant are read here and are part of the
-    // cache key, not just of the frame: width alone cannot tell a swapped view from an unchanged one, and
-    // `update()` — the member that used to be the only change test — is not called on pi-tui's own frame
-    // requests. The drawn array is the key rather than the view's own, and it is the same array every time
-    // for a view that has not moved, so the cache's fast path survives the sectioning. The label is read
-    // here for the same reason it is drawn here: a frame that did not name it would keep the old one on
-    // screen after the operator rebound the focus key. The state for the same reason again, sharper: the
-    // peek and the open panel are drawn from one view and are not the same bytes.
-    const sections = this.#sections();
-    const pins = sections.flat;
-    const replyHint = this.#host.replyHint();
-    const mode = frameMode(this.#host);
-    const ageNow = this.#ageNow();
-    // The cache key carries the *bucket*, and the content carries the instant: two redraws in one minute
-    // are the same frame, and the frame that is built still ages every row at one named instant.
-    const ageKey = ageBucket(ageNow);
-    const frame = this.#memory.frame;
-    if (
-      frame !== undefined &&
-      frame.width === width &&
-      frame.pins === pins &&
-      frame.replyHint === replyHint &&
-      frame.mode === mode &&
-      frame.ageNow === ageKey
-    )
-      return frame.lines;
-    // A view that no longer holds the selected pin re-clamps the bar *before* the frame is laid out, so
-    // a redraw that found the swap cannot draw a bar past the end of the list it just rebuilt.
-    if (this.#selection >= pins.length) this.#selection = Math.max(0, pins.length - 1);
-    const style = this.#styleOf();
-    // The peek asks nothing of the layout: three rows, one pin, no window and no bar. Handing it the row
-    // table would wrap every pin of the view to draw one row of one of them.
-    const lines =
-      mode === "peek"
-        ? buildPeekLines({ sections, ageNow, replyHint }, width, style)
-        : this.#openLines(sections, width, style, ageNow, replyHint);
-    this.#memory.frame = {
-      lines,
-      width,
-      pins,
-      selection: this.#selection,
-      focused: this.#focused,
-      replyHint,
-      mode,
-      ageNow: ageKey,
-    };
-    return lines;
+    return drawFrame(this.#memory, this.#host, this.#drawFor(width), {
+      selection: () => this.#state.selection,
+      focused: () => this.#state.focused,
+    });
   }
 
-  /** The open panel's rows: `panel-component-open.ts`, which owns the layout pass and why one is enough. */
-  #openLines(
-    sections: PanelSections,
-    width: number,
-    style: PanelStyle,
-    ageNow: string,
-    replyHint: string,
-  ): string[] {
-    return buildOpenLines(this.#tui?.terminal?.rows, {
-      content: {
-        // The *drawn order* — what `selection` indexes — and the sections the title's counts are read off.
-        pins: sections.flat,
-        selection: this.#selection,
-        focused: this.#focused,
-        replyHint,
-        sections: sections.order,
-        ageNow,
-      },
-      sections,
+  /** What one frame needs: the sectioning, the width pi-tui asked for, and this component's colours. */
+  #drawFor(width: number) {
+    return {
+      sections: this.#sections(),
       width,
-      style,
-      ageNow,
-    });
+      style: this.#styleOf(),
+      terminalRows: this.#tui?.terminal?.rows,
+    };
   }
 
   /** Forget the memorised frame and the memorised order together (`PanelMemory`). */
