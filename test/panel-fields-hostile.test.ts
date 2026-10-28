@@ -1,5 +1,5 @@
 /**
- * The three v2 fields — `group`, `options`, `compact` — drawn to a frame whose every line is hostile.
+ * The three optional fields — `group`, `options`, `compact` — drawn to a frame whose every line is hostile.
  *
  * `panel-lines-hostile.test.ts` is the frame's defence against a hostile *pin text* and a theme that
  * smuggles escapes in. This file is the same frame against the other thing a model controls: the fields it
@@ -79,7 +79,7 @@ test("hostile group and options forge no pin row and no reply line, at the sizes
 
 test("the field's own fold is what keeps a hostile group to one heading, every break shape", () => {
   // The raw shape, with its break still in it. A group heading and an options row each fold what they draw
-  // (`toOneLine` in the heading, `foldBreaks` in `drawOptionRow`), so the break the field carried is gone
+  // (`foldBreaks` in the heading and in `drawOptionRow`), so the break the field carried is gone
   // before the line is measured and the field is one row whatever shape it was — the fold belongs to the
   // drawer, not to whatever pass order happened to clean the field on the way in. A tall terminal so the
   // sweep measures the fold rather than the window's ceiling.

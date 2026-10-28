@@ -14,7 +14,7 @@
  */
 import { expect, test } from "bun:test";
 
-import { groupKey, hasHeadings, isGroupSection, panelSections } from "../src/panel-sections.ts";
+import { hasHeadings, panelSections } from "../src/panel-sections.ts";
 import type { ViewPin } from "../src/types.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 
@@ -27,9 +27,16 @@ const grouped = (
   replied = false,
 ): ViewPin => ({ ...levelPin(id, text, level, replied), group });
 
+/** Each section spelled as the frame reads it: a level by its level, a group prefixed as the old key was. */
 const kinds = (pins: readonly ViewPin[]) =>
-  panelSections(pins).order.map((section) => section.kind);
+  panelSections(pins).order.map((section) =>
+    section.kind === "level" ? section.level : `group:${section.name}`,
+  );
 const ids = (pins: readonly ViewPin[]) => pins.map((pin) => pin.id);
+
+/** The section of `level` — the level section, not a group whose best pin happens to be of it. */
+const levelSection = (pins: readonly ViewPin[], level: ViewPin["level"]) =>
+  panelSections(pins).order.find((section) => section.kind === "level" && section.level === level);
 
 test("a group is one section holding its pins, whatever levels they carry", () => {
   const pins = [
@@ -73,8 +80,9 @@ test("a level whose every pin is grouped keeps a counting section so the title s
   ];
   const sections = panelSections(pins);
   expect(kinds(pins)).toContain("warning");
-  const counting = sections.order.find((section) => section.kind === "warning");
-  expect(counting?.pins).toEqual([]);
+  // The counting section: the level the view holds with no pins of its own, because its only warning is
+  // drawn by the group beside it.
+  expect(levelSection(pins, "warning")?.pins).toEqual([]);
   // ...and the pin is drawn by the group's section alone, so the title's `1 warning` and the frame's one row
   // for `#1` are the same pin counted by the two questions the frame asks.
   // Within the group's level run the two facts keep the section's own ranking: unreplied first, newest id first.
@@ -119,8 +127,12 @@ test("a group named after a level cannot take that level's section key", () => {
   // to — the two `info` spellings share neither rows nor heading.
   expect(sections.order[0]?.pins.map((pin) => pin.id)).toEqual([1]);
   expect(sections.order[2]?.pins.map((pin) => pin.id)).toEqual([2]);
-  expect(isGroupSection("info")).toBe(false);
-  expect(isGroupSection(groupKey("info"))).toBe(true);
+  // The two `info` spellings are different members of the union: the group carries a name, the level a level,
+  // so neither can be mistaken for the other by a caller that switched on one and read the other.
+  const group = sections.order[0];
+  const level = sections.order[2];
+  expect(group?.kind === "group" && group.name).toBe("info");
+  expect(level?.kind === "level" && level.level).toBe("info");
 });
 
 test("a group's pins keep the level section's within-section order", () => {

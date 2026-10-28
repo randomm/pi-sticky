@@ -76,6 +76,19 @@ export function isPanelSize(width: number, height: number): boolean {
 }
 
 /**
+ * Whether a size is one a *closed* frame fits in: the builder draws nothing below either bound.
+ *
+ * Lives beside the two bounds it reads rather than in the frame's builder, because the frame and the peek
+ * (`panel-peek.ts`) both ask it and neither may reach sideways into the other for a size predicate: a peek
+ * which fitted where the open panel would not draw is a frame with gutters hanging off the overlay.
+ */
+export function isPanelFrameSize(width: number, height: number): boolean {
+  return (
+    isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
+  );
+}
+
+/**
  * Whether the panel can be shown at all: a width that is a size the panel can honour, at or past the
  * boundary.
  *

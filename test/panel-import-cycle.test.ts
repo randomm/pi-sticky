@@ -30,9 +30,10 @@ const COLD_MODULES = [
   "src/panel-draw.ts",
   // The options row's drawer, which the frame fills at its own width.
   "src/panel-options-row.ts",
-  // The frame's title counts levels over the sections, and reads `isLevelSection` out of the sectioning.
+  // The frame's title counts levels over the sections, discriminating each one rather than asking a
+  // predicate of the sectioning.
   "src/panel-frame-title.ts",
-  // The two text surfaces' rows, which reach `render.ts` for the fold and `time.ts` for the stamp.
+  // The two text surfaces' rows, which reach `escape.ts` for the fold and `time.ts` for the stamp.
   "src/pin-rows-text.ts",
   "src/render.ts",
   "src/rail-lines.ts",

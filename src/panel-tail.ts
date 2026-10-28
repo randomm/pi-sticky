@@ -63,7 +63,7 @@ export function pinMeta(pin: ViewPin, parts: MetaParts = {}): string {
 /**
  * The tail of `pin` exactly as the row draws it: the theme's `dim` over `pinMeta`.
  *
- * `pinRow` (`panel-lines.ts`) prints this string and `widestMetaColumns` (`panel-frame-geometry.ts`)
+ * `pinRow` (`panel-draw.ts`) prints this string and `widestMetaColumns` (`panel-frame-geometry.ts`)
  * measures this same string, so the columns the text column gives up are the columns the tail occupies —
  * which is what a theme whose `dim` adds visible columns used to break, cutting the time out of the tail.
  * The parts are supplied rather than derived here so the row that draws and the layout that measures are
@@ -71,7 +71,7 @@ export function pinMeta(pin: ViewPin, parts: MetaParts = {}): string {
  */
 export function metaStamp(pin: ViewPin, dim: MetaDimmer, parts: MetaParts = {}): string {
   // The leading space is part of the tail, not of the text: the row joins the two (`pinRow`,
-  // `panel-lines.ts`) and the reserve is measured on this string, so a space left to the text would be a
+  // `panel-draw.ts`) and the reserve is measured on this string, so a space left to the text would be a
   // column the layout never charged for and a tail that began against the last character of the text.
   return dim(` ${pinMeta(pin, parts)}`);
 }

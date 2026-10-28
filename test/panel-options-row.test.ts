@@ -23,8 +23,11 @@ import { pin } from "./fixtures.ts";
 /** The identity frame: no member wraps anything in visible bytes. */
 const identity: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
 
-const row = (extra: Record<string, unknown>, width = 60) =>
-  drawOptionRow({ ...pin(1, "text", "info"), ...extra } as ViewPin, width, identity);
+/** The fields a test asks for, on a pin whose identity the row does not read. */
+type OptionFields = Pick<ViewPin, "options">;
+
+const row = (extra: Partial<OptionFields>, width = 60) =>
+  drawOptionRow({ ...pin(1, "text", "info"), ...extra }, width, identity);
 
 describe("the options row", () => {
   test("the exact row for a short option list (operator resolution 4)", () => {
@@ -86,24 +89,36 @@ describe("the options row", () => {
     expect(drawn).toContain("1 a b");
   });
 
-  test("the colours are the frame's own, applied to the entries that survived", () => {
+  test("the keycap and the label are asked of the frame's own two style verbs", () => {
     // The row borrows `header` for the keycap and `dim` for the label rather than inventing a fourth style
-    // verb; with the theme's escapes switched on the row still closes at the width, because the drawer hands
-    // it to the frame's one escape policy.
+    // verb. The style is a *sentinel* that records what it was called with, because a drawn row cannot be
+    // asserted on with a theme's own bytes: the frame's one closure strips every escape a line carries,
+    // SGR included (`fitLine`, `panel-draw.ts`) — that is what stops a theme smuggling a window title or a
+    // clipboard sequence into a flush-right overlay.
+    const asked: string[] = [];
     const coloured: PanelStyle = {
       ...identity,
-      header: (s) => `\u001b[1m${s}\u001b[0m`,
-      dim: (s) => `\u001b[2m${s}\u001b[0m`,
+      header: (s) => {
+        asked.push(`header:${s}`);
+        return s;
+      },
+      dim: (s) => {
+        asked.push(`dim:${s}`);
+        return s;
+      },
     };
-    // `⌨1 a` is five columns, the separator three and `⌨2 bb` six: 5+3+6 = 14 will not close inside 10.
-    const drawn = drawOptionRow(
-      { ...pin(1, "t", "info"), options: ["a", "bb"] } as never,
-      10,
-      coloured,
-    );
-    expect(drawn).toContain("\u001b[1m⌨1\u001b[0m");
-    expect(drawn).toContain("\u001b[2ma\u001b[0m");
-    // The entry that did not fit carries no colour bytes either: the theme is applied to what survived.
-    expect(drawn).not.toContain("bb");
+    // Wide enough for both entries: `⌨1 a` is five columns, the separator three and `⌨2 bb` six.
+    expect(
+      drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 14, coloured).trimEnd(),
+    ).toBe("\u2328\u0031 a   \u2328\u0032 bb");
+    expect(asked).toEqual(["header:\u2328\u0031", "dim:a", "header:\u2328\u0032", "dim:bb"]);
+    asked.length = 0;
+    // Too narrow for the separator *and* the second entry: the row drops it whole and keeps a row of columns.
+    expect(
+      drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 11, coloured).trimEnd(),
+    ).toBe("\u2328\u0031 a");
+    // The style verbs are asked per entry that is *named* — the dropped one is absent from the row, which the
+    // assertion above pins by its exact bytes, and styling a label the user never sees is the failure the
+    // "entries are dropped whole" case above is about.
   });
 });

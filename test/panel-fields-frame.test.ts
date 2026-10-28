@@ -1,6 +1,6 @@
 /**
- * The three v2 fields as the *open panel* draws them: group headings, the options row, and the frame title's
- * level counts in the presence of groups.
+ * The optional fields (`group`, `options`, `compact`) as the *open panel* draws them: group headings, the
+ * options row, and the frame title's level counts in the presence of groups.
  *
  * The frame is drawn through `test/panel-frame.ts`, the one way a test pairs the row table with the drawer,
  * so what these tests assert on is the frame the component would put on screen — the same sectioning feeds
@@ -80,6 +80,31 @@ test("a group whose name is hostile text draws as text and closes at the width",
   // The break is folded into the heading's own line rather than becoming a second row of the frame: the
   // builder hands each line to `fitLine` and cannot tell a folded name from a short one.
   expect(heading).toContain("red # heading second line");
+});
+
+/**
+ * Sequences that are an *escape* to the panel's own policy (`stripSequences`, `escape.ts`) and printable
+ * columns to pi-tui's `visibleWidth` — the one class of text a width measured on the raw string cannot be
+ * trusted for. Each is padded with the word that must not reach the screen: a cut that trusted pi-tui's
+ * measurement would print the payload, and a row that trusted nothing would spill its column.
+ */
+const UNTRUSTED = [
+  ["unterminated OSC", "\u001b]8;;http://evil"],
+  ["OSC without its BEL", "\u001b]2;a title"],
+  ["unterminated DCS", "\u001bP++++"],
+  ["lone introducer", "\u001b_"],
+] as const;
+
+test("a group name whose escapes the terminal counts as printable cannot widen the frame", () => {
+  for (const [name, sequence] of UNTRUSTED) {
+    const rows = frameOf([pin(1, "info", { group: `G${sequence}${"PAYLOAD".repeat(20)}` })]);
+    // The heading owns one row whatever the sequence did to the measurement, and it closes at the width.
+    expect(rows, name).toHaveLength(2);
+    for (const row of rows) expect(visibleWidth(row), name).toBe(WIDTH);
+    expect(rows.join(""), name).not.toContain("PAYLOAD");
+    // The name is still the name: what the cut removes is the sequence and its payload, not the group.
+    expect(rows[0] ?? "", name).toContain("G");
+  }
 });
 
 test("a level whose pins are all grouped owns no rows and no heading, yet the title counts it", () => {
@@ -163,6 +188,30 @@ test("an option carrying an escape buys no free columns", () => {
   );
   for (const row of lines) expect(visibleWidth(row)).toBe(60);
   expect(lines.join("")).not.toContain("\u001b[1m");
+});
+
+/** An option label whose escape pi-tui counts as printable, padded with the word that must not be drawn. */
+const hostileOption = (sequence: string): string => `o${sequence}${"PAYLOAD".repeat(20)}`;
+
+test("an option whose escapes the terminal counts as printable cannot widen the frame", () => {
+  for (const [name, sequence] of UNTRUSTED) {
+    const lines = built(
+      {
+        pins: [pin(1, "info", { options: [hostileOption(sequence), "b"] })],
+        selection: 0,
+        focused: true,
+        replyHint: "",
+        ageNow: LATER,
+      },
+      WIDTH,
+      style,
+    );
+    // The frame is the same number of rows it would be for a clean label — an escape buys a row neither by
+    // widening one nor by splitting one — and none of its rows prints the sequence's payload.
+    expect(lines, name).toHaveLength(4);
+    for (const row of lines) expect(visibleWidth(row), name).toBe(WIDTH);
+    expect(lines.join(""), name).not.toContain("PAYLOAD");
+  }
 });
 
 test("compact changes how many rows the pin owns, which is how the user sees it", () => {

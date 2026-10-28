@@ -25,8 +25,9 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { stripSequences } from "./escape.ts";
-import { type Style, orderPins, plainStyle, toOneLine } from "./render.ts";
+import { foldBreaks, stripSequences } from "./escape.ts";
+import { ELLIPSIS, INJECTED_RESET } from "./panel-frame.ts";
+import { type Style, orderPins, plainStyle } from "./render.ts";
 import { formatPinAge } from "./time.ts";
 import type { PinLevel, PinView, ViewPin } from "./types.ts";
 
@@ -38,14 +39,10 @@ const HEADER = "📌 Pinned for you";
 const HINT = " · /pins";
 
 /**
- * The escape sequences `truncateToWidth` introduces: a reset before the ellipsis and one after the
- * cut. Written at runtime from code points because a literal escape sequence in source is rewritten
- * on its way into the file, which silently changes what the pattern matches.
+ * The escape sequences `truncateToWidth` introduces when it cuts, and the ellipsis it cuts with, both taken
+ * from the panel's own copies (`panel-frame.ts`): the rail and the panel cut lines under one policy, and two
+ * spellings of the same sequence is how one of them stops matching.
  */
-const INJECTED_RESET = new RegExp(
-  `${String.fromCharCode(0x1b)}\\[0m${String.fromCodePoint(0x2026)}${String.fromCharCode(0x1b)}\\[0m`,
-  "g",
-);
 
 /**
  * Cut a drawn line to the width, and make sure what comes back is a line the rail may draw. Both
@@ -62,10 +59,10 @@ const INJECTED_RESET = new RegExp(
  * of a line that was never safe to draw in the first place.
  */
 function cut(line: string, width: number, styled: boolean): string {
-  const cutLine = truncateToWidth(line, width, "…");
+  const cutLine = truncateToWidth(line, width, ELLIPSIS);
   if (styled) {
     if (cutLine === line) return line;
-    const cleaned = cutLine.replace(INJECTED_RESET, String.fromCodePoint(0x2026));
+    const cleaned = cutLine.replace(INJECTED_RESET, ELLIPSIS);
     if (visibleWidth(cleaned) <= width) return cleaned;
     // pi-tui measured something as printable that a terminal will consume as a sequence: fall back
     // to the plain text, which is the only string here whose width both sides agree on.
@@ -94,7 +91,7 @@ function pinLine(
   // A replied pin's whole row is dimmed and its text carries a leading `↩ `: the mark is what the user
   // scans for, so it goes at the start of the text column rather than at the end of a row that may be
   // cut there. The dim wraps the text column only, not the id or the time, which stay legible.
-  const body = toOneLine(pin.text);
+  const body = foldBreaks(pin.text);
   const text = pin.repliedAt === undefined ? body : style.dim(`↩ ${body}`);
   return ` ${marker} #${pin.id} ${time}  ${text}`;
 }

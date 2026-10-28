@@ -188,7 +188,12 @@ test("the frame's counts are the very sections its rows were laid out from", () 
   expect(lines[0]).toContain("📌 Pinned · 2 warnings · 2 needs you · 3 more");
   // The sections the layout carries out are the ones the frame printed counts for: three, in drawn order,
   // with the row table holding one heading per section and one row per pin.
-  expect(layout.sections.map((section) => [section.kind, section.pins.length])).toEqual([
+  expect(
+    layout.sections.map((section) => [
+      section.kind === "level" ? section.level : section.name,
+      section.pins.length,
+    ]),
+  ).toEqual([
     ["warning", 2],
     ["action", 2],
     ["info", 3],

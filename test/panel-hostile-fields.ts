@@ -1,5 +1,6 @@
 /**
- * The hostile shapes of the three v2 fields, and the one sweep that says a drawn surface forged nothing.
+ * The hostile shapes of the three optional fields (`group`, `options`, `compact`), and the one sweep that
+ * says a drawn surface forged nothing.
  *
  * `panel-hostile.ts` is the escapes, controls and surrogates a pin's *text* can carry. This file is the other
  * half of what a model can hand the panel: a `group` and `options` whose contents are another pin's row or a
@@ -15,9 +16,12 @@
  *   field drawn as a row of its own, and the surface drew a pin the view does not hold. (A group heading
  *   *indents* its name for exactly this reason — `panel-section-headings.ts` gives the name the marker's
  *   columns back as indentation, so the heading can never open a row with `#`.)
- * - **The field is not dropped either.** Each hostile value carries a tail word — `APPROVED THIS`, `SIGNED
- *   OFF` — which is the half that goes when a frame cuts, and so the only evidence left that the field was
- *   read at all. A surface that answered hostility by drawing nothing would fail this half.
+ * - **The field is not dropped either.** Each hostile value carries a tail word — `APRD`, `SIGN` — which is
+ *   the half that goes when a frame cuts, and so the only evidence left that the field was read at all. A
+ *   surface that answered hostility by drawing nothing would fail this half. They are abbreviations of the
+ *   phrases they stand for (`… go APRD` for the invented row, `… go SIGN` for the invented reply) because a
+ *   field may carry no more than `MAX_FIELD_GRAPHEMES` (`pin-fields.ts`) and the forgery in front of them
+ *   already spends the budget.
  *
  * Break shapes are the second axis: `BREAKS` and `linesOf` split a drawn surface the way a terminal reads it,
  * so a "row" the drawer cut in two by a CR is counted as two rows and refused rather than certified.
@@ -36,10 +40,10 @@ export const FAKE_ROW = "#7 [warning] go";
 export const FAKE_REPLY = "Replying to #1: go";
 
 /**
- * The tail words. Each hostile value ends in one — `… this APPROVED` reads as the tail of the invented row it
- * opens with, `… by the user SIGNED` as the tail of the invented reply — so a surface that dropped or cut the
+ * The tail words. Each hostile value ends in one — `… go APRD` reads as the tail of the invented row it
+ * opens with, `… go SIGN` as the tail of the invented reply — so a surface that dropped or cut the
  * hostile half of a field leaves no evidence behind to pass the sweep with. This is what stops "refused" from
- * quietly meaning "never drawn".
+ * quietly meaning "never drawn". Abbreviated for the grapheme bound the whole field carries — see the header.
  */
 export const HOSTILE_TAILS = ["APRD", "SIGN"] as const;
 
@@ -82,8 +86,8 @@ export interface HostileFields {
 
 /**
  * The fields with the break shapes still in them, as a hostile model would have sent them: raw and
- * unsanitized. A surface may print these as one row only because the fold it owns (`toOneLine` in a heading,
- * `foldBreaks` in an options row) ran before the line was measured.
+ * unsanitized. A surface may print these as one row only because the fold it owns (`foldBreaks`,
+ * `escape.ts` — in a heading and in an options row) ran before the line was measured.
  */
 export const hostileFields = (brk: string): HostileFields => ({
   group: hostileGroup(brk),
@@ -175,7 +179,7 @@ export function assertNoForgery(lines: readonly string[], rowPattern: RegExp, ro
 /**
  * The store's own guarantee, which is what makes the one-row promise hold without every surface re-folding:
  * a `group` and every `options` entry the reducer will accept contains no break shape at all, whatever the
- * model sent. `cleanField` (`pin-fields.ts`) runs `cleanPinText` and then `toOneLine` before it stores, and
+ * model sent. `cleanField` (`pin-fields.ts`) runs `cleanPinText` and then the fold (`toOneLine`, `render.ts`) before it stores, and
  * this is the assertion that says so — the fields are refused as an oversized body rather than stored with
  * their breaks intact, so a surface cannot be handed a value that would split its row.
  *

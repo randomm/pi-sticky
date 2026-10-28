@@ -19,12 +19,12 @@
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import { foldBreaks } from "./escape.ts";
 import { widestMetaColumns } from "./panel-frame-geometry.ts";
 import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
-import { toOneLine } from "./render.ts";
 /**
  * The columns the two gutters own, re-exported so the callers that lay these rows out keep naming the module
  * whose rows they lay out. The tail's format is *not* re-exported: `panel-tail.ts` is its owner and the two
@@ -63,11 +63,20 @@ export interface PanelRow {
    * row, the age alone on the second, and nothing at all on a third.
    *
    * A whole string rather than one the drawer completes: `widestMetaColumns` measures these and `pinRow`
-   * (`panel-lines.ts`) draws these, so the columns the text gives up are the columns the tail occupies. The
+   * (`panel-draw.ts`) draws these, so the columns the text gives up are the columns the tail occupies. The
    * empty string is the builder's signal for a row that owns no tail — the continuation lines of a pin whose
    * age already had a row of its own.
    */
   tail: string;
+  /**
+   * The one structural marker a row may carry: `"options"` on the row the table reserves for a pin's
+   * options and the drawer fills.
+   *
+   * A field rather than a value test on `text`/`tail`, because those two strings are what every other row
+   * is made of: two pins can draw byte-identical rows, so a reserved row identified by its characters could
+   * be claimed by a real pin row and silently overwritten with keycaps.
+   */
+  kind?: "options";
 }
 
 /**
@@ -130,9 +139,16 @@ export function panelPinRows(
   // A `compact` pin is one row: the wrap is skipped and the text takes the single line it will be cut to.
   // It is collapsed here, in the table, rather than cut by the drawer: the window scrolls, the bar sits and
   // `d`/`Enter` index *this* row count, so a pin that wrapped into four rows and was trimmed afterwards
-  // would leave three rows counted for a pin that shows one. `toOneLine` folds what breaks the model put in,
-  // and the drawer's `fitLine` spends the ellipsis on the tail of it.
-  const wrapped = pin.compact === true ? [toOneLine(body)] : wrapTextWithAnsi(body, textWidth);
+  // would leave three rows counted for a pin that shows one. `foldBreaks` folds what breaks the model put
+  // in (the fold `toOneLine` wraps, read from its owner rather than through `render.ts`, which is one of this
+  // module's callers), and the drawer's `fitLine` spends the ellipsis on the tail of it.
+  //
+  // Expansion on selection is deliberately *not* implemented: the row the bar reaches has to be a row the
+  // table built before the bar moved, and growing the table under the bar for one frame is the disagreement
+  // the rest of this module exists to avoid (research-summary U13). The flag is also the cost lever, not
+  // decoration: a non-compact pin is re-wrapped at the frame's text column on every frame the panel redraws
+  // — a moving bar included — so for a long pin this one branch is what bounds the draw.
+  const wrapped = pin.compact === true ? [foldBreaks(body)] : wrapTextWithAnsi(body, textWidth);
   // Which row carries the age is decided by how many rows the wrap produced, so the wrap runs first and the
   // tails are stamped against its answer: a pin that fits on one line is the case the id/age pair belongs
   // to. `count` below is that count, and the empty-text fallback is one row for the same reason.
@@ -167,9 +183,12 @@ function optionRows(pin: ViewPin): PanelRow[] {
  * scrolls and the bar sits on that count), so the entries are filled in at the frame's own width by the
  * drawer (`panel-lines.ts`), which drops whole entries from the end rather than truncating one. The row owns
  * no tail — it names no id, and the pin's first row carries it.
+ *
+ * The `kind` tag, not the pad character, is what says a row is this one: `isOptionRow` reads the tag, so a
+ * real pin row that happened to draw a single space could not be overwritten with keycaps.
  */
-export function optionRow(): PanelRow {
-  return { text: OPTION_PAD, tail: "" };
+function optionRow(): PanelRow {
+  return { text: OPTION_PAD, tail: "", kind: "options" };
 }
 
 /** The pad character an option row reserves its row with before the drawer fills it. */
@@ -177,7 +196,7 @@ const OPTION_PAD = " ";
 
 /** Whether the row is the reserved one, and so the one the drawer still has to fill. */
 export function isOptionRow(row: PanelRow): boolean {
-  return row.tail === "" && row.text === OPTION_PAD;
+  return row.kind === "options";
 }
 /**
  * Rows of every pin in `pins`, which must be the panel's *drawn* order (`panelSections`'s `flat`),

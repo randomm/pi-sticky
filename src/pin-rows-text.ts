@@ -15,12 +15,16 @@
  * ```
  *
  * `group` sits after the level and before the text, and `options` and `compact` come last, after the reply
- * note. Group and every option go through `toOneLine` before they reach the row: they were cleaned and
+ * note. Group and every option go through the fold before they reach the row: they were cleaned and
  * bounded when they were stored (`pin-fields.ts`), but the row is one line by this module's own promise, not
  * by whatever the pass order of another module left behind. `/pins` spells the same fields differently — the
  * options on their own indented line, and no `compact` at all — which is `pinsTextRow`'s header.
+ *
+ * The fold is `foldBreaks` (`escape.ts`) taken directly rather than `toOneLine` (`render.ts`): this module is
+ * one of `render.ts`'s own dependencies, and reaching back into its caller for a one-line re-export of a
+ * function that sits below both is the value-level cycle `test/panel-import-cycle.test.ts` exists to catch.
  */
-import { toOneLine } from "./render.ts";
+import { foldBreaks } from "./escape.ts";
 import { formatLocalTime } from "./time.ts";
 import type { ViewPin } from "./types.ts";
 
@@ -29,14 +33,14 @@ const CONTINUATION = "   ";
 
 /** ` (group: Now)` — the section the model filed the pin under, or nothing. */
 function groupPart(pin: ViewPin): string {
-  return pin.group === undefined ? "" : ` (group: ${toOneLine(pin.group)})`;
+  return pin.group === undefined ? "" : ` (group: ${foldBreaks(pin.group)})`;
 }
 
 /** ` (options: Pass | Block)` — the actions the model offered, in the order it named them, or nothing. */
 function optionsPart(pin: ViewPin): string {
   const options = pin.options;
   if (options === undefined || options.length === 0) return "";
-  return ` (options: ${options.map((option) => toOneLine(option)).join(" | ")})`;
+  return ` (options: ${options.map((option) => foldBreaks(option)).join(" | ")})`;
 }
 
 /** ` (compact)` — the pin the model marked to be read in one line, or nothing. */
@@ -54,12 +58,12 @@ function compactPart(pin: ViewPin): string {
 function pinsOptionsLine(pin: ViewPin): string {
   const options = pin.options;
   if (options === undefined || options.length === 0) return "";
-  const entries = options.map((option, index) => `${index + 1}) ${toOneLine(option)}`);
+  const entries = options.map((option, index) => `${index + 1}) ${foldBreaks(option)}`);
   return `\n${CONTINUATION}options: ${entries.join("  ")}`;
 }
 
 /** The reply note a replied pin carries on both surfaces, or nothing. */
-export function repliedSuffix(pin: ViewPin): string {
+function repliedSuffix(pin: ViewPin): string {
   if (pin.repliedAt === undefined) return "";
   return ` (replied by the user at ${formatLocalTime(pin.repliedAt)})`;
 }
@@ -71,7 +75,7 @@ export function repliedSuffix(pin: ViewPin): string {
  * interpolates `formatLocalTime`, which is already ASCII `HH:MM` or `--:--`.
  */
 export function modelRow(pin: ViewPin): string {
-  return `#${pin.id} [${pin.level}]${groupPart(pin)} ${toOneLine(pin.text)}${repliedSuffix(pin)}${optionsPart(pin)}${compactPart(pin)}`;
+  return `#${pin.id} [${pin.level}]${groupPart(pin)} ${foldBreaks(pin.text)}${repliedSuffix(pin)}${optionsPart(pin)}${compactPart(pin)}`;
 }
 
 /**

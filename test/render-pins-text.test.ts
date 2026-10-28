@@ -10,22 +10,16 @@ import { describe, expect, test } from "bun:test";
 
 import { renderPinsText } from "../src/render.ts";
 import { LATER, LATER_TIME, NOW_TIME, pin, view } from "./fixtures.ts";
-import { HOSTILE_TAILS, assertNoForgery, foldedHostileFields } from "./panel-hostile-fields.ts";
+import {
+  BREAKS,
+  HOSTILE_TAILS,
+  assertNoForgery,
+  foldedHostileFields,
+  linesOf,
+} from "./panel-hostile-fields.ts";
 
 /** A row of the listing: what a real pin line looks like and nothing else may. */
 const ROW = /^#\d+ \[(info|action|warning)\] /;
-
-/** Split as a terminal would: on every break shape, not only the LF the sanitizer leaves. */
-const BREAKS = [
-  String.fromCodePoint(0x0a),
-  String.fromCodePoint(0x0b),
-  String.fromCodePoint(0x0c),
-  String.fromCodePoint(0x0d),
-  String.fromCodePoint(0x85),
-  String.fromCodePoint(0x2028),
-  String.fromCodePoint(0x2029),
-];
-const linesOf = (text: string): string[] => text.split(new RegExp(`[${BREAKS.join("")}]+`));
 
 describe("renderPinsText", () => {
   test("says so when nothing is pinned", () => {

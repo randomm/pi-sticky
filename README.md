@@ -122,7 +122,8 @@ still yours:
   for you. When the frame is too narrow to name them all, the last ones are left off whole rather than cut
   mid-word, so a label you can read is a label you can answer.
 - **`compact`** asks for the pin to occupy one row instead of several: its text is cut rather than wrapped.
-  Use it for a pin whose text is a formality and whose `#id` is the thing you will act on.
+  Use it for a pin whose text is a formality and whose `#id` is the thing you will act on. There is no key to
+  expand it back: the row the bar sits on has to be a row the panel counted before the bar moved there.
 
 The peek shows neither group nor options and is always one line; the rail shows neither group nor options,
 and `compact` changes nothing about it. `/pins` lists the group after the level and puts the options on their

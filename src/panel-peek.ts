@@ -37,7 +37,7 @@ import {
   FRAME_TOP_RIGHT,
   glyph,
 } from "./panel-frame.ts";
-import { isPanelFrameSize } from "./panel-lines.ts";
+import { isPanelFrameSize } from "./panel-geometry.ts";
 import { panelPinRows } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSections } from "./panel-sections.ts";

@@ -1,6 +1,6 @@
 /**
- * The three v2 fields on the two *text* surfaces: the model's listing (`renderList`, also the compaction
- * reminder) and the user's `/pins`.
+ * The three optional fields (`group`, `options`, `compact`) on the two *text* surfaces: the model's listing
+ * (`renderList`, also the compaction reminder) and the user's `/pins`.
  *
  * The shapes are pinned exactly, because both strings are contracts: the model is told by `tool.ts`'s
  * guidelines to trust a row that reads like a pin row, and a user who reads `(group: Now)` on screen has to
@@ -11,16 +11,12 @@
 import { describe, expect, test } from "bun:test";
 
 import { renderList, renderPinsText } from "../src/render.ts";
+import type { ViewPin } from "../src/types.ts";
 import { LATER, LATER_TIME, NOW_TIME, pin, view } from "./fixtures.ts";
-
-/** Every shape that starts a new line on a terminal, not only the LF the sanitizer leaves. */
-const BREAKS = ["\n", "\v", "\f", "\r", String.fromCodePoint(0x85), " ", " "];
-
-const linesOf = (text: string): string[] =>
-  text.split(new RegExp(`[${BREAKS.join("")}]+`)).filter((line) => line !== "");
+import { BREAKS, linesOf } from "./panel-hostile-fields.ts";
 
 /** A pin carrying the fields, with the extras the test names. */
-const withFields = (extra: Record<string, unknown>) => ({ ...pin(1, "text", "info"), ...extra });
+const withFields = (extra: Partial<ViewPin>) => ({ ...pin(1, "text", "info"), ...extra });
 
 describe("renderList draws group, options and compact", () => {
   test("the exact row of a fully-populated pin (operator resolution 4)", () => {
@@ -37,7 +33,7 @@ describe("renderList draws group, options and compact", () => {
     );
   });
 
-  test("a pin with none of the three reads exactly as it did before v2", () => {
+  test("a pin with none of the three reads exactly as it did before the fields existed", () => {
     expect(renderList(view([pin(1, "plain", "info")]), 3)).toBe(
       `Pinned for the user now (1 of 3):\n#1 [info] ${"plain"}`,
     );

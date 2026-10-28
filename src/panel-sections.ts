@@ -31,49 +31,35 @@
 import { orderPins } from "./render.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
 
-/** A level the view holds, spelled as the frame's title and headings spell it. */
-export type LevelKind = PinLevel;
-
-/**
- * Which kind of section this is: a level the view holds, or the name of a group the model wrote.
- *
- * A group name is stored on the section prefixed with `group:` — see `groupKey` — so a model that sends
- * `group: "info"` cannot take the info level's key in the `Map` that builds the sections. A member of
- * `LEVEL_KINDS` is the only spelling that names a level.
- */
-export type SectionKind = string;
-
-/** The three levels, spelled once for the callers that read a section's kind as one of them. */
-export const LEVEL_KINDS: readonly LevelKind[] = ["warning", "action", "info"];
-
-/** The `group` key of one section, spelled the way `panelSections` stamps it. */
-export const groupKey = (group: string): string => `${GROUP_PREFIX}${group}`;
-
-/** What marks a section kind as a group rather than a level. */
+/** What marks a bucket key as a group's rather than a level's — the internal spelling, never a field. */
 const GROUP_PREFIX = "group:";
 
-/** Whether `kind` names a group rather than a level. */
-export function isGroupSection(kind: SectionKind): boolean {
-  return kind.startsWith(GROUP_PREFIX);
-}
+/**
+ * The level a group ranks on. A bucket is only ever created from a pin, so its first pin exists; the
+ * fallback is the type's, not a state the walk can reach.
+ */
+const groupRank = (pins: readonly ViewPin[]): PinLevel => pins[0]?.level ?? "info";
 
-/** Whether `kind` names one of the three levels rather than a group the model wrote. */
-export function isLevelSection(kind: SectionKind): kind is LevelKind {
-  return !isGroupSection(kind) && (LEVEL_KINDS as readonly string[]).includes(kind);
-}
+/**
+ * A section of the panel's working list, and the one place its kind is decided.
+ *
+ * A **level** section holds the ungrouped pins of one level; a **group** section holds every pin that
+ * carries one group name, whatever level those pins hold, together with the level it ranks on. Which of
+ * the two a section is is a field on the section, not a string a caller re-parses: the disjointness the
+ * old `"group:"` prefix gave by convention is now stated by the union, so an unprefixed group name and a
+ * level named `group:` are both unrepresentable rather than merely unlikely.
+ */
+export type PanelSection =
+  | { readonly kind: "level"; readonly level: PinLevel; readonly pins: readonly ViewPin[] }
+  | {
+      readonly kind: "group";
+      readonly name: string;
+      readonly rank: PinLevel;
+      readonly pins: readonly ViewPin[];
+    };
 
-/** The group name a group section was built from, or `undefined` for a level section. */
-export function groupOf(kind: SectionKind): string | undefined {
-  return isGroupSection(kind) ? kind.slice(GROUP_PREFIX.length) : undefined;
-}
-
-/** A section of the panel's working list: one kind, and the pins that belong to it. */
-export interface PanelSection {
-  /** Which kind of section this is; the key the heading and the frame title are read from. */
-  kind: SectionKind;
-  /** The section's pins, in `orderPins` order: unreplied before replied, then newest id first. */
-  pins: readonly ViewPin[];
-}
+/** The three levels, spelled once: in the order the frame draws them and its title prints them. */
+export const LEVEL_KINDS: readonly PinLevel[] = ["warning", "action", "info"];
 
 /** The sections of one view, and the one flattened order every panel coordinate resolves through. */
 export interface PanelSections {
@@ -83,8 +69,12 @@ export interface PanelSections {
   flat: readonly ViewPin[];
 }
 
-/** Where a level sits in the ordering: warning, then action, then info. */
-export const LEVEL_ORDER: Record<PinLevel, number> = { warning: 0, action: 1, info: 2 };
+/** Where a level sits in the ordering: warning, then action, then info. Derived, so the order lives once. */
+const LEVEL_ORDER: Record<PinLevel, number> = {
+  warning: LEVEL_KINDS.indexOf("warning"),
+  action: LEVEL_KINDS.indexOf("action"),
+  info: LEVEL_KINDS.indexOf("info"),
+};
 
 /**
  * Whether `pins` is already in the order the panel draws — the order `panelSections` itself produces.
@@ -147,7 +137,7 @@ function alreadyDrawn(pins: readonly ViewPin[]): boolean {
 export function panelSections(pins: readonly ViewPin[]): PanelSections {
   if (pins.length === 0) return { order: [], flat: [] };
   const ranked = alreadyDrawn(pins) ? pins : orderPins(pins);
-  const buckets = new Map<SectionKind, ViewPin[]>();
+  const buckets = new Map<string, ViewPin[]>();
   for (const pin of ranked) {
     // A pin belongs to its group's section *or* its level's section, never both. A group is the model's
     // word for a bundle of pins that belong together, so its section is the whole of that pin's drawn
@@ -155,24 +145,38 @@ export function panelSections(pins: readonly ViewPin[]): PanelSections {
     // `counts` below) and still earns the section that count, but the rows the user reads are the group's,
     // under the group's heading — two copies of one pin would be two rows, two bar targets and `d`
     // dismissing whichever the walk reached first.
-    const kind: SectionKind = pin.group === undefined ? pin.level : groupKey(pin.group);
-    const bucket = buckets.get(kind);
-    if (bucket === undefined) buckets.set(kind, [pin]);
+    // A group's name is its bucket key prefixed with `group:` — an internal spelling only, so a model that
+    // sends `group: "info"` cannot take the info level's bucket. The section the bucket becomes carries the
+    // bare name.
+    const key = pin.group === undefined ? pin.level : `${GROUP_PREFIX}${pin.group}`;
+    const bucket = buckets.get(key);
+    if (bucket === undefined) buckets.set(key, [pin]);
     else bucket.push(pin);
   }
-  const order: PanelSection[] = [...buckets.entries()].map(([kind, sectionPins]) => ({
-    kind,
-    pins: sectionPins,
-  }));
+  const order: PanelSection[] = [...buckets.entries()].map(([key, sectionPins]) =>
+    key.startsWith(GROUP_PREFIX)
+      ? {
+          kind: "group" as const,
+          name: key.slice(GROUP_PREFIX.length),
+          // The level the group ranks on: its best pin's, which `orderPins` put first. Read off the pin
+          // rather than a caller's arithmetic, so the section ranks on what it actually holds.
+          rank: groupRank(sectionPins),
+          pins: sectionPins,
+        }
+      : { kind: "level" as const, level: key as PinLevel, pins: sectionPins },
+  );
   // A level the view holds is a section whatever its pins carry, so the frame's title — which counts levels,
   // not groups — has a segment for it. A level whose every pin lives in a group has no bucket of its own, so
   // an empty *counting* section is written in here — a section whose meaning is its kind alone, holding no
   // pins and owning no rows. Without it the title drops the segment, which is how a `Now` group holding the
   // view's only warning lost its `1 warning`.
-  const held = new Set<SectionKind>(order.map((section) => section.kind));
+  // The levels that already have a section of their own; a group's name is no level's, so it never matches.
+  const held = new Set<string>(
+    order.flatMap((section) => (section.kind === "level" ? [section.level] : [])),
+  );
   for (const level of LEVEL_KINDS) {
     if (held.has(level)) continue;
-    if (ranked.some((pin) => pin.level === level)) order.push({ kind: level, pins: [] });
+    if (ranked.some((pin) => pin.level === level)) order.push({ kind: "level", level, pins: [] });
   }
   order.sort(compareSections);
   // One push per pin rather than `push(...section.pins)`: a spread hands the section's pins as arguments,
@@ -193,44 +197,31 @@ export function panelSections(pins: readonly ViewPin[]): PanelSections {
  * occur at once (one bucket per kind, and a level either has its own bucket or gets a counting section).
  */
 function compareSections(a: PanelSection, b: PanelSection): number {
-  const byLevel = LEVEL_ORDER[bestLevelOf(a)] - LEVEL_ORDER[bestLevelOf(b)];
+  const byLevel = LEVEL_ORDER[rankOf(a)] - LEVEL_ORDER[rankOf(b)];
   if (byLevel !== 0) return byLevel;
-  return bestIdOf(b) - bestIdOf(a);
+  // A counting section has no best pin to tie on, so it takes the lowest id there can be and sits after any
+  // drawn section of its rank — the ordering the paragraph above states.
+  const bestId = (section: PanelSection): number => section.pins[0]?.id ?? Number.MIN_SAFE_INTEGER;
+  return bestId(b) - bestId(a);
 }
 
-/** The section's best-ranked pin, which `orderPins` put first. Only called for a section that has one. */
-function bestOf(section: PanelSection): ViewPin {
-  return section.pins[0] as ViewPin;
-}
-
-/** The level a section ranks on: its own level, or the best pin's level for a group. */
-function bestLevelOf(section: PanelSection): PinLevel {
-  return isLevelSection(section.kind) ? section.kind : bestOf(section).level;
-}
-
-/** The id a section ties on: its best pin's, or none at all for a counting section. */
-function bestIdOf(section: PanelSection): number {
-  return section.pins.length === 0 ? Number.MIN_SAFE_INTEGER : (bestOf(section) as ViewPin).id;
+/** The level a section ranks on: its own level, or the level its best pin carried. */
+function rankOf(section: PanelSection): PinLevel {
+  return section.kind === "level" ? section.level : section.rank;
 }
 
 /**
- * Whether the frame draws any heading at all: more than one section that owns rows, *or* one section that
- * needs naming.
+ * Whether the frame draws any heading at all: more than one section owns rows, *or* the one that does is a
+ * group.
  *
  * The question the layout asks is not "more than one section". A view whose every pin carries one group
  * is a single drawn section, and a level section of one needs no heading to tell the user what they are
  * looking at — the glyph on each row already says it. A **group** section does: the group's name is the only
  * place the user learns what bundle these rows are, and nothing else on the frame carries it (a pin row never
- * repeats its own group). So one group section is headed and one level section is not.
+ * repeats its own group). So one group section is headed and one level section is not — the asymmetry, in
+ * one pass over the order rather than two overlapping clauses.
  */
 export function hasHeadings(order: readonly PanelSection[]): boolean {
-  return (
-    drawnSections(order) > 1 ||
-    order.some((section) => section.pins.length > 0 && isGroupSection(section.kind))
-  );
-}
-
-/** How many sections of `order` own rows — the sections a heading could go over. */
-function drawnSections(order: readonly PanelSection[]): number {
-  return order.filter((section) => section.pins.length > 0).length;
+  const drawn = order.filter((section) => section.pins.length > 0);
+  return drawn.length > 1 || drawn.some((section) => section.kind === "group");
 }

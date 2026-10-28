@@ -41,7 +41,7 @@ import {
   gutter,
   padPlain,
 } from "./panel-frame.ts";
-import { PANEL_MIN_FRAME_COLUMNS, PANEL_MIN_FRAME_ROWS, isPanelSize } from "./panel-geometry.ts";
+import { isPanelFrameSize } from "./panel-geometry.ts";
 import { drawOptionRow } from "./panel-options-row.ts";
 import { panelContentRows } from "./panel-rows.ts";
 import { isOptionRow } from "./panel-rows.ts";
@@ -54,17 +54,6 @@ import type { ViewPin } from "./types.ts";
 
 /** The keys the panel answers, written into the bottom border while the panel holds focus. */
 export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
-
-/**
- * Whether a size is one a *closed* frame fits in: the builder draws nothing below either bound. Exported
- * because the peek is drawn by another module and is measured by the same two numbers — a peek which fitted
- * where the open panel would not draw is a frame with gutters hanging off the overlay.
- */
-export function isPanelFrameSize(width: number, height: number): boolean {
-  return (
-    isPanelSize(width, height) && width >= PANEL_MIN_FRAME_COLUMNS && height >= PANEL_MIN_FRAME_ROWS
-  );
-}
 
 /** What the builder draws. `pins` is the *drawn order* — `panelSections`'s flattened list, which is what the component hands the frame and what `selection` indexes into. */
 export interface PanelContent {
@@ -233,9 +222,12 @@ export function buildPanelLines(
 }
 
 /**
- * The row as the frame prints it, with a pin's options filled into the row the table only reserved
- * (`optionRow`, `panel-rows.ts`). Filling happens here because it is the only place the frame's inner width
- * is known; `drawOptionRow` drops whole entries from the end rather than truncating one.
+ * The row as the frame prints it, with a pin's options filled into the row the table only reserved (the row
+ * `optionRows` builds in `panel-rows.ts`, which tags it so this is the only thing that can match it).
+ * Filling happens here because it is the only place the frame's inner width is known; `drawOptionRow` drops
+ * whole entries from the end rather than truncating one. The width it fills at is the frame's *full inner
+ * width*, not the text column the pin's own rows wrapped at — the row carries no tail, so it pays for no
+ * id/age reserve (see `panel-options-row.ts`).
  */
 function optionFilled(
   entry: PanelOwned,

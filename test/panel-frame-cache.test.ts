@@ -14,29 +14,60 @@
  */
 import { expect, test } from "bun:test";
 
-import { sameFrame } from "../src/panel-frame-cache.ts";
 import type { PanelFrame } from "../src/panel-frame-cache.ts";
+import { sameFrame } from "../src/panel-frame-cache.ts";
+import { frameOf } from "../src/panel-frame-draw.ts";
 import { railStamp } from "../src/panel-geometry.ts";
+import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
+import { panelSections } from "../src/panel-sections.ts";
 import { applyAction } from "../src/reducer.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, pin, state, uidSource, view } from "./fixtures.ts";
 
 const PINS: readonly ViewPin[] = [pin(1, "One", "info"), pin(2, "Two", "warning")];
 
-/** A frame whose every field is a default the tests change one at a time. */
-function frame(over: Partial<PanelFrame> = {}): PanelFrame {
+/**
+ * A frame whose every field is a default the tests change one at a time, built by `frameOf` — the builder
+ * `drawFrame` uses for the frame it memorises — rather than by a literal of the test's own. A literal would
+ * keep this table honest only while the test's field list happened to match the type's; a frame built by the
+ * production builder cannot name a field the frame does not have, and the case below names the fields the
+ * builder is *given*, which is what a new member of the key has to pass through to be noticed at all.
+ */
+/** The defaults `frame` builds with, so a case names only what it changes. */
+interface FrameOverrides {
+  lines?: string[];
+  width?: number;
+  pins?: readonly ViewPin[];
+  selection?: number;
+  focused?: boolean;
+  mode?: PanelFrame["mode"];
+  replyHint?: string;
+  ageNow?: number;
+}
+
+function frame(over: FrameOverrides = {}): PanelFrame {
+  const pins = over.pins ?? PINS;
   return {
-    lines: ["╭──╮", "│One│", "╰──╯"],
-    width: 12,
-    pins: PINS,
-    selection: 0,
-    focused: false,
-    // The state the frame was drawn for: `open` is what every case below draws, and the one case that needs
-    // the peek's rows names it.
-    mode: "open",
-    replyHint: "",
-    ageNow: 29_725_800,
-    ...over,
+    ...frameOf(
+      over.lines ?? ["╭──╮", "│One│", "╰──╯"],
+      {
+        sections: panelSections(pins),
+        width: over.width ?? 12,
+        style: NO_PANEL_COLOUR,
+        terminalRows: 24,
+      },
+      {
+        replyHint: over.replyHint ?? "",
+        mode: over.mode ?? "open",
+        ageNow: NOW,
+        // The minute the frame's ages were drawn at; the case below moves it by one to prove the key reads
+        // the bucket and not the instant.
+        ageKey: over.ageNow ?? 29_725_800,
+      },
+      over.focused ?? false,
+      over.selection ?? 0,
+    ),
+    pins,
   };
 }
 

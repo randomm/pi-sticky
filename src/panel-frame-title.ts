@@ -20,7 +20,7 @@
  * grouping the headings under this title came from.
  */
 import type { PanelSection } from "./panel-sections.ts";
-import { isLevelSection } from "./panel-sections.ts";
+import { LEVEL_KINDS } from "./panel-sections.ts";
 import type { PinLevel } from "./types.ts";
 
 /** The frame title's opening, before its first count. */
@@ -28,9 +28,6 @@ const TITLE = "📌 Pinned";
 
 /** The separator between the opening and a count, and between two counts. */
 const SEPARATOR = " · ";
-
-/** Levels in the order their segments are printed: warning, then what the user must decide, then facts. */
-const LEVELS: readonly PinLevel[] = ["warning", "action", "info"];
 
 /**
  * The word each level's count is written with. `warning` is a noun and inflects; `needs you` is a phrase and
@@ -69,7 +66,7 @@ const INFLECTS: Record<PinLevel, boolean> = { warning: true, action: false, info
 export function frameTitle(sections: readonly PanelSection[]): string {
   const counts = levelCounts(sections);
   const segments: string[] = [];
-  for (const level of LEVELS) {
+  for (const level of LEVEL_KINDS) {
     const count = counts[level];
     if (count === 0) continue;
     // The test is on the level and the segments already built, never on an index into `sections`
@@ -94,20 +91,19 @@ export function frameTitle(sections: readonly PanelSection[]): string {
  * Two kinds of section contribute, and the difference is what the title is for:
  *
  * - a **level** section — the pins of that level that carry no group — contributes the pins it holds;
- * - a **counting** section — a level whose every pin carries a group, and which therefore holds none —
- *   contributes one per pin of that level held by a *group* section.
+ * - a **group** section — whose pins belong to no level section (that is the placement rule, `panelSections`)
+ *   — contributes one per pin, at each pin's own level.
  *
- * A group's pins are members of no level section (that is the placement rule, `panelSections`), so reading
- * only the level sections would silently drop them: the twelve-pin session whose only warning sat in a `Now`
- * group would have titled `📌 Pinned · 11 more` and hidden the one pin that asked for a decision. Counting a
- * pin twice — once in its group and once in its level — is the failure the two branches are written apart to
- * avoid.
+ * Reading only the level sections would silently drop a group's pins: the twelve-pin session whose only
+ * warning sat in a `Now` group would have titled `📌 Pinned · 11 more` and hidden the one pin that asked for a
+ * decision. Counting a pin twice — once in its group and once in its level — is the failure the two branches
+ * are written apart to avoid.
  */
 function levelCounts(sections: readonly PanelSection[]): Record<PinLevel, number> {
   const counts: Record<PinLevel, number> = { warning: 0, action: 0, info: 0 };
   for (const section of sections) {
-    if (isLevelSection(section.kind)) {
-      counts[section.kind] += section.pins.length;
+    if (section.kind === "level") {
+      counts[section.level] += section.pins.length;
       continue;
     }
     // A group section: its pins belong to their own levels here and nowhere else in this sum.
