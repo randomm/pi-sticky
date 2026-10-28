@@ -23,31 +23,49 @@ import { createPanelMode } from "../src/panel-mode.ts";
 import type { PanelModeState } from "../src/panel-mode.ts";
 import { rebuildSession } from "../src/session-rebuild.ts";
 import type { RebuildCells, Rebuilt } from "../src/session-rebuild.ts";
-import { EMPTY_STATE } from "../src/state.ts";
 import { UI_TYPE } from "../src/types.ts";
+import type { ViewPin } from "../src/types.ts";
 import { contextWith } from "./panel-lifecycle-fixture.ts";
 
 /** The entries of a session whose last panel verb was `shown`. */
 const hideEntry = { type: "custom", customType: UI_TYPE, data: { v: 1, shown: false } };
 
-/** The cells of one rebuild over `entries`, with the two answers the caller owns. */
+/**
+ * The cells of one rebuild over `entries`, with the four answers the caller owns: what is drawn, whether a
+ * commit is unappended, whether an auto-show sits on the screen the entries do not account for, and what the
+ * outstanding commit published for the branch to be checked against.
+ */
 function cells(
   entries: readonly unknown[],
   panel: PanelModeState,
-  opts: { drawn: boolean; unseen: boolean; published?: Rebuilt[] },
+  opts: {
+    drawn: boolean;
+    unseen: boolean;
+    published?: Rebuilt[];
+    autoShow?: boolean;
+    holds?: ViewPin[];
+  },
 ): RebuildCells {
+  const holds = opts.holds ?? [];
   return {
     reconstruct: (ctx) => {
       // Read the entries the context carries, so a test that passed a context with no branch is caught by
       // the type rather than by an unused parameter.
       void ctx.sessionManager.getEntries();
-      const rebuilt: Rebuilt = { state: EMPTY_STATE, view: { pins: [], removed: [] } };
+      const rebuilt: Rebuilt = {
+        state: { v: 1, nextId: 1, pins: holds, removed: [] },
+        view: { pins: holds, removed: [] },
+      };
       opts.published?.push(rebuilt);
       return rebuilt;
     },
     panel,
     surfacesDrawn: () => opts.drawn,
     unseen: () => opts.unseen,
+    published: () => holds,
+    landed: () => {},
+    autoShowPending: () => opts.autoShow ?? false,
+    sighted: () => {},
     publish: () => {},
   };
 }
@@ -94,6 +112,51 @@ test("a panel that is on screen is settled from the entry without moving the rec
   // The half the whole transience rests on: without this, one auto-open after a `/pins hide` would teach
   // the cell that the user had asked for a shown panel, and every later rebuild would re-show it.
   expect(panel.recorded()).toBe(false);
+});
+
+test("an auto-show the branch has not been read for outranks the entries, but never the user", () => {
+  // The half the commit's own `unseen` cannot cover. A pin arrives while the panel rests hidden, the
+  // auto-show puts it on screen, and pi writes the result: the *next* rebuild is no longer held back by the
+  // commit — the branch holds the pin — and the entries still hold the hide the auto-show was granted
+  // permission to undo. Settling from that entry is how a pin vanishes off the screen while the user reads
+  // it, and it is the failure the ledger's per-commit lifecycle used to paper over by never landing at all.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.settle(false); // the user's verb, recorded: the entry below is that same choice
+  panel.autoOpen(); // …and a pin earned a transient open
+  expect(panel.shown()).toBe(true);
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+  );
+  expect(panel.shown()).toBe(true);
+  expect(panel.recorded()).toBe(false);
+
+  // The same rebuild, with the claim settled (what a trusted rebuild reports through `sighted`): the entries
+  // are the last word again, and the panel goes back to what the user recorded.
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
+  );
+  expect(panel.shown()).toBe(false);
+});
+
+test("a recorded verb outranks an auto-show still standing", () => {
+  // The claim is a transience and not a latch: once the session holds a verb the *user* wrote, the entries
+  // decide, claim or no claim. Otherwise one auto-show would keep a panel the user has since put away on
+  // screen for the rest of the session — the same shape of bug as a commit which never landed.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.settle(false);
+  panel.autoOpen();
+  panel.settle(true); // the user's own `/pins show`, which records
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+  );
+  // The entry says hidden and the cell's record says shown; the cell's own record is the user's last verb,
+  // so the screen settles to what the entries say and the record is not restated over it.
+  expect(panel.shown()).toBe(false);
 });
 
 test("a rebuild with no context changes nothing", () => {

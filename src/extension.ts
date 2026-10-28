@@ -156,13 +156,15 @@ export function createStickyExtension(
         () => redrawAll(live),
       );
 
-    /** The cells `rebuildSession` reads and writes — the four it touches, all of them this instance's. */
+    // The cells `rebuildSession` reads and writes. The commit cells are the ledger's own, forwarded whole:
+    // the rebuild asks its two questions of the ledger and reports both verdicts back, which is what keeps
+    // the answer a caller is given and the state the ledger keeps from parting (`session-commits.ts`).
     const rebuildCells: RebuildCells = {
       reconstruct: (ctx) =>
         reconstruct(ctx.sessionManager.getBranch(), ctx.sessionManager.getEntries()),
+      ...commits,
       panel,
       surfacesDrawn: () => surfaces.surfacesDrawn(),
-      unseen: () => commits.unseen(),
       publish: (rebuilt) => {
         state = rebuilt.state;
         view = rebuilt.view;
@@ -179,7 +181,7 @@ export function createStickyExtension(
         // cannot be read for yet (U8, narrowed by U11). *Every* commit is noted, including one that added no
         // pin: an `update` that promotes a pin to `action` is exactly the commit U11 says must reach the
         // level test, and a length comparison would have dropped it before it got there.
-        commits.note(affected);
+        commits.note(affected, next.pins);
         state = next;
         view = { pins: next.pins, removed: next.removed };
       },
