@@ -15,9 +15,10 @@
   },
   "keywords": ["pi-package", "pi", "pi-extension", "pi-coding-agent"],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./src/index.ts"],
+    "skills": ["./skills"]
   },
-  "files": ["src", "README.md", "LICENSE", "NOTICE"],
+  "files": ["src", "skills", "README.md", "LICENSE", "NOTICE"],
   "scripts": {
     "test": "bun test",
     "check": "biome check src test && tsc --noEmit",

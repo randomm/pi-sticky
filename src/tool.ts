@@ -34,11 +34,8 @@ const PROMPT_SNIPPET =
   "pin_for_user: keep a short message on the user's screen until it is resolved (decisions you need, blockers, final results).";
 
 const PROMPT_GUIDELINES: readonly string[] = [
-  "Use pin_for_user when the user must see something after a long run: a decision you need from them, a blocker that stopped your work, a risk, or the final result and where to find it.",
-  "Do not pin progress updates or routine status. Keep each pin to one or two sentences and say what the user should do.",
-  "Update an existing pin instead of adding a new one on the same topic, and unpin it when it is resolved.",
-  "The user may read a pin hours later, so make each pin understandable on its own.",
-  'When the user replies to a pin (their message starts with "Replying to pin #N"), act on the reply, then update or unpin that pin.',
+  "Pin only what the user must see after a long run: a decision you need, a blocker, a risk, or the final result. Never a progress update.",
+  "For detailed use, load the sticky-basics skill.",
 ];
 
 const Params = Type.Object({
