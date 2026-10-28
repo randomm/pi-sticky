@@ -234,7 +234,7 @@ agent decides the task fits, so a skill costs almost nothing until it is used.
 | `sticky-basics` | What deserves a pin, which level to pick, one pin per topic, answering a reply, and when to use `options` or `compact`. The tool's own prompt points here. |
 | `sticky-decisions` | Asking a question: one question per `action` pin, 2–4 answerable `options`, never inventing an answer, closing the pin when the reply arrives. |
 | `sticky-run-board` | A Now/Backlog board for a long run: one compact `Now` pin updated in place, a small `Backlog` copied from the tracker, and unpinning it all at the end. |
-| `sticky-noni` | The [noni](https://github.com/randomm/noni) bridge: pin each steering question at `action` level with its own `options`, build the `Backlog` group from the top of `noni/direction/order.json`, and keep one `warning` for a failing census. Only applies in a project that has a `noni/` directory — see [Using with noni](#using-with-noni). |
+| `sticky-noni` | The [noni](https://github.com/randomm/noni) bridge: steering questions as `action` pins with their `options`, the `Backlog` group from `noni/direction/order.json`, one `warning` for a failing census. Needs noni — see [Using with noni](#using-with-noni). |
 
 The agent loads them itself when they fit. To force one, run it as a command — the text after the
 name goes along as your request:
@@ -282,42 +282,58 @@ read-only census that reports where the work has drifted from either. pi-sticky 
 any of it. The `sticky-noni` skill tells the agent how to *surface* those three: the committed record
 stays the truth and the pin is only how you see it.
 
-Install noni's skills alongside this extension — from a clone of noni:
+Install noni's skills alongside this extension, from a clone of noni (a git-URL install works too, but
+it clones the whole repo — `tests/` and all — into pi's package cache and re-scans it on every
+`/reload`):
 
 ```sh
 pi install /path/to/noni
 ```
 
+Confirm it with `pi list` — noni's skills must appear there. A `pi install` of a path is validated only
+by an existence check, so a typo'd or moved clone can record the package and load no skills at all.
+
 **Verified:** `pi install` of a noni clone does expose its skills with no manifest. noni's repo has no
 `package.json` at all, and pi discovers a conventional top-level `skills/` directory for a package with
-no `pi` manifest, so the skills load from that one command. Verified with pi 1.4.0 against a clone of
-noni's `main`, which ships four (`steering-ledger`, `direction`, `census`, `sessions-claims`). Use
-`pi install` rather than a symlink into `~/.pi/agent/extensions/` for the same reason as the extension
-itself (see Disabling and subagent isolation).
+no `pi` manifest, so the skills load from that one command. Verified against pi 1.3.0, the version this
+repo pins, on a clone of noni's `main` (private at the time of writing), which ships four
+(`steering-ledger`, `direction`, `census`, `sessions-claims`). If noni later ships a `pi` manifest that
+names only `extensions`, discovery stops and the settings route below is the fix. Same install rule as
+this extension: `pi install`, never a symlink (see Disabling and subagent isolation).
+
+The scripts those skills run import noni's package, so install it alongside the skills
+(`pip install noni`, or `PYTHONPATH=<clone>` in the environment the agent runs in), or every one of
+them refuses to start.
 
 If you would rather not install noni as a package, add its skills directory to the `skills` list in
-your pi settings instead (`~/.pi/agent/settings.json`, or `.pi/settings.json` for one project):
+your pi settings instead: `~/.pi/agent/settings.json` for every project, `.pi/settings.json` for one.
 
 ```json
 {
-  "skills": ["/path/to/noni/skills"]
+  "skills": ["+/path/to/noni/skills"]
 }
 ```
 
-Either route needs a restart to pick the skills up. Noni ships no `SKILL.md` at its root, so pointing
-the setting at the clone root loads nothing — it has to name `noni/skills` (or one skill directory
-under it). To confirm both halves are loaded, ask the agent to run the census and check it reaches
-noni's `skills/census/scripts/census.py`, then force each skill by name:
+The `+` forces the directory in; restart pi afterwards either way. Noni ships no `SKILL.md` at its
+root, so pointing the setting at the clone root loads nothing — it has to name `noni/skills` (or one
+skill directory under it).
+
+To confirm both halves are loaded, from the target project: 1) force noni's own skill and check the
+census actually runs — `python3 /path/to/noni/skills/census/scripts/census.py --repo .`, or `noni
+census` where the package is installed; 2) force the bridge and check it pins what the census
+reported:
 
 ```text
 /skill:steering-ledger run the census and tell me what fails
 /skill:sticky-noni pin what the census reported
 ```
 
-The bridge does nothing without noni: in a project with no `noni/` directory `sticky-noni` declines and
-says so, rather than inventing a ledger or an order. See `skills/sticky-noni/SKILL.md` for the policy —
-one `action` pin per question, the `Backlog` group rebuilt from the first five entries of the order, and
-never more than one census warning on screen.
+If either answer says the project has no noni, or the census script cannot be reached, the skills are
+not loaded — re-check the path in `pi list` or in the `skills` setting before trusting the verdict.
+
+The bridge does nothing without noni: in a project with no `noni/` directory, or with noni's skills not
+loaded, `sticky-noni` declines and says so. When a pin and the committed record disagree, the record
+wins — the skill's closing rule.
 
 ## Keys
 
