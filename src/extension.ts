@@ -42,6 +42,7 @@ import { PanelOwner } from "./panel.ts";
 import { registerReminder } from "./reminder.ts";
 import { registerReply } from "./reply.ts";
 import { drawFrom, drawSession, settleSession } from "./session-draw.ts";
+import { createSessionSurfaces } from "./session-surfaces.ts";
 import { createPanelTick } from "./session-tick.ts";
 import { reconstruct } from "./state.ts";
 import { EMPTY_STATE } from "./state.ts";
@@ -76,48 +77,45 @@ export function createStickyExtension(
     let sinceRebuild = 0;
     /** How wide this session's terminal is, as pi-tui last stated it — one holder per instance. */
     const terminal = new TerminalWidth();
+    /**
+     * The cells this instance owns about what it has on screen — its live rail, the panel owner, and the
+     * hand's one question over both. Per instance, never a `static`: `session-surfaces.ts`.
+     */
+    const surfaces = createSessionSurfaces();
 
     /**
      * The minute hand: owned by this instance, started afresh at each session boundary so none carries a
      * dead session's state into its successor. Its wiring reads the live cells, not their values, and both
-     * questions go to the owner that installs the surfaces — never a width `TerminalWidth` had to guess.
+     * questions go to the owner that installs the surfaces (`surfaces`), never a width `TerminalWidth` guessed.
      */
-    const surfaceDrawn = (): boolean => panelRef.current?.isAnySurfaceVisible() ?? false;
     const tick = createPanelTick(
       {
         pinCount: () => view.pins.length,
-        panelDrawn: surfaceDrawn,
+        panelDrawn: surfaces.surfacesDrawn,
         now: clock,
         redraw: () => redrawAll(live),
       },
       clock,
-      surfaceDrawn,
+      surfaces.surfacesDrawn,
     );
 
-    /**
-     * Draw the rail from the current view and the open panel.
-     *
-     * The single place the handoff is written: everything that can change what the rail shows — a commit, a
-     * toggle, a dismissal, a rebuild, a frame — reaches it through here, so exactly one call site has to pass
-     * the live `panel`. The owner is read off the holder rather than closed over: its wiring is built from
-     * this function, so the two are mutually recursive and only a cell breaks the cycle — and the cell being
-     * `| undefined` makes the ordering below something the compiler checks rather than a comment.
-     *
-     * The visibility flag is *not* an argument: `panel.isVisible()` already folds it in, so a second copy
-     * here could only be one the caller forgot to refresh.
-     */
-    function drawRail(ctx: ExtensionContext | undefined): void {
-      // The rail's teardown is reported, not obeyed: pi disposes the key's component every time it replaces
-      // the rail, so stopping the hand here would stop the minute on the tick that re-ages this rail.
-      if (ctx) drawPins(ctx, view, config, panelRef.current, clock, () => tick.surfaceGone());
-    }
+    /** A surface's teardown: the hand re-asks whether either surface is still drawn. Shared by both. */
+    const onRailGone = (): void => tick.surfaceGone();
 
     /**
-     * The one cell the owner is kept in, for the mutual recursion above: assigned once, below, before
-     * anything that reads it is registered, and every read optional-chained so a call that arrives early
-     * draws the rail and nothing else rather than throwing.
+     * Draw the rail from the current view and the open panel. The single place the handoff is written:
+     * everything that can change what the rail shows — a commit, a toggle, a dismissal, a rebuild, a frame —
+     * reaches it through here, so exactly one call site has to pass the live `panel`, read off the instance's
+     * cells (`session-surfaces.ts`) rather than closed over: the owner's wiring is built from this function,
+     * so the two are mutually recursive and only a cell breaks the cycle. The flag is *not* an argument —
+     * `panel.isVisible()` already folds it in, so a copy here could only be one the caller forgot.
      */
-    const panelRef: { current: PanelOwner | undefined } = { current: undefined };
+    function drawRail(ctx: ExtensionContext | undefined): void {
+      // The rail's teardown is reported, not obeyed: pi replaces the key's component on every install, so
+      // stopping the hand here would stop the minute on the tick that re-ages this rail.
+      if (ctx)
+        drawPins(ctx, view, config, surfaces.panel.current, clock, onRailGone, surfaces.rail);
+    }
 
     /**
      * Settle the flag and draw both surfaces — the one idiom every change uses, in one fixed order, so a
@@ -127,7 +125,7 @@ export function createStickyExtension(
      */
     function redrawAll(ctx: ExtensionContext | undefined): void {
       drawRail(ctx ?? live);
-      panelRef.current?.refresh();
+      surfaces.panel.current?.refresh();
     }
 
     /**
@@ -217,7 +215,7 @@ export function createStickyExtension(
     // factory so the shape it depends on lives with the panel. The width is read from the holder rather than
     // from a command's own `ctx`: pi builds those from a literal that copies the bound uiContext, so a
     // refusal measured against one could read a terminal of zero columns and contradict the overlay on screen.
-    panelRef.current = new PanelOwner(
+    surfaces.panel.current = new PanelOwner(
       createPanelWiring({
         deps,
         terminal,
@@ -235,7 +233,7 @@ export function createStickyExtension(
         // `rpc` installs a rail no overlay competes with, and the hand has to know that without a context.
         rpc: () => live?.mode === "rpc",
         // The panel's surface is going; the rail may still hold the pins, so the hand is re-asked.
-        onDispose: () => tick.surfaceGone(),
+        onDispose: onRailGone,
       }),
     );
 
@@ -245,7 +243,7 @@ export function createStickyExtension(
     registerCommands(
       pi,
       deps,
-      panelCommands(() => panelRef.current),
+      panelCommands(() => surfaces.panel.current),
     );
     registerReminder(pi, deps);
     registerReply(pi, deps);
@@ -255,7 +253,7 @@ export function createStickyExtension(
     registerPanelShortcuts(
       pi,
       config,
-      panelShortcuts(() => panelRef.current),
+      panelShortcuts(() => surfaces.panel.current),
     );
 
     // The cells `drawSession` reaches, built by `session-draw.ts` from the shape it declares: one object,
@@ -266,7 +264,7 @@ export function createStickyExtension(
       },
       rebuild,
       redraw: redrawAll,
-      panel: () => panelRef.current,
+      panel: () => surfaces.panel.current,
       tick,
     });
 
@@ -294,7 +292,7 @@ export function createStickyExtension(
       panelShown = true;
       sinceRebuild = 0;
       terminal.forget();
-      panelRef.current?.close();
+      surfaces.panel.current?.close();
     });
   };
 }

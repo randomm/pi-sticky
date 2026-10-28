@@ -133,7 +133,11 @@ test("the reserved tail is measured, not guessed, and the frame floor covers it"
   // the builder asking for more than the tail needs, which costs nothing; a floor below it is the `#id`
   // drawing in a frame too narrow for it, which is the defect. An id past `#999` is neither one's problem —
   // it buys its own columns from the text, which the sweeps above prove.
-  expect(META_COLUMNS).toBe(visibleWidth(RESERVED_TAIL) + META_SEPARATOR_COLUMNS);
+  // The reserved tail's own spelling is the thing under test, so it is spelled as a literal here: the
+  // assertion reads the exported string against what the panel means to reserve, and then measures the
+  // arithmetic against the same literal — `META_COLUMNS` against itself would be true whatever the tail drew.
+  expect(RESERVED_TAIL).toBe(" #999 999d");
+  expect(META_COLUMNS).toBe(visibleWidth(" #999 999d") + META_SEPARATOR_COLUMNS);
   expect(MIN_COLUMNS_FOR_META).toBe(FRAME_COLUMNS + META_COLUMNS + META_SEPARATOR_COLUMNS + 1);
   expect(PANEL_MIN_FRAME_COLUMNS).toBeGreaterThanOrEqual(MIN_COLUMNS_FOR_META);
 });

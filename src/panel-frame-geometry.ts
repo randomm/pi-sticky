@@ -65,7 +65,28 @@ const RESERVED_PIN: ViewPin = {
 /** 999 days: the widest age the panel reserves a tail for, as the difference `RESERVED_NOW` is measured by. */
 const RESERVED_AGE_MS = 999 * 24 * 60 * 60 * 1000;
 
-const RESERVED_NOW = new Date(Date.parse(RESERVED_PIN.createdAt) + RESERVED_AGE_MS).toISOString();
+/**
+ * The instant to measure the floor at, spelled as an offset rather than through `Date`.
+ *
+ * `toISOString()` throws `RangeError: Invalid Date` on an unparseable stamp, so it would abort the module
+ * before the check below ever ran: the failure would be loud, but not this one, and not with the message that
+ * names the pair to fix. Measuring the age as a millisecond difference keeps the arithmetic the header states
+ * (999 days, as a difference) and leaves the module to answer for itself.
+ */
+const RESERVED_NOW_MS = Date.parse(RESERVED_PIN.createdAt) + RESERVED_AGE_MS;
+
+// Loud here rather than wrong further down: if either stamp stops parsing, `RESERVED_NOW` is `NaN`, the
+// reserved tail stamps as `--`, and the floor silently drops to the width of two characters — every frame then
+// charges the text for columns the tail does not take, and the `#id` is what the row cuts. A module that throws
+// while loading says so; a module whose floor is quietly small says nothing until a user's panel loses an id.
+// `RESERVED_PIN.createdAt` is a literal, so this can only fire through an edit.
+if (Number.isNaN(RESERVED_NOW_MS)) {
+  throw new Error(
+    "panel-frame-geometry: the reserved tail's stamps do not parse, so META_COLUMNS measures nothing",
+  );
+}
+
+const RESERVED_NOW = new Date(RESERVED_NOW_MS).toISOString();
 
 /**
  * The columns `pinRow` puts before the tail, beside the tail itself rather than inside it.
@@ -87,7 +108,8 @@ const reservedTail = (): string => fullStamp(RESERVED_PIN, (text) => text, RESER
  * Exported because the promise it pins — `META_COLUMNS` is the width of the *actual* reserved tail, not of a
  * literal someone estimated — cannot be checked from outside without either copying the format (the failure
  * this whole area exists to prevent) or reading the constant back against itself (which proves nothing). One
- * exported spelling, read by the arithmetic and by the assertion over the arithmetic.
+ * exported spelling, read by the arithmetic and by the assertion over the arithmetic — which asserts the
+ * *spelling* (`" #999 999d"`) and then the arithmetic against a literal, so neither half can move alone.
  */
 export const RESERVED_TAIL = reservedTail();
 

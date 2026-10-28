@@ -1,4 +1,4 @@
-import { containTick } from "../src/panel-tick-guard.ts";
+import type { TickGuard } from "../src/panel-tick-guard.ts";
 /**
  * The minute hand a test drives by hand: the wiring, the clock the test moves, and the frames it asked for.
  *
@@ -7,7 +7,12 @@ import { containTick } from "../src/panel-tick-guard.ts";
  * dispatch instead — what `setInterval` actually fires — which is the only way to see a throw the tick's own
  * body cannot report. Both are the same hand; a second copy of the wiring below is how the two would drift
  * into testing two different fixtures, which is why the shape lives here.
+ *
+ * Each hand builds its **own** guard (`createTickGuard`) and reports it on `guard`, because the guard's one
+ * piece of state is per session: a shared one would let the first failure anywhere in the suite silence every
+ * later hand, and a case that asserts a report was made would pass or fail on the order the file ran in.
  */
+import { createTickGuard } from "../src/panel-tick-guard.ts";
 import { PanelTick } from "../src/panel-tick.ts";
 import type { TickWiring } from "../src/panel-tick.ts";
 
@@ -30,6 +35,8 @@ export interface Hand {
   fire(): void;
   /** The hand's own tally, for a case that supplies its own `redraw` and must still count what it drew. */
   asked(): void;
+  /** This hand's containment — `forget()` it to stand in for a session boundary. */
+  guard: TickGuard;
   /** Replace one member of the wiring after the hand was built — for a host whose behaviour changes. */
   over(over: Partial<TickWiring>): void;
 }
@@ -60,15 +67,17 @@ export function hand(over: Partial<TickWiring> = {}): Hand {
   // The tick's clock is the wiring's own: a hand whose two clocks disagree measures an age against an
   // instant no frame was drawn at. Read through an arrow, not a detached reference — a clock written as a
   // method (`now() { return this.iso }`) needs its receiver, and a bare `wiring.now` arrives with none.
-  const tick = new PanelTick(wiring, () => wiring.now());
+  const guard = createTickGuard();
+  const tick = new PanelTick(wiring, () => wiring.now(), guard);
   return {
     tick,
     at: (next) => {
       iso = next;
     },
     frames: () => frames,
-    fire: () => containTick(tick, wiring),
+    fire: () => guard.contain(tick, wiring),
     asked,
+    guard,
     over: (next) => Object.assign(wiring, next),
   };
 }

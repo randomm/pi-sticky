@@ -26,14 +26,16 @@
  * The interval is never started twice: `start` clears what it was holding first, which is what makes a
  * `session_start` on a live session (a reload) a restart rather than a second timer over the same session.
  *
- * And a tick never escapes: `containTick` (`panel-tick-guard.ts`) wraps it, the way `containKey` wraps the
+ * And a tick never escapes: `createTickGuard` (`panel-tick-guard.ts`) wraps it, the way `containKey` wraps the
  * key dispatch. `setInterval` has no caller to hand a throw to, so one that escaped would be an uncaught
- * exception in pi's own process rather than a minute that did not draw.
+ * exception in pi's own process rather than a minute that did not draw. The guard is handed in rather than
+ * built here because its one piece of state belongs to the *session*, which `SessionTick`
+ * (`session-tick.ts`) owns; a tick that built its own would report the same failure once per timer.
  */
 
 import type { AgeClock } from "./panel-age.ts";
 import { ageBucket } from "./panel-age.ts";
-import { containTick } from "./panel-tick-guard.ts";
+import type { TickGuard } from "./panel-tick-guard.ts";
 
 /** How often the age is asked whether it moved: a whole minute, the coarsest bucket the age is drawn at. */
 export const TICK_INTERVAL_MS = 60_000;
@@ -50,7 +52,7 @@ export interface TickWiring {
   redraw(): void;
   /**
    * Tell the user one line, when a minute could not be drawn. Optional, and asked rather than assumed:
-   * the hand is not given the panel's deps (see `containTick`, `panel-tick-guard.ts`), so a wiring that has
+   * the hand is not given the panel's deps (see `createTickGuard`, `panel-tick-guard.ts`), so a wiring that has
    * no ui to reach — a hand-built one, a session that has already lost its context — answers with nothing
    * and the tick is simply silent, which is what the containment falls back to.
    */
@@ -104,6 +106,7 @@ export function surfaceDrawn(surfaces: TickSurfaces): boolean {
 export class PanelTick {
   #wiring: TickWiring;
   #clock: AgeClock;
+  #guard: TickGuard;
   #handle: ReturnType<typeof setInterval> | undefined;
   /**
    * The bucket the last tick *attempted*, not the bucket the last frame was seen at.
@@ -118,9 +121,15 @@ export class PanelTick {
    */
   #minute: number | undefined;
 
-  constructor(wiring: TickWiring, clock: AgeClock) {
+  constructor(
+    wiring: TickWiring,
+    clock: AgeClock,
+    /** This session's containment, built by its owner (`SessionTick`). */
+    guard: TickGuard,
+  ) {
     this.#wiring = wiring;
     this.#clock = clock;
+    this.#guard = guard;
   }
 
   /**
@@ -134,11 +143,11 @@ export class PanelTick {
     this.stop();
     // Bound, not passed bare: `setInterval` invokes its callback detached, and `this` is what the tick reads
     // its wiring through.
-    // Contained, not bare: the callback runs with nothing above it, and `containTick` is what keeps a host
+    // Contained, not bare: the callback runs with nothing above it, and the guard is what keeps a host
     // that throws out of pi's process. Read through `this` at tick time — and the wiring read at *failure*
     // time, so a session whose ui has already gone is asked whether it can still be told, rather than being
     // reached for through a context the guard has no business holding.
-    this.#handle = setInterval(() => containTick(this, this.#wiring), TICK_INTERVAL_MS);
+    this.#handle = setInterval(() => this.#guard.contain(this, this.#wiring), TICK_INTERVAL_MS);
   }
 
   /**
@@ -176,7 +185,7 @@ export class PanelTick {
    * the wiring's `now` and the tick's `clock` are different sources (which no extension does, and a test
    * can): the drawn check would be skipped and the frame owed for a surface that is not on screen.
    *
-   * The interval does not call this — it calls `containTick`, which runs it and contains what it throws.
+   * The interval does not call this — it calls the guard's `contain`, which runs it and contains what it throws.
    * It stays public because driving one minute by hand is the right instrument for the two rules above, and
    * a test that waited a real minute for each would test nothing.
    */

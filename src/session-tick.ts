@@ -19,7 +19,7 @@ import type { AgeClock } from "./panel-age.ts";
  *   the hand when the owner says neither surface is drawn, and never starts one: a teardown that could
  *   rebuild a hand would re-arm the clock the surface just asked to stop.
  */
-import { forgetTickWarning } from "./panel-tick-guard.ts";
+import { createTickGuard } from "./panel-tick-guard.ts";
 import { PanelTick } from "./panel-tick.ts";
 import type { TickWiring } from "./panel-tick.ts";
 
@@ -50,6 +50,8 @@ export class SessionTick {
   #make: () => PanelTick;
   #drawn: () => boolean;
   #tick: PanelTick | undefined;
+  /** This session's report memory; replaced with the tick at every boundary (`restart`). */
+  #guard = createTickGuard();
 
   constructor(make: () => PanelTick, drawn: () => boolean) {
     this.#make = make;
@@ -71,10 +73,12 @@ export class SessionTick {
    */
   restart(mode: string): void {
     this.stop();
-    // A new session is a new host, so a failure the previous one reported does not speak for this one:
-    // the guard's one-line memory (`panel-tick-guard.ts`) is cleared here rather than at the tick, which
-    // cannot tell a first failure from the hundredth minute of the same one.
-    forgetTickWarning();
+    // A new session is a new host, so a failure the previous one reported does not speak for this one: the
+    // guard is rebuilt here rather than cleared at the tick, which cannot tell a first failure from the
+    // hundredth minute of the same one. Fresh rather than reset because the guard is the session's and this
+    // is where the session changes — a new tick is built beside a new guard, and the pair never outlives a
+    // boundary together.
+    this.#guard = createTickGuard();
     if (!DRAWING_MODES.includes(mode)) return;
     this.#tick = this.#make();
     this.#tick.start();
@@ -101,10 +105,16 @@ export class SessionTick {
   /**
    * Stop keeping time. Safe when nothing was running — every lifecycle edge calls it, including the ones
    * where the session never started a timer.
+   *
+   * The guard's memory goes with the tick. `stop()` is the one member every edge reaches (`restart` calls
+   * it first, `surfaceGone` calls it when neither surface is drawn, `session_shutdown` calls it outright),
+   * so clearing here is what guarantees no hand — the next session's or a later one in the same process —
+   * inherits a silence this session earned. `restart` then builds the fresh guard.
    */
   stop(): void {
     this.#tick?.stop();
     this.#tick = undefined;
+    this.#guard.forget();
   }
 }
 
@@ -124,5 +134,5 @@ export function createPanelTick(
   clock: AgeClock,
   drawn: () => boolean,
 ): SessionTick {
-  return new SessionTick(() => new PanelTick(wiring, clock), drawn);
+  return new SessionTick(() => new PanelTick(wiring, clock, createTickGuard()), drawn);
 }

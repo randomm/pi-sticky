@@ -194,5 +194,6 @@ test("the rank memo is dropped with the frame it belongs to, and re-ranked for a
   const copy = [...view.pins];
   h.stub.getView = () => ({ ...view, pins: copy });
   expect(c.pins.map((p) => p.id)).toEqual([2, 1]);
-  expect(c.pins).toBe(c.pins);
+  const again = c.pins;
+  expect(c.pins).toBe(again);
 });

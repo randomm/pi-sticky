@@ -58,34 +58,26 @@ export class RailComponent implements Component {
   #onDispose: (() => void) | undefined;
   #cachedWidth?: number;
   #cachedLines?: string[];
+  /** Whether this component has been drawn at least once since its last report. */
+  #onScreen = false;
+  /** The holder that names this component as its instance's rail — see `LiveRail`. */
+  #holder: LiveRail;
 
   constructor(
     view: PinView,
     config: StickyConfig,
     theme: Theme,
+    holder: LiveRail,
     clock?: AgeClock,
     onDispose?: () => void,
   ) {
     this.#view = view;
     this.#config = config;
     this.#style = themeStyle(theme);
+    this.#holder = holder;
     this.#clock = clock;
     this.#onDispose = onDispose;
   }
-
-  /** Whether this component has been drawn at least once since its last report. */
-  #onScreen = false;
-  /**
-   * The one rail this extension instance has on screen, as reported by the component that drew it.
-   *
-   * The report `dispose()` makes is about *the rail the user was looking at*, and pi disposes the component a
-   * key held at the same moment it installs the replacement — so a per-component verdict cannot tell a rail
-   * that went away from a rail that was replaced. This cell can: the install names the component that is now
-   * the rail, and a teardown by anything else is a reinstall. Held as an erased shape rather than as a
-   * `RailComponent` because the only thing read of it is identity, and a field typed as its own class would
-   * be a leak of a private type into itself.
-   */
-  static #live: { invalidate(): void } | undefined;
 
   render(width: number): string[] {
     // The one fact `dispose()` needs to be honest about: a component pi never drew is not a surface that
@@ -103,10 +95,6 @@ export class RailComponent implements Component {
     });
     this.#cachedWidth = width;
     this.#cachedLines = lines;
-    // Drawing is what makes this component *the* rail: pi hands a factory out per install and the host
-    // renders the one it kept, so the component that has drawn is the one on the screen — and the one whose
-    // teardown is worth reporting.
-    RailComponent.#live = this;
     return lines;
   }
 
@@ -135,21 +123,53 @@ export class RailComponent implements Component {
    * Optional, because the rail is also built by tests that have no surfaces to keep time for.
    *
    * **Edge-triggered, per rail rather than per component**: reported only when this component is the one the
-   * extension still believes is the rail. A report that every disposed rail component made would fire on
-   * every install, because that is what `setExtensionWidget` does to the component it is replacing, and a
-   * tick that re-ages a rail pays exactly one of those disposals per minute. It is kept rather than dropped
-   * because the per-tick `#drawn()` check does not cover the case: the hand asks whether a surface *is*
-   * drawn, and only the teardown lets it ask at the moment neither one is — the last dismissal clears the
-   * widget without a session boundary, and a rail pi pops without asking has no other witness.
+   * extension still believes is the rail — which is the *holder's* answer (`LiveRail`), and a holder belongs
+   * to one extension instance, never to the module. A report that every disposed rail component made would
+   * fire on every install, because that is what `setExtensionWidget` does to the component it is replacing,
+   * and a tick that re-ages a rail pays exactly one of those disposals per minute. It is kept rather than
+   * dropped because the per-tick `#drawn()` check does not cover the case: the hand asks whether a surface
+   * *is* drawn, and only the teardown lets it ask at the moment neither one is — the last dismissal clears
+   * the widget without a session boundary, and a rail pi pops without asking has no other witness.
    */
   dispose(): void {
     this.invalidate();
     if (!this.#onScreen) return;
     this.#onScreen = false;
-    if (RailComponent.#live !== this) return;
-    RailComponent.#live = undefined;
+    if (this.#holder.current !== this) return;
+    this.#holder.current = undefined;
     this.#onDispose?.();
   }
+}
+
+/**
+ * The one rail an extension instance has on screen, in the cell that instance owns.
+ *
+ * The report `RailComponent.dispose()` makes is about *the rail the user was looking at*, and pi disposes the
+ * component a key held at the same moment it installs the replacement — so a per-component verdict cannot
+ * tell a rail that went away from a rail that was replaced. This cell can: `drawPins` names the component it
+ * built as the rail, and a teardown by anything else is a reinstall.
+ *
+ * A holder of its own rather than a `static` on the component, because a static is one cell for every
+ * extension instance in the process: two sessions, two extension instances, and one instance's rail would
+ * answer for the other's — a rail replaced in one would silence the other's teardown, and a teardown in one
+ * would be read as a surface going away in a session whose rail is still on the screen. The erased shape is
+ * what it always was: the only thing read of the cell is identity.
+ */
+export interface LiveRail {
+  /**
+   * The component this instance installed as its rail, or `undefined` when nothing is installed.
+   *
+   * Typed as the shape the cell is read through — identity, and nothing else — rather than as `RailComponent`:
+   * a field typed as the class it lives beside would be a leak of that class into its own declaration, and
+   * the one caller that has to *use* the component it read (`RailComponent.dispose`, on itself) has the real
+   * type already.
+   */
+  current: { invalidate(): void } | undefined;
+}
+
+/** The holder one extension instance owns; `drawPins` writes it and `RailComponent.dispose` clears it. */
+export function createLiveRail(): LiveRail {
+  return { current: undefined };
 }
 
 /** What `drawPins` asks of the panel owner: the minute the rail reports, and who owns the pins. */
@@ -180,11 +200,17 @@ export function drawPins(
   clock?: AgeClock,
   /** The rail was disposed by pi; the extension stops the minute's redraw for it. */
   onRailDispose?: () => void,
+  /** This extension instance's live rail — see `LiveRail`. */
+  live?: LiveRail,
 ): void {
   // First, whatever the mode: the age the rows are about to carry is the one the rail's guard has to compare
   // the next frame against, and a frame drawn without it would leave the guard holding the previous minute.
   panel?.railDrawn?.(ageAt(clock));
   if (!ctx.hasUI) return;
+  // Whatever this call leaves installed (or clears) is now the instance's rail: an empty view, a panel that
+  // owns the pins and a mode with no component path all leave nothing for a teardown to report as gone.
+  const holder: LiveRail = live ?? createLiveRail();
+  holder.current = undefined;
   if (view.pins.length === 0) {
     ctx.ui.setWidget(KEY, undefined);
     return;
@@ -196,7 +222,20 @@ export function drawPins(
     }
     ctx.ui.setWidget(
       KEY,
-      (tui: TUI, theme: Theme) => new RailComponent(view, config, theme, clock, onRailDispose),
+      // The parameters are named for the factory's shape, which pi's own `setWidget` demands; neither is
+      // read — the rail takes its colours from the theme, which the component builds itself.
+      (_tui: TUI, theme: Theme) => {
+        // The component pi builds from this factory is the rail, and it is recorded *here* rather than left
+        // to the factory's return value: pi may never call a factory it was handed (a key written twice in
+        // one turn, a host that stores the factory instead of installing it), and the previous rule — "the
+        // component that drew is the rail" — left that case with nothing named, so the real rail's teardown
+        // read as a reinstall and went unreported. `RailComponent`'s own `#onScreen` gate still has to pass
+        // for a teardown to report, so a component no host ever drew — a recorder replaying a stored factory
+        // — still says nothing.
+        const rail = new RailComponent(view, config, theme, holder, clock, onRailDispose);
+        holder.current = rail;
+        return rail;
+      },
       { placement: "aboveEditor" },
     );
     return;

@@ -21,7 +21,7 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { TICK_INTERVAL_MS } from "../src/panel-tick.ts";
 import { KEY } from "../src/types.ts";
-import { RailComponent } from "../src/widget.ts";
+import { RailComponent, createLiveRail } from "../src/widget.ts";
 import { LATER } from "./fixtures.ts";
 import {
   PINNED,
@@ -173,26 +173,36 @@ test("a tick that re-ages the rail does not dispose its own hand away", async ()
   expect(live()).toHaveLength(1);
 });
 
-test("the rail's teardown is reported, once, and only by the component that drew", async () => {
+test("the rail's teardown is reported, once, and only by the rail the holder still names", async () => {
   // Three things have to be true of the same line, and only a direct call to the component can separate
-  // them: pi replaces a widget by disposing the component the key held *and* rebuilding its factory, so a
+  // them: pi replaces a widget by disposing the component the key held *and* building the new one, so a
   // `dispose()` that reported unconditionally would let a reinstall, a recorder reaching for the component
   // it holds, and a host that replays a stored factory each stand in for the rail going away — and stop the
-  // minute hand that asks for the install in the first place.
+  // minute hand that asks for the install in the first place. The install names the component here exactly as
+  // `drawPins`'s factory names it; drawing is the gate that says the named component was really shown.
   let reports = 0;
-  const rail = new RailComponent(
-    ONE,
-    DEFAULT_CONFIG,
-    createPlainTheme(),
-    () => LATER,
-    () => {
-      reports += 1;
-    },
-  );
+  // One holder for the pair, as one extension instance owns one: the two components below are the rail and
+  // its replacement, and the report is decided by which of the two the holder still names.
+  const holder = createLiveRail();
+  const install = (): RailComponent => {
+    const rail = new RailComponent(
+      ONE,
+      DEFAULT_CONFIG,
+      createPlainTheme(),
+      holder,
+      () => LATER,
+      () => {
+        reports += 1;
+      },
+    );
+    holder.current = rail;
+    return rail;
+  };
+  const rail = install();
   // Built and never drawn: it was never on the screen, so its teardown says nothing.
   rail.dispose();
   expect(reports).toBe(0);
-  // Drawn, and now it is the rail — drawing is not a teardown.
+  // Drawn, and now its teardown is the rail's going.
   expect(rail.render(60).length).toBeGreaterThan(0);
   rail.dispose();
   expect(reports).toBe(1);
@@ -202,15 +212,7 @@ test("the rail's teardown is reported, once, and only by the component that drew
   expect(reports).toBe(1);
   // A component that drew *after* it took the rail's place, and the first one's disposal is then a reinstall
   // rather than a loss — which is exactly what a tick's own re-age costs, every minute.
-  const replacement = new RailComponent(
-    ONE,
-    DEFAULT_CONFIG,
-    createPlainTheme(),
-    () => LATER,
-    () => {
-      reports += 1;
-    },
-  );
+  const replacement = install();
   replacement.render(60);
   rail.dispose();
   expect(reports).toBe(1);
