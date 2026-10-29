@@ -8,7 +8,9 @@
  * Bounds refuse rather than cut, which is the difference between this module and `sanitizePinText`:
  * a 25-grapheme `group` is a refusal, never a string with an ellipsis where its tail used to be. The
  * two bounds themselves — graphemes for the budget, UTF-16 units for what is stored — are in
- * `pin-fields-bounds.test.ts`.
+ * `pin-fields-bounds.test.ts`. The `options` half of the refusals (the list shape, the per-entry rules
+ * and the digit-edged options) is in `pin-fields-options.test.ts`; the boundary between the two files
+ * is by case, not by field, so no test name appears in both.
  */
 import { describe, expect, test } from "bun:test";
 
@@ -96,133 +98,7 @@ describe("checkPinFields group", () => {
   });
 });
 
-describe("checkPinFields options", () => {
-  test("the count is checked on the list as sent, before any element is sanitized", () => {
-    // Mirrors `tooManyIds`: an oversized body is refused on its size rather than walked, so a hostile list
-    // is never inspected. The regression: a list of clean, distinct entries past `MAX_OPTIONS` was walked
-    // and *accepted*, so the reducer published an ok snapshot `isPinState` refuses and the next rebuild
-    // skipped it, losing every pin on the branch. A hostile and a clean list of the same size answer
-    // alike, so the refusal cannot be reading elements; a list too short is the model's mistake about the
-    // list, and the `[]` an update sends is the one exception — the clear case below.
-    const five = (hostile: boolean) =>
-      Array.from({ length: 5 }, (_, i) => (hostile ? `${ESC}[2J${i}` : `opt${i}`));
-    const clean = (n: number) => Array.from({ length: n }, (_, i) => `opt${i}`);
-    for (const options of [[], ["only"], five(true), five(false), clean(6), clean(30)]) {
-      expect(checkPinFields({ options }), `list of ${options.length}`).toEqual({
-        ok: false,
-        error: `options must be a list of ${MIN_OPTIONS} to ${MAX_OPTIONS} strings`,
-      });
-    }
-  });
-
-  test("a non-list is refused as a wrong type, and the writer refuses every shape the classifier then names", () => {
-    // `cleanOptionsOrUndefined` is the gate: `checkPinFields` only asks `optionsRefusal` for the wording
-    // once this reader has said no, so a rule one side has and the other lacks is invisible from outside.
-    // Every list shape the module refuses is walked here through the writer alone — a non-list, the count
-    // at both ends, a list that duplicates down below the floor, a hole, and an array with its own key.
-    const hole: unknown[] = new Array(2);
-    hole[0] = "a";
-    const extraKey = Object.assign(["a", "b"], { zz: "z" });
-    const clean = (n: number) => Array.from({ length: n }, (_, i) => `opt${i}`);
-    const refused: unknown[] = [
-      null,
-      "yes,no",
-      42,
-      true,
-      {},
-      [],
-      ["only"],
-      hole,
-      new Array(3),
-      ["a", "a", "b"],
-      clean(30),
-      extraKey,
-    ];
-    for (const options of refused) {
-      expect(cleanOptionsOrUndefined(options), JSON.stringify(options)).toBeNull();
-      if (Array.isArray(options)) continue;
-      // A wrong type names the list rule, never an omission: a `null` the tool read as "no field" would
-      // leave a stale value on a pin the model meant to change.
-      expect(checkPinFields({ options })).toEqual({
-        ok: false,
-        error: `options must be a list of ${MIN_OPTIONS} to ${MAX_OPTIONS} strings`,
-      });
-    }
-    // The clearing reading does not open the door to a defective list: only the exact `[]` clears, and
-    // the guard refuses the extra-keyed array the writer refused — key and all, as the reducer would have
-    // stored it, since it copies the list rather than rebuilding it.
-    expect(checkPinFields({ options: [] }, true)).toEqual({ ok: true, fields: { options: [] } });
-    for (const options of [clean(5), hole, extraKey]) {
-      expect(checkPinFields({ options }, true)).toEqual({
-        ok: false,
-        error: `options must be a list of ${MIN_OPTIONS} to ${MAX_OPTIONS} strings`,
-      });
-    }
-    expect(isPinState(state([{ ...pin(1, "a"), options: extraKey }], 2))).toBe(false);
-  });
-
-  test("every entry is sanitized and folded onto one line", () => {
-    const result = checkPinFields({ options: [HOSTILE, `x${cp(0x0a)}y`] });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.fields.options).toEqual(["ABCDE", "x y"]);
-    // Uniqueness is checked on those cleaned values, so a pair that differs only in escapes is one option
-    // and the list the user chooses from has a single choice left — which is a refusal, never a stored
-    // list of one.
-    const duplicate = ["yes", `${ESC}[2Jyes${cp(0x200b)}`];
-    expect(cleanPinText(duplicate[1] ?? "")).toBe("yes");
-    expect(checkPinFields({ options: duplicate })).toEqual({
-      ok: false,
-      error: "options must be unique after cleaning",
-    });
-    expect(checkPinFields({ options: ["a", "a", "b"] })).toEqual({
-      ok: false,
-      error: "options must be unique after cleaning",
-    });
-  });
-
-  test("an entry that is not a string, cleans to nothing, or is too long names the entries", () => {
-    for (const options of [
-      ["yes", 42],
-      ["yes", null],
-      ["yes", {}],
-      ["yes", `${ESC}[2J`],
-      ["yes", cp(0x200b)],
-      ["yes", "x".repeat(MAX_FIELD_GRAPHEMES + 1)],
-    ]) {
-      expect(checkPinFields({ options })).toEqual({
-        ok: false,
-        error: `each option must be 1 to ${MAX_FIELD_GRAPHEMES} characters after cleaning`,
-      });
-    }
-  });
-
-  test("a list the writer rejects always names a rule in the classifier", () => {
-    // The classifier is only ever asked *after* the writer refused, and its last line throws: reaching it
-    // would mean the two walks disagreed about one list. That disagreement was real while the writer
-    // tested only the lower bound — a clean list of five was accepted, so the classifier was never asked
-    // and nothing here could tell the two readings apart. Every rejected shape is therefore walked here
-    // and must name a rule rather than throw. The writer's own answer for these shapes, holes and an
-    // extra key included, is in the options cases above.
-    const rejected: unknown[] = [
-      ["a"],
-      ["a", "b", "c", "d", "e"],
-      Array.from({ length: 30 }, (_, i) => `opt${i}`),
-      ["a", 42],
-      ["a", `${ESC}[2J`],
-      ["a", "x".repeat(MAX_FIELD_GRAPHEMES + 1)],
-      ["a", "a"],
-      ["a", "a", "b", "c", "d"],
-    ];
-    for (const options of rejected) {
-      const result = checkPinFields({ options });
-      expect(result.ok, JSON.stringify(options)).toBe(false);
-      if (result.ok) return;
-      // A rule — one of this field's three — and never the bare error the throw would have surfaced.
-      expect(result.error).toMatch(/^options must be |^each option must be /);
-    }
-  });
-
+describe("checkPinFields options (clearing and combined bodies)", () => {
   test("the three fields land together, and the first refusal wins", () => {
     // A model fixes one field at a time, so a list of complaints would bury the one it should read.
     const result = checkPinFields({ group: 1, options: "no", compact: "no" });

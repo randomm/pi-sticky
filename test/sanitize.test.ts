@@ -74,7 +74,9 @@ describe("terminal escapes", () => {
   });
 
   test("a CSI terminated by CAN is dropped only up to CAN", () => {
-    expect(clean(`${ESC}[31${cp(0x18)}red`)).toBe("red");
+    // The introducer and the CAN die; `31` was never a final byte, so it is payload and stays. The
+    // digits only survive because the edge trim no longer carries the characters 1 and 3.
+    expect(clean(`${ESC}[31${cp(0x18)}red`)).toBe("31red");
   });
 
   test("drops a CSI with no final byte", () => {

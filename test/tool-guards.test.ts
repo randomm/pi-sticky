@@ -89,6 +89,23 @@ test("a two-column grapheme survives the tool as one grapheme", async () => {
   expect(result.details.pins[0]?.options).toEqual([FAMILY, "no"]);
 });
 
+test("options that differ only in a trailing digit are stored as two distinct choices", async () => {
+  // The positive counterpart to the "unique after cleaning" refusal below: an edge class built from the
+  // *number* 0x0d contains the characters "1" and "3", so both of these cleaned to "Plan" and the tool
+  // answered "options must be unique after cleaning". The stored list is asserted verbatim, not merely
+  // that the call was accepted — a green `isError` alongside ["Plan","Plan"] would lose the user's choice.
+  const h = harness();
+  const result = await h.call({
+    action: "pin",
+    text: "Decide X",
+    group: "Release 1",
+    options: ["Plan 1", "Plan 3"],
+  });
+  expect(result.isError).toBeUndefined();
+  expect(result.details.pins[0]?.group).toBe("Release 1");
+  expect(result.details.pins[0]?.options).toEqual(["Plan 1", "Plan 3"]);
+});
+
 test("the tool refuses a bad field itself, and says which rule it broke", async () => {
   // The reducer runs the same checks, but a model reads the tool's answer: a refusal comes back as
   // `isError` with `details` intact, naming the field and the rule.

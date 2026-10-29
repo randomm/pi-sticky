@@ -34,14 +34,31 @@ const CR = 0x0d;
 const TAB = 0x09;
 
 const LF_CHAR = String.fromCodePoint(LF);
+/** CR as a character: interpolating the number `CR` into a class would put the digits 1 and 3 in it. */
+const CR_CHAR = String.fromCodePoint(CR);
 const NEL = String.fromCodePoint(0x85);
 const LINE_SEP = String.fromCodePoint(0x2028);
 const PARA_SEP = String.fromCodePoint(0x2029);
 /** Three or more newlines, built from LF_CHAR rather than written as a literal. */
 const REPEAT_NEWLINE = new RegExp(`(?:${LF_CHAR}){3,}`, "g");
-/** Edge whitespace, spelled out instead of using trim(), which also strips the two U+202x. */
-const EDGE = `\\s${LF_CHAR}${CR}${NEL}${LINE_SEP}${PARA_SEP}`;
-const TRIM_EDGE = new RegExp(`^(?:[${EDGE}])+|(?:(?:[${EDGE}])+$)`, "g");
+/**
+ * Edge whitespace, spelled out instead of using trim(), which also strips the two U+202x. Every
+ * member is a string built by `String.fromCodePoint`, never a number: template interpolation takes a
+ * number for a string slot, which is how the numeric `CR` once put the characters "1" and "3" into
+ * the class. The members are exported so a test can name each one and catch a break dropped from it,
+ * and frozen so that export cannot be extended from outside: a member pushed onto the array after
+ * load would be joined into nothing (the class is built once) and would leave the exported list a
+ * witness to a trim that never ran.
+ */
+export const EDGE_CHARACTERS: readonly [string, string, string, string, string] = Object.freeze([
+  LF_CHAR,
+  CR_CHAR,
+  NEL,
+  LINE_SEP,
+  PARA_SEP,
+] as const);
+const EDGE = `[\\s${EDGE_CHARACTERS.join("")}]`;
+const TRIM_EDGE = new RegExp(`^(?:${EDGE})+|(?:(?:${EDGE})+$)`, "g");
 /** Property tests, built at runtime for the same reason as the patterns above. */
 const CF_TEST = /\p{Cf}/u;
 /** Every combining mark, not just Mn: enclosing marks (U+20E3) and spacing marks count too. */
