@@ -89,6 +89,19 @@ export function dropControls(text: string, keep?: (text: string, at: number) => 
 }
 
 /**
+ * Is code a byte a drawn line may never carry? The exact inverse of the set `dropControls` above keeps —
+ * TAB, printable ASCII and the latin-1/pictographic band — plus DEL, which is drawn text to neither pass.
+ * Written as the inverse rather than as `code < 0x20` because a range that stops at the wrong end of C0 is
+ * the blind spot this classifier exists not to have: 0x0e-0x1f are controls, and a sweep that called them
+ * text would certify a drawn line carrying one as clean.
+ */
+function isDrawnControl(code: number): boolean {
+  const printable =
+    code === TAB || (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xfffd);
+  return code === 0x7f || !printable;
+}
+
+/**
  * One left-to-right pass: keep text, drop every escape sequence. An introducer is dispatched on
  * whether it is one, never on whether it is kept, because the 8-bit introducers are members of the
  * printable range above C1 and a kept-test would let them through as text.
@@ -142,9 +155,15 @@ export function stripNonSgr(text: string): string {
 
 /**
  * Does `text` carry an escape sequence that is not SGR — a hyperlink, a title or clipboard write, a
- * cursor or screen move, a DCS/APC payload, an 8-bit introducer or a stray C1 control? The one question
- * the panel's drawn-line sweeps ask once theme colours are allowed, and the only difference from
- * `containsEscape` is that it is read on the bytes a theme produced rather than on a pin's.
+ * cursor or screen move, a DCS/APC payload, an 8-bit introducer or a stray C1 control — or a bare C0
+ * control or DEL? The one question the panel's drawn-line sweeps ask once theme colours are allowed, and
+ * the only difference from `containsEscape` is that it is read on the bytes a theme produced rather than on
+ * a pin's.
+ *
+ * The control half is not padding. `stripNonSgr` is a *sequence* pass and a bare BEL or CR is not a
+ * sequence, so it is one of the few bytes this pass leaves where it stood, and a sweep that asked only the
+ * sequence question would certify a drawn line carrying one as clean — which is how a theme that writes a
+ * CR between its two colours gets a row that redraws its own column.
  */
 export function containsNonSgr(text: string): boolean {
   let i = 0;
@@ -155,7 +174,7 @@ export function containsNonSgr(text: string): boolean {
     // range above C1, so a guard that asked only "is this byte an ESC or a control" would wave `CSI8` on
     // through as text and certify a screen-clear as clean.
     if (!isIntroducer(code)) {
-      if (isC1Control(code)) return true;
+      if (isC1Control(code) || isDrawnControl(code)) return true;
       i += 1;
       continue;
     }

@@ -103,6 +103,43 @@ test("a hostile border label draws as text, and a themed one keeps only its colo
   expect(coloured[coloured.length - 1] ?? "").toContain(`${ESC}[2m`);
 });
 
+test("a theme that writes a bare control between its colours draws no control on any row", () => {
+  // The frame-level half of the marker cell's both-branches promise. `stripNonSgr` keeps a colour and
+  // ignores a bare control — it is a sequence pass, not a control pass — and the cut branch of
+  // `markerCell` re-attaches colours out of the *coloured* string a column at a time, so a control that
+  // stood after a kept colour was copied back onto the row and the SGR-tolerant sweep called the line clean.
+  // Every member is given the shape at once: the marker, the bar, the tail, both labels and the gutter.
+  const control = String.fromCharCode(0x07);
+  const smuggle = (text: string) => `${ESC}[33m${control}${ESC}[0m${text}`;
+  const controlTheme: RenderPanelStyle = {
+    header: smuggle,
+    marker: (_level, text) => smuggle(text),
+    dim: smuggle,
+    selected: smuggle,
+    border: smuggle,
+    borderFocused: smuggle,
+  };
+  for (const focused of [false, true]) {
+    for (const width of [MIN_FRAME_WIDTH, 40, 60, 120]) {
+      const lines = built(
+        content([one(1, "Decide X")], 0, focused, "f to reply"),
+        width,
+        controlTheme,
+      );
+      expectUniformWidth(lines, width);
+      for (const line of lines) {
+        // The control named directly, and then the sweep that is supposed to catch it. The unconditional
+        // `offenders` is deliberately *not* asked here: this theme colours every row, so an ESC on a line is
+        // the theme's colour and the SGR-tolerant sweep is the one with jurisdiction. `drawnOffenders` is the
+        // one that used to wave a bare control through, so an empty verdict from it is only evidence once the
+        // byte above has been named as absent.
+        expect(line, `@${width}`).not.toContain(control);
+        expect(drawnOffenders(line), `@${width}`).toEqual([]);
+      }
+    }
+  }
+});
+
 test("a theme that colours with an 8-bit introducer costs the frame no columns", () => {
   // pi's own `theme.fg` emits `ESC [ … m`, so the 7-bit fixtures of the sibling file cover the shipped theme;
   // this is the third-party theme that spells the same colour with `CSI8` (U+009B). The introducer is a

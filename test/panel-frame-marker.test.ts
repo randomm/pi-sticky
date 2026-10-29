@@ -19,6 +19,7 @@
 import { expect, test } from "bun:test";
 
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { containsNonSgr } from "../src/escape.ts";
 import { glyph, markerCell } from "../src/panel-frame.ts";
 
 /** The plain glyph whose columns every case below is measured against — the warning level's own, one column. */
@@ -29,6 +30,11 @@ const E = String.fromCharCode(0x1b);
 const SGR = `${E}[33m`;
 const OSC = `${E}]0;evil${String.fromCharCode(0x07)}`;
 const RESET = `${E}[0m`;
+const BEL = String.fromCharCode(0x07);
+const DEL = String.fromCharCode(0x7f);
+const LF = String.fromCharCode(0x0a);
+const CR = String.fromCharCode(0x0d);
+const NEL = String.fromCharCode(0x85);
 
 test("a marker whose wrapper fits is kept, and padded back to the glyph's own columns", () => {
   // The fitting branch returns the theme's string padded out to the glyph's column rather than short of it:
@@ -56,10 +62,6 @@ test("a marker's escapes and control characters never reach the screen, whatever
   // The cell carries the theme's colour and nothing else: no control character, from either branch, and no
   // escape sequence but the SGR the theme asked for. Both halves are spelled with the code points above, so
   // neither side of the comparison can be rewritten into agreement.
-  const LF = String.fromCharCode(0x0a);
-  const CR = String.fromCharCode(0x0d);
-  const DEL = String.fromCharCode(0x7f);
-  const NEL = String.fromCharCode(0x85);
   // A colour is the introducer plus `[`, its digits and the `m` — spelled from the code points of each part,
   // because a backslash-d-b-lacket written into a template has no backslash left in it by the time the
   // regular expression is built, and a pattern that does not match the escape it is named for makes an escape
@@ -94,6 +96,49 @@ test("a marker's escapes and control characters never reach the screen, whatever
   // A colour is kept through a cut as well as through a fit — with its introducer, or not at all. What must
   // never reach the screen is a *half* of a sequence, which is what a control-stripped introducer is.
   expect(markerCell(SGR + String.fromCharCode(0x21), ONE)).toBe(SGR + String.fromCharCode(0x21));
+});
+
+test("a bare control between two colours dies on both branches of the width", () => {
+  // The arrangement a hostile `theme.marker` writes — `ESC [ 33 m` BEL `ESC [ 0 m` around the glyph — and
+  // the one case the two passes used to disagree about. `stripNonSgr` is a *sequence* pass and a bare BEL,
+  // CR, VT, BS, FF or DEL is not a sequence, so it passed straight through; the control pass that removes
+  // it ran on the cut *before* the colours were re-attached out of the coloured string, which copied each
+  // one back out. So the fitting branch leaked whatever it was given, and the cut branch leaked anything
+  // that stood after a kept colour. `main` dropped controls on both branches, and this file's header
+  // promises they go on both.
+  const CR = String.fromCharCode(0x0d);
+  const VT = String.fromCharCode(0x0b);
+  const BS = String.fromCharCode(0x08);
+  const FF = String.fromCharCode(0x0c);
+  const NUL = String.fromCharCode(0x00);
+  const CONTROLS = [NUL, BEL, BS, VT, FF, CR, DEL];
+  for (const control of CONTROLS) {
+    for (const marked of [
+      // Fitting branch: the wrapper draws nothing but the control, so the cell is padded, never cut.
+      `${control}${ONE}`,
+      `${SGR}${control}${ONE}`,
+      // Cutting branch: visible bytes past the glyph's one column, with the control after a kept colour —
+      // the exact offset `keepColours` used to copy verbatim out of the coloured string.
+      `${SGR}${control}PK`,
+      `${SGR}${control}<m:!>`,
+      `${SGR}${ONE}${control}PK`,
+      // Both spellings of colour at once, so the refused one going must not carry the drawable one with it.
+      `${SGR}${OSC}${control}${ONE}`,
+    ]) {
+      const cell = markerCell(marked, ONE);
+      for (const stray of CONTROLS) {
+        expect(cell, `${JSON.stringify(marked)} -> ${JSON.stringify(cell)}`).not.toContain(stray);
+      }
+      expect(visibleWidth(cell), JSON.stringify(marked)).toBe(1);
+      // The classifier the frame sweeps defer to must name the byte, not certify it: asserted on the
+      // *input* rather than the cell, which is clean by the time this loop reads it.
+      if (control !== LF && control !== CR && control !== VT && control !== FF && control !== NEL) {
+        // Break shapes are folded before a row is drawn (`foldBreaks`), so only the non-break controls are
+        // the classifier's business.
+        expect(containsNonSgr(marked), JSON.stringify(marked)).toBe(true);
+      }
+    }
+  }
 });
 
 test("an 8-bit colour never buys a marker cell columns, on either branch of the width", () => {

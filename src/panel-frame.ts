@@ -111,23 +111,35 @@ export function markerCell(marked: string, glyphText: string): string {
   // own — `visibleWidth` counts a colour as free, so a cut over the *kept* form spends real columns on bytes
   // that drew nothing. The colours the theme asked for are put back over the columns that survived.
   const plain = dropControls(stripSequences(marked));
-  if (visibleWidth(plain) <= columns) return padPlain(tinted(marked), columns);
+  if (visibleWidth(plain) <= columns) return padPlain(themeBytes(marked), columns);
   // The cut runs over `plain`, so no colour of the theme's survives it: what comes back is the surviving
-  // text plus any colour `tinted` puts over it, and `keepColours` re-attaches them one column at a time.
+  // text plus any colour `themeBytes` puts over it, and `keepColours` re-attaches them one column at a time.
+  // The `themeBytes` after the re-attach is the one that closes the hole: `keepColours` copies columns out
+  // of the *coloured* string, so a control standing after a kept colour came back with it.
   const cut = dropControls(normaliseInjected(truncateToWidth(plain, columns, "")));
-  return padPlain(keepColours(cut, marked), columns);
+  return padPlain(themeBytes(keepColours(cut, marked)), columns);
 }
 
 /**
  * The theme's own colours and nothing else: every other sequence, and every control, is gone.
  *
- * One walk, both passes agreeing on what a colour is: `stripNonSgr` refuses every sequence but a CSI
- * closed by `m`, and `dropControls` is told the same class so it walks over that colour instead of
- * stripping its introducer and leaving the parameters behind as the text `[33m`. There is nothing to put
- * back afterwards — the colour was never taken apart — which is why this used to reach for a rewrite of
- * the parameter-only shape the old control pass left behind.
+ * Two passes over the same walk, in the order that matters. `stripNonSgr` first: it keeps a CSI closed by
+ * `m` and refuses every other sequence. `dropControls` second, and *told* the same class so it walks over
+ * that colour instead of stripping its introducer and leaving the parameters behind as the text `[33m`.
+ *
+ * The order is not cosmetic. `stripNonSgr` is a sequence pass, not a control pass: a bare BEL, CR, VT, BS,
+ * FF or DEL is not an escape sequence, so it passes straight through it — and those are exactly the bytes a
+ * hostile `theme.marker` writes in between its colours. Run second, `dropControls` is the pass that removes
+ * them, and because it walks a kept colour whole rather than cutting into it, the colour the theme asked
+ * for stays intact. Run first, it is the pass that orphaned the parameters.
+ *
+ * Exported as the drawn-line policy for a string whose bytes come from the *theme*: every surface that puts
+ * theme bytes on a row — this file's marker and glyph, the border's label (`fitLabel`,
+ * `panel-border.ts`), the tail (`drawnTail`, `panel-tail.ts`), and the closure of every row (`fitPlain`,
+ * `panel-draw.ts`) — needs both passes in this order, and one definition is what keeps them from holding
+ * opposite policies.
  */
-function tinted(marked: string): string {
+export function themeBytes(marked: string): string {
   return dropControls(stripNonSgr(marked), isSgr);
 }
 
@@ -155,8 +167,6 @@ const E = String.fromCharCode(0x1b);
  * introducer and the row carries `ESC ESC [` where it should carry one `ESC`.
  */
 const COLOUR_CELL = new RegExp(`${E}\\[[0-9;]*m`);
-/** Any other introducer: a sequence `stripNonSgr` refused, skipped as one cell rather than as characters. */
-const SEQUENCE_CELL = new RegExp(`${E}[\\][PX^_G]`);
 
 /**
  * The theme's colours, put back over a cut that was measured on the sequence-free form of the same string.
@@ -240,7 +250,7 @@ export function glyph(frame: (text: string) => string, glyphText: string): strin
   // `stripNonSgr` is the escape policy and `dropControls` the control pass, each told which sequence the
   // frame draws: a colour is walked over whole by both rather than having its introducer taken out by the
   // second and left on the screen as the text `[94m`.
-  return padPlain(dropControls(stripNonSgr(frame(glyphText)), isSgr), 1);
+  return padPlain(themeBytes(frame(glyphText)), 1);
 }
 
 /**

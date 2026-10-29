@@ -151,6 +151,38 @@ describe("containsNonSgr", () => {
     }
   });
 
+  test("a bare C0 control or DEL is reported, and TAB is not", () => {
+    // The blind spot the #70 review found. `stripNonSgr` is a *sequence* pass, and a bare BEL, BS, VT, FF,
+    // NUL or DEL is not a sequence: it is one of the few bytes the pass leaves exactly where it stood. A
+    // classifier that asked only "does this carry a refused sequence" therefore certified a drawn line
+    // carrying one as clean, which is how a theme that writes a CR between its two colours got a row that
+    // redraws its own column past a sweep sworn to catch it.
+    //
+    // The range is `dropControls`' keep-set inverted, not a `< 0x20` bound: 0x0e-0x1f are controls too, and
+    // a sweep that stopped at the wrong end of C0 is the same blind spot one byte lower.
+    for (const code of [0x00, 0x01, 0x07, 0x08, 0x0e, 0x17, 0x1f, 0x7f]) {
+      const control = cp(code);
+      expect(containsNonSgr(control), `bare 0x${code.toString(16)}`).toBe(true);
+      // The byte the drawn-line sweep is for: a control sitting *after* a kept colour, which is where the
+      // re-attaching walk used to copy it back out and where a sequence-only classifier saw nothing.
+      expect(
+        containsNonSgr(`${SGR_RED}a${control}b`),
+        `0x${code.toString(16)} inside a colour`,
+      ).toBe(true);
+      // `stripNonSgr` is the *sequence* pass and leaves these bytes where they stood — the pass that
+      // removes them is `dropControls`, run after it. Pinned so the two are never collapsed into one.
+      expect(stripNonSgr(`${SGR_RED}a${control}b`), `strip keeps 0x${code.toString(16)}`).toBe(
+        `${SGR_RED}a${control}b`,
+      );
+    }
+    // TAB is the control every drawn surface keeps (`dropControls`, and `foldBreaks` leaves it alone for
+    // the same reason), so naming it would make the frame sweeps report a legitimate row.
+    expect(containsNonSgr("a\tb")).toBe(false);
+    // The break shapes are not the classifier's either: they are folded to a space before a row is drawn
+    // (`foldBreaks`), so a row that still carries one is a row that skipped that pass, not an escape.
+    expect(containsNonSgr("a b")).toBe(false);
+  });
+
   test("an 8-bit CSI that is not a colour is reported", () => {
     // The class a byte-range guard misses: `CSI8` is printable to `visibleWidth`, so a sweep that
     // looked only for ESC and C1 bytes would call a screen clear clean. `stripSequences` removes it

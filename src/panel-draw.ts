@@ -3,15 +3,16 @@
  * between the gutters.
  *
  * `fitLine` is the one closure every drawn line of both frames passes through — the open panel's rows,
- * the peek's three, the options row, a heading's cell. Its escape policy is `stripNonSgr` (`escape.ts`):
- * a theme's colour reaches the screen and every other escape sequence dies. That is the policy the rail's
- * own `cut` has always run on its styled branch, and the reason the two surfaces agree rather than holding
- * opposite ones. What the pass refuses is what made the old blanket strip worth keeping an eye on rather
- * than dropping outright: `visibleWidth` counts an OSC 8 hyperlink, an OSC 2/52 window-title or an APC
- * sequence as *zero* columns, so a theme whose `header`/`dim` emitted one measured as free and was padded
- * right over the chat, its padding extending a smuggled hyperlink across columns the user believes are
- * blank. Nothing in a panel row is a hyperlink and AGENTS.md says a pin never draws one, so refusing every
- * non-SGR sequence costs the theme nothing real.
+ * the peek's three, the options row, a heading's cell. Its escape policy is `themeBytes`
+ * (`panel-frame.ts`) — `stripNonSgr` (`escape.ts`) keeps a theme's colour and refuses every other
+ * sequence, and `dropControls` then removes the controls that pass is not a pass over. That is the policy
+ * the rail's own `cut` has always run on its styled branch, and the reason the two surfaces agree rather
+ * than holding opposite ones. What it refuses is what made the old blanket strip worth keeping an eye on
+ * rather than dropping outright: `visibleWidth` counts an OSC 8 hyperlink, an OSC 2/52 window-title or an
+ * APC sequence as *zero* columns, so a theme whose `header`/`dim` emitted one measured as free and was
+ * padded right over the chat, its padding extending a smuggled hyperlink across columns the user believes
+ * are blank. Nothing in a panel row is a hyperlink and AGENTS.md says a pin never draws one, so refusing
+ * every non-SGR sequence costs the theme nothing real.
  *
  * Untrusted text is not this function's job. A pin's text, its group and its options are stripped by
  * `stripSequences` at their *own* drawn boundaries — `pinRow` here, `headingCell`, `entryCell` — before a
@@ -52,7 +53,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import { isIntroducer } from "./escape-chars.ts";
 import { scanSequence } from "./escape-scan.ts";
-import { stripNonSgr, stripSequences } from "./escape.ts";
+import { stripSequences } from "./escape.ts";
 import { META_SEPARATOR_COLUMNS } from "./panel-frame-geometry.ts";
 import {
   ELLIPSIS,
@@ -62,6 +63,7 @@ import {
   padPlain,
   selectionCell,
   selectionReset,
+  themeBytes,
 } from "./panel-frame.ts";
 import type { PanelRow } from "./panel-rows.ts";
 import { drawnTail, tailReserve } from "./panel-tail.ts";
@@ -82,14 +84,18 @@ export function fitLine(line: string, width: number): string {
  * all of them.
  */
 export function fitPlain(line: string, width: number): string {
-  const safe = stripNonSgr(line);
+  // `themeBytes` is the pair of passes every theme-byte surface runs: the sequence pass that keeps a colour,
+  // and the control pass that removes what the sequence pass is not a pass over. A bare BEL or CR written
+  // between two of the theme's colours is not a sequence, so `stripNonSgr` alone leaves it on a drawn row —
+  // and the re-measuring branches below cut from the form that still carries it.
+  const safe = themeBytes(line);
   const spare = width - visibleWidth(safe);
   if (spare >= 0) return padPlain(safe, width);
-  const cut = normaliseCut(stripNonSgr(truncateToWidth(safe, width, ELLIPSIS)));
+  const cut = normaliseCut(themeBytes(truncateToWidth(safe, width, ELLIPSIS)));
   if (visibleWidth(cut) <= width) return padPlain(cut, width);
   // The rail's own answer for the case pi-tui's measurement cannot be trusted: cut again from the string
   // with *every* sequence gone, the only form whose width both sides agree on.
-  const plain = normaliseCut(stripNonSgr(truncateToWidth(stripSequences(line), width, ELLIPSIS)));
+  const plain = normaliseCut(themeBytes(truncateToWidth(stripSequences(line), width, ELLIPSIS)));
   return padPlain(plain, width);
 }
 

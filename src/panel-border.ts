@@ -17,7 +17,7 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { stripNonSgr, stripSequences } from "./escape.ts";
+import { stripSequences } from "./escape.ts";
 import {
   CORNER_COLUMNS,
   ELLIPSIS,
@@ -27,6 +27,7 @@ import {
   glyph,
   padPlain,
   selectionReset,
+  themeBytes,
 } from "./panel-frame.ts";
 
 /**
@@ -45,10 +46,12 @@ import {
  */
 function fitLabel(label: string, room: number): string {
   // The label is the header or the hint, coloured by the theme: its SGR is what the border is coloured by,
-  // and its non-SGR sequences are refused here rather than by the line's closer.
-  const plain = stripNonSgr(label);
+  // and its non-SGR sequences are refused here rather than by the line's closer. `themeBytes` is that pair
+  // of passes — a bare control between two of the theme's colours is not a sequence, so the sequence pass
+  // alone leaves it on a border column, where nothing on the row consumes it.
+  const plain = themeBytes(label);
   if (visibleWidth(plain) <= room) return plain;
-  const cut = stripNonSgr(truncateToWidth(plain, room, ELLIPSIS)).replace(INJECTED_RESET, ELLIPSIS);
+  const cut = themeBytes(truncateToWidth(plain, room, ELLIPSIS)).replace(INJECTED_RESET, ELLIPSIS);
   return padPlain(cut, room);
 }
 
