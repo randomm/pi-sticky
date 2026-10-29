@@ -127,6 +127,23 @@ test("up and down and j and k move the selection, and each move asks for a frame
   expect(state.renders).toBe(before + 4);
 });
 
+test("focusing the panel puts the bar back on the best-ranked pin", () => {
+  // The bar is the user's only pointer into a list they cannot see the whole of, so a panel that came back
+  // focused with the bar wherever the last visit left it answers keys against a row the user is not looking
+  // at — and with the marker drawn in that row's marker column (#70 decision 2), it would point at a pin they
+  // never moved to. Focus is the moment the panel is being handed to them, so it is the moment the bar returns
+  // to the top of the ranking.
+  const { c } = component(pins("One", "Two", "Three"));
+  c.handleInput("j");
+  c.handleInput("j");
+  expect(c.selection).toBe(2);
+  // Releasing the panel does not move it: the bar's place is the user's, and an unfocus is not a fresh visit.
+  c.unfocus();
+  expect(c.selection).toBe(2);
+  c.focus();
+  expect(c.selection).toBe(0);
+});
+
 test("a key the panel does not own is swallowed, and the selection stops at both ends", () => {
   const { c, state } = component(pins("One", "Two"));
   const before = state.renders;

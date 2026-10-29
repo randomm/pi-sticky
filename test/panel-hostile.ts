@@ -1,9 +1,17 @@
 /**
- * The hostile bytes a pin can carry, and the sweep that says a drawn line is free of them.
+ * The hostile bytes a pin can carry, and the two sweeps that say a drawn line is free of them.
  *
  * Shared by `panel-lines.test.ts` (the builder) and `integration-panel.test.ts` (a whole session),
  * which are the two places that can put them on screen. The sanitizer is what removes them from a
  * pin; these files prove the panel's own wrapping, padding and theming do not put any back.
+ *
+ * Two sweeps, because the panel draws two kinds of bytes under two policies. `offenders` is the
+ * unconditional one — a line built from *untrusted* text may carry no escape byte at all, and every
+ * hostile-text sweep reads it. `drawnOffenders` is the SGR-tolerant one, for a line whose colour came from
+ * the *theme*: it forgives a CSI closed by `m` and still names every hyperlink, clipboard write, cursor
+ * move, 8-bit introducer and C1 control. A line that failed both is a line that drew something the user
+ * never asked for. The classifier is `containsNonSgr` (`src/escape.ts`), which the sweep defers to rather
+ * than restating the CSI/OSC/DCS grammar here.
  *
  * The file also states the terminal the panel tests draw against. A frame's height comes from
  * `panelMaxRows`, which halves the terminal it is given, so a builder test names that terminal and
@@ -15,6 +23,7 @@
  * The terminal rows a panel test sizes a frame against: an explicit terminal, not the height of the
  * frame it is drawing. A frame drawn at this height is `TERMINAL_ROWS / 2` rows tall.
  */
+import { containsNonSgr } from "../src/escape.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 
 export const TERMINAL_ROWS = 40;
@@ -114,5 +123,17 @@ export function offenders(text: string): string[] {
     else if (code >= 0x80 && code <= 0x9f) bad.push(`C1 0x${code.toString(16)}`);
     else if (code === 0x202e) bad.push("U+202E");
   }
+  return bad;
+}
+
+/**
+ * The same sweep, read on a line the *theme* coloured: an SGR colour is what the panel is allowed to draw,
+ * so it is not named. Cursor and screen CSIs, OSC (its 8 hyperlinks and its 52 clipboard writes), DCS/APC,
+ * the 8-bit introducers, a C1 control, DEL and a lone surrogate all still are — the classes `stripNonSgr`
+ * (`src/escape.ts`) refuses and `glyph`/`fitLine` (`panel-frame.ts`, `panel-draw.ts`) are what keep out.
+ */
+export function drawnOffenders(text: string): string[] {
+  const bad = offenders(text).filter((offender) => offender !== "ESC 0x1b");
+  if (containsNonSgr(text)) bad.push("non-SGR escape");
   return bad;
 }

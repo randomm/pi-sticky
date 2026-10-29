@@ -54,8 +54,10 @@ test("a view swap without an update() rebuilds the frame at the same width", () 
   // last-pinned pin — the one this test removes.
   c.focus();
   c.select(0);
-  // The bar sits inside the gutters, so the drawn row opens with the gutter, its space, and then the bar.
-  expect(c.render(44).join("\n")).toContain("│ [ • Dismissed");
+  // The bar sits inside the gutters, so the drawn row opens with the gutter, its space, and then the bar —
+  // and the bar's own row carries the selection marker in the marker cell, not the level's glyph (#70
+  // decision 2), which is what tells a user where the bar is when the theme gives them no colour.
+  expect(c.render(44).join("\n")).toContain(`│ [${String.fromCodePoint(0x203a)} Dismissed`);
   // The view swapped under a panel nobody sent `update()` for — a rebuild that published a fresh array
   // while the overlay was not redrawn. Asked again at the *same* width, a frame cache keyed on the width
   // alone hands the old view's lines back, dismissed pin and all, with the bar on a row of a list that no
@@ -65,7 +67,7 @@ test("a view swap without an update() rebuilds the frame at the same width", () 
   expect(text).not.toContain("Dismissed");
   // ...and the bar the component was holding past the end of the new view does not survive the redraw:
   // it lands on the last row that does exist — index 0 of the two-pin ranked list, which is the newest id.
-  expect(text).toContain("│ [ • Two");
+  expect(text).toContain(`│ [${String.fromCodePoint(0x203a)} Two`);
   expect(c.selection).toBe(0);
   // A frame request that changed nothing still costs nothing: the cache keeps its fast path.
   const cached = c.render(44);

@@ -19,8 +19,7 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { stripSequences } from "./escape.ts";
-import { ELLIPSIS, padPlain } from "./panel-frame.ts";
+import { ELLIPSIS, padPlain, themeBytes } from "./panel-frame.ts";
 import { pinAge } from "./stamp.ts";
 import { formatLocalTime } from "./time.ts";
 import type { ViewPin } from "./types.ts";
@@ -131,7 +130,13 @@ export function widestStampColumns(
 ): number {
   let widest = floor;
   for (const pin of pins) {
-    const width = visibleWidth(stripSequences(stamp(pin)));
+    // Measured on what the theme is allowed to *draw*: the tail is the theme's bytes around a `#id` and an
+    // age the panel spelled, so its SGR costs no columns and its non-SGR sequences are refused where they
+    // are drawn (`drawnTail`) — measuring on anything else would reserve columns the row never spends.
+    // `themeBytes` is the pair of passes the drawing side runs and `glyph`'s and `markerCell`'s cut is charged
+    // to the plain stamp, so a theme that wrote visible bytes *around* the stamp is measured on those bytes
+    // here and cut to the stamp's own columns there: reserve on the theme, cut on the panel's text.
+    const width = visibleWidth(themeBytes(stamp(pin)));
     if (width > widest) widest = width;
   }
   return widest;
@@ -161,5 +166,8 @@ export function drawnTail(
   separator: number,
 ): string {
   const reserve = tailReserve(metaColumns, inner, separator);
-  return padPlain(truncateToWidth(stripSequences(stamped), reserve, ELLIPSIS), reserve);
+  // The theme's colour survives and everything else the theme wrapped the tail in goes — the tail is drawn
+  // bytes, and the reserve `widestStampColumns` measured is measured by the same `themeBytes` pair, so one
+  // arithmetic decides the tail's columns twice and cannot disagree with itself.
+  return padPlain(truncateToWidth(themeBytes(stamped), reserve, ELLIPSIS), reserve);
 }

@@ -96,6 +96,9 @@ function colourless(width: number, focused: boolean): string[] {
 /** Wide enough for the focused frame's hint to be drawn whole rather than cut to the border's ellipsis. */
 const WIDTH = 60;
 
+/** The selection marker, spelled from its code point: a literal of it in source is rewritten on the way in. */
+const SELECTED = String.fromCodePoint(0x203a);
+
 test("the identity style draws a closed, unpainted frame in both focus states", () => {
   const resting = colourless(WIDTH, false);
   const focused = colourless(WIDTH, true);
@@ -139,12 +142,28 @@ test("the identity style draws a closed, unpainted frame in both focus states", 
   // `selected` is asked of the focused frame alone, and its answer must cost the bar nothing: a real theme
   // marks the selected row (`panelThemeStyle`'s `selectedBg`, or `inverse` where a theme gives that token
   // no colour), so the whole point of the last resort is that a panel which could not ask its theme for
-  // either still closes and still reads, with no bar faked in. The focused row is therefore the very bytes
-  // the resting row drew — the bar is `selected`'s job, and a fallback that invented one would bracket a
-  // row the user's keys are not on.
+  // either still closes and still reads, with no bar faked in. The focused row is the resting row's bytes
+  // with one column exchanged — the selection marker in the level glyph's cell, which is the panel's own
+  // answer to a selection and not the theme's (#70 decision 2), drawn where the bar sits and nowhere else.
   expect(resting[0]).toBe(focused[0]);
-  expect(resting[1]).toBe(focused[1]);
+  // Read the focused row's marker column and put the level's own glyph back into it: that is the resting
+  // row, byte for byte, which is the promise a last-resort style makes (nothing but the marker is added).
+  // The row table pays for the marker cell with *two* columns (`panel-rows.ts` writes ` ${glyph} `), so the
+  // resting row and the focused row differ by the marker and the space the level glyph's cell keeps: the
+  // cell is put back at the columns the row table gave it, and nothing else moves.
+  const focusedRow = focused[1] ?? "";
+  const at = focusedRow.indexOf(SELECTED);
+  expect(at).toBeGreaterThan(-1);
+  // The marker is drawn on the row the bar sits on and on no other, and the row keeps its tail: the exchange
+  // is the marker cell for the level cell, which is why the two frames' rows carry the same columns.
+  expect(resting[1] ?? "").toContain("• Decide X");
+  expect(focusedRow).toContain(`${SELECTED} Decide X`);
+  expect(visibleWidth(focusedRow)).toBe(visibleWidth(resting[1] ?? ""));
   for (const lines of [resting, focused]) expect(lines[1]?.includes("[")).toBe(false);
+  // The marker is drawn on the focused row and never on the resting one, so the last resort does not put a
+  // bar where the user's keys are not — it only says which row the bar would be on.
+  expect(focused[1] ?? "").toContain(SELECTED);
+  expect(resting[1] ?? "").not.toContain(SELECTED);
 
   // The focused frame is where `borderFocused` and the hint's `dim` live: the hint is the one thing the
   // focus adds, drawn through the same `dim` the id/time tail came through and cut to the border by the

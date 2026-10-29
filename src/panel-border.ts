@@ -2,10 +2,13 @@
  * The two border rows of the pins panel: the corners, the label each carries, and the rule between them.
  *
  * The panel is a *closed* box, and a closed box is the part a theme can break: a corner wrapped in visible
- * bytes pushes the frame past the width the overlay was given, and a label whose bytes the theme smuggled
- * into an escape sequence reaches a border column that reads as blank. So both rows are drawn under the
- * same policy — every escape byte refused, the label measured on what survives, the rule counted in columns
- * rather than styled — and the policy is stated once, here, for the top and the bottom alike.
+ * bytes pushes the frame past the width the overlay was given, and a label that carried a smuggled escape
+ * sequence reaches a border column that reads as blank. So both rows are drawn under one policy — the
+ * label's own bytes refused unconditionally before the theme is asked for them, the theme's colour kept,
+ * every other sequence of the styled label refused, the label measured on what survives, the rule counted in
+ * columns rather than styled — and the policy is stated once, here, for the top and the bottom alike. The
+ * labels themselves are panel-owned words (`frameTitle`, `focusedHint`, `replyHint`), never a pin's: a pin's
+ * bytes are stripped at their own boundary, so a border column is one no pin reaches.
  *
  * It is a module of its own rather than a few functions in `panel-lines.ts` for a plain reason: the frame
  * and the rows are two responsibilities, and the file that held both had outgrown the project's size limit.
@@ -23,12 +26,18 @@ import {
   frameGlyphs,
   glyph,
   padPlain,
+  selectionReset,
+  themeBytes,
 } from "./panel-frame.ts";
 
 /**
- * The label a border row carries, at the room the border gives it, under the same escape policy as every
- * other drawn line: the theme's bytes are refused before the label is measured, so nothing a theme wraps the
- * label in can reach a border column (the frame is drawn from the *stripped* label, never the styled one).
+ * The label a border row carries, at the room the border gives it, under the *theme's* escape policy:
+ * a colour survives and every other sequence is refused at this boundary rather than by the line's closer.
+ *
+ * What reaches here is a theme member applied to one of the panel's own words — `frameTitle` at the top,
+ * `focusedHint`/`replyHint` at the bottom (`panel-lines.ts`) — never a pin's bytes, which are stripped at
+ * their own boundary (`panelPinRows`, `headingCell`, `entryCell`), and which `borderLine` below refuses
+ * unconditionally before the theme is asked for them.
  *
  * A label that fits is cut by nothing and padded by nothing — the rule is the padding, and a pad here would
  * put a blank between the label and the corner. A label too long is cut with `…`, minus the reset bytes
@@ -36,12 +45,13 @@ import {
  * character, so the ellipsis is put back and the line carries no escape the builder introduced.
  */
 function fitLabel(label: string, room: number): string {
-  const plain = stripSequences(label);
+  // The label is the header or the hint, coloured by the theme: its SGR is what the border is coloured by,
+  // and its non-SGR sequences are refused here rather than by the line's closer. `themeBytes` is that pair
+  // of passes — a bare control between two of the theme's colours is not a sequence, so the sequence pass
+  // alone leaves it on a border column, where nothing on the row consumes it.
+  const plain = themeBytes(label);
   if (visibleWidth(plain) <= room) return plain;
-  const cut = stripSequences(truncateToWidth(plain, room, ELLIPSIS)).replace(
-    INJECTED_RESET,
-    ELLIPSIS,
-  );
+  const cut = themeBytes(truncateToWidth(plain, room, ELLIPSIS)).replace(INJECTED_RESET, ELLIPSIS);
   return padPlain(cut, room);
 }
 
@@ -63,13 +73,26 @@ export function borderLine(
   width: number,
   frame: (text: string) => string,
 ): string {
-  const text = label === "" ? "" : ` ${fitLabel(labelStyle(label), width - CORNER_COLUMNS - 2)} `;
+  // The caller's `replyHint` is the one label this module does not compose, and it reaches the theme from
+  // the operator's environment (`PI_STICKY_FOCUS_KEY`, via `replyHint`, `panel-hint.ts`). `parseKeyIdStrict`
+  // rejects an ESC in that value and `readConfig` falls back to the default when it will not parse, so a
+  // border label is panel-owned text by construction — but the unconditional strip is the promise this
+  // module made before the theme's colour was allowed on a border, and keeping it costs nothing: a label
+  // with no escape in it is returned byte for byte, and one with an escape in it reaches the theme as text
+  // rather than as the bytes it carried.
+  const safe = label === "" ? "" : stripSequences(label);
+  const text = safe === "" ? "" : ` ${fitLabel(labelStyle(safe), width - CORNER_COLUMNS - 2)} `;
   // The rule reaches the right corner of the border whatever the label does with the room it was given:
   // a cut ends at the last column it was allowed, a label shorter than its room leaves the rest to the
   // rule. No border ever ends in a blank — the panel is flush right, and blanks at its edge would read
   // as a frame that was never drawn.
   const rule = Math.max(0, width - CORNER_COLUMNS - visibleWidth(text));
-  return `${glyph(frame, left)}${text}${RULE.repeat(rule)}${glyph(frame, right)}`;
+  // One reset closes the whole border row after its last visible byte. Each glyph closes itself through
+  // `glyph`, but a coloured gutter written before the rule it is joined to would otherwise leave the
+  // screen wearing that colour across the rule and past the frame's last column: the panel is flush right,
+  // so the bleed lands on the chat, not on the panel's own padding. `selectionReset` answers `""` for a
+  // border the theme did not colour, so a plain frame still draws no escape byte.
+  return selectionReset(`${glyph(frame, left)}${text}${RULE.repeat(rule)}${glyph(frame, right)}`);
 }
 
 /**

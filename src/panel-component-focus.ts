@@ -22,6 +22,15 @@ import type { PanelHost } from "./panel-host.ts";
 export interface PanelFocusState {
   /** Record the focus flag and drop the memorised frame with it (`PanelComponent.setFocused`). */
   setFocused(focused: boolean): void;
+  /**
+   * Put the bar back on the top-ranked pin and drop the memorised frame with it.
+   *
+   * On the *focus-taking* verb alone. `setFocused` is not enough and is not what to hang this on:
+   * `containKey` (`panel-input.ts`) and `hidePanel` (`panel-user-verbs.ts`) move the flag directly as an
+   * escape hatch when a host throws, and a panel the user never got to see must not lose its place on their
+   * account — only a session that *begins* resets it (`focusPanel` below).
+   */
+  resetSelection(): void;
 }
 
 /** The three collaborators one focus change involves. */
@@ -35,13 +44,21 @@ export interface PanelFocus {
 }
 
 /**
- * Take the focus: the flag first, then the handle, then a frame.
+ * Take the focus: the bar back at the top, then the flag, then the handle, then a frame.
+ *
+ * The selection is reset *first*, before the flag moves, because `d` and `Enter` address `pins[selection]`:
+ * a bar the user could not see — the colours failed them, or they left the panel three rows deep and came
+ * back — must never act on a pin nobody chose. Losing the place is the cheaper loss, and this is the one
+ * place the reset lives: the two direct `setFocused(false)` escape hatches (`containKey`, `hidePanel`) and
+ * `unfocusPanel` below are deliberately reset-free, so a throwing host or a hide cannot spend a selection the
+ * user was working with.
  *
  * The flag is set *before* the handle moves so the frame pi-tui requests on the strength of the handle
  * already reads the focused colours and the keys hint; a handle that focused first could be drawn by a
  * frame request that came from elsewhere in between, in resting colours.
  */
 export function focusPanel(target: PanelFocus): void {
+  target.state.resetSelection();
   target.state.setFocused(true);
   target.handle?.focus();
   target.host.requestRender();

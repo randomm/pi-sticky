@@ -71,6 +71,21 @@ test("a dim that adds columns is charged to the text, not to the id/time tail", 
 // `built` is `panel-frame.ts`'s: one `panelLayoutSections` pass at `width` — the rows the pins own over the two
 // borders, cut to `TERMINAL_ROWS`' half — and the builder handed that very table.
 
+/**
+ * The marker cell of a drawn row: the columns between its left gutter and the row's text.
+ *
+ * A theme's `border` puts an SGR prefix in front of the gutter, and the row's own indent follows it, so the
+ * cell is read from the gutter rather than from the start of the line — which is the only way to see what the
+ * marker's wrapper left behind.
+ */
+function markerCellOf(line: string): string {
+  const body = line.slice(line.indexOf(GUTTER) + 1).replace(/^ +/, "");
+  const end = body.indexOf(" ");
+  return end === -1 ? body : body.slice(0, end);
+}
+
+const GUTTER = String.fromCodePoint(0x2502);
+
 test("a themed panel draws through all six colours", () => {
   // One draw per focus state: a frame is coloured by `border` or by `borderFocused` and never by both at
   // once, so the unfocused gutter and the focused corners are asked for from the frames that use them.
@@ -85,7 +100,13 @@ test("a themed panel draws through all six colours", () => {
     border: (s: string) => `\u{1b}[2m${s}`,
     borderFocused: (s: string) => `\u{1b}[1m${s}`,
   };
+  // Two frames of the same theme at the same width: the *resting* one, which draws the level's glyph, and
+  // the focused one, which draws the bar. The marker assertion is made on the resting row, because the bar's
+  // row exchanges the level's glyph for the panel's own selection marker (#70 decision 2) and there the
+  // theme's `marker` wrapper is asked for the marker, not the level — `resting` is the frame in which this
+  // theme's `marker` is asked for a level at all.
   const focused = built(content([one(1, "Decide X")], 0, true), 40, painted);
+  const resting = built(content([one(1, "Decide X")], 0, false), 40, painted);
   expect(focused[0]).toContain("<h:t>");
   // The marker's wrapper is *cut*, not drawn: the glyph owns one column and this theme's `marker` puts six
   // visible columns around it, so the row keeps the first of them and the glyph itself is what gives way — the
@@ -93,10 +114,16 @@ test("a themed panel draws through all six colours", () => {
   // tail (`< x >`, not `< x …`). Six colours are still asked for, and the frame's other five are drawn. The
   // cell the row opens with is therefore the wrapper's lone surviving column and none of its tail: `<m:t>`
   // would mean the whole wrapper was drawn, and `<m` would mean the cut left the marker's own name on the
-  // screen, and a bare `<` would pass for any other byte a theme put there.
-  expect(focused[1]).toContain(" < ");
-  expect(focused[1]).not.toContain("<m");
-  expect(focused[1]).toContain("<s:t>");
+  // screen, and a bare `<` would pass for any other byte a theme put there. `dropControls` (`escape.ts`) is
+  // what took the theme's own reset with the rest of the wrapper, so the cell is the `<` and the pad that
+  // brings it back to the glyph's two columns — and `resting` is the resting row, which is why no bracket
+  // stands between the gutter and the cell.
+  expect(markerCellOf(resting[1] ?? "")).toBe("<");
+  expect(resting[1] ?? "").not.toContain("<m");
+  expect(resting[1] ?? "").not.toContain("<s:t>");
+  // The bar's own row, drawn focused, is where the theme's `selected` is asked for the row's columns.
+  const bar = built(content([one(1, "Decide X")], 0, true), 40, painted);
+  expect(bar[1] ?? "").toContain("<s:t>");
   // ...and the *resting* row's tail is whole. This theme's `dim` wraps — its tag is drawn, not counted away —
   // so the tail it stamps is sixteen columns wider than the `#<id> <age>` an undimmed measurement saw. A
   // reserve sized on the undimmed string handed those columns to the text and cut the age, drawing
@@ -105,7 +132,6 @@ test("a themed panel draws through all six colours", () => {
   // The focused row of the same theme is not that row: `<s:t>` puts its own six visible columns in front of a
   // line the frame already sized without them, so at 40 columns the whole line is cut by `fitLine` whatever
   // the tail's reserve was, and asserting an uncut tail there would be asserting the bar is free.
-  const resting = built(content([one(1, "Decide X")], 0, false), 40, painted);
   // This theme's `dim` puts sixteen *drawn* columns around whatever it stamps, and the row must carry them
   // whole: the reserve is charged for the drawn tail, not the undimmed one, and that is what stops the
   // wrapper's own bytes from being paid for out of the tail — the defect that drew `<d:t> #1 2…</d:t>`.

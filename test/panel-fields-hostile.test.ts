@@ -70,7 +70,9 @@ test("hostile group and options forge no pin row and no reply line, at the sizes
         // The frame is still the frame, and the pin it drew is the one the view holds: heading, pin, options,
         // borders. A hostile field never buys the frame a row, and never costs it one.
         expect(lines).toHaveLength(5);
-        expect(lines[2]).toContain("! Decide X");
+        // The pin's own row, whichever glyph stands in its marker column: focused, the bar sits on it and the
+        // panel draws its own selection marker there instead of the warning's `!` (#70 decision 2).
+        expect(lines[2]).toContain("Decide X");
         expect(lines[2]).toContain("#1");
       }
     }
@@ -91,10 +93,10 @@ test("the field's own fold is what keeps a hostile group to one heading, every b
     // this frame was cut from is the table a break-free field would have produced.
     expect(lines).toHaveLength(5);
     assertNoForgery(lines, /! Decide X/);
-    // And the fold was a *fold*, not a drop or a wrap: at 120 columns the row has room for all three keycaps,
+    // And the fold was a *fold*, not a drop or a wrap: at 120 columns the row has room for all three digits,
     // so the break the option carried came back as a space rather than as a row of the frame.
-    expect(lines[3]).toContain("\u23281");
-    expect(lines[3]).toContain("\u23283");
+    expect(lines[3]).toContain("1 ");
+    expect(lines[3]).toContain("3 ");
   }
 });
 

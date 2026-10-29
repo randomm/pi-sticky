@@ -89,7 +89,10 @@ configured as the focus key, and when `PI_STICKY_FOCUS_KEY` is `off` the border 
 
 Once focused:
 
-- `↑`/`↓` or `j`/`k` move the selection bar.
+- `↑`/`↓` or `j`/`k` move the selection bar. The row the bar sits on is drawn in the theme's selected colours
+  and opens with a `›` where that pin's level marker stands, so the row you are on is readable even in a
+  terminal with no colours. Only that row is marked, and nothing is marked while the panel is unfocused.
+  Focusing the panel puts the bar back on the top-ranked pin, so a bar you never saw never acts for you.
 - `Enter` puts `Re #<id>: ` at the start of the editor, keeps the draft that was already there, and
   hands focus back to the main editor. It counts as a reply only as a bare carriage return or line
   feed, so under the Kitty keyboard protocol type `Re #<id>: ` by hand.
@@ -147,7 +150,7 @@ still yours:
   in the frame's title, so a `Now` group holding your only warning still titles `1 warning`. A pin with no
   group stays in its level's section.
 - **`options`** are the actions the agent is offering. They are drawn on one row under the pin, each with its
-  number (`⌨1 Passed on   ⌨2 Not yet`), and you type that number into the editor yourself: nothing here acts
+  number (`1 Passed on   2 Not yet`), and you type that number into the editor yourself: nothing here acts
   for you. When the frame is too narrow to name them all, the last ones are left off whole rather than cut
   mid-word, so a label you can read is a label you can answer.
 - **`compact`** asks for the pin to occupy one row instead of several: its text is cut rather than wrapped.
@@ -369,7 +372,7 @@ Without noni the bridge declines rather than inventing a record.
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
 | `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |
-| `1`–`4` | On a pin with `options`, put `Re #<id>: <that option> ` in the editor and return focus to it. The digit is the position the keycap row numbered. `0` and a digit past the list do nothing. |
+| `1`–`4` | On a pin with `options`, put `Re #<id>: <that option> ` in the editor and return focus to it. The digit is the position the option row numbered. `0` and a digit past the list do nothing. |
 | `d` | Dismiss the selected pin. |
 | `Esc` | Back to the editor; the panel stays open. |
 
