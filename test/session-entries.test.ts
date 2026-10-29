@@ -12,10 +12,12 @@ import { describe, expect, test } from "bun:test";
 import { cleanPinText } from "../src/sanitize.ts";
 import { snapshotFromCustom, snapshotFromEntry } from "../src/session-entries.ts";
 import { isPinState } from "../src/state-guards.ts";
+import { DIGIT_GROUP, DIGIT_OPTIONS, NOW_DIGIT, digitPin } from "./digit-fixtures.ts";
 import {
   NOW,
   customEntry,
   pin,
+  removal,
   state,
   toolResultEntry,
   userAction,
@@ -96,6 +98,29 @@ describe("snapshotFromEntry", () => {
     expect(stored?.compact).toBe(true);
     expect(stored?.group).not.toContain(ESC);
     expect(stored?.options?.[1]).not.toContain(cp(0xdc00));
+  });
+
+  test("a digit at the edge of a group or an option survives every re-clean", () => {
+    // The reader runs cleanPinText again over what the session file already holds, and the reducer
+    // cleaned it on the way in: an edge class carrying the characters "1" and "3" would shave one digit
+    // off per pass until a name came back truncated, an all-digit option fell under MIN_OPTIONS and the
+    // whole `options` key disappeared. The shared digit fixture carries the hostile stamp too, so the
+    // escape in front of it proves the fold and the trim both ran.
+    const hostileStamp = `${ESC}[2J${NOW_DIGIT}`;
+    for (const [read, entryFor] of [
+      [snapshotFromEntry, toolResultEntry],
+      [snapshotFromCustom, customEntry],
+    ] as const) {
+      const stored = read(entryFor(state([digitPin(1)], 3, [removal(2, "user", hostileStamp)])))
+        ?.pins[0];
+      if (!stored) throw new Error("a valid snapshot must read back");
+      expect(stored.text).toBe("Ship 1");
+      expect(stored.group).toBe(DIGIT_GROUP);
+      expect(stored.options).toEqual(DIGIT_OPTIONS);
+      // An ISO stamp ending in a digit is the shape no fixture had: the one the suite uses ends in Z.
+      expect(stored.createdAt).toBe(NOW_DIGIT);
+      expect(stored.updatedAt).toBe(NOW_DIGIT);
+    }
   });
 
   test("a group or an option that cleans to nothing leaves no key the guard would refuse", () => {

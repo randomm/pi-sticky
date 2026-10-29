@@ -8,7 +8,7 @@
  * silently skipped on reload.
  *
  * The shape rules themselves (ids, uids, density, bounds) are in state-guards.test.ts; the escape
- * coverage of the sanitizer is in sanitize.test.ts and escape.test.ts.
+ * coverage of the sanitizer is in sanitize.test.ts, sanitize-digit-edge.test.ts and escape.test.ts.
  */
 import { describe, expect, test } from "bun:test";
 

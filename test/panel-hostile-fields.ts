@@ -179,13 +179,14 @@ export function assertNoForgery(lines: readonly string[], rowPattern: RegExp, ro
 /**
  * The store's own guarantee, which is what makes the one-row promise hold without every surface re-folding:
  * a `group` and every `options` entry the reducer will accept contains no break shape at all, whatever the
- * model sent. `cleanField` (`pin-fields.ts`) runs `cleanPinText` and then the fold (`toOneLine`, `render.ts`) before it stores, and
- * this is the assertion that says so — the fields are refused as an oversized body rather than stored with
- * their breaks intact, so a surface cannot be handed a value that would split its row.
+ * model sent. `cleanField` (`pin-fields.ts`) runs `cleanPinText` and then the fold (`toOneLine`,
+ * `render.ts`) before it stores, and this is the assertion that says so — the fields are refused as an
+ * oversized body rather than stored with their breaks intact, so a surface cannot be handed a value
+ * that would split its row.
  *
- * Asserted here rather than in `pin-fields.test.ts` because it is the premise every drawn sweep in this
- * project stands on: when a frame, a peek or a listing is shown a hostile field and still draws one row, this
- * is the fact that made that possible.
+ * Asserted here rather than in either half of the `pin-fields` tests, because it is the premise every
+ * drawn sweep in this project stands on: when a frame, a peek or a listing is shown a hostile field and
+ * still draws one row, this is the fact that made that possible.
  */
 export function assertStoredFieldsAreOneLine(): void {
   for (const brk of BREAKS) {

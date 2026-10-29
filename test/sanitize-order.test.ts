@@ -1,7 +1,9 @@
 /**
  * Regression tests for the sanitizer's *pass order* — the cases where the pipeline as a whole leaks
  * what an individual pass would have removed, because a later pass undoes an assumption the earlier
- * one relied on. The single-pass behaviour is in sanitize.test.ts and escape.test.ts.
+ * one relied on. The single-pass behaviour is in sanitize.test.ts and escape.test.ts; the digit-edged
+ * cases for the trim that runs last are in sanitize-digit-edge.test.ts, which also carries the full
+ * account of the CR interpolation that put "1" and "3" into the edge class.
  *
  * The bug these lock down: a bare `ESC` that opens nothing is emitted as one character, and its low
  * byte 0x1b pairs with the low surrogate half of the tag character that follows —

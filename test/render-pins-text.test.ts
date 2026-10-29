@@ -3,8 +3,8 @@
  * a pi-tui `Text`, which does not parse Markdown), so this surface has one promise: what it emits
  * is plain text. That means both halves — the shape of a row, and the absence of any markup the
  * renderer could have introduced — are pinned here. The text itself arrives already cleaned by
- * `cleanPinText` (see test/state-untrusted.test.ts), which is why these tests assert on shape and
- * on Markdown markup rather than on escapes.
+ * `cleanPinText` (see test/state-untrusted.test.ts and test/state-untrusted-fields.test.ts), which is
+ * why these tests assert on shape and on Markdown markup rather than on escapes.
  */
 import { describe, expect, test } from "bun:test";
 

@@ -11,6 +11,7 @@ import { describe, expect, test } from "bun:test";
 
 import { cleanPinText } from "../src/sanitize.ts";
 import { latestUIShown, userActionFrom } from "../src/session-entries.ts";
+import { NOW_DIGIT } from "./digit-fixtures.ts";
 import { NOW, customEntry, state, toolResultEntry, userAction, userEntry } from "./fixtures.ts";
 import {
   ESC,
@@ -27,6 +28,16 @@ describe("userActionFrom", () => {
     expect(read).toEqual({ v: 1, uid: "uid-7", action: "dismiss", at: cleanPinText(action.at) });
     expect(read).not.toBe(action);
     expect(read?.at).not.toContain(ESC);
+  });
+
+  test("a stamp ending in a digit is copied verbatim, not trimmed", () => {
+    // Every timestamp the readers clean ends in a digit rather than the `Z` the fixtures use, and `at`
+    // is what the user-removal refusal prints: an edge class carrying the characters "1" and "3" shaved
+    // one digit off it per rebuild. `NOW_DIGIT` is that shape.
+    for (const kind of ["dismiss", "reply"] as const) {
+      const action = userAction("uid-7", kind, `${ESC}[2J${NOW_DIGIT}`);
+      expect(userActionFrom(userEntry(action))?.at).toBe(NOW_DIGIT);
+    }
   });
 
   test("refuses the wrong entry or custom type", () => {

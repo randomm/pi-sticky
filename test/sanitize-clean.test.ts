@@ -20,13 +20,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { cleanPinText, sanitizePinText } from "../src/sanitize.ts";
+import { BEL, ESC, cp } from "./session-entries-hostile.ts";
 
-const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
 const NL = cp(0x0a);
 const CR = cp(0x0d);
 const TAB = cp(0x09);
-const ESC = cp(0x1b);
-const BEL = cp(0x07);
 /** The smallest maxChars the tool can be configured with, so the cut below is a real one. */
 const MIN_MAX_CHARS = 40;
 const graphemes = (text: string): string[] =>
@@ -62,7 +60,16 @@ const CASES: [string, string, string][] = [
     `e${cp(0x301, 0x301, 0x301, 0x301, 0x301, 0x301)}x${cp(0x20e3, 0x20e3, 0x20e3, 0x20e3, 0x20e3, 0x20e3)}`,
     `e${cp(0x301, 0x301, 0x301, 0x301)}x${cp(0x20e3, 0x20e3, 0x20e3, 0x20e3)}`,
   ],
+  [
+    "digits at both edges and a run of breaks padded with a digit",
+    `${CR}Plan 3${CR}${NL}${NL}Step 13${NL}${cp(0x85)}1st${NL}3${TAB}`,
+    `Plan 3${NL}${NL}Step 13${NL}${NL}1st${NL}3`,
+  ],
 ];
+
+// The digit-edged cases themselves — every edge shape, every digit position, and the repeated clean
+// the reducer and `reconstruct` perform — live in `sanitize-digit-edge.test.ts`, the file that fails
+// while the edge class carries the characters "1" and "3".
 
 describe("cleanPinText applies every pass and no budget", () => {
   test.each(CASES)("%s cleans to exactly the expected text", (_name, raw, expected) => {
