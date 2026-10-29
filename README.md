@@ -276,8 +276,8 @@ and when it applies. Run `/reload` after editing a skill. What a package contrib
 resource lists beside `source` in a `packages` entry — a list narrows that type and `[]` loads none of
 it, while a bare `"source"` with no list loads everything the package declares. `!pattern` excludes and
 `+path` forces back one exact path there, and in the top-level `skills` list too — but `+` is exact, so
-the path has to name the skill's own directory (or its `SKILL.md`) relative to the settings file's
-directory or absolute, and a bare skill name re-includes nothing.
+the path has to name the skill's own directory (or its `SKILL.md`) relative to the directory pi reads
+that list from, or absolute, and a bare skill name re-includes nothing.
 
 ## Using with noni
 
