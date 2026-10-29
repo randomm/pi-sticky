@@ -42,10 +42,17 @@ describe("stripNonSgr keeps a colour", () => {
     );
   });
 
-  test("an SGR written in its 8-bit form survives too", () => {
-    // `CSI8` is an introducer, so the dispatch still runs it through the CSI branch: a colour a
-    // theme wrote with the 8-bit introducer is the same colour.
-    expect(stripNonSgr(`${CSI8}31mred`)).toBe(`${CSI8}31mred`);
+  test("an SGR written in its 8-bit form is refused, not kept", () => {
+    // `CSI8` is still dispatched as a CSI — the walk takes the introducer, its parameters and its final
+    // whole — but it is never a *kept* sequence. U+009B is a member of the printable range: `visibleWidth`
+    // charges it a column, and `31m` three more, so a pass that emits what it keeps cannot draw an 8-bit
+    // colour for free. The 7-bit spelling above is the only one a theme may colour a drawn line with.
+    expect(stripNonSgr(`${CSI8}31mred`)).toBe("red");
+    expect(containsNonSgr(`${CSI8}31mred`)).toBe(true);
+    // Refused whole: neither the introducer nor its parameters come back as the text `31m`.
+    expect(stripNonSgr(`${CSI8}38;2;1;2;3mred`)).toBe("red");
+    // ...and a 7-bit colour is untouched alongside it, so refusing one spelling is not refusing colour.
+    expect(stripNonSgr(`${CSI8}31m${SGR_RED}red`)).toBe(`${SGR_RED}red`);
   });
 
   test("plain text is returned byte for byte", () => {
@@ -170,6 +177,16 @@ describe("containsNonSgr", () => {
     ];
     for (const line of lines) {
       expect(containsNonSgr(line), JSON.stringify(line)).toBe(stripNonSgr(line) !== line);
+    }
+  });
+
+  test("an 8-bit colour is a line that must be rewritten, whatever `visibleWidth` makes of it", () => {
+    // The agreement above, pinned for the one class a *keeping* pass cannot keep: the introducer is
+    // printable to `visibleWidth`, so a classifier that trusted a byte range would call it clean and a
+    // keeping pass would draw four columns of it where a colour was supposed to cost none.
+    for (const line of [`${CSI8}31mred`, `${SGR_RED}${CSI8}44mx`]) {
+      expect(containsNonSgr(line), JSON.stringify(line)).toBe(true);
+      expect(stripNonSgr(line), JSON.stringify(line)).not.toContain(CSI8);
     }
   });
 });

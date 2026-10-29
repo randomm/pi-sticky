@@ -18,6 +18,7 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
+import { is8BitIntroducer } from "./escape-chars.ts";
 import { scanSequence } from "./escape-scan.ts";
 import { sgrResetFor } from "./escape-sgr.ts";
 import { dropControls, stripNonSgr, stripSequences } from "./escape.ts";
@@ -118,25 +119,26 @@ export function markerCell(marked: string, glyphText: string): string {
 }
 
 /**
- * The theme's colours, put back over a cut that was measured on the sequence-free form of the same string.
+ * The theme's own colours and nothing else: every other sequence, and every control, is gone.
  *
- * `plain` and `marked` differ only by sequences, so walking the two together and taking `marked`'s bytes
- * wherever `plain` still has one re-attaches exactly the SGR the theme wrote and nothing else: an OSC, a DCS
- * or a stray control that `stripSequences` removed is absent from `plain`, so it has no column to be put back
- * into. A cut that ends in the middle of a colour's parameters ends before it, which is why the reset at the
- * end of a drawn line (`selectionReset`, above) is the thing that closes a cell that was cut mid-colour.
+ * One walk, both passes agreeing on what a colour is: `stripNonSgr` refuses every sequence but a CSI
+ * closed by `m`, and `dropControls` is told the same class so it walks over that colour instead of
+ * stripping its introducer and leaving the parameters behind as the text `[33m`. There is nothing to put
+ * back afterwards — the colour was never taken apart — which is why this used to reach for a rewrite of
+ * the parameter-only shape the old control pass left behind.
  */
-/** The theme's own colours and nothing else: every other sequence, and every control, is gone. */
 function tinted(marked: string): string {
-  // One walk, both passes agreeing on what a colour is: `stripNonSgr` refuses every sequence but a CSI
-  // closed by `m`, and `dropControls` is told the same class so it walks over that colour instead of
-  // stripping its introducer and leaving the parameters behind as the text `[33m`. There is nothing to put
-  // back afterwards — the colour was never taken apart — which is why this used to reach for a rewrite of
-  // the parameter-only shape the old control pass left behind.
   return dropControls(stripNonSgr(marked), isSgr);
 }
 
-/** Does the sequence at `at` name a colour, i.e. is it the one class `stripNonSgr` keeps? */
+/**
+ * Does the sequence at `at` name a colour, i.e. is it the one class `stripNonSgr` keeps?
+ *
+ * The vote is the scanner's `kept`, which recognises a colour only in its 7-bit spelling — an 8-bit `CSI8`
+ * introducer is refused even when its parameters end in `m`, because U+009B is a *character*
+ * `visibleWidth` charges for and this pass emits what it keeps. A colour whose introducer was kept but
+ * whose parameters were not would print the text `31m` where a colour was supposed to cost nothing.
+ */
 function isSgr(text: string, at: number): boolean {
   return scanSequence(text, at, text.charCodeAt(at)).kept;
 }
@@ -156,36 +158,59 @@ const COLOUR_CELL = new RegExp(`${E}\\[[0-9;]*m`);
 /** Any other introducer: a sequence `stripNonSgr` refused, skipped as one cell rather than as characters. */
 const SEQUENCE_CELL = new RegExp(`${E}[\\][PX^_G]`);
 
+/**
+ * The theme's colours, put back over a cut that was measured on the sequence-free form of the same string.
+ *
+ * `plain` and `marked` differ only by sequences, so walking the two together and taking `marked`'s bytes
+ * wherever `plain` still has one re-attaches exactly the SGR the theme wrote and nothing else: an OSC, a DCS
+ * or a stray control that `stripSequences` removed is absent from `plain`, so it has no column to be put back
+ * into. A cut that ends in the middle of a colour's parameters ends before it, which is why the reset at the
+ * end of a drawn line (`selectionReset`, above) is the thing that closes a cell that was cut mid-colour.
+ *
+ * Every byte copied out of `marked` is either text or a colour: the walk skips each *whole* sequence — an
+ * introducer is never re-emitted a code unit at a time, and an 8-bit introducer, which this file's drawn
+ * policy refuses, is skipped like any other rather than copied as if it were text.
+ */
 function keepColours(cut: string, marked: string): string {
-  const plainOf = (character: string): string => dropControls(stripSequences(character));
   let out = "";
   let at = 0;
   for (const kept of cut) {
     // Skip what draws no columns: the refused sequences the cut took out, and the parameters of a colour
     // the cut ended before. Each is skipped as a whole cell so a colour is never re-emitted in pieces.
     for (;;) {
-      if (at >= marked.length) break;
-      const cell = marked.slice(at).match(COLOUR_CELL)?.[0];
-      if (cell !== undefined && marked.startsWith(cell, at)) {
-        // A colour is a cell: it draws nothing, so the cut has no column for it and it is passed over
-        // here — the colour itself is what `tinted` puts back over the columns that survived.
-        at += cell.length;
-        continue;
-      }
-      const introducer = marked.slice(at).match(SEQUENCE_CELL)?.[0];
-      if (introducer !== undefined && marked.startsWith(introducer, at)) {
-        // A refused sequence, and its payload up to whatever ends it, draws nothing either.
-        const length = scanSequence(marked, at, marked.charCodeAt(at)).length;
-        at += length < 0 ? 0 - length : length;
-        continue;
-      }
-      break;
+      const cell = skippedCell(marked, at);
+      if (cell === 0) break;
+      at += cell;
     }
     if (at >= marked.length) break;
     out += marked[at];
-    at++;
+    at += 1;
   }
   return out;
+}
+
+/**
+ * How many code units the zero-width cell at `at` occupies, or `0` where a real drawn column begins.
+ *
+ * Three classes, all of them free to `visibleWidth` and so all of them absent from the cut this walk is
+ * matched against: a colour (`COLOUR_CELL`), a refused `ESC`-led sequence, and an 8-bit introducer with its
+ * payload. The last is the one a byte-range test misses — U+009B is *printable* to `visibleWidth`, so a
+ * walk that stopped at the first byte above C1 would copy the introducer back onto the line that
+ * `stripNonSgr` had just refused it on.
+ */
+function skippedCell(text: string, at: number): number {
+  if (at >= text.length) return 0;
+  const code = text.charCodeAt(at);
+  const colour = text.slice(at).match(COLOUR_CELL)?.[0];
+  if (code === 0x1b && colour !== undefined && text.startsWith(colour, at)) return colour.length;
+  if (code === 0x1b || is8BitIntroducer(code)) return skipLength(text, at);
+  return 0;
+}
+
+/** The units the scanner walks over at `at`, with the resume-offset form of a negative length folded back. */
+function skipLength(text: string, at: number): number {
+  const length = scanSequence(text, at, text.charCodeAt(at)).length;
+  return length < 0 ? 0 - length : Math.max(1, length);
 }
 
 /**

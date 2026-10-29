@@ -18,7 +18,8 @@
  */
 import { expect, test } from "bun:test";
 
-import { markerCell } from "../src/panel-frame.ts";
+import { visibleWidth } from "@earendil-works/pi-tui";
+import { glyph, markerCell } from "../src/panel-frame.ts";
 
 /** The plain glyph whose columns every case below is measured against — the warning level's own, one column. */
 const ONE = "!";
@@ -93,4 +94,44 @@ test("a marker's escapes and control characters never reach the screen, whatever
   // A colour is kept through a cut as well as through a fit — with its introducer, or not at all. What must
   // never reach the screen is a *half* of a sequence, which is what a control-stripped introducer is.
   expect(markerCell(SGR + String.fromCharCode(0x21), ONE)).toBe(SGR + String.fromCharCode(0x21));
+});
+
+test("an 8-bit colour never buys a marker cell columns, on either branch of the width", () => {
+  // The class the 7-bit fixtures could not catch. `CSI8` is U+009B — an introducer to the scanner, and a
+  // *printable character* to `visibleWidth`. A keep-vote that asked the scanner "is this a CSI closed by
+  // `m`" and nothing more emitted it verbatim, so a one-column marker cell came back as four columns
+  // (`U+009B` plus the three characters `31m`) and the flush-right frame paid for a colour it did not draw.
+  // The cell is therefore held to the plain glyph's width over both branches — the fitting one and the
+  // cutting one — and to carrying no C1 byte at all, whatever the theme spelled its colour with.
+  const CSI8 = String.fromCharCode(0x9b);
+  const EIGHT_BIT = `${CSI8}31m`;
+  const EIGHT_BIT_TRUE = `${CSI8}38;2;1;2;3m`;
+  for (const marked of [
+    `${EIGHT_BIT}${ONE}`,
+    `${EIGHT_BIT}XYZ${ONE}`,
+    `${EIGHT_BIT_TRUE}${ONE}`,
+    // Both spellings of the same idea at once: the refused one goes and the drawable one stays.
+    `${EIGHT_BIT}${SGR}${ONE}`,
+    // A refused 8-bit run in front of *visible* bytes, so the cell is cut and the colours are re-attached:
+    // the branch that used to copy the introducer back out of the coloured string one character at a time.
+    `<>${EIGHT_BIT}31m${ONE}`,
+    `<${CSI8}2J${ONE}`,
+  ]) {
+    const cell = markerCell(marked, ONE);
+    expect(visibleWidth(cell), JSON.stringify(marked)).toBe(1);
+    // No C1 control survives — the introducer itself, and none of the parameters left behind when it goes.
+    for (let i = 0; i < cell.length; i++) {
+      const code = cell.charCodeAt(i);
+      expect(code >= 0x80 && code <= 0x9f, `C1 at ${i} of ${JSON.stringify(cell)}`).toBe(false);
+    }
+    // And no *half* of a sequence: what is left once the drawable colours are removed carries no introducer
+    // and no orphaned parameters.
+    const bare = cell.replace(new RegExp(`[${E}]${String.fromCharCode(0x5b)}[0-9;]*m`, "g"), "");
+    expect(bare).not.toContain(E);
+    expect(bare).not.toMatch(/[0-9;]*m/);
+  }
+  // The one-column promise the whole frame rests on, for the same bytes through the *glyph* path: a corner
+  // that drew four columns would push the box past the width the overlay was given.
+  expect(visibleWidth(glyph((text) => `${EIGHT_BIT}${text}`, ONE))).toBe(1);
+  expect(glyph((text) => `${EIGHT_BIT}${text}`, ONE)).toBe(ONE);
 });

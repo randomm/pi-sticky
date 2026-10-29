@@ -35,7 +35,13 @@ export interface Sequence {
    * offset the scan resumes at, for an unterminated string that died at an ESC opening another sequence.
    */
   readonly length: number;
-  /** Only a CSI closed by `m` — a colour — survives the drawn panel's policy. */
+  /**
+   * A CSI closed by `m` **written in its 7-bit form** — a colour the drawn panel may show. The 8-bit
+   * spelling is deliberately excluded: `CSI8` is U+009B, a character `visibleWidth` charges a column for,
+   * so a pass that *keeps* rather than strips cannot emit it for free. `stripNonSgr` refuses it as the
+   * introducer it is, and every caller that re-attaches a kept colour therefore vouches for a byte it can
+   * actually draw (`isSgr`, `panel-frame.ts`).
+   */
   readonly kept: boolean;
 }
 
@@ -77,7 +83,9 @@ export function scanSequence(text: string, start: number, code: number): Sequenc
         return refused(2);
     }
   }
-  if (code === CSI8) return csi(text, start, 1);
+  // The 8-bit CSI is still dispatched as a CSI, so the walk takes the introducer, its parameters and its
+  // final whole — but never as a colour: see `Sequence.kept`.
+  if (code === CSI8) return refused(csi(text, start, 1).length);
   if (is8BitIntroducer(code)) return refused(stringLength(text, start, start + 1, false));
   return refused(1);
 }
