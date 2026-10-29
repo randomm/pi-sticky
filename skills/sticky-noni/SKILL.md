@@ -101,8 +101,8 @@ noni writers — `register`, `claim`, `close`, `release` — do use `1`).
 - Any non-zero exit **with a census row** names the class that failed, because the exit code is that row's
   own code: **one** `warning` pin naming that row's `check`, its exit code and its own `fix:` text — do
   not derive an owner from the row's name prefix. A row that says the scan or the read did not run (a
-  cannot-tell / probe-honesty row, which `--strict` promotes to a failure) belongs with the next bullet:
-  no check is named as failed and no repair owner is named.
+  cannot-tell / probe-honesty row, a `warn` row which plain `--strict` promotes to a failure) belongs
+  with the next bullet: no check is named as failed and no repair owner is named.
 - Exit `2` with no row is a bad argument (an unknown `--only` name, an unparseable `--now` or
   `--stale-after`, a `--repo` that does not exist): quote what the census wrote on stderr and never
   guess a missing binary. Two things exit `3`, and stderr tells them apart: census's own `3` names `git`

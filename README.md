@@ -274,9 +274,10 @@ has not answered.
 The `description` is what the model reads when deciding whether to load the skill, so say what it does
 and when it applies. Run `/reload` after editing a skill. What a package contributes is set by the
 resource lists beside `source` in a `packages` entry — a list narrows that type and `[]` loads none of
-it, while a bare `"source"` with no list loads everything the package declares. The `+` prefix in the
-[noni settings example](#using-with-noni) belongs to the top-level `skills` list, where it forces in a
-directory another entry excludes.
+it, while a bare `"source"` with no list loads everything the package declares. `!pattern` excludes and
+`+path` forces back one exact path there, and in the top-level `skills` list too — but `+` is exact, so
+the path has to name the skill's own directory (or its `SKILL.md`) relative to the settings file's
+directory or absolute, and a bare skill name re-includes nothing.
 
 ## Using with noni
 
@@ -290,8 +291,8 @@ those three: the committed record stays the truth and the pin is only how you se
 pi install /path/to/noni
 ```
 
-Confirm the skills loaded by starting pi in the target project — the startup listing names each
-loaded skill, shown by default and forced on with `--verbose` — or by forcing one with
+Confirm the skills loaded by starting pi in the target project — the startup listing names each loaded
+skill unless `quietStartup` hides it, and `--verbose` forces it back on — or by forcing one with
 `/skill:census`. If noni's skills are not there, work through the three
 failure states yourself: the skill is absent (fix the install or the `skills` setting below); the script
 is not at its path (wrong clone); or the script is there but exits non-zero naming an import error — that
@@ -327,8 +328,8 @@ Notes:
 
 If you would rather not install noni as a package, add its skills directory to the `skills` list in
 your pi settings instead — pi's user settings file (loaded for every project) or the project's own
-settings file under its config directory. A plain absolute path is enough; add `+` when another `skills`
-entry excludes the tree.
+settings file under its config directory. A plain absolute path is enough; to bring back one skill that
+another `skills` entry excluded with `!`, add `+` before that skill's own directory path.
 
 ```json
 {
@@ -344,13 +345,13 @@ directory where you can, and set `PYTHONDONTWRITEBYTECODE=1` so running the scri
 
 To confirm both halves are loaded, from the target project:
 
-1. Force noni's own skill and check the census actually runs —
+1. Force noni's census skill and check the census actually runs —
    `python3 <clone>/skills/census/scripts/census.py --repo .` from the target project, or `noni census`
    where the package is installed.
 2. Force the bridge and check it pins what the census reported.
 
 ```text
-/skill:steering-ledger run the census and tell me what fails
+/skill:census run the census and tell me what fails
 /skill:sticky-noni pin what the census reported
 ```
 
