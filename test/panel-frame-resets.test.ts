@@ -1,11 +1,16 @@
 /**
- * The line-end SGR reset every drawn line of both frames owes (#70).
+ * The line-end SGR reset every drawn line of both frames owes (#70), read through a terminal model.
  *
  * The panel is a flush-right overlay: an unterminated colour does not stop at the frame's last column, it
  * paints the chat beside it. So each drawn line closes on a reset after its last visible byte
  * (`selectionReset`, `panel-frame.ts`), a theme that closed its own colours gains no byte for it, and an
  * uncoloured panel still draws no escape byte at all. Widths are re-asserted on every line the reset
  * touches, because a reset that was counted as a column would open the box.
+ *
+ * What decides whether a line owed that reset is `worn` below — a small model of what a terminal is wearing
+ * after it drew the line — and not `sgrResetFor`/`isSgrReset` (`escape-sgr.ts`). Asserting the frame's own
+ * classifier against itself would only prove the frame and its test agree, which is exactly the state a bug
+ * in that classifier leaves them in.
  */
 import { expect, test } from "bun:test";
 
@@ -18,7 +23,6 @@ import {
   E,
   SGR_RESET,
   WARNING,
-  carriesColour,
   closedColours,
   csi,
   frame,
@@ -31,6 +35,50 @@ import {
 } from "./panel-drawn-lines-fixture.ts";
 import { drawnOffenders } from "./panel-hostile.ts";
 import { expectUniformWidth } from "./panel-lines-hostile-fixture.ts";
+
+/**
+ * The terminal every drawn line is read against: what the screen is wearing once it has drawn the line.
+ *
+ * `attribute` is the one SGR still on, carried with the text drawn after it so the caller can see what
+ * actually followed a colour. Only a reset closes it (no parameters, or parameters that are all zero);
+ * every other SGR opens another one. An attribute still on at the last visible byte of a line is the bug
+ * #70 is about — the panel is flush right, so it paints the chat beside the frame. `escapes` counts every
+ * ESC on the line, so a line the model calls uncoloured can be held to having drawn no escape at all.
+ *
+ * Deliberately a regex over the drawn bytes, not the scanner: an 8-bit `CSI8` closed by `m` is an introducer
+ * this model reads as text where the production walk refuses it as a sequence, and it keeps *which* colour
+ * was last open rather than a single boolean.
+ */
+interface Terminal {
+  /** An SGR the screen is still wearing, and the text drawn after it — the run whose colour must be closed. */
+  attribute: { sgr: string; drawn: string } | null;
+  /** Any escape byte on the line, kept so a line the model calls uncoloured can be held to drawing none. */
+  escapes: number;
+}
+
+const OPEN = new RegExp(`${E}\\[([0-9;]*)m`, "g");
+
+/** Does the parameter list of an SGR close every attribute rather than open one? */
+function closesAttributes(parameters: string): boolean {
+  return /^0+(?:;0+)*$/.test(parameters);
+}
+
+/**
+ * What the screen is still wearing at the end of `line`: the walk the frame's reset is checked against,
+ * spelled independently of `sgrResetFor` so the two can disagree and therefore can catch each other.
+ */
+function worn(line: string): Terminal {
+  let attribute: Terminal["attribute"] = null;
+  let at = 0;
+  for (const match of line.matchAll(OPEN)) {
+    const start = match.index ?? 0;
+    if (attribute !== null) attribute.drawn += line.slice(at, start);
+    at = start + match[0].length;
+    attribute = closesAttributes(match[1] ?? "") ? null : { sgr: match[0], drawn: "" };
+  }
+  if (attribute !== null) attribute.drawn += line.slice(at);
+  return { attribute, escapes: (line.match(new RegExp(E, "g")) ?? []).length };
+}
 
 test("every drawn line of both frames ends in a reset once a colour is open", () => {
   // The acceptance criterion the residual gap-gate finding named: nothing emitted a trailing reset before
@@ -48,12 +96,29 @@ test("every drawn line of both frames ends in a reset once a colour is open", ()
       expectUniformWidth(lines, width);
       for (const line of lines) {
         expect(drawnOffenders(line), `width ${width}`).toEqual([]);
-        // The criterion is the line-end reset *after its last visible byte*: a line that drew a colour ends
-        // on the reset, and a line that drew none has nothing to close. `sgrResetFor` answers `""` for the
-        // latter, which is what keeps an uncoloured panel drawing no escape bytes at all — the unfocused
-        // bottom border is that line, its only colour being the gutter glyph at its left edge.
-        if (carriesColour(line)) {
+        // The terminal model decides, not the classifier under test: `worn` walks the bytes and
+        // `sgrResetFor` walks parsed sequences, so the two are free to disagree — which is the point. Nothing
+        // may still be on at the last visible byte of a line.
+        const state = worn(line);
+        expect(state.attribute, `width ${width} ${JSON.stringify(line)}`).toBeNull();
+        if (state.escapes === 0) {
+          // A line the model says opened nothing owes no byte, and drawing none is what keeps an uncoloured
+          // panel escape-free rather than paying a reset for nothing.
+          expect(line, `width ${width}`).not.toContain(E);
+        } else {
+          // ...and the closing is the frame's own: the one reset the line ends on, right after its last
+          // visible byte. Strip that reset and the line is caught still wearing the colour it drew, with only
+          // visible text between it and the end — a reset the line carried itself would answer `null` here.
           expect(line.endsWith(SGR_RESET), `width ${width} ${JSON.stringify(line)}`).toBe(true);
+          const bare = worn(line.slice(0, line.length - SGR_RESET.length));
+          expect(bare.attribute === null, `width ${width} ${JSON.stringify(line)}`).toBe(false);
+          expect(bare.attribute?.drawn.includes(E), `width ${width} ${JSON.stringify(line)}`).toBe(
+            false,
+          );
+          expect(
+            visibleWidth(bare.attribute?.drawn ?? ""),
+            `width ${width} ${JSON.stringify(line)}`,
+          ).toBeGreaterThan(0);
         }
         // The reset carries no visible column, so the row still measures the frame's width.
         expect(visibleWidth(line)).toBe(width);

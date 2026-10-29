@@ -26,6 +26,14 @@ import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
 
+/**
+ * `ESC [ p m`, spelled from code points so the file holds no literal escape (one is rewritten on its way into
+ * a source file, and an assertion against a rewritten literal passes by accident).
+ */
+const sgr = (parameters: string): string => `${String.fromCharCode(0x1b)}[${parameters}m`;
+/** The one SGR that closes every attribute, spelled the same way. */
+const SGR_RESET = sgr("0m");
+
 /** The identity frame: no member wraps anything in visible bytes. */
 const identity: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
 
@@ -165,8 +173,36 @@ describe("the options row", () => {
     expect(
       drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 7, coloured).trimEnd(),
     ).toBe("\u0031 a");
-    // The style verbs are asked per entry that is *named* — the dropped one is absent from the row, which the
-    // assertion above pins by its exact bytes, and styling a label the user never sees is the failure the
-    // "entries are dropped whole" case above is about.
+    // ...and the four calls are the two entries the wide row above drew, each digit before its own label.
+    expect(asked).toEqual(["header:\u0031", "dim:a", "header:\u0032", "dim:bb"]);
+    // The narrow row cannot be checked that way: `entryCell` asks the two verbs *before* the loop knows the
+    // entry fits, so the dropped entry is asked for and then thrown away. What proves it unstyled is the row's
+    // own bytes — `\u0031`\u2009`a` are the kept entry's and belong on the row; `\u0032`\u2009`bb` are the dropped
+    // entry's and none of them may appear. A sentinel that wraps each part in a colour is what makes that
+    // visible: a styled-but-undrawn label reaches the line as a faint around `bb`.
+    const styled: string[] = [];
+    const wrapped: PanelStyle = {
+      ...identity,
+      header: (s) => {
+        styled.push(s);
+        return `${sgr("1m")}${s}${SGR_RESET}`;
+      },
+      dim: (s) => {
+        styled.push(s);
+        return `${sgr("2m")}${s}${SGR_RESET}`;
+      },
+    };
+    const narrow = drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 7, wrapped);
+    // What the theme was asked to colour, in order: the kept entry's digit and label, then the dropped
+    // entry's. `entryCell` composes an entry before the loop has measured it, so the calls alone can never
+    // show a dropped entry to be unstyled — the next three lines are the row, which is what can.
+    expect(styled).toEqual(["\u0031", "a", "\u0032", "bb"]);
+    expect(narrow).not.toContain("bb");
+    expect(narrow).not.toContain(`${sgr("2m")}\u0032`);
+    // The whole row, byte for byte: the kept entry's digit in the header colour and its label in the faint,
+    // each closed by the theme's own reset. The dropped entry bought the row nothing at all — not a digit, not
+    // a label, not one colour byte. A dropped entry that had been styled would show up here as a third pair of
+    // colours around the label the user was never shown.
+    expect(narrow.trimEnd()).toBe(`${sgr("1m")}\u0031${SGR_RESET} ${sgr("2m")}a${SGR_RESET}`);
   });
 });

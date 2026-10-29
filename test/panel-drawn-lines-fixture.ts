@@ -6,7 +6,9 @@
  * the frame to: `panel-frame-resets.test.ts` on the SGR discipline every drawn line owes (#70's line-end
  * reset), and `panel-drawn-lines.test.ts` on the theme's colour and the selection marker actually
  * reaching those bytes. Splitting them kept each under the size cap without splitting the fixtures, which
- * is what makes the two files' frames comparable.
+ * is what makes the two files' frames comparable. The reset file reads every line through its own terminal
+ * model rather than asking the production classifier whether a line needs a reset, so a bug in that
+ * classifier cannot be certified by a test that asked it the same question it answered.
  *
  * Every escape is spelled from code points: a literal written into a source file is rewritten on the way
  * in, and an escape assertion against a rewritten literal is vacuous whenever both sides agree by accident.
@@ -100,18 +102,5 @@ export const sameLevel = (count: number, level: PinLevel = "info"): ViewPin[] =>
 
 /** The frame's content rows: the two borders taken off. */
 export const inner = (lines: string[]): string[] => lines.slice(1, -1);
-
-/**
- * Does `line` draw a colour the screen is still wearing — an SGR that opened and was never closed?
- *
- * The spelling of the question `sgrResetFor` answers, kept on the bytes rather than on the helper that
- * produced them: a line whose last SGR is a reset closed itself and owes nothing.
- */
-export function carriesColour(line: string): boolean {
-  const opens = new RegExp(`${E}\\[[0-9;]*m`, "g");
-  const resets = new RegExp(`${E}\\[(?:0|0;0|00|0+;0+)m$`);
-  const seen = line.match(opens);
-  return seen !== null && !resets.test(seen[seen.length - 1] ?? "");
-}
 
 export { visibleWidth };

@@ -264,10 +264,11 @@ export function glyph(frame: (text: string) => string, glyphText: string): strin
  * anybody knows which of them the bar will sit on.
  */
 export function selectionCell(style: PanelStyle, level: PinLevel): string {
-  // The cell is the glyph *and* the space after it, because that is what the row table wrote
-  // (` ${markerCell(...)} `, `panelRows`) and what `textAfterMarkerCell` consumes: take the glyph alone and
-  // the row keeps a stray space and the text column shifts by one, which is the width the layout did not pay
-  // for. `markerCell` closes the glyph to one column either side, so the cell is exactly the two it replaces.
+  // The cell is the glyph's column *plus* the space after it, because that is what the row table wrote
+  // (` ${markerCell(...)} `, `panelRows`) and what `textAfterMarkerCell` consumes: it takes the leading space
+  // and this cell, so returning the glyph alone would leave the row holding a stray space and shifting the
+  // text column by one — a width the layout did not pay for. `markerCell` closes the glyph to one column
+  // either side, which is why the two columns this returns are the two the row spent.
   return `${markerCell(style.marker(level, SELECTION_MARKER), SELECTION_MARKER)} `;
 }
 
