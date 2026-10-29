@@ -71,12 +71,25 @@ test("a mixed view draws a heading above each level, in the drawn order", () => 
     false,
     false,
   ]);
-  // The heading's word lines up with the pin text under it: both are opened by the same three columns, so
-  // the word a heading names sits in the column the text of its pins begins in. The warning's own marker is
-  // `!` and the heading's glyph is `⚠`, which is why the comparison is made on the words.
+  // The heading's word lines up with the pin text under it: a heading is indented by the marker cell it does
+  // not draw, so its word opens in the column its pins' text opens in. The heading's glyph is `⚠` and a
+  // warning pin's own marker is `!`, both drawn in the marker cell, which is why the comparison is made on
+  // the words. It is made on the *unfocused* frame: `pinRow` measures the highlight with `visibleWidth`,
+  // which charges a bar's row for the two brackets the plain style puts around it, and that row then spends
+  // its last column on an ellipsis. A bar's row is a different budget, not a different grid.
   const heading = rows[0] as string;
-  const pinUnderIt = rows[1] as string;
-  expect(heading.indexOf("Warnings") + 1).toBe(pinUnderIt.indexOf("warn two"));
+  const plain = contentRows(
+    built(
+      { pins: mixedView(), selection: 0, focused: false, replyHint: "", ageNow: LATER },
+      WIDTH,
+      noBar,
+    ),
+  );
+  expect((plain[0] ?? "").indexOf("Warnings")).toBe((plain[1] ?? "").indexOf("warn two"));
+  expect(plain[1] ?? "").toContain("! warn two");
+  // The bar's row exchanges the warning's glyph for the selection marker in the same column, and keeps the
+  // pin's word in the text column the row table gave it (#70 decision 2).
+  expect(rows[1] ?? "").toContain(`${String.fromCodePoint(0x203a)} warn two`);
 });
 
 test("a single-level view draws no headings at all (resolution 1)", () => {

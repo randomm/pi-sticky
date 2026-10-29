@@ -109,10 +109,13 @@ const INDENT = "  ";
  * A heading shares the text column a pin row pays for — the same three columns `panelPinRows`
  * (`panel-rows.ts`) opens a pin row with — so the heading's word lines up with the pin text below it rather
  * than starting a column to the left of it. `label` is this module's word, or the model's for a group, and
- * `mark` is the level's own `MARKER` glyph: the group's name is cleaned before it is stored
- * (`pin-fields.ts`) and `fitLine` refuses every escape byte that survives to here anyway, so a smuggled
- * sequence buys neither free columns in a flush-right overlay nor live bytes on the screen. Both measuring
- * halves read the string with `visibleWidth`, so a two-column glyph costs the two columns it really occupies.
+ * `mark` is the level's own `MARKER` glyph. The two are trusted differently, and each is dealt with where it
+ * is drawn: the group's name is the model's word, so it passes the unconditional strip (`stripSequences`,
+ * `escape.ts`) at *this* boundary — before `fitLine` and independently of it — and can neither count as
+ * columns it does not draw nor reach the screen with bytes of its own. The level heading's word is this
+ * module's own (`HEADINGS`), so only its *marker* is the theme's bytes, and `markerCell` is what closes them
+ * to the glyph's columns, colour kept. `fitLine` then closes the row whatever the theme added around it —
+ * defence in depth, never the pass a group name leans on.
  */
 export function headingCell(row: HeadingRow, textWidth: number, style: PanelStyle): string {
   if (textWidth <= 0) return "";
@@ -123,9 +126,8 @@ export function headingCell(row: HeadingRow, textWidth: number, style: PanelStyl
   // `headingRow` into the column a level heading's word occupies.
   const cell =
     row.kind === "group"
-      ? // The group's name is measured on what survives the strip, so it can neither count as columns it
-        // does not draw nor reach the screen with escape bytes of its own; the drawer's own `fitLine` below
-        // then closes the row whatever the theme added around it.
+      ? // The group's name is the model's word and is stripped at this boundary, the drawer's own guarantee
+        // rather than the frame's: `pin-fields.ts` cleans what it stores, but the view is also built directly.
         ` ${stripSequences(row.label)}`
       : ` ${markerCell(style.marker(row.level, row.mark), row.mark)} ${row.label}`;
   return fitLine(cell, textWidth);

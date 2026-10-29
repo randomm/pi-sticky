@@ -69,6 +69,10 @@ test("the view a test builds with fixtures.ts draws like any other", () => {
   // One action pin, so the title names the level rather than a bare count: `needs you` is what an action
   // costs the user, and it is the whole reason the counts replaced the old `(1)`.
   expect(lines[0]).toContain("📌 Pinned · 1 needs you");
-  expect(lines[1]).toContain("?");
+  // The pin is the bar's row, so its level glyph has given its column to the selection marker (#70 decision
+  // 2) — the mark that survives a terminal with no colours. The level's own glyph is what an *unfocused* row
+  // of the same pin draws, which is the next assertion below and the case `panel-lines.test.ts` sweeps.
+  expect(lines[1]).toContain(String.fromCodePoint(0x203a));
   expect(lines[1]).toContain("Decide X");
+  expect(built(content(pins, 0, false), 40, plainStyle)[1]).toContain("?");
 });

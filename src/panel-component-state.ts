@@ -25,6 +25,13 @@ export interface PanelComponentState {
   setSelection(index: number): void;
   /** Move the focus flag and drop the memorised frame with it. */
   setFocused(focused: boolean): void;
+  /**
+   * Move the bar back to the top-ranked pin, and drop the memorised frame with it.
+   *
+   * Asked by the focus-taking verb alone (`focusPanel`, `panel-component-focus.ts`) — never by `setFocused`,
+   * whose two direct callers are escape hatches that must leave the bar where the user left it.
+   */
+  resetSelection(): void;
 }
 
 /**
@@ -50,6 +57,13 @@ export function createPanelComponentState(invalidateFrame: InvalidatesFrame): Pa
     },
     setFocused: (value) => {
       focused = value;
+      invalidateFrame();
+    },
+    // The bar's home position through the same rule every other write obeys: a frame memorised at the old
+    // index must not outlive the move, whoever asked for it.
+    resetSelection: () => {
+      if (selection === 0) return;
+      selection = 0;
       invalidateFrame();
     },
   };

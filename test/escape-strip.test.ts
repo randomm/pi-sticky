@@ -1,32 +1,38 @@
 /**
- * Direct tests of the escape scanner, `stripSequences`, which sanitizePinText runs as its first
- * pass. Going through the sanitizer leaves a branch of the scanner unexercised: a stray ESC inside
+ * Direct tests of the escape scanner: `stripSequences`, which sanitizePinText runs as its first
+ * pass, and `stripNonSgr`/`containsNonSgr`, which is what a *theme's* bytes are drawn under (#70).
+ *
+ * Going through the sanitizer leaves a branch of the scanner unexercised: a stray ESC inside
  * an 8-bit string body is payload that the scanner steps over, but the sanitizer then deletes the
  * surviving control, so a sanitize-level assertion cannot tell "stepped over and dropped" from
  * "leaked". Asserting on the scanner's own output is also how a suspected coverage gap is settled:
  * every introducer, final-byte class and terminator below is driven straight into the scanner.
  *
+ * The two passes share the walk in `escape-scan.ts`, so the `stripNonSgr` cases are driven over the
+ * same classes as the `stripSequences` ones above: what each pass keeps and what it refuses is the
+ * panel's drawn-line policy, and a class only one pass was tested on is a class nobody vouches for.
+ *
  * Controls are built at runtime — a literal escape sequence written into this file is rewritten on
  * its way in and silently changes what the comparison matches.
- */
-import { describe, expect, test } from "bun:test";
-import { stripSequences } from "../src/escape.ts";
-
-const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
-const ESC = cp(0x1b);
-const BEL = cp(0x07);
-const BS = cp(0x5c); // backslash, the second half of ST
-const CAN = cp(0x18);
-const SUB = cp(0x1a);
-const ST8 = cp(0x9c); // 8-bit STRING TERMINATOR
-const CSI8 = cp(0x9b);
-const OSC8 = cp(0x9d);
-const DCS8 = cp(0x90);
-const SOS8 = cp(0x98);
-const PM8 = cp(0x9e);
-const APC8 = cp(0x9f);
-/** ST written the only way this file can: ESC then a backslash. */
-const ST = `${ESC}${BS}`;
+ */ import { describe, expect, test } from "bun:test";
+import { containsEscape, foldBreaks, stripSequences } from "../src/escape.ts";
+import {
+  APC8,
+  BEL,
+  BS,
+  CAN,
+  CSI8,
+  DCS8,
+  ESC,
+  OSC8,
+  PM8,
+  SOS8,
+  ST,
+  ST8,
+  SUB,
+  cp,
+  csi,
+} from "./escape-fixtures.ts";
 
 describe("7-bit CSI", () => {
   test("a CSI with a final byte dies whole", () => {
@@ -165,5 +171,30 @@ describe("text that only looks like a control", () => {
   test("an 8-bit introducer is dispatched on, never emitted as text", () => {
     // U+009B is inside the printable C1 range; a kept-test would let it through as text.
     expect(stripSequences(`${CSI8}h`)).toBe("");
+  });
+});
+
+describe("the two whole-text questions the sweeps ask", () => {
+  test("`containsEscape` names any escape byte and nothing else", () => {
+    // The unconditional sweep over a pin's *own* bytes (`offenders`, `panel-hostile.ts` is its drawn
+    // sibling). It is a byte test, not a scanner: a stray introducer with no sequence after it is still
+    // an offender, and a line of ordinary text — including the C1 range a *sequence* would have been —
+    // is not what this question is about.
+    expect(containsEscape("plain text")).toBe(false);
+    expect(containsEscape("")).toBe(false);
+    expect(containsEscape(`${ESC}[31m`)).toBe(true);
+    expect(containsEscape(`mid${ESC}`)).toBe(true);
+    expect(containsEscape(ST8)).toBe(false); // an 8-bit terminator is not the ESC byte
+  });
+
+  test("`foldBreaks` collapses every break shape to one space", () => {
+    // The rail and the model-facing listing share this pass, so a break the model put in cannot make one
+    // surface draw two lines for a record the other one calls one line.
+    expect(foldBreaks("a\nb")).toBe("a b");
+    expect(foldBreaks("a\r\n\nb")).toBe("a b");
+    expect(foldBreaks(`a${cp(0x2028)}${cp(0x2029)}b`)).toBe("a b");
+    expect(foldBreaks(`a${cp(0x85)}b`)).toBe("a b");
+    // Tab aligns rather than breaks, so it is the control the pass leaves alone.
+    expect(foldBreaks("a\tb")).toBe("a\tb");
   });
 });

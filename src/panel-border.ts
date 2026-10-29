@@ -14,7 +14,7 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { stripSequences } from "./escape.ts";
+import { stripNonSgr } from "./escape.ts";
 import {
   CORNER_COLUMNS,
   ELLIPSIS,
@@ -23,6 +23,7 @@ import {
   frameGlyphs,
   glyph,
   padPlain,
+  selectionReset,
 } from "./panel-frame.ts";
 
 /**
@@ -36,12 +37,11 @@ import {
  * character, so the ellipsis is put back and the line carries no escape the builder introduced.
  */
 function fitLabel(label: string, room: number): string {
-  const plain = stripSequences(label);
+  // The label is the header or the hint, coloured by the theme: its SGR is what the border is coloured by,
+  // and its non-SGR sequences are refused at this boundary rather than by the line's closer.
+  const plain = stripNonSgr(label);
   if (visibleWidth(plain) <= room) return plain;
-  const cut = stripSequences(truncateToWidth(plain, room, ELLIPSIS)).replace(
-    INJECTED_RESET,
-    ELLIPSIS,
-  );
+  const cut = stripNonSgr(truncateToWidth(plain, room, ELLIPSIS)).replace(INJECTED_RESET, ELLIPSIS);
   return padPlain(cut, room);
 }
 
@@ -69,7 +69,12 @@ export function borderLine(
   // rule. No border ever ends in a blank — the panel is flush right, and blanks at its edge would read
   // as a frame that was never drawn.
   const rule = Math.max(0, width - CORNER_COLUMNS - visibleWidth(text));
-  return `${glyph(frame, left)}${text}${RULE.repeat(rule)}${glyph(frame, right)}`;
+  // One reset closes the whole border row after its last visible byte. Each glyph closes itself through
+  // `glyph`, but a coloured gutter written before the rule it is joined to would otherwise leave the
+  // screen wearing that colour across the rule and past the frame's last column: the panel is flush right,
+  // so the bleed lands on the chat, not on the panel's own padding. `selectionReset` answers `""` for a
+  // border the theme did not colour, so a plain frame still draws no escape byte.
+  return selectionReset(`${glyph(frame, left)}${text}${RULE.repeat(rule)}${glyph(frame, right)}`);
 }
 
 /**

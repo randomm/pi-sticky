@@ -19,7 +19,7 @@
  */
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { foldBreaks } from "./escape.ts";
+import { foldBreaks, stripSequences } from "./escape.ts";
 import { widestMetaColumns } from "./panel-frame-geometry.ts";
 import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
@@ -77,6 +77,12 @@ export interface PanelRow {
    * be claimed by a real pin row and silently overwritten with keycaps.
    */
   kind?: "options";
+  /**
+   * The level whose glyph this row's marker column draws — the row table's own answer, kept so the drawer
+   * can exchange that glyph for the selection marker on the bar's row without re-deriving the level from a
+   * pin the row no longer names (`selectionCell`, `panel-draw.ts`). Absent on a row that draws no marker.
+   */
+  markerLevel?: PinLevel;
 }
 
 /**
@@ -128,14 +134,26 @@ export function panelPinRows(
     // The options row is reserved here too: the degenerate frame is a frame whose *pins* own one row each,
     // and a pin the table gave no options row to is a pin whose options are silently never drawn.
     return [
-      { text: ` ${markerCell(marker, glyph)} `, tail: fullStamp(pin, style.dim, now) },
+      {
+        text: ` ${markerCell(marker, glyph)} `,
+        tail: fullStamp(pin, style.dim, now),
+        markerLevel: pin.level,
+      },
       ...optionRows(pin),
     ];
   }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
   // rail gives it (see `pinLine`), so the two surfaces never disagree about what an answered pin looks like.
   // The wrap happens *after* the mark is added, so a row cut to the width cannot lose it.
+  //
+  // The text is stripped *here*, at the boundary that puts a model's words into a drawn row: `stripSequences`
+  // (`escape.ts`) is the unconditional pass, run before `style.dim` is asked for anything and independently of
+  // the frame's SGR-tolerant `fitLine`, which is defence in depth and never the only escape check a pin's text
+  // has. The sanitizer cleans what is stored (`sanitize.ts`), but the view is also built directly — by tests
+  // and by any future caller — and a drawn surface that leans on somebody else's pass borrows a guarantee it
+  // does not own.
   const body = pin.repliedAt === undefined ? pin.text : style.dim(`↩ ${pin.text}`);
+  const plain = stripSequences(body);
   // A `compact` pin is one row: the wrap is skipped and the text takes the single line it will be cut to.
   // It is collapsed here, in the table, rather than cut by the drawer: the window scrolls, the bar sits and
   // `d`/`Enter` index *this* row count, so a pin that wrapped into four rows and was trimmed afterwards
@@ -148,20 +166,26 @@ export function panelPinRows(
   // the rest of this module exists to avoid (research-summary U13). The flag is also the cost lever, not
   // decoration: a non-compact pin is re-wrapped at the frame's text column on every frame the panel redraws
   // — a moving bar included — so for a long pin this one branch is what bounds the draw.
-  const wrapped = pin.compact === true ? [foldBreaks(body)] : wrapTextWithAnsi(body, textWidth);
+  const wrapped = pin.compact === true ? [foldBreaks(plain)] : wrapTextWithAnsi(plain, textWidth);
   // Which row carries the age is decided by how many rows the wrap produced, so the wrap runs first and the
   // tails are stamped against its answer: a pin that fits on one line is the case the id/age pair belongs
   // to. `count` below is that count, and the empty-text fallback is one row for the same reason.
   const count = wrapped.length > 0 ? wrapped.length : 1;
   const tails = pinTails(pin, count, metaColumns, now, style.dim);
   const rows = wrapped.map((line, index) => ({
-    text: index === 0 ? ` ${markerCell(marker, glyph)} ${line}` : `   ${line}`,
+    text: ` ${index === 0 ? markerCell(marker, glyph) : "   "} ${line}`,
     tail: index === 0 ? tails.first : index === 1 ? (tails.second ?? "") : "",
+    ...(index === 0 ? { markerLevel: pin.level } : {}),
   }));
   // The options row is part of the pin's entry: it belongs to the pin, the window scrolls it with the pin
   // and the pin owns the bar's row. Reserved rather than drawn, so one row covers any number of options.
   return [
-    ...(rows.length > 0 ? rows : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first }]),
+    // The fallback row is a pin whose text drew nothing, and it carries the level's glyph like any other
+    // first row: whether that glyph becomes the selection marker is the *drawer's* question, asked once it
+    // knows which row the bar landed on (`barMarker`, `panel-draw.ts`).
+    ...(rows.length > 0
+      ? rows
+      : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first, markerLevel: pin.level }]),
     ...optionRows(pin),
   ];
 }

@@ -1,6 +1,6 @@
 /**
- * The escape-sequence scanner the sanitizer runs first, split out because recognising sequences
- * is a self-contained problem with its own vocabulary of introducers, final bytes and terminators.
+ * The escape-sequence scanner the sanitizer and the drawn panel run, split out because recognising
+ * sequences is a self-contained problem with its own vocabulary of introducers, final bytes and terminators.
  *
  * Neither pi-tui's stripTerminalSequences (which recognises CSI only with final bytes m/G/K/H/J)
  * nor pi's unexported stripAnsi removes 8-bit CSI, DCS or an unterminated OSC, so delegating would
@@ -9,33 +9,21 @@
  * of its own, so a run that reaches no final byte was never a CSI and only the introducer dies; and
  * a Kitty image prefix, like pi-tui's own private APC markers, cannot survive.
  *
+ * Two passes share that walk: `stripSequences`, which is what untrusted text is drawn under, and
+ * `stripNonSgr`, which is what a *theme's* bytes are drawn under — it keeps a CSI closed by `m` and refuses
+ * every other sequence. The dispatch runs on whether a byte is an introducer, never on whether it is kept,
+ * because the 8-bit introducers are members of the printable range above C1 and a kept-test would let them
+ * through as text.
+ *
  * Control characters appear in this file only as numeric code points. A literal escape sequence in
  * source is rewritten on its way into the file, which silently changes what a comparison matches.
  */
-const ESC = 0x1b;
-const BEL = 0x07;
-const BACKSLASH = 0x5c;
-/** CSI and the five string introducers, in their 8-bit form. */
-const CSI8 = 0x9b;
-const OSC8 = 0x9d;
-const DCS8 = 0x90;
-const SOS8 = 0x98;
-const PM8 = 0x9e;
-const APC8 = 0x9f;
-/** CAN, SUB and 8-bit ST end an unterminated string, and go with it. */
-const CAN = 0x18;
-const SUB = 0x1a;
-const ST8 = 0x9c;
+import { isC1Control, isIntroducer, isSurrogate } from "./escape-chars.ts";
+import { scanSequence } from "./escape-scan.ts";
 
-/** Is code one half of a surrogate pair? Those are not printable on their own. */
-export function isSurrogate(code: number): boolean {
-  return code >= 0xd800 && code <= 0xdfff;
-}
+export { isC1Control, isSurrogate } from "./escape-chars.ts";
 
-/** Is code a C1 control: neither a byte a CSI may carry nor text? */
-function isC1Control(code: number): boolean {
-  return code >= 0x80 && code <= 0x9f;
-}
+const ESC_CODE = 0x1b;
 
 /**
  * The six line-break shapes a terminal or a reader may end a line on, spelled from code points: LF,
@@ -70,121 +58,34 @@ export function foldBreaks(text: string): string {
  * nothing between the panel's gutters consumes it. TAB stays because it aligns text rather than breaking a
  * line — the same reasoning `BREAK_SHAPES` gives for leaving it alone — and `padPlain` may still pad after
  * this pass, so a row cannot come back short.
+ *
+ * An escape sequence that `keep` accepts is walked over whole rather than filtered byte by byte. The
+ * introducer of a sequence is a control, so the naive pass would take it out of a colour the caller has
+ * just decided to draw and leave its parameters behind as the *text* `[94m` — visible bytes, charged for
+ * columns, where a colour was supposed to cost none. The caller's own policy therefore survives this pass
+ * instead of being undone by it, and a sequence the caller did not vouch for is still walked into and
+ * dropped whole by the shared scanner.
  */
-export function dropControls(text: string): string {
+export function dropControls(text: string, keep?: (text: string, at: number) => boolean): string {
   let out = "";
-  for (let i = 0; i < text.length; i++) {
+  for (let i = 0; i < text.length; ) {
     const code = text.charCodeAt(i);
+    if (isIntroducer(code)) {
+      const sequence = scanSequence(text, i, code);
+      const consumed = sequence.length;
+      const length = consumed < 0 ? 0 - consumed : consumed;
+      // A kept sequence is a colour and is text for this pass's purposes; a refused one is an escape
+      // sequence and goes, introducer, parameters and final alike.
+      if (length > 0 && keep?.(text, i)) out += text.slice(i, i + length);
+      i += length;
+      continue;
+    }
     if (code === TAB || (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xfffd)) {
       out += text[i];
     }
-  }
-  return out;
-}
-
-/** Is code one of the six introducers in their 8-bit form? */
-function is8BitIntroducer(code: number): boolean {
-  return (
-    code === CSI8 ||
-    code === OSC8 ||
-    code === DCS8 ||
-    code === SOS8 ||
-    code === PM8 ||
-    code === APC8
-  );
-}
-
-/**
- * Is code a byte a CSI may carry before its final byte? Written as two explicit ranges rather
- * than one test over 0x20-0x3f, and deliberately excluding 0x1b: an ESC inside a CSI belongs to no
- * sequence and terminates the attempt.
- */
-function isCsiMiddle(code: number): boolean {
-  return (code >= 0x20 && code <= 0x2f) || (code >= 0x30 && code <= 0x3f);
-}
-
-/** Is code the byte that closes a CSI? */
-function isCsiFinal(code: number): boolean {
-  return code >= 0x40 && code <= 0x7e;
-}
-
-/**
- * Length of a CSI, counted from its introducer at start, which occupies introducerWidth units.
- * Parameter and intermediate bytes are consumed, then one final byte closes it. A CSI carries no
- * terminator of its own, so a run that reaches no final byte was never a CSI: only the introducer
- * dies and the text after it survives. A C1 control is neither a CSI byte nor text, so it
- * terminates the attempt and goes with it.
- */
-function csiLength(text: string, start: number, introducerWidth: number): number {
-  let i = start + introducerWidth;
-  while (i < text.length && isCsiMiddle(text.charCodeAt(i))) i += 1;
-  if (i < text.length && isCsiFinal(text.charCodeAt(i))) return i + 1 - start;
-  if (i < text.length && isC1Control(text.charCodeAt(i))) return i + 1 - start;
-  return introducerWidth;
-}
-
-/**
- * Length of a string sequence — OSC, DCS, SOS, PM or APC — counted from its introducer at start.
- *
- * ST (ESC plus a backslash) and BEL, CAN, SUB and 8-bit ST terminate the string and go with it. A
- * lone ESC that is not ST opens the next sequence instead: the scan is handed back to that ESC by
- * returning the absolute offset as a negative number, so the sequence it opens decides how much
- * more of the input dies, and two introducers can never merge. Inside an 8-bit string a stray ESC
- * is payload, so the scan only steps over it. With no terminator anywhere the payload runs to the
- * end of the input.
- */
-function stringLength(text: string, start: number, body: number, escaped: boolean): number {
-  let i = body;
-  while (i < text.length) {
-    const code = text.charCodeAt(i);
-    if (code === ESC) {
-      if (i + 1 < text.length && text.charCodeAt(i + 1) === BACKSLASH) {
-        return i + 2 - start;
-      }
-      if (escaped) return 0 - i;
-      i += 1;
-      continue;
-    }
-    if (code === BEL || code === CAN || code === SUB || code === ST8) {
-      return i + 1 - start;
-    }
     i += 1;
   }
-  return text.length - start;
-}
-
-/**
- * How many code units the sequence at start occupies. A negative result is not a length: it is the
- * absolute offset the scan resumes at, for an unterminated string that died at an ESC opening
- * another sequence. ESC G opens the Kitty graphics prefix, which is a string sequence: the plan
- * requires that an image prefix cannot survive, so it dies with its payload.
- */
-function sequenceLength(text: string, start: number, code: number): number {
-  if (code === ESC) {
-    const next = start + 1 < text.length ? text.charCodeAt(start + 1) : -1;
-    switch (next) {
-      case 0x5b:
-        return csiLength(text, start, 2);
-      case 0x5d:
-      case 0x50:
-      case 0x58:
-      case 0x5e:
-      case 0x5f:
-      case 0x47:
-        return stringLength(text, start, start + 2, true);
-      case -1:
-        // A trailing bare ESC is a sequence of one.
-        return 1;
-      default:
-        // Any other ESC final makes a two-character sequence: ESC M, and so on.
-        return 2;
-    }
-  }
-  if (code === CSI8) return csiLength(text, start, 1);
-  if (is8BitIntroducer(code)) {
-    return stringLength(text, start, start + 1, false);
-  }
-  return 1;
+  return out;
 }
 
 /**
@@ -197,13 +98,76 @@ export function stripSequences(text: string): string {
   let i = 0;
   while (i < text.length) {
     const code = text.charCodeAt(i);
-    if (code !== ESC && !is8BitIntroducer(code)) {
+    if (!isIntroducer(code)) {
       out += text[i];
       i += 1;
       continue;
     }
-    const consumed = sequenceLength(text, i, code);
+    const consumed = scanSequence(text, i, code).length;
     i = consumed < 0 ? 0 - consumed : i + consumed;
   }
   return out;
+}
+
+/**
+ * The same walk as `stripSequences` with one class kept: a CSI closed by `m`, which is a colour and is
+ * what a theme is for. Everything else dies — OSC (its 8 hyperlinks and its 52 clipboard writes), DCS,
+ * SOS, PM, APC, the Kitty image prefix, and every other CSI (`ESC [ 1 ; 1 H`, `ESC [ 2 J`, `ESC [ K`,
+ * `ESC [ ? 25 l`) — plus the six 8-bit introducers and any C1 control, which are not text.
+ *
+ * This is the policy for bytes whose *source is the theme*, never for a pin: untrusted text is drawn under
+ * `stripSequences` at its own boundary, and the frame applies this pass as defence in depth on the way out.
+ * A colouring that is not SGR is not colour, and `visibleWidth` counts an OSC pair as free columns, so a
+ * kept one would be padded across the chat behind a flush-right panel for nothing.
+ */
+export function stripNonSgr(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const code = text.charCodeAt(i);
+    if (!isIntroducer(code)) {
+      // A C1 control is neither an introducer's payload nor text; the 8-bit introducers went through the
+      // branch above, so what is left in 0x80-0x9f is a byte no terminal should be handed.
+      if (!isC1Control(code)) out += text[i];
+      i += 1;
+      continue;
+    }
+    const sequence = scanSequence(text, i, code);
+    const consumed = sequence.length;
+    if (sequence.kept && consumed > 0) out += text.slice(i, i + consumed);
+    i = consumed < 0 ? 0 - consumed : i + consumed;
+  }
+  return out;
+}
+
+/**
+ * Does `text` carry an escape sequence that is not SGR — a hyperlink, a title or clipboard write, a
+ * cursor or screen move, a DCS/APC payload, an 8-bit introducer or a stray C1 control? The one question
+ * the panel's drawn-line sweeps ask once theme colours are allowed, and the only difference from
+ * `containsEscape` is that it is read on the bytes a theme produced rather than on a pin's.
+ */
+export function containsNonSgr(text: string): boolean {
+  let i = 0;
+  while (i < text.length) {
+    const code = text.charCodeAt(i);
+    // The same dispatch the two strip passes run, on the same test: an introducer is looked at because
+    // it *is* one, never because it survived a pass. The 8-bit introducers are members of the printable
+    // range above C1, so a guard that asked only "is this byte an ESC or a control" would wave `CSI8` on
+    // through as text and certify a screen-clear as clean.
+    if (!isIntroducer(code)) {
+      if (isC1Control(code)) return true;
+      i += 1;
+      continue;
+    }
+    const sequence = scanSequence(text, i, code);
+    if (!sequence.kept) return true;
+    const consumed = sequence.length;
+    i = consumed < 0 ? 0 - consumed : i + consumed;
+  }
+  return false;
+}
+
+/** Does `text` carry any escape byte at all? The sweep over a pin's own bytes. */
+export function containsEscape(text: string): boolean {
+  return text.includes(String.fromCharCode(ESC_CODE));
 }

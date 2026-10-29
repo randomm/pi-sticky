@@ -86,7 +86,7 @@ test("the row table and the drawer read pin.options the same way, so a reserved 
     const reserved = rows[rows.length - 1];
     expect(reserved === undefined ? null : isOptionRow(reserved)).toBe(expected === 2);
     const filled = drawOptionRow(view, 40, style).trimEnd();
-    if (expected === 2) expect(filled).toContain("\u23281 ");
+    if (expected === 2) expect(filled).toContain("1 a");
     else expect(filled).toBe("");
   }
 });

@@ -19,6 +19,9 @@ import type { ViewPin } from "../src/types.ts";
 import { LATER, pin } from "./fixtures.ts";
 import { built, framed } from "./panel-frame.ts";
 import { infoView, levelPin } from "./panel-sections-fixture.ts";
+/** The selection marker, spelled from its code point: a literal of it in source is rewritten on the way in. */
+const SELECTED = String.fromCodePoint(0x203a);
+
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
 function content(
   pins: readonly ViewPin[],
@@ -72,10 +75,11 @@ test("the selected pin's row is drawn with the selected style, and only that row
   // not by the bar, so the row opens with the gutter and only then the highlight.
   // The pins draw newest id first, so selection 1 is the *older* pin, `First`: the bar is asserted on the
   // drawn order, because that is the order the selection indexes — which is the coordinate the whole bar
-  // rests on since sections put rows that own no pin in the same table.
-  expect(lines.some((line) => line.includes("[ • First") && inside(line).startsWith(" ["))).toBe(
-    true,
-  );
+  // rests on since sections put rows that own no pin in the same table. The marker's column of that row is
+  // the selection marker rather than the level's glyph (`› First`, not `• First`): the bar replaces the
+  // glyph, it does not add to it (#70 decision 2).
+  const BAR = `[${String.fromCodePoint(0x203a)} First`;
+  expect(lines.some((line) => line.includes(BAR) && inside(line).startsWith(" ["))).toBe(true);
   // Exactly one row carries the bar. `]` cannot be the marker for that count: pi-tui wraps the ellipsis of
   // every line it cuts in a reset whose bytes contain `]0m`, and at this width the frame's other row and both
   // border labels are cut — so three lines close a bracket the panel never drew. The bar's *head* bracket is
@@ -183,7 +187,9 @@ test("the window opens on the heading over the selected pin, not one row below i
     const { lines, rows } = shortWarningFrame(focused);
     // The heading directly above the pin, focused or not: focus moves the bar, never the window.
     expect(rows[0]).toContain("Warnings");
-    expect(rows[1]).toContain("! warn");
+    // The pin's row carries its level's glyph while the panel is unfocused, and the selection marker in that
+    // same column once it holds focus (#70 decision 2) — one column exchanged, so the row still reads `warn`.
+    expect(rows[1]).toContain(focused ? `${SELECTED} warn` : "! warn");
     expect(rows[1]).toContain("#1");
     // The bar, when there is one, is still on the pin's row and not on the heading above it.
     const bar = rows.filter((row) => row.includes("["));

@@ -38,6 +38,39 @@ const style: PanelStyle = {
 
 const WIDTH = 60;
 
+/** The selection marker, spelled from its code point: a literal of it in source is rewritten on the way in. */
+const SELECTED = String.fromCodePoint(0x203a);
+/** The action level's own glyph, which the ungrouped pin of the counting-section test draws. */
+const LEVEL_GLYPH = "?";
+
+/**
+ * The glyph a drawn row puts in its marker column, `""` for a row that draws none.
+ *
+ * The row table pads an unfocused marker to two columns and the selection marker keeps that width, so the
+ * column is read by code point and compared on its first character — `includes` over the whole line would
+ * also match a glyph inside a pin's text or a padded tail.
+ */
+const markerColumn = (row: string): string => {
+  const inner = row
+    .replace(/\u2502/g, "")
+    .replace(/[[\]]/g, "")
+    .replace(/\s+$/, "");
+  const first = [...inner].find((cell) => cell !== " ") ?? "";
+  return first === SELECTED || LEVEL_GLYPHS.has(first) ? first : "";
+};
+
+const LEVEL_GLYPHS = new Set(["!", "?", "\u2022"]);
+
+/** The one row of `rows` that draws a marker column — a pin's first row, never a heading. */
+const markerRow = (rows: string[]): string =>
+  rows.find((row) => row.includes(SELECTED) || row.includes(LEVEL_GLYPH)) ?? "";
+
+/** The options row a single pin draws in a frame of `width`, which is the row beneath its own. */
+const optionsRowOf = (pins: ViewPin[], width: number): string => {
+  const rows = frameOf(pins, 0, width);
+  return rows[rows.length - 1] ?? "";
+};
+
 /** `levelPin` plus the fields under test. */
 const pin = (
   id: number,
@@ -64,10 +97,15 @@ test("a group section is headed by the group's own name, with no level glyph", (
   // with the glyph's columns given back as indentation; at the marker's column it would read as a pin.
   const levelHeading = rows.find((row) => row.includes("FYI")) ?? "";
   expect(heading.indexOf("Release")).toBe(levelHeading.indexOf("FYI"));
-  expect(heading.indexOf("Release")).toBe((rows[1] ?? "").indexOf("!") + 1);
-  // No level's mark stands for a group that mixes them: the warning's `!` belongs to the pin's own row.
+  // The frame is drawn focused, so the pin’s marker column carries the selection marker rather than the
+  // warning’s `!` (#70 decision 2) — the same column either way, which is what this comparison is about.
+  // `markerRow` picks the row that draws a marker, which is the pin’s own row and not the heading over it.
+  expect(heading.indexOf("Release")).toBe(markerRow(rows).indexOf(SELECTED) + 2);
+  // No level’s mark stands for a group that mixes them, and no `!` is drawn anywhere in this frame:
+  // the warning’s own row is the bar’s row, so its glyph has been exchanged for the marker there.
   expect(heading).not.toContain("!");
-  expect(rows[1]).toContain("! pin 1");
+  expect(rows.join("")).not.toContain("!");
+  expect(markerRow(rows)).toContain(`${SELECTED} pin 1`);
 });
 
 test("a group whose name is hostile text draws as text and closes at the width", () => {
@@ -82,31 +120,6 @@ test("a group whose name is hostile text draws as text and closes at the width",
   expect(heading).toContain("red # heading second line");
 });
 
-/**
- * Sequences that are an *escape* to the panel's own policy (`stripSequences`, `escape.ts`) and printable
- * columns to pi-tui's `visibleWidth` — the one class of text a width measured on the raw string cannot be
- * trusted for. Each is padded with the word that must not reach the screen: a cut that trusted pi-tui's
- * measurement would print the payload, and a row that trusted nothing would spill its column.
- */
-const UNTRUSTED = [
-  ["unterminated OSC", "\u001b]8;;http://evil"],
-  ["OSC without its BEL", "\u001b]2;a title"],
-  ["unterminated DCS", "\u001bP++++"],
-  ["lone introducer", "\u001b_"],
-] as const;
-
-test("a group name whose escapes the terminal counts as printable cannot widen the frame", () => {
-  for (const [name, sequence] of UNTRUSTED) {
-    const rows = frameOf([pin(1, "info", { group: `G${sequence}${"PAYLOAD".repeat(20)}` })]);
-    // The heading owns one row whatever the sequence did to the measurement, and it closes at the width.
-    expect(rows, name).toHaveLength(2);
-    for (const row of rows) expect(visibleWidth(row), name).toBe(WIDTH);
-    expect(rows.join(""), name).not.toContain("PAYLOAD");
-    // The name is still the name: what the cut removes is the sequence and its payload, not the group.
-    expect(rows[0] ?? "", name).toContain("G");
-  }
-});
-
 test("a level whose pins are all grouped owns no rows and no heading, yet the title counts it", () => {
   // The view's only warning and its only fact both live in a group, and the action pin is ungrouped: the
   // frame draws two headings (the group's, `Needs you`'s) and three pins, and the two empty counting
@@ -119,8 +132,12 @@ test("a level whose pins are all grouped owns no rows and no heading, yet the ti
   const rows = frameOf(pins);
   expect(rows).toHaveLength(5);
   expect(rows[0]).toContain("Now");
-  // The warning's `!` appears once, on its pin's row: the counting section drew no heading for it.
-  expect(rows.filter((row) => row.includes("! "))).toHaveLength(1);
+  // The warning's marker column is the selection marker's, because this pin owns the bar's row: the
+  // counting section drew no heading, and the frame's only level glyph is the ungrouped action pin's own.
+  // The marker is drawn once, on the warning's row, and nowhere else in the frame.
+  expect(rows.filter((row) => row.includes(SELECTED))).toHaveLength(1);
+  expect(markerColumn(rows[barRowOf(rows)] ?? "")).toBe(SELECTED);
+  expect(rows.filter((row) => markerColumn(row) === LEVEL_GLYPH)).toHaveLength(2);
   // ...and the frame's title still names both grouped levels, which is the only thing those sections do.
   expect(titleOf(pins)).toContain("1 warning");
   expect(titleOf(pins)).toContain("1 needs you");
@@ -139,8 +156,8 @@ test("the options row is one row of its pin, and the bar still lands on the pin"
   // Heading, pin 1, its options, heading, pin 2.
   expect(rows).toHaveLength(5);
   const options = rows[2] ?? "";
-  expect(options).toContain("⌨1 Passed on");
-  expect(options).toContain("⌨2 Not yet");
+  expect(options).toContain("1 Passed on");
+  expect(options).toContain("2 Not yet");
   // The row is one row of the table: at the bar's selection the highlight covers the pin's own row, never
   // its options — `d` and `Enter` address a pin, and a bar parked on its option row would answer neither.
   // Heading, pin 1, its options ...
@@ -154,7 +171,7 @@ test("the options row is one row of its pin, and the bar still lands on the pin"
   expect(unowned[2]?.pin).toBe(0);
 });
 
-test("the keycap digits the frame draws are the positions in the pin's option list", () => {
+test("the digits the frame draws are the positions in the pin's option list", () => {
   // The row table (`optionRows`, `panel-rows.ts`) and the drawer (`drawOptionRow`) read the same field and
   // must agree about it: the user answers a pin by typing the digit beside a label, so a table that reserved
   // a row the drawer answered differently — or a drawer that renumbered the entries it kept — sends the answer
@@ -162,14 +179,20 @@ test("the keycap digits the frame draws are the positions in the pin's option li
   // the case a renumbering would show.
   const options = ["a", "a label much too wide for this frame", "c", "d"];
   // One pin, so the frame is its row and the options row beneath it — no section heading above them.
-  const drawn = frameOf([pin(1, "info", { options })], 0, 56)[1] ?? "";
-  expect(drawn).toContain("\u23281 a");
-  expect(drawn).toContain("\u23282 a label much too wide for this frame");
-  expect(drawn).not.toContain("\u23283");
-  // And in order: the digit before each label is that label's 1-based position, never the count of the labels
-  // that happened to fit before it.
+  const drawn = optionsRowOf([pin(1, "info", { options })], 48);
+  expect(drawn).toContain("1 a");
+  expect(drawn).toContain("2 a label much too wide for this frame");
+  // The same list at a width that keeps only the first entry: the digit of the entry the row kept is still
+  // the position it came from, and the entries it gave up leave nothing half-drawn behind.
+  const narrow = optionsRowOf([pin(1, "info", { options })], 34);
+  expect(narrow).toContain("1 a");
+  expect(narrow).not.toContain("2 a label");
+  // And in order: the digit beside each label is that label's 1-based position, never the count of the
+  // labels that happened to fit before it — and the entries the row gave up are absent whole, not drawn
+  // half and not renumbered into the gap they left.
   options.forEach((label, index) => {
-    expect(drawn.includes(`\u2328${index + 1} ${label}`)).toBe(index < 2);
+    expect(drawn.includes(`${index + 1} ${label}`)).toBe(index < 2);
+    expect(narrow.includes(`${index + 1} ${label}`)).toBe(index === 0);
   });
 });
 
@@ -178,7 +201,8 @@ test("a pin with no options has no options row", () => {
   // One row and nothing else: a single-section view draws no heading, and a pin with no options reserves no
   // row — the frame is the byte-for-byte plain list it was before any of this existed.
   expect(rows).toHaveLength(1);
-  expect(rows.join("")).not.toContain("⌨");
+  // Neither the keycap glyph #70 dropped nor any digit: the pin has no options, so the row is not drawn.
+  expect(rows.join("")).not.toContain("1)");
 });
 
 test("the options row closes at the frame's width at every width the panel draws at", () => {
@@ -194,42 +218,6 @@ test("the options row closes at the frame's width at every width the panel draws
       style,
     );
     for (const row of lines) expect(visibleWidth(row)).toBe(width);
-  }
-});
-
-test("an option carrying an escape buys no free columns", () => {
-  const smuggled = `a\u001b[1m${"x".repeat(200)}\u001b[0m`;
-  const pins = [pin(1, "info", { options: [smuggled, "b"] })];
-  const lines = built(
-    { pins, selection: 0, focused: true, replyHint: "", ageNow: LATER },
-    60,
-    style,
-  );
-  for (const row of lines) expect(visibleWidth(row)).toBe(60);
-  expect(lines.join("")).not.toContain("\u001b[1m");
-});
-
-/** An option label whose escape pi-tui counts as printable, padded with the word that must not be drawn. */
-const hostileOption = (sequence: string): string => `o${sequence}${"PAYLOAD".repeat(20)}`;
-
-test("an option whose escapes the terminal counts as printable cannot widen the frame", () => {
-  for (const [name, sequence] of UNTRUSTED) {
-    const lines = built(
-      {
-        pins: [pin(1, "info", { options: [hostileOption(sequence), "b"] })],
-        selection: 0,
-        focused: true,
-        replyHint: "",
-        ageNow: LATER,
-      },
-      WIDTH,
-      style,
-    );
-    // The frame is the same number of rows it would be for a clean label — an escape buys a row neither by
-    // widening one nor by splitting one — and none of its rows prints the sequence's payload.
-    expect(lines, name).toHaveLength(4);
-    for (const row of lines) expect(visibleWidth(row), name).toBe(WIDTH);
-    expect(lines.join(""), name).not.toContain("PAYLOAD");
   }
 });
 
