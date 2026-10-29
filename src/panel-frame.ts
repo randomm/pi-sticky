@@ -127,13 +127,12 @@ export function markerCell(marked: string, glyphText: string): string {
  * panel that overruns its own width is drawn over the chat beside it.
  */
 function closedCell(theme: string, columns: number): string {
-  // `themeBytes` again over the caller's already-filtered form, with the half pairs taken out: the policy is
-  // not a surrogate pass, so `stripNonSgr` hands a lone half through and `visibleWidth` charges it nothing —
-  // a cell that kept one measured the width it owed while handing the terminal a character it cannot draw.
-  // Running the policy here as well is what makes the two strings the offset walk reads agree byte for byte,
-  // so `keepColours` never meets a half pair in one of them and not the other and bills the cell a column for
-  // a character that drew nothing.
-  const plain = dropLoneSurrogates(themeBytes(theme));
+  // `themeBytes` again over the caller's already-filtered form — the policy is idempotent, so a caller that
+  // ran it costs nothing. Running it here is what makes the two strings the offset walk reads agree byte for
+  // byte, halves of a surrogate pair included now that the policy itself drops them: `keepColours` never
+  // meets a half in one form and not the other and bills the cell a column for a character the terminal
+  // cannot draw.
+  const plain = themeBytes(theme);
   if (visibleWidth(plain) <= columns) return padPlain(plain, columns);
   // pi-tui's wrapper closes every cut with a reset of its own even when the caller asked for no ellipsis, so
   // the reset is taken out before the re-attach (and again, harmlessly, by `keepColours`'s walk): a cell that
@@ -150,11 +149,9 @@ function closedCell(theme: string, columns: number): string {
  * The drawn-line policy for a string whose bytes come from the theme, read from its owner (`themeBytes`,
  * `escape-sgr.ts`) rather than restated here: this file's marker and glyph, the border's label
  * (`fitLabel`, `panel-border.ts`), the tail (`drawnTail`, `panel-tail.ts`) and the closure of every row
- * (`fitPlain`, `panel-draw.ts`) all run the same two passes in the same order.
+ * (`fitPlain`, `panel-draw.ts`) all run the same passes in the same order, half pairs dropped.
  */
-export function themeBytes(marked: string): string {
-  return sgrThemeBytes(marked);
-}
+export const themeBytes = sgrThemeBytes;
 
 /**
  * The theme's colours, put back over a cut that was measured on the colour-free form of the same string.
@@ -188,21 +185,6 @@ function keepColours(cut: string, safe: string): string {
     const step = String.fromCodePoint(safe.codePointAt(at) as number);
     if (!isSurrogate(step.charCodeAt(0))) out += step;
     at += step.length;
-  }
-  return out;
-}
-
-/**
- * Every code point of `text` that is not half a surrogate pair, in order.
- *
- * A pair is a character; a half of one is not. `visibleWidth` charges a lone surrogate nothing, so a cell that
- * kept one looked the width it owed while handing the terminal a character it cannot draw — and the drawn-line
- * sweeps (`offenders`, `panel-hostile.ts`) name exactly that byte.
- */
-function dropLoneSurrogates(text: string): string {
-  let out = "";
-  for (const character of text) {
-    if (!isSurrogate(character.charCodeAt(0))) out += character;
   }
   return out;
 }

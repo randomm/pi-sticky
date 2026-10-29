@@ -11,7 +11,7 @@
  */
 import { isIntroducer } from "./escape-chars.ts";
 import { scanSequence } from "./escape-scan.ts";
-import { dropControls, stripNonSgr, stripSequences } from "./escape.ts";
+import { dropControls, isSurrogate, stripNonSgr, stripSequences } from "./escape.ts";
 
 /** `ESC [`, spelled from code points as everywhere in this corner of the codebase. */
 export const SGR_PREFIX = `${String.fromCharCode(0x1b)}[`;
@@ -105,11 +105,12 @@ function isSgr(text: string, at: number): boolean {
  * The drawn-line policy for a string whose bytes come from the *theme*: every surface that puts theme bytes
  * on a row — `markerCell` and `glyph` (`panel-frame.ts`), the border's label (`fitLabel`,
  * `panel-border.ts`), the tail (`drawnTail`, `panel-tail.ts`) and the closure of every row (`fitPlain`,
- * `panel-draw.ts`) — needs both passes in this order, and one definition is what keeps them from holding
- * opposite policies.
+ * `panel-draw.ts`) — needs both passes in this order, *and* the half-pair drop below, and one definition is
+ * what keeps them from holding opposite policies. The drop is here rather than in the marker cell because a
+ * filter in one cell is what left the other three surfaces drawing the byte the cut had just dropped.
  */
 export function themeBytes(marked: string): string {
-  return dropControls(stripNonSgr(marked), isSgr);
+  return dropLoneSurrogates(dropControls(stripNonSgr(marked), isSgr));
 }
 
 /**
@@ -142,5 +143,39 @@ export function skippedCell(text: string, at: number): number {
  * than inside the theme's raw string. That is what lets a cut re-attach colours it can vouch for.
  */
 export function themeMeasure(marked: string): string {
-  return dropControls(stripNonSgr(stripSequences(marked)), isSgr);
+  return dropLoneSurrogates(dropControls(stripNonSgr(stripSequences(marked)), isSgr));
+}
+
+/**
+ * Every code point of `text` that is not half a surrogate pair, in order.
+ *
+ * A pair is a character; a half of one is not. `stripNonSgr` and `dropControls` are a sequence pass and a
+ * control pass, and neither one is a surrogate pass: the band sits inside the printable range both of them
+ * keep, so a lone half rides through both and `visibleWidth` charges it nothing — a row that kept one
+ * measured the width it owed while handing the terminal a character it cannot draw. That is the byte the
+ * drawn-line sweeps name (`offenders`, `panel-hostile.ts`), so it is the class `themeBytes` owes to *every*
+ * surface that reads a theme, not only to the marker cell: the border's label, the tail and the closure of
+ * each row are held to it by the frame-level sweeps, because a guard in one cell is what left the other
+ * three drawing the half the cut had just dropped. A pair, by contrast, is a character and stays whole — the
+ * theme's own glyph is what the user asked to see.
+ */
+function dropLoneSurrogates(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (!isSurrogate(code)) {
+      out += text.charAt(i);
+      continue;
+    }
+    // A high half followed by a low half is one character and both units are kept. The walk is over *code
+    // units* deliberately: iterating a string yields code points, so `charCodeAt(0)` of a whole astral glyph
+    // is 0x1F4CC — above the band — and a `for..of` filter reads a real emoji as text and keeps it by
+    // accident while a grapheme counter charges the same pair one column. Only a half with no partner goes.
+    const next = i + 1 < text.length ? text.charCodeAt(i + 1) : -1;
+    if (code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+      out += text.charAt(i) + text.charAt(i + 1);
+      i += 1;
+    }
+  }
+  return out;
 }

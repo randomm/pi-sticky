@@ -174,3 +174,71 @@ test("a theme that colours with an 8-bit introducer costs the frame no columns",
     }
   }
 });
+
+test("a theme that wraps its text in half a surrogate pair draws no orphan half on any row", () => {
+  // `themeBytes` (`escape-sgr.ts`) is the drawn-line policy for *every* surface that puts theme bytes on a
+  // row — the header, the dim tail, the bar's colour, both border labels — and it is a sequence pass and a
+  // control pass, neither of which is a surrogate pass: the band sits inside the printable range both keep.
+  // The #70 fix removed the class from `markerCell` alone, which left `header`, `dim` and `selected` writing
+  // the exact byte the cut branch had just lost onto the row beside it. So the sweep is per member: a theme
+  // that colours with a wrapped pair must close every half it opened, and one that writes an unpaired half
+  // must have it dropped rather than drawn. `visibleWidth` charges a half nothing, so a row that kept one
+  // still measured the frame's width — the leak was invisible to the width assertion alone.
+  const high = String.fromCharCode(0xd83d);
+  const low = String.fromCharCode(0xdc00);
+  const arms: Array<[string, string, string]> = [
+    ["a pair split around the text", high, low],
+    ["a high half with no partner", high, ""],
+    ["a low half with no partner", "", low],
+    ["two halves in the wrong order", low, high],
+  ];
+  for (const [name, before, after] of arms) {
+    const wrap = (text: string) => `${ESC}[33m${before}${text}${after}`;
+    const halves: RenderPanelStyle = {
+      header: wrap,
+      marker: (_level, text) => wrap(text),
+      dim: wrap,
+      selected: wrap,
+      border: wrap,
+      borderFocused: wrap,
+    };
+    for (const focused of [false, true]) {
+      for (const width of [MIN_FRAME_WIDTH, 40, 60, 120]) {
+        const lines = built(
+          content(
+            [one(1, "Decide X"), one(2, "a second pin long enough to be cut here")],
+            0,
+            focused,
+            "f to reply",
+          ),
+          width,
+          halves,
+        );
+        expectUniformWidth(lines, width);
+        for (const line of lines) {
+          // Read code unit by code unit, not by iterating: `for..of` yields code points and a whole astral
+          // glyph reads as one item above the band, which is how a filter can keep a real emoji and a lone
+          // half under the same answer. A high half is only ever clean with a low half behind it.
+          const orphans: string[] = [];
+          for (let i = 0; i < line.length; i++) {
+            const code = line.charCodeAt(i);
+            if (code >= 0xd800 && code <= 0xdbff) {
+              const next = line.charCodeAt(i + 1);
+              if (next >= 0xdc00 && next <= 0xdfff) i++;
+              else orphans.push(`high 0x${code.toString(16)} at ${i}`);
+            } else if (code >= 0xdc00 && code <= 0xdfff) {
+              orphans.push(`low 0x${code.toString(16)} at ${i}`);
+            }
+          }
+          expect(orphans, `${name}, focused=${focused} @${width}: ${JSON.stringify(line)}`).toEqual(
+            [],
+          );
+          expect(drawnOffenders(line), `${name} @${width}`).toEqual([]);
+        }
+        // The theme's colour is still drawn, so the sweep above is not the accident of a row that was
+        // emptied: the half going must not take the colour with it.
+        expect(lines.join(""), name).toContain(`${ESC}[33m`);
+      }
+    }
+  }
+});

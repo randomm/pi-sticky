@@ -127,11 +127,27 @@ test("the cell closes the width the panel paid for, whatever the theme wrote", (
 });
 
 test("a cut cell carries no half a surrogate pair, on either side of the walk", () => {
-  // The policy is not a surrogate pass — `stripNonSgr` hands a lone half through, and `visibleWidth` charges
-  // it nothing, so a cell that kept one measured the width it owed and handed the terminal a character it
-  // cannot draw. Both sides of the offset walk are swept: the cut's own byte (`truncateToWidth` spends a
-  // column on it) and the byte the walk reached in the coloured form, which is the one the review's leak rode
-  // in on. The pair is the shape the policy does not already filter, so it is the one the cell has to.
+  // The policy *was* not a surrogate pass: `stripNonSgr` handed a lone half through and `visibleWidth`
+  // charges it nothing, so a cell that kept one measured the width it owed while handing the terminal a
+  // character it cannot draw. Both sides of the offset walk are swept — the cut's own byte
+  // (`truncateToWidth` spends a column on it) and the byte the walk reached in the coloured form, which is
+  // the one the review's leak rode in on — and the walk is asserted against **both** readings of the cell.
+  //
+  // Which reading names what was measured against the pre-diff cell, and the two are not interchangeable:
+  //
+  //  - the *padding* branch copied the raw string, so it is where a half reaches the screen, and there
+  //    `drawnOffenders` does name it — it is the assertion that discriminates on this diff, and the one a
+  //    future swap of `byteScan` for the shared sweep would have to keep;
+  //  - the *cut* branch drops the half along with every other byte past the glyph's column, so both reads
+  //    come back clean there whatever the cell did, and `byteScan` is the only one that would have named a
+  //    half in any form: `offenders` (`panel-hostile.ts`) sees one, while `containsNonSgr` — which
+  //    `drawnOffenders` also asks — reads the surrogate band as printable. A classifier must not certify its
+  //    own blind spot, so the scan written from the ranges stays file-local *and* the shared sweep stays
+  //    asserted beside it rather than instead of it.
+  //
+  // The class is also held at the row level now: the filter lives in `themeBytes`, the policy every theme-byte
+  // surface shares, and `panel-lines-hostile-theme.test.ts` sweeps it through a whole frame — which is where
+  // a guard kept only in this cell would have left `header`, `dim` and `selected` still drawing the half.
   const halves = [
     String.fromCharCode(0xd800),
     String.fromCharCode(0xdc00),
@@ -154,6 +170,25 @@ test("a cut cell carries no half a surrogate pair, on either side of the walk", 
       expect(byteScan(cell), why).toEqual([]);
       expect(visibleWidth(cell), JSON.stringify(marked)).toBe(1);
       expect(drawnOffenders(cell), JSON.stringify(marked)).toEqual([]);
+    }
+  }
+  // The padding branch, spelled out so the discriminating assertion is not buried in the loop above: a
+  // marker the cut never touches is emitted whole, so this is the branch on which a half the policy handed
+  // back actually reaches the screen — and the one on which `drawnOffenders` names it. It is the read that
+  // discriminates on this diff: the *cut* branch drops the half along with every other byte past the glyph's
+  // column, so a cell whose only defence were that drop answers `[]` to both sweeps there and is caught by
+  // neither. Here the cell must draw the glyph and its colour and neither half.
+  for (const bad of halves) {
+    for (const marked of [`${SGR}${bad}${ONE}`, `${SGR}${ONE}${bad}`]) {
+      const cell = markerCell(marked, ONE);
+      const why = `padding branch kept a half: ${JSON.stringify(marked)} -> ${JSON.stringify(cell)}`;
+      expect(drawnOffenders(cell), why).toEqual([]);
+      expect(byteScan(cell), why).toEqual([]);
+      expect(visibleWidth(cell), why).toBe(1);
+      // Not a cell that simply drew nothing: the glyph and the theme's colour are both there, so the two
+      // sweeps above are read on a cell that kept what it should and dropped only the half.
+      expect(cell, why).toContain(ONE);
+      expect(cell, why).toContain(SGR);
     }
   }
   // An astral glyph the cut keeps stays whole: a pair kept is one column, and a pair dropped is none, but a

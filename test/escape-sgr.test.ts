@@ -17,7 +17,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { SGR_RESET, isSgrReset, sgrResetFor } from "../src/escape-sgr.ts";
+import { SGR_RESET, isSgrReset, sgrResetFor, themeBytes, themeMeasure } from "../src/escape-sgr.ts";
 
 const E = String.fromCharCode(0x1b);
 const csi = (parameters: string): string => `${E}[${parameters}`;
@@ -62,6 +62,18 @@ describe("sgrResetFor", () => {
     expect(sgrResetFor(`${E}]0;title${String.fromCharCode(0x07)}row`)).toBe("");
   });
 
+  test("a colour opened after an unterminated string is still read as open", () => {
+    // The scanner hands the walk back to a bare ESC that opens a second sequence rather than swallowing the
+    // run to the end of the input (the negative `length` form, `escape-scan.ts`). That resume is the only
+    // path on which `opensColour` advances without deciding anything, so a colour written *after* the dead
+    // string must still be named: a theme whose OSC is cut short and which then opens a background is a line
+    // that bleeds past the frame's last column.
+    expect(sgrResetFor(`${E}]0;pwn${csi("31m")}row`)).toBe(SGR_RESET);
+    // ...and the same resume with no colour after it owes nothing: the dead string is refused bytes, and a
+    // classifier that appended a reset for it would put an escape on an otherwise plain row.
+    expect(sgrResetFor(`${E}]0;pwn${E}Pq payload${E}\\row`)).toBe("");
+  });
+
   test("a reset before the end does not excuse a colour opened after it", () => {
     // pi-tui's cut injects a reset *and then* re-prepends the row's colours to the continuation, so the
     // bytes reaching the screen can close a colour and reopen it in the same line. The last SGR is what
@@ -93,6 +105,74 @@ describe("isSgrReset", () => {
     expect(isSgrReset("")).toBe(false);
     expect(isSgrReset(`x${SGR_RESET}`)).toBe(false);
     expect(isSgrReset(`${E}]0;0m`)).toBe(false);
+  });
+});
+
+describe("themeBytes / themeMeasure — the half-pair drop the drawn policy owns", () => {
+  // The policy is a sequence pass and a control pass, and neither is a surrogate pass: the band sits inside
+  // the printable range both keep, so a lone half rode through it and reached every theme-byte surface — the
+  // border's label, the tail, the closure of each row — not only the marker cell. `visibleWidth` charges a
+  // half nothing, so the row still measured the width it owed while handing the terminal a character it
+  // cannot draw, which is why the class is asserted at the policy itself rather than only where a cell or a
+  // frame happens to sweep it.
+  const high = String.fromCharCode(0xd83d);
+  const low = String.fromCharCode(0xdc00);
+  const emoji = "\u{1f600}";
+  /** A colour the measuring form takes out and the drawn one keeps: the two differ by exactly this. */
+  const COLOUR = `${E}[33m`;
+
+  test("a half with no partner is dropped and a pair is kept whole", () => {
+    // Read per policy: `themeBytes` keeps the theme's colour and `themeMeasure` takes it out too, because a
+    // colour draws no column and the cut must not be counted on bytes the terminal spends nothing on.
+    for (const [policy, colour] of [[themeBytes, COLOUR] as const, [themeMeasure, ""] as const]) {
+      expect(policy(`${COLOUR}${high}abc`), policy.name).toBe(`${colour}abc`);
+      expect(policy(`${COLOUR}${low}abc`), policy.name).toBe(`${colour}abc`);
+      // Two halves in the wrong order are two orphans, not a character: neither may survive on the theory
+      // that a low written before a high could be paired with it.
+      expect(policy(`${COLOUR}${low}${high}x`), policy.name).toBe(`${colour}x`);
+      // An astral glyph is a pair and a character, so it stays — the theme's own emoji is what the user
+      // asked to see, and a filter that dropped it would silently deface every coloured frame. The pair
+      // below is spelled as the two halves the theme's bytes actually carry and checked against the
+      // character they decode to, so the assertion cannot be satisfied by a pass that dropped both.
+      expect(policy(`${COLOUR}${emoji}`), policy.name).toContain(emoji);
+      expect(policy(`${COLOUR}${high}${low}`), policy.name).toBe(
+        `${colour}${String.fromCodePoint(0xd83d, 0xdc00)}`,
+      );
+    }
+  });
+
+  test("a half standing between a colour and the glyph costs no column and leaves no orphan", () => {
+    // The shape the #70 cut branch leaked on: the half sat on the column of a colour that survived, so it is
+    // asserted here that the kept form carries neither the half nor a stray introducer, and that the form the
+    // cut is *counted* on agrees with the drawn one byte for byte once the colours are taken out — the pair
+    // of forms `keepColours` walks together, which cannot be allowed to disagree about a half.
+    const marked = `${E}[33m${high}a${low}b`;
+    const kept = themeBytes(marked);
+    expect(kept).toBe("\u001b[33mab");
+    for (let i = 0; i < kept.length; i++) {
+      const code = kept.charCodeAt(i);
+      const before = kept.charCodeAt(i - 1);
+      const orphan = code >= 0xdc00 && code <= 0xdfff && !(before >= 0xd800 && before <= 0xdbff);
+      expect(orphan, `orphan half at ${i} of ${JSON.stringify(kept)}`).toBe(false);
+    }
+    expect(themeMeasure(marked)).toBe(kept.replace(new RegExp(`${E}\\[[0-9;]*m`, "g"), ""));
+  });
+
+  test("the policy is idempotent, so a caller that already ran it costs nothing", () => {
+    // `closedCell` (`panel-frame.ts`) runs the policy over a form its caller has just run it over; that is
+    // only safe while a second pass changes nothing. Every shape above is run twice through.
+    for (const policy of [themeBytes, themeMeasure]) {
+      for (const marked of [
+        `${E}[33m${high}abc`,
+        `${E}[33m${low}${high}x`,
+        `${E}[33m${emoji}${high}`,
+        `${E}[33m${emoji}${emoji}plain`,
+        `${E}]0;t${String.fromCharCode(0x07)}a${E}[33mb`,
+      ]) {
+        const once = policy(marked);
+        expect(policy(once), `${policy.name} ${JSON.stringify(marked)}`).toBe(once);
+      }
+    }
   });
 });
 

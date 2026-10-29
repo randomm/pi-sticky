@@ -62,13 +62,6 @@ interface Terminal {
 
 const OPEN = new RegExp(`${E}\\[([0-9;]*)m`, "g");
 
-/**
- * The attributes an ordinary terminal keeps until something closes them, so "wearing nothing" means nothing at
- * all is on and not merely the colour written last. The frames' themes open `1;35`, `2`, `33`, `36`, `44`, `90`
- * and `94`; the set is what stops `worn` from certifying a line that opened an attribute the sweep never named.
- */
-const ATTRIBUTES = ["1", "2", "4", "7", "31", "33", "36", "44", "90", "94"];
-
 /** Does the parameter list of an SGR close every attribute rather than open one? */
 function closesAttributes(parameters: string): boolean {
   return /^0+(?:;0+)*$/.test(parameters);
