@@ -14,8 +14,15 @@
 import type { Pin, PinState } from "../src/types.ts";
 import { NOW, pin, removal } from "./fixtures.ts";
 
-/** An ISO stamp ending in a digit rather than the `Z` every other fixture ends in. */
-export const NOW_DIGIT = `${NOW.slice(0, -1)}3`;
+/**
+ * An ISO stamp whose last character before the zone designator is a digit, where every other fixture ends
+ * in `Z` — the shape whose tail the buggy edge trim shaved. The designator itself stays: without it
+ * `new Date` reads the stamp as *local* time, so the same fixture would name a different instant in every
+ * zone and any assertion about the clock it draws would really be an assertion on the runner's `TZ` (see
+ * the `localTime` note in `fixtures.ts`). A stamp that is nothing but digits is swept in
+ * `sanitize-digit-edge.test.ts`.
+ */
+export const NOW_DIGIT = `${NOW.slice(0, -1)}3Z`;
 
 /** The digit-edged shapes of the three optional fields, as the tool receives them. */
 export const DIGIT_GROUP = "Backlog 1";

@@ -85,14 +85,26 @@ describe("reconstruct cleans the three optional fields of an untrusted snapshot"
       expect(drawnBreaks(text)).toEqual([]);
     }
     // Drawn, not merely stored: a field the surfaces never show is a field nobody would have missed. The
-    // stamp reaches the screen as the rail's local `HH:MM`, not as the ISO string, so it is checked as
-    // drawn rather than by slicing the stamp — and a stamp the clock cannot read would draw `--:--`.
+    // `/pins` text draws the stamp as `formatLocalTime`'s local `HH:MM`, not as the ISO string, so it is
+    // checked as drawn rather than by slicing the stamp — and a stamp the clock cannot read would draw
+    // `--:--`. The rail is not part of this: it draws an *age* (`formatPinAge`), and `renderList` draws no
+    // time at all, so neither can confirm a stamp was read as the instant it names.
     expect(digitTexts.some((text) => text.includes(DIGIT_GROUP))).toBe(true);
-    expect(digitTexts.some((text) => text.includes(localTime(NOW)))).toBe(true);
+    // The clock of the instant the fixture *means* — `NOW`, the shared stamp `NOW_DIGIT` was cut from —
+    // against what the surface drew for the digit-edged one. The two sides are deliberately different
+    // strings: comparing `NOW_DIGIT` with the column drawn from `NOW_DIGIT` would be true whatever the
+    // fixture said, and an assertion that cannot fail is not a guard. So a fixture that lost its zone
+    // designator — and is then read as local time, moving the hour in every zone but UTC — is caught here.
+    for (const text of drawnClocks(digits)) {
+      expect(text.includes(localTime(NOW)), text).toBe(true);
+    }
+    // And the fixture still names one instant with `NOW`, which is what the line above is entitled to
+    // expect of it: `NOW_DIGIT` is `NOW` with a digit cut in before the `Z`, not a different time.
+    expect(Date.parse(NOW_DIGIT)).toBe(Date.parse(NOW));
     // Both digit-edged stamps still read as clocks: `formatLocalTime` answers the sentinel `--:--` for a
     // stamp `new Date` cannot parse, and the rail's age and the removal refusal both go through it. An
     // edge cleaner that rewrote the stamp's tail would leave the stored string equal and every column
-    // above dead, so the drawn form is asserted too.
+    // above dead, so the drawn form is asserted too — against `NOW`, for the same reason as above.
     expect(formatLocalTime(NOW_DIGIT)).toBe(localTime(NOW));
     const removalStamp = readBack?.state.removed[0]?.at;
     expect(removalStamp ? formatLocalTime(removalStamp) : "").toBe(localTime(NOW));
@@ -156,6 +168,30 @@ describe("reconstruct cleans the three optional fields of an untrusted snapshot"
 
 /** The rail budget `drawn` asks for: its header plus one row per pin, capped at seven rows. */
 const RAIL_BUDGET = 8;
+
+/**
+ * The surface that draws a stamp as a clock: `renderPinsText` puts `formatLocalTime(createdAt)` on the row
+ * (render.ts, pinsTextRow). `renderList` is excluded — `modelRow` carries no time at all — and so is the
+ * rail, which draws an *age*; a sweep that included either could satisfy a clock assertion with a line that
+ * shows no hour. Unlike `drawn`, this one draws the **fixture** state rather than a rebuild of it: the
+ * assertion it feeds compares the stored stamp with the column drawn for it, and reading that pair out of
+ * one rebuild would compare each string with itself.
+ */
+function drawnClocks(state: PinState): string[] {
+  if (!isPinState(state)) {
+    throw new Error("drawnClocks() was handed a state no reader would accept");
+  }
+  const lines = [renderPinsText(view(state.pins, state.removed))];
+  // Non-empty, and every line carrying a clock-shaped column (`HH:MM`, or the `--:--` sentinel the
+  // formatter answers for an unreadable stamp): a surface that drew no row would make the caller's
+  // `for (…)` sweep pass on nothing, and a header line alone would satisfy a `some` without a time in it.
+  // The sentinel passes this floor on purpose — refusing it here would pre-empt the `--:--` assertion below,
+  // which is the one that says which stamp was unreadable.
+  if (lines.length === 0 || lines.some((line) => !/[0-9]{2}:[0-9]{2}|--:--/.test(line))) {
+    throw new Error(`drawnClocks() drew no clock column: ${JSON.stringify(lines)}`);
+  }
+  return lines;
+}
 
 /**
  * The degenerate sweep `drawn` exists to refuse, produced on purpose: the same rebuild, with the surfaces
