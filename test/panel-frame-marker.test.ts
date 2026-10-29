@@ -4,7 +4,9 @@
  * its heading cannot each close the theme's `marker` to a different width. These cases are that helper's own
  * arithmetic — the padding branch, the cut branch, and the control characters that must not survive either.
  * `panel-section-headings.test.ts` is where the two call sites are compared to each other, and
- * `panel-lines-hostile.test.ts` is where the cut reaches a frame drawn through all six theme colours.
+ * `panel-lines-hostile.test.ts` is where the cut reaches a frame drawn through all six theme colours, and
+ * `panel-frame-marker-hostile.test.ts` is where the same helper is swept against a hostile `marker` both in
+ * isolation and through a whole frame at every width.
  *
  * Since #70 the cell is drawn *painted*: the theme's SGR survives, because the level's colour is what makes a
  * warning read as a warning at a glance, and it costs the frame no columns. Every *other* sequence is refused

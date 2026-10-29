@@ -18,10 +18,13 @@
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-import { is8BitIntroducer } from "./escape-chars.ts";
-import { scanSequence } from "./escape-scan.ts";
-import { sgrResetFor } from "./escape-sgr.ts";
-import { dropControls, stripNonSgr, stripSequences } from "./escape.ts";
+import {
+  sgrResetFor,
+  themeBytes as sgrThemeBytes,
+  skippedCell,
+  themeMeasure,
+} from "./escape-sgr.ts";
+import { isSurrogate, stripSequences } from "./escape.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { PinLevel } from "./types.ts";
@@ -102,125 +105,106 @@ export function selectionReset(line: string): string {
  * *survives* is the theme's SGR (`stripNonSgr`, `escape.ts`) — the level's colour is the reason a warning
  * reads as a warning, and it costs no columns — while an OSC, a DCS or a non-colour CSI is refused here
  * rather than reaching the row.
+ *
+ * Both branches read one form of `marked`: the theme's bytes under the drawn policy (`themeBytes`,
+ * `escape-sgr.ts`). The cut used to run over the stripped form and then re-attach its colours out of the
+ * theme's *raw* string, so a byte the policy refused — a bare C0, a C1 that is not one of the scanner's six
+ * introducers, half a surrogate pair — rode back in on the column of a colour that survived. Nothing is
+ * copied out of the raw string now.
  */
 export function markerCell(marked: string, glyphText: string): string {
-  const columns = visibleWidth(glyphText);
-  // One string does the measuring and, when it has to, the cutting: `plain`, the theme's `marker` with every
-  // sequence gone. It is the only form whose width `visibleWidth`, pi-tui's wrapper and this file all agree
-  // on, and cutting from it is what stops a marker's colour from buying the row columns the glyph does not
-  // own — `visibleWidth` counts a colour as free, so a cut over the *kept* form spends real columns on bytes
-  // that drew nothing. The colours the theme asked for are put back over the columns that survived.
-  const plain = dropControls(stripSequences(marked));
-  if (visibleWidth(plain) <= columns) return padPlain(themeBytes(marked), columns);
-  // The cut runs over `plain`, so no colour of the theme's survives it: what comes back is the surviving
-  // text plus any colour `themeBytes` puts over it, and `keepColours` re-attaches them one column at a time.
-  // The `themeBytes` after the re-attach is the one that closes the hole: `keepColours` copies columns out
-  // of the *coloured* string, so a control standing after a kept colour came back with it.
-  const cut = dropControls(normaliseInjected(truncateToWidth(plain, columns, "")));
-  return padPlain(themeBytes(keepColours(cut, marked)), columns);
+  return closedCell(themeBytes(marked), visibleWidth(glyphText));
+}
+
+/**
+ * Theme bytes closed to `columns`: cut to them if they are over, padded to them if they are under.
+ *
+ * The cut runs over the colour-free form because `truncateToWidth` measures the bytes a terminal draws and a
+ * colour draws none, so cutting the coloured form would spend real columns on it; the colours are then put
+ * back over the columns that survived (`keepColours`). A theme that wrote *visible* bytes around the glyph it
+ * was handed — a `marker` wrapping the level's glyph, a `border` wrapping a corner — is what this closes:
+ * those bytes are the ones that would take the panel past the width the overlay was given, and a flush-right
+ * panel that overruns its own width is drawn over the chat beside it.
+ */
+function closedCell(theme: string, columns: number): string {
+  // `themeBytes` again over the caller's already-filtered form, with the half pairs taken out: the policy is
+  // not a surrogate pass, so `stripNonSgr` hands a lone half through and `visibleWidth` charges it nothing —
+  // a cell that kept one measured the width it owed while handing the terminal a character it cannot draw.
+  // Running the policy here as well is what makes the two strings the offset walk reads agree byte for byte,
+  // so `keepColours` never meets a half pair in one of them and not the other and bills the cell a column for
+  // a character that drew nothing.
+  const plain = dropLoneSurrogates(themeBytes(theme));
+  if (visibleWidth(plain) <= columns) return padPlain(plain, columns);
+  // pi-tui's wrapper closes every cut with a reset of its own even when the caller asked for no ellipsis, so
+  // the reset is taken out before the re-attach (and again, harmlessly, by `keepColours`'s walk): a cell that
+  // kept the pair would pay its columns for bytes the terminal draws for nothing. `themeMeasure(plain)` is
+  // the form the cut is counted on — the colours out too, because a colour draws no column and a cut that
+  // counted on a form that carried them would spend the glyph's column on the wrapper's padding instead.
+  const cut = normaliseInjected(truncateToWidth(themeMeasure(plain), columns, ""));
+  return padPlain(keepColours(cut, plain), columns);
 }
 
 /**
  * The theme's own colours and nothing else: every other sequence, and every control, is gone.
  *
- * Two passes over the same walk, in the order that matters. `stripNonSgr` first: it keeps a CSI closed by
- * `m` and refuses every other sequence. `dropControls` second, and *told* the same class so it walks over
- * that colour instead of stripping its introducer and leaving the parameters behind as the text `[33m`.
- *
- * The order is not cosmetic. `stripNonSgr` is a sequence pass, not a control pass: a bare BEL, CR, VT, BS,
- * FF or DEL is not an escape sequence, so it passes straight through it — and those are exactly the bytes a
- * hostile `theme.marker` writes in between its colours. Run second, `dropControls` is the pass that removes
- * them, and because it walks a kept colour whole rather than cutting into it, the colour the theme asked
- * for stays intact. Run first, it is the pass that orphaned the parameters.
- *
- * Exported as the drawn-line policy for a string whose bytes come from the *theme*: every surface that puts
- * theme bytes on a row — this file's marker and glyph, the border's label (`fitLabel`,
- * `panel-border.ts`), the tail (`drawnTail`, `panel-tail.ts`), and the closure of every row (`fitPlain`,
- * `panel-draw.ts`) — needs both passes in this order, and one definition is what keeps them from holding
- * opposite policies.
+ * The drawn-line policy for a string whose bytes come from the theme, read from its owner (`themeBytes`,
+ * `escape-sgr.ts`) rather than restated here: this file's marker and glyph, the border's label
+ * (`fitLabel`, `panel-border.ts`), the tail (`drawnTail`, `panel-tail.ts`) and the closure of every row
+ * (`fitPlain`, `panel-draw.ts`) all run the same two passes in the same order.
  */
 export function themeBytes(marked: string): string {
-  return dropControls(stripNonSgr(marked), isSgr);
+  return sgrThemeBytes(marked);
 }
 
 /**
- * Does the sequence at `at` name a colour, i.e. is it the one class `stripNonSgr` keeps?
+ * The theme's colours, put back over a cut that was measured on the colour-free form of the same string.
  *
- * The vote is the scanner's `kept`, which recognises a colour only in its 7-bit spelling — an 8-bit `CSI8`
- * introducer is refused even when its parameters end in `m`, because U+009B is a *character*
- * `visibleWidth` charges for and this pass emits what it keeps. A colour whose introducer was kept but
- * whose parameters were not would print the text `31m` where a colour was supposed to cost nothing.
+ * `keepColours` is handed `themeBytes(marked)`, not the theme's raw output: every byte it can copy is one the
+ * drawn policy already kept — a colour, or a character in the printable band. It walks the two forms together
+ * and takes `safe`'s bytes wherever the cut still has one, so the colour the theme wrote is re-attached whole
+ * and nothing else rides in with it.
+ *
+ * The walk advances by whole **code points**, not code units. A cut runs by visible columns, so an astral
+ * glyph is one column that `truncateToWidth` keeps or drops as a pair; copying one code unit at a time out of
+ * `safe` handed back half a surrogate pair — a character no terminal can draw, and one the drawn-line sweeps
+ * name (`offenders`, `panel-hostile.ts`). `stripNonSgr` keeps a lone surrogate it was handed (it is neither a
+ * sequence nor a C1), so the pair is the one shape the policy does not already filter: a cell whose walk
+ * landed on half a pair is dropped, leaving the columns to `padPlain`.
+ *
+ * A cell at the offset is skipped whole (`skippedCell`, `escape-sgr.ts`) so a colour is never re-emitted in
+ * pieces, and the columns the colours cost are free to `visibleWidth`, which is what the cell is measured in.
  */
-function isSgr(text: string, at: number): boolean {
-  return scanSequence(text, at, text.charCodeAt(at)).kept;
-}
-
-/** The introducer, spelled at runtime: a literal does not survive the way a source file is read. */
-const E = String.fromCharCode(0x1b);
-
-/**
- * A colour that came through `stripNonSgr`/`dropControls` whole: introducer, parameters and final.
- *
- * The cut branch measures on the sequence-free form of the string, so `keepColours` walks that form back
- * into the coloured one a column at a time — and the columns it copies out of `marked` must be whole
- * sequences, never one code unit at a time, or a colour is re-emitted one character after its own
- * introducer and the row carries `ESC ESC [` where it should carry one `ESC`.
- */
-const COLOUR_CELL = new RegExp(`${E}\\[[0-9;]*m`);
-
-/**
- * The theme's colours, put back over a cut that was measured on the sequence-free form of the same string.
- *
- * `plain` and `marked` differ only by sequences, so walking the two together and taking `marked`'s bytes
- * wherever `plain` still has one re-attaches exactly the SGR the theme wrote and nothing else: an OSC, a DCS
- * or a stray control that `stripSequences` removed is absent from `plain`, so it has no column to be put back
- * into. A cut that ends in the middle of a colour's parameters ends before it, which is why the reset at the
- * end of a drawn line (`selectionReset`, above) is the thing that closes a cell that was cut mid-colour.
- *
- * Every byte copied out of `marked` is either text or a colour: the walk skips each *whole* sequence — an
- * introducer is never re-emitted a code unit at a time, and an 8-bit introducer, which this file's drawn
- * policy refuses, is skipped like any other rather than copied as if it were text.
- */
-function keepColours(cut: string, marked: string): string {
+function keepColours(cut: string, safe: string): string {
   let out = "";
   let at = 0;
   for (const kept of cut) {
-    // Skip what draws no columns: the refused sequences the cut took out, and the parameters of a colour
-    // the cut ended before. Each is skipped as a whole cell so a colour is never re-emitted in pieces.
     for (;;) {
-      const cell = skippedCell(marked, at);
+      const cell = skippedCell(safe, at);
       if (cell === 0) break;
       at += cell;
     }
-    if (at >= marked.length) break;
-    out += marked[at];
-    at += 1;
+    if (at >= safe.length) break;
+    // One code point per drawn column: the pair of a surrogate together, never one half of it.
+    const step = String.fromCodePoint(safe.codePointAt(at) as number);
+    if (!isSurrogate(step.charCodeAt(0))) out += step;
+    at += step.length;
   }
   return out;
 }
 
 /**
- * How many code units the zero-width cell at `at` occupies, or `0` where a real drawn column begins.
+ * Every code point of `text` that is not half a surrogate pair, in order.
  *
- * Three classes, all of them free to `visibleWidth` and so all of them absent from the cut this walk is
- * matched against: a colour (`COLOUR_CELL`), a refused `ESC`-led sequence, and an 8-bit introducer with its
- * payload. The last is the one a byte-range test misses — U+009B is *printable* to `visibleWidth`, so a
- * walk that stopped at the first byte above C1 would copy the introducer back onto the line that
- * `stripNonSgr` had just refused it on.
+ * A pair is a character; a half of one is not. `visibleWidth` charges a lone surrogate nothing, so a cell that
+ * kept one looked the width it owed while handing the terminal a character it cannot draw — and the drawn-line
+ * sweeps (`offenders`, `panel-hostile.ts`) name exactly that byte.
  */
-function skippedCell(text: string, at: number): number {
-  if (at >= text.length) return 0;
-  const code = text.charCodeAt(at);
-  const colour = text.slice(at).match(COLOUR_CELL)?.[0];
-  if (code === 0x1b && colour !== undefined && text.startsWith(colour, at)) return colour.length;
-  if (code === 0x1b || is8BitIntroducer(code)) return skipLength(text, at);
-  return 0;
-}
-
-/** The units the scanner walks over at `at`, with the resume-offset form of a negative length folded back. */
-function skipLength(text: string, at: number): number {
-  const length = scanSequence(text, at, text.charCodeAt(at)).length;
-  return length < 0 ? 0 - length : Math.max(1, length);
+function dropLoneSurrogates(text: string): string {
+  let out = "";
+  for (const character of text) {
+    if (!isSurrogate(character.charCodeAt(0))) out += character;
+  }
+  return out;
 }
 
 /**
@@ -232,7 +216,13 @@ function skipLength(text: string, at: number): number {
  * source file is read.
  */
 function normaliseInjected(text: string): string {
-  return text.replace(INJECTED_RESET, "").replace(new RegExp(`${E}\\[0m`, "g"), "");
+  // A reset, spelled from the introducer's own code point (a literal does not survive the way a source file
+  // is read) with its bracket escaped: `[` opens a character class to `RegExp`, and a pattern with an
+  // unescaped one is a syntax error rather than a match. `[^m]*m` is every SGR, not only pi-tui's reset —
+  // `themeBytes` above already kept the only SGR that can be here, and a cell that paid its columns for the
+  // bytes of any of them would be charging the frame for what the terminal draws for nothing.
+  const sgr = new RegExp(`${String.fromCharCode(0x1b)}\\[[^m]*m`, "g");
+  return text.replace(INJECTED_RESET, "").replace(sgr, "");
 }
 
 /**
@@ -247,10 +237,17 @@ function normaliseInjected(text: string): string {
  * there is what pins that wiring, with the border's colour being the only thing a frame can be coloured by.
  */
 export function glyph(frame: (text: string) => string, glyphText: string): string {
-  // `stripNonSgr` is the escape policy and `dropControls` the control pass, each told which sequence the
-  // frame draws: a colour is walked over whole by both rather than having its introducer taken out by the
-  // second and left on the screen as the text `[94m`.
-  return padPlain(themeBytes(frame(glyphText)), 1);
+  // `themeBytes` is the escape policy and the control pass together, each told which sequence the frame
+  // draws: a colour is walked over whole rather than having its introducer taken out and left on the screen
+  // as the text `[94m`. Then the same cut `markerCell` runs, because the promise here is not "the escapes are
+  // gone" but "this cell is one column": a theme that wrote visible bytes *around* the corner — `border` is
+  // free to — widened the box by every one of them, and a panel that overruns its own width is drawn over the
+  // chat beside it. `padPlain` puts back the column a cut to nothing leaves, so an empty gutter is a blank
+  // column and never a missing one.
+  // A cell's whole width is the glyph it stands for: `columns` is taken from the glyph and every byte the
+  // theme wrote around it is cut away or refused, so a corner is one column whatever its theme did to it.
+  const columns = visibleWidth(glyphText);
+  return closedCell(themeBytes(frame(glyphText)), columns);
 }
 
 /**

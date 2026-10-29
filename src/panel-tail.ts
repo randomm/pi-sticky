@@ -133,8 +133,9 @@ export function widestStampColumns(
     // Measured on what the theme is allowed to *draw*: the tail is the theme's bytes around a `#id` and an
     // age the panel spelled, so its SGR costs no columns and its non-SGR sequences are refused where they
     // are drawn (`drawnTail`) — measuring on anything else would reserve columns the row never spends.
-    // `themeBytes` is the pair of passes the drawing side runs, so the reserve and the drawn bytes cannot
-    // disagree about what survives.
+    // `themeBytes` is the pair of passes the drawing side runs and `glyph`'s and `markerCell`'s cut is charged
+    // to the plain stamp, so a theme that wrote visible bytes *around* the stamp is measured on those bytes
+    // here and cut to the stamp's own columns there: reserve on the theme, cut on the panel's text.
     const width = visibleWidth(themeBytes(stamp(pin)));
     if (width > widest) widest = width;
   }
