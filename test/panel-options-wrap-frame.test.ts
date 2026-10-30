@@ -19,6 +19,7 @@ import { PANEL_OVERLAY_OPTIONS } from "../src/panel-geometry.ts";
 import { optionLine } from "../src/panel-options-row.ts";
 import { optionColumns, optionRowCount } from "../src/panel-options-wrap.ts";
 import { isOptionRow } from "../src/panel-rows.ts";
+import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 import { style } from "./panel-component-host.ts";
@@ -74,6 +75,92 @@ const between = (row: string): string => row.replace(/^\u2502 /, "").replace(/ \
 /** The widths both sweeps run: the named one, the derived one, and the builder's own floor. */
 const WIDTHS = [WIDE, NARROW, MIN_FRAME_WIDTH];
 
+/**
+ * A theme that writes **visible** bytes rather than colour around the two verbs an option row is composed from.
+ *
+ * The shape `test/panel-lines-hostile-theme.test.ts` calls a "wrapped" theme, and the one the options rows were
+ * never swept against: a `header`/`dim` that returns `[1]` and `<label>` spends columns a colour costs none, so
+ * a count measured on the bare label reserved rows the draw then refused to fill. Pi's own theme colours and
+ * draws nothing, so the shipped suite could not see the difference between the two measurements.
+ */
+const visibleBytes: PanelStyle = {
+  ...style,
+  header: (s) => `[${s}]`,
+  dim: (s) => `<${s}>`,
+};
+
+/**
+ * The labels that used to draw a wholly blank row under such a theme.
+ *
+ * `word ` × 8 measured 25 columns unthemed — inside a 40-column frame's inner 36 — and 35 once the theme's
+ * brackets went on, so the packer seated a second entry next to it, the cut refused it, and the row that row was
+ * counted for drew nothing at all.
+ */
+const BRACKET_TRIP = ["x".repeat(24), "word ".repeat(8)];
+
+test("a theme whose verbs draw bytes reserves no row it cannot fill, and no row it fills comes back blank", () => {
+  // The frame-level half of the count: whatever the theme wrote around the keycap, the rows the table counted
+  // are the rows the drawer has a line for, each one naming at least one option by its digit, and each one
+  // closing at the frame. A counted-but-blank row is the defect: the window scrolls past it, the bar can sit on
+  // it, and `d`/`Enter`/the digit keys index it as though it answered something.
+  for (const width of [33, 36, 40, 48, 60]) {
+    for (const options of [BRACKET_TRIP, ["word ".repeat(8)], ["word ".repeat(12)], FOUR_LONG]) {
+      const view = [optioned(3, options)];
+      const { lines, layout } = framed(
+        { pins: view, selection: 0, focused: false, replyHint: "", ageNow: NOW },
+        width,
+        visibleBytes,
+        TERMINAL_ROWS,
+      );
+      const reserved = layout.owned.filter((entry) => isOptionRow(entry.row)).length;
+      expect(reserved, `${options.length} options at ${width}`).toBe(
+        optionRowCount(options, width, visibleBytes),
+      );
+      // The frame drew every row of the table, so what was counted is what was printed — nothing scrolled away.
+      const rows = inside(lines);
+      expect(rows.length, `every counted row is drawn at ${width}`).toBe(layout.owned.length);
+      for (let k = 0; k < reserved; k++) {
+        const drawn = between(rows[1 + k] ?? "");
+        expect(visibleWidth(rows[1 + k] ?? ""), `row ${k} at ${width}`).toBe(width);
+        // A counted row is a row the wrap has a line for, and that line names an option: no row of padding, and
+        // no row whose every digit the cut ate.
+        expect(drawn.trimEnd(), `row ${k} at ${width} is not blank`).not.toBe("");
+        expect(
+          options.some((_label, index) => drawn.includes(String(index + 1))),
+          `row ${k} at ${width} carries a digit the user can press`,
+        ).toBe(true);
+        expect(drawn, `row ${k} at ${width} is the wrap's own line`).toBe(
+          optionLine(view[0] as ViewPin, optionColumns(width), visibleBytes, k) ?? "",
+        );
+      }
+      for (const line of lines) expect(visibleWidth(line), `@${width}`).toBe(width);
+    }
+  }
+});
+
+test("every option of a wrapped pin still reaches the frame under a visible-bytes theme", () => {
+  // The other half of the same theme: a row the cut shortens is the *label's* tail it gives up, never its
+  // entry. Under the old asymmetry an entry the theme widened could vanish whole while its row stayed, so the
+  // user read a list with a hole in the numbering — an option the model offered and no row ever named.
+  const view = [optioned(4, FOUR_LONG)];
+  for (const width of [36, 48, 60]) {
+    const lines = built(
+      { pins: view, selection: 0, focused: false, replyHint: "", ageNow: NOW },
+      width,
+      visibleBytes,
+      TERMINAL_ROWS,
+    );
+    const content = inside(lines).join("\n");
+    FOUR_LONG.forEach((_label, index) => {
+      expect(
+        content.includes(String(index + 1)),
+        `option ${index + 1} is named at ${width} columns`,
+      ).toBe(true);
+    });
+    for (const line of lines) expect(visibleWidth(line), `@${width}`).toBe(width);
+  }
+});
+
 test("every option the model named reaches the frame at all three widths", () => {
   for (const width of WIDTHS) {
     const view = [optioned(1, FOUR_LONG)];
@@ -109,7 +196,7 @@ test("the frame draws exactly the rows the wrap counted, and fills each one", ()
       TERMINAL_ROWS,
     );
     const reserved = layout.owned.filter((entry) => isOptionRow(entry.row)).length;
-    expect(reserved).toBe(optionRowCount(FOUR_LONG, width));
+    expect(reserved).toBe(optionRowCount(FOUR_LONG, width, style));
     const rows = inside(lines);
     // A tall terminal, so the window reaches every row: what the table counted is what the frame drew.
     expect(rows.length).toBe(layout.owned.length);
@@ -167,7 +254,7 @@ test("the reserved count and the drawn count agree for every width the builder c
       );
       const reserved = layout.owned.filter((entry) => isOptionRow(entry.row)).length;
       expect(reserved, `${options.length} options at ${width}`).toBe(
-        optionRowCount(options, width),
+        optionRowCount(options, width, style),
       );
       // And the drawer has a line for each of them: no reserved row the wrap would answer blank.
       for (let k = 0; k < reserved; k++) {

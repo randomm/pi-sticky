@@ -43,7 +43,7 @@ describe("the options packing", () => {
     // the labels and whatever the width, the figure the row table reserves is the figure the drawer fills.
     for (const width of [26, 33, 40, 60, 80, 120]) {
       for (const options of [[], ["a"], ["a", "b"], ["a", "b", "c"], FOUR_LONG]) {
-        const reserved = optionRowCount(options, width);
+        const reserved = optionRowCount(options, width, style);
         const rows = drawOptionRows(options, optionColumns(width), style);
         expect(rows.length, `${options.length} options at ${width}`).toBe(reserved);
         // And the count only ever grows with the labels: a pin with no options owns no rows at all, which is the
@@ -101,10 +101,10 @@ describe("the options packing", () => {
   test("no options, a zero width or a negative width own no rows at all", () => {
     // The three degenerate inputs the row table can hand the wrap. Each answers *no rows* rather than a row of
     // padding: a reserved row the wrap has nothing for is a row the window counts and the bar can sit on.
-    expect(optionRowCount(undefined, 60)).toBe(0);
-    expect(optionRowCount([], 60)).toBe(0);
-    expect(optionRowCount(["a"], 0)).toBe(0);
-    expect(optionRowCount(["a"], -10)).toBe(0);
+    expect(optionRowCount(undefined, 60, style)).toBe(0);
+    expect(optionRowCount([], 60, style)).toBe(0);
+    expect(optionRowCount(["a"], 0, style)).toBe(0);
+    expect(optionRowCount(["a"], -10, style)).toBe(0);
     expect(drawOptionRows(["a"], 0, style)).toEqual([]);
   });
 
@@ -129,6 +129,80 @@ describe("the options packing", () => {
       for (const row of drawOptionRows(FOUR_LONG, optionColumns(width), coloured)) {
         expect(visibleWidth(row)).toBe(optionColumns(width));
       }
+    }
+  });
+
+  test("a theme whose verbs add visible bytes reserves exactly the rows it can fill", () => {
+    // The counting half of the same measurement. A `header`/`dim` that writes *visible* bytes — a box around the
+    // keycap, padding inside the colour — charges columns the unthemed label never paid for, and a count taken
+    // on the bare label while the rows are drawn themed left a row the packer reserved, the cut emptied and the
+    // window still scrolled past: a counted row of pure padding, with no digit on it for the keys to answer.
+    // So the count is taken through the style as well, and this says the two figures are one answer whatever
+    // the theme wrote.
+    const visibleBytes: PanelStyle = {
+      ...style,
+      header: (s) => `[${s}]`,
+      dim: (s) => `<${s}>`,
+    };
+    // The labels the old asymmetry emptied: the unthemed `1 <label>` measured inside the row while the themed
+    // `[1] <label>` did not, so the packer seated an entry the cut then refused, and a row of nothing was left
+    // where a counted row had been. `word ` × 8/12 is the label that used to draw a wholly blank row.
+    const cases: readonly (readonly string[])[] = [
+      ["x".repeat(24), "word ".repeat(8)],
+      ["word ".repeat(8)],
+      ["word ".repeat(12)],
+      ["word ".repeat(4), "word ".repeat(4), "word ".repeat(4)],
+      ["x".repeat(24), "x".repeat(24), "word ".repeat(8), "b"],
+      FOUR_LONG,
+    ];
+    for (const width of [33, 36, 40, 48, 60]) {
+      for (const options of cases) {
+        const reserved = optionRowCount(options, width, visibleBytes);
+        const rows = drawOptionRows(options, optionColumns(width), visibleBytes);
+        expect(rows.length, `${options.length} options at ${width}`).toBe(reserved);
+        for (const [index, row] of rows.entries()) {
+          expect(visibleWidth(row), `row ${index} at ${width}`).toBe(optionColumns(width));
+          // A row the table counted is a row that names at least one option by its digit: a blank row is not a
+          // row, and the bar, `d` and the digit keys would all index a row that answers nothing.
+          expect(row.trimEnd(), `row ${index} at ${width} names an option`).not.toBe("");
+          const digits = options.map((_label, i) => String(i + 1));
+          expect(
+            digits.some((digit) => row.includes(digit)),
+            `row ${index} at ${width} carries a digit the user can press`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  test("the count is always its own theme's answer, and one theme can never borrow another's rows", () => {
+    // The reserve and the draw read one style, which is the agreement that matters. A theme that draws bytes
+    // *spends* columns, so it can legitimately need **more** rows than an identity theme for the same labels —
+    // one more entry split off its neighbour is one more row — and asserting `<=` here would be asserting that
+    // the theme costs nothing. What the count may never do is answer one theme's packing with another theme's
+    // row table: each theme's number is exactly the number of rows that same theme's drawer fills.
+    const visibleBytes: PanelStyle = {
+      ...style,
+      header: (s) => `[${s}]`,
+      dim: (s) => `<${s}>`,
+    };
+    const options = ["Passed on", "Not yet", "Escalated to the vendor today", "Deferred"];
+    for (const width of [33, 40, 48, 60, 100]) {
+      for (const theme of [style, visibleBytes]) {
+        const reserved = optionRowCount(options, width, theme);
+        const rows = drawOptionRows(options, optionColumns(width), theme);
+        expect(reserved, `at ${width}`).toBe(rows.length);
+        for (const [index, row] of rows.entries()) {
+          expect(visibleWidth(row), `row ${index} at ${width}`).toBe(optionColumns(width));
+          expect(row.trimEnd(), `row ${index} at ${width} names an option`).not.toBe("");
+        }
+      }
+      // And the theme really is charged: drawing bytes around every cell cannot leave the row count untouched
+      // at a width where the labels were already tight.
+      const plain = optionRowCount(options, width, style);
+      const themed = optionRowCount(options, width, visibleBytes);
+      expect(themed, `at ${width}`).toBeGreaterThanOrEqual(plain);
+      expect(plain, `at ${width}`).toBeGreaterThan(0);
     }
   });
 

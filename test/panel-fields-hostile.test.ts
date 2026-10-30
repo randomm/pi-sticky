@@ -150,7 +150,7 @@ test("a hostile group name costs the frame one heading and a hostile option list
   // The number the options add is *the wrap's* answer at this frame's inner width, not a remembered `+1`: the
   // labels here are long enough to need a row of their own, and the count that buys them is the count the
   // drawer fills (`optionRowCount`, `panel-options-wrap.ts`), read at the same width the frame draws at.
-  const optionRows = (options: string[]): number => optionRowCount(options, 120);
+  const optionRows = (options: string[]): number => optionRowCount(options, 120, plain);
   expect(at({ options: fields.options })).toHaveLength(bare.length + optionRows(fields.options));
   expect(at(fields)).toHaveLength(bare.length + optionRows(fields.options));
   // The same frame the benign fields draw, row for row: hostility changes what is printed, never how many

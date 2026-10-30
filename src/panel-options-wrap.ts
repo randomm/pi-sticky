@@ -21,14 +21,25 @@
  * 100-column terminal) a `MAX_FIELD_GRAPHEMES` label of 24 graphemes plus its digit does not fit beside
  * anything, and four such entries are four rows. Dropping the digit would break the one promise the row makes:
  * the digit *is* the key the user presses, so a row that drew `…t three` would name an option no key answers.
- * `truncateToWidth` with `ELLIPSIS` is therefore asked to cut the label and the result re-measured against the
- * digit's own columns — a cut that ate the key is refused, and the entry draws nothing rather than something
- * unanswerable.
+ * `truncateToWidth` with `ELLIPSIS` is therefore asked to cut the label, and the cut is refused unless the
+ * themed cell still measures inside the row — an entry that cannot keep its keycap is dropped rather than drawn
+ * keyless, and the row it occupied is dropped with it when nothing else was left on it.
+ *
+ * **The theme's bytes are part of the measurement, and the count is taken through them.** Every width below is
+ * read off `style.header`/`style.dim` — the strings the row actually draws — and never off the bare label, and
+ * the count is handed the same `PanelStyle` as the rows are. A theme whose verbs wrap a cell in *visible* bytes
+ * rather than SGR (a box around the keycap, padding inside the colour) charges `visibleWidth` columns that the
+ * unthemed measurement never billed, and then the cut refuses the entry: the row it had been reserved is left
+ * drawn blank, a counted row whose digits the user cannot press. One form for both figures means a row is only
+ * ever counted when it can be filled, and the count cannot be taken through one theme and the rows through
+ * another.
  *
  * **Every row closes at exactly the width it is packed at.** The panel is a flush-right overlay, so a short row
  * lets the chat behind it show through. The closure is `fitPlain` (`panel-draw.ts`), the one every drawn line
  * of both frames passes through, run once for the whole row: a theme whose `header`/`dim` opened a colour gets
- * the single reset the row needs rather than one per entry, and the pad lands outside the theme's bytes.
+ * the single reset the row needs rather than one per entry, and the pad lands outside the theme's bytes. The
+ * rows this module hands `fitPlain` are already measured to `inner` *with* the theme's bytes in them, so the
+ * branch that pass takes is the pad — never the cut, which is what used to spend a label's characters.
  *
  * **The width is the frame's full inner width**, `frameWidth - GUTTER_COLUMNS` — the figure `buildPanelLines`
  * (`panel-lines.ts`) draws between the gutters and `panelLayoutSections` hands to the row table. The row carries
@@ -38,7 +49,7 @@
  * The labels are untrusted: a model wrote them. `cleanField` (`pin-fields.ts`) sanitized, folded and bounded
  * each one on the way in and `isPinState` (`state-guards.ts`) refuses a snapshot whose list is anything else,
  * but a drawn surface that leaned on somebody else's pass would borrow a guarantee it does not own — the view is
- * also built directly by tests and by any future caller — so `entryCell` strips each label again at the boundary
+ * also built directly by tests and by any future caller — so `entryOf` strips each label again at the boundary
  * that draws it, and folds it: a break inside a label would otherwise buy the pin a row the table never counted.
  */
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -65,13 +76,19 @@ const SEPARATOR_COLUMNS = visibleWidth(SEPARATOR);
 export const optionColumns = (frameWidth: number): number => frameWidth - GUTTER_COLUMNS;
 
 /**
- * How many rows `options` costs at a frame `frameWidth` across — the row table's question.
+ * How many rows `options` cost at a frame `frameWidth` across — the row table's question.
  *
- * The same packing `drawOptionRows` fills, so a frame cannot count rows the drawer leaves blank or draw rows the
- * window does not own. Zero for a pin with no options, which is the row table's signal to reserve nothing.
+ * The same packing `drawOptionRows` fills, and through the very same `style`: a frame cannot count rows the
+ * drawer leaves blank or draw rows the window does not own, and a count taken on the bare label while the rows
+ * are drawn themed is the drift that produced a counted row of pure padding. Zero for a pin with no options,
+ * which is the row table's signal to reserve nothing.
  */
-export function optionRowCount(options: readonly string[] | undefined, frameWidth: number): number {
-  return pack(options, optionColumns(frameWidth)).length;
+export function optionRowCount(
+  options: readonly string[] | undefined,
+  frameWidth: number,
+  style: PanelStyle,
+): number {
+  return pack(options, optionColumns(frameWidth), style).length;
 }
 
 /**
@@ -86,126 +103,138 @@ export function drawOptionRows(
   inner: number,
   style: PanelStyle,
 ): string[] {
-  return pack(options, inner).map((row) => fitPlain(row.line(style), inner));
+  return pack(options, inner, style).map((row) => fitPlain(row, inner));
 }
 
 /**
- * One entry: its label as it will be drawn, the digit that names it, and the columns each half costs.
+ * One entry of a row, measured through the theme as the row will draw it.
  *
  * The label is folded and stripped *here*, at the boundary that draws a model's word, and every measurement
  * below is taken on that form: `visibleWidth` charges an escape pi-tui does not recognise as printable (an
  * unterminated OSC, a lone introducer) columns it will never draw, so budgeting on the raw entry would keep an
  * entry into a row the frame then cut from the columns underneath it.
  *
- * `digit` is the columns the keycap alone owns — measured through the theme, because a `header` that wrote
- * *visible* bytes around the digit spends the row's columns too, and a rule that says the cut may not eat the
- * digit has to know how wide it is.
+ * Every figure is the *themed* cell's — the strings `style.header` and `style.dim` returned, not the strings
+ * they were handed. A theme is free to write visible bytes rather than colour, and the packer, the cut and the
+ * drawer all have to be charging the same columns the terminal will. `columns` is what the packer budgets and
+ * `drawn` is what the row joins, so the two can no longer be measurements of two different strings.
  */
 interface Entry {
   /** The number the user types for this entry, which is its position in the pin's list. */
   readonly number: number;
   /** The label after the digit, folded and stripped, as `style.dim` is asked to colour it. */
   readonly label: string;
-  /** Columns the whole entry draws, digit, gap and label, whatever the theme coloured. */
+  /** The entry as the theme draws it — the exact bytes that reach the row, and what `columns` measures. */
+  readonly drawn: string;
+  /** Columns that cell draws: digit, gap and label, whatever the theme coloured around them. */
   readonly columns: number;
-  /** Columns the digit and its gap own: the least a row may spend on the entry, and the part a cut keeps. */
-  readonly digit: number;
-}
-
-/** One row's entries, composed at the width they were packed against. */
-interface OptionRow {
-  readonly entries: readonly Entry[];
-  /**
-   * The row as it will be drawn: every entry styled, joined by the separator, and cut to `inner` with its
-   * digits intact. `fitPlain`'s job is only the pad and the trailing reset, so the row's *columns* are decided
-   * here — where the entries and their digits are in scope to be protected.
-   */
-  readonly line: (style: PanelStyle) => string;
 }
 
 /**
- * `options` cut into rows at `inner`, or `[]` when there is nothing to name.
+ * `options` cut into rows at `inner`, each row already composed through `style` at that width, or `[]` when
+ * there is nothing to name.
  *
- * The single packing of the panel: `optionRowCount` takes this array's length and `drawOptionRows` renders it,
- * so reserved and drawn are one answer and cannot drift. Not memoised — the row table and the drawer are one
- * call apart on a frame the component already memorises whole (`panel-frame-cache.ts`), so a cache here would be
- * a second lifetime for a value whose lifetime somebody else owns.
+ * The single packing of the panel: `optionRowCount` takes this array's length and `drawOptionRows` pads its
+ * entries, so reserved and drawn are one answer and cannot drift — a row counted here is a row that measured
+ * inside `inner` *with the theme's bytes in it*, which is the only form the drawer will put on screen. Not
+ * memoised — the row table and the drawer are one call apart on a frame the component already memorises whole
+ * (`panel-frame-cache.ts`), so a cache here would be a second lifetime for a value whose lifetime somebody
+ * else owns.
  */
-function pack(options: readonly string[] | undefined, inner: number): OptionRow[] {
+function pack(options: readonly string[] | undefined, inner: number, style: PanelStyle): string[] {
   if (options === undefined || options.length === 0 || inner <= 0) return [];
-  const entries = options.map(entryOf);
-  const rows: OptionRow[] = [];
+  const entries = options.map((label, position) => entryOf(label, position, style));
+  const rows: string[] = [];
   let current: Entry[] = [];
   let used = 0;
   for (const entry of entries) {
     // A row that already holds nothing takes the entry whatever it costs — that is the entry wider than the
-    // frame, and dropping it would leave options no row names and no key answers. `fitted` is what keeps such a
-    // row inside the columns it was given.
-    const joins = current.length > 0;
-    if (joins && used + SEPARATOR_COLUMNS + entry.columns > inner) {
-      rows.push(rowOf(current, inner));
+    // frame, and dropping it outright would leave options no row names and no key answers. `fittedCell` is what
+    // keeps such a row inside the columns it was given, by cutting the label rather than losing the entry.
+    if (current.length > 0 && used + SEPARATOR_COLUMNS + entry.columns > inner) {
+      pushRow(rows, current, inner, style);
       current = [];
       used = 0;
     }
     used += (current.length === 0 ? 0 : SEPARATOR_COLUMNS) + entry.columns;
     current.push(entry);
   }
-  if (current.length > 0) rows.push(rowOf(current, inner));
+  if (current.length > 0) pushRow(rows, current, inner, style);
   return rows;
 }
 
-/** One packed row: its entries, and the composed line they draw. */
-function rowOf(entries: readonly Entry[], inner: number): OptionRow {
-  return { entries, line: (style) => fitted(entries, style, inner) };
+/**
+ * The composed row of `entries`, appended to `rows` only when it drew something.
+ *
+ * The refusal lives here rather than in the caller: a row whose every entry lost the cut below is a row of
+ * nothing, and appending it would be exactly the counted-but-blank row this module exists to prevent — the
+ * window would scroll past it and the bar could sit on it. The packer always hands at least one entry, so an
+ * empty result means every entry of the row was refused by `fittedCell`.
+ */
+function pushRow(
+  rows: string[],
+  entries: readonly Entry[],
+  inner: number,
+  style: PanelStyle,
+): void {
+  const line = fittedRow(entries, inner, style);
+  if (line !== "") rows.push(line);
 }
 
 /**
- * One entry composed: the label folded and stripped, then measured with and without its digit.
+ * One entry composed: the label folded and stripped, then the cell the theme draws for it, measured once.
  *
- * Both figures come from the same `label` — `columns` of the composed entry, `digit` of the digit and its gap
- * alone — because the cut rule compares the two: what is left when the label gives up its tail is the digit,
- * and that is the figure a row must keep to stay answerable.
+ * The measurement is of `drawn`, so the figure the packer budgets is the figure the row joins — the asymmetry
+ * this closes is the one where the packer charged the bare `1 <label>` and the cut checked the themed
+ * `H[1] D[<label>]`, and every column the theme wrote was a column nobody had billed.
+ *
+ * The label is measured on the form it is kept in: `cleanField` (`pin-fields.ts`) and `foldBreaks` leave a
+ * leading or trailing space only where the sanitizer left one, and `visibleWidth(entry.label)` is asked of the
+ * same string the cell was composed from, so the two can never disagree about what is chrome and what is text.
  */
-function entryOf(label: string, position: number): Entry {
+function entryOf(label: string, position: number, style: PanelStyle): Entry {
   const number = position + 1;
   const text = foldBreaks(stripSequences(label));
-  const key = String(number);
-  return {
-    number,
-    label: text,
-    columns: visibleWidth(`${key} ${text}`),
-    digit: visibleWidth(key),
-  };
+  const drawn = cell(text, number, style);
+  return { number, label: text, drawn, columns: visibleWidth(drawn) };
 }
 
 /**
- * The entries of one row, joined, styled and cut to `inner` with every digit intact.
+ * One row's entries, composed at the width they were packed against, or `""` when the theme's bytes left no
+ * entry of the row room to draw.
  *
- * Each entry is composed from its own two theme verbs — `header` for the digit, `dim` for the label — so the
- * bytes the row draws are the bytes the theme was asked for, and the whole row is measured once more before it
- * leaves. An entry that will not fit is cut on its label's tail (`truncateToWidth` + `ELLIPSIS`), and the cut
- * re-measured against `digit`: if the ellipsis ate the keycap the entry is *dropped* rather than drawn keyless,
- * which is the same refusal the old one-row drawer made when it dropped whole entries from the end.
+ * An entry the packer could not seat beside its neighbours is cut on its label's tail (`truncateToWidth` +
+ * `ELLIPSIS`) and the cut re-measured *as the cell the theme draws*: if the ellipsis ate the keycap the entry is
+ * dropped rather than drawn keyless, which is the same refusal the old one-row drawer made when it dropped whole
+ * entries from the end. The empty string is the caller's signal to drop the row — a counted row of nothing is
+ * the one outcome this module must never hand the window.
  */
-function fitted(entries: readonly Entry[], style: PanelStyle, inner: number): string {
+function fittedRow(entries: readonly Entry[], inner: number, style: PanelStyle): string {
   const parts: string[] = [];
   for (const entry of entries) {
-    if (entry.columns <= inner) {
-      parts.push(cell(entry.label, entry.number, style));
-      continue;
-    }
-    // Too wide for the row at all: keep the keycap, cut the label. The budget is the row less the keycap and its
-    // gap, and the ellipsis costs a column of its own, so the label gets what remains.
-    const room = inner - entry.digit - SEPARATOR_COLUMNS - visibleWidth(ELLIPSIS);
-    if (room < 1) continue;
-    const cut = truncateToWidth(entry.label, room, ELLIPSIS);
-    // `truncateToWidth` measures the label it was handed, but the row is measured with the theme's bytes in it:
-    // re-ask the theme and check the *whole* cell, so a coloured entry cannot slip past the row's columns the
-    // way an unrecognised escape slips past `visibleWidth`.
-    const candidate = cell(cut, entry.number, style);
-    if (visibleWidth(candidate) <= inner) parts.push(candidate);
+    const cellOf = entry.columns <= inner ? entry.drawn : fittedCell(entry, inner, style);
+    if (cellOf !== null) parts.push(cellOf);
   }
   return parts.join(SEPARATOR);
+}
+
+/**
+ * The cell of an entry too wide for the row at all: its digit kept, its label cut, or `null` when no cut of
+ * that label keeps the keycap inside `inner`.
+ *
+ * The budget is the row less the columns the entry's own cell draws around its label — the keycap, its gap and
+ * whatever the theme wrote around them — and the ellipsis costs a column of its own. `truncateToWidth` measures
+ * the *label* it was handed, so the result is re-measured as the whole themed cell: the only figure the row's
+ * columns are decided on.
+ */
+function fittedCell(entry: Entry, inner: number, style: PanelStyle): string | null {
+  // What the label may keep is the row less everything the cell draws *around* it — the keycap, its gap and
+  // whatever the theme wrote — minus the ellipsis's own column.
+  const chrome = entry.columns - visibleWidth(entry.label);
+  const room = inner - chrome - visibleWidth(ELLIPSIS);
+  if (room < 1) return null;
+  const cut = cell(truncateToWidth(entry.label, room, ELLIPSIS), entry.number, style);
+  return visibleWidth(cut) <= inner ? cut : null;
 }
 
 /**

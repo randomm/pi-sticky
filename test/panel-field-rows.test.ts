@@ -88,7 +88,7 @@ test("a pin with options owns the rows its labels need, and the same pin without
   for (const options of [["a"], ["a", "b", "c", "d"], ["a", "b", "c", "d".repeat(200)]]) {
     const pin = { ...plain, options };
     expect(rowsOf(pin)).toHaveLength(
-      rowsOf(plain).length + optionRowCount(options, frameOfText(60)),
+      rowsOf(plain).length + optionRowCount(options, frameOfText(60), style),
     );
   }
 });

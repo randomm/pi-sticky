@@ -24,6 +24,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { ELLIPSIS, INJECTED_RESET } from "../src/panel-frame.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { optionLine } from "../src/panel-options-row.ts";
+import { optionRowCount } from "../src/panel-options-wrap.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -134,18 +135,23 @@ describe("the options row", () => {
         }
       }
     }
-    // So narrow that an entry's digit and label cannot sit together: what the row keeps is the *digit* — the key
-    // the user presses — and the label ends in the wrap's ellipsis rather than in a word the user would answer
-    // by mistake. An entry whose digit the cut would eat is drawn nowhere at all. The whole row is spelled out
-    // because "still shows its digit" is the promise, and a cut that spent the row on the ellipsis alone would
-    // pass a `toContain("1")` written against a padded line. The resets are pi-tui's own: `truncateToWidth`
-    // wraps its `…` in `ESC[0m` on each side, and this row is closed by `fitPlain` (`panel-draw.ts`) without
-    // `normaliseCut` — the wrap chose the ellipsis, so nothing rewrites the pair. The three columns after it are
-    // `padPlain`'s, which pads to the *drawn* width and charges a theme's SGR nothing.
-    expect(row({ options }, 6)).toBe(`1 ${RESET}${ELLIPSIS}${RESET}${" ".repeat(3)}`);
-    // Five columns is one fewer than the digit, its gap and the ellipsis need: there is no entry the row can
-    // name, so it draws nothing — and the row it draws is still a row of exactly five columns.
-    expect(row({ options }, 5).trimEnd()).toBe("");
+    // So narrow that an entry's digit and its whole label cannot sit together: what the row keeps is the *digit*
+    // and as much of the label as closes — `1 al…` at six columns, `1 a…` at five — and the label ends in the
+    // wrap's ellipsis rather than in a word the user would answer by mistake. The whole row is spelled out because
+    // "still shows its digit" is the promise, and a cut that spent the row on the ellipsis alone would pass a
+    // `toContain("1")` written against a padded line. The resets are pi-tui's own: `truncateToWidth` wraps its `…`
+    // in `ESC[0m` on each side, and this row is closed by `fitPlain` (`panel-draw.ts`) without `normaliseCut` —
+    // the wrap chose the ellipsis, so nothing rewrites the pair. The column after it is `padPlain`'s, which pads
+    // to the *drawn* width and charges a theme's SGR nothing.
+    expect(row({ options }, 6)).toBe(`1 al${RESET}${ELLIPSIS}${RESET} `);
+    expect(row({ options }, 5)).toBe(`1 a${RESET}${ELLIPSIS}${RESET} `);
+    // And no width, however small, leaves the pin with a row the table counted and the wrap has nothing for: the
+    // reserve is the wrap's own list at that width, so a row is only ever reserved when the same style can fill it.
+    // At a frame whose inner column cannot hold even `1 a…` the answer is *no rows* — nothing for the window to
+    // scroll past, nothing for the bar to sit on — and at the first width that holds one, four rows for four
+    // entries, each of them fillable.
+    expect(optionRowCount(options, 5, identity)).toBe(0);
+    expect(optionRowCount(options, 9, identity)).toBe(4);
   });
 
   test("the digit and label are counted against the row together, so a row never overflows", () => {

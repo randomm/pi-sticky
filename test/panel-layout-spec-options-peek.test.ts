@@ -101,7 +101,7 @@ test("four 24-grapheme options all appear across wrapped rows, at 40 and at the 
     // The window is tall enough to reach every reserved row at these two widths, which is what lets the frame
     // be compared row for row against the table rather than against whatever subset fitted.
     expect(inside(lines).length).toBe(layout.owned.length);
-    expect(reserved).toBe(optionRowCount(FOUR_LONG, width));
+    expect(reserved).toBe(optionRowCount(FOUR_LONG, width, style));
     expect(reserved).toBeGreaterThan(1);
     // Every one of the four options is on screen: the digit and the whole label of each.
     const content = inside(lines).join("\n");
@@ -143,7 +143,7 @@ test("the rows the table reserves are the rows the drawer fills, by construction
     const rows = inside(lines);
     const viewPin = view[0] as ViewPin;
     // The table's count and the wrap's count are one answer, asked at the same width.
-    expect(reserved).toBe(optionRowCount(FOUR_LONG, width));
+    expect(reserved).toBe(optionRowCount(FOUR_LONG, width, style));
     // The frame drew every row of the table: the window is not cutting any of them at these heights, so a row
     // the table counted and the drawer could not fill would show up as a padded line among these.
     expect(rows.length).toBe(layout.owned.length);
@@ -178,7 +178,7 @@ test("the peek stays three rows and shows no option text at those widths", () =>
   }
   // The premise the assertion rests on: the open frame of this very view really does need more than one row
   // for those options, so "three rows" is a restraint and not an accident of a pin that needed none.
-  expect(optionRowCount(FOUR_LONG, WIDE)).toBeGreaterThan(1);
+  expect(optionRowCount(FOUR_LONG, WIDE, style)).toBeGreaterThan(1);
 });
 
 test("focus, j, then d dismisses the second pin of the drawn order, and a digit still answers a wrapped pin", () => {

@@ -23,6 +23,7 @@ import {
   SWEEP_CORPORA,
   carriedCharacters,
   owedCharacters,
+  sweepStyle,
   sweptFrame,
 } from "./panel-wrapped-sweep.ts";
 
@@ -53,7 +54,7 @@ test("the options rows the table reserves are the rows the wrap draws, and are e
         options: OPTIONS_UNDER_SWEEP,
       });
       expect(withOptions.rows.length).toBe(
-        plain.rows.length + optionRowCount(OPTIONS_UNDER_SWEEP, width),
+        plain.rows.length + optionRowCount(OPTIONS_UNDER_SWEEP, width, sweepStyle),
       );
       const reserved = withOptions.rows[withOptions.rows.length - 1];
       expect(withOptions.textRows).not.toContain(reserved ?? null);
@@ -72,7 +73,7 @@ test("four long options own one row apiece at the widths where they cannot share
   const wide = ["Passed on", "Not yet", "Escalated to the on-call", "Deferred to next quarter"];
   for (const width of [40, 33]) {
     const frame = sweptFrame(1, "short", width, { options: wide });
-    expect(frame.rows.filter(isOptionRow).length).toBe(optionRowCount(wide, width));
+    expect(frame.rows.filter(isOptionRow).length).toBe(optionRowCount(wide, width, sweepStyle));
     expect(frame.rows.filter(isOptionRow).length).toBeGreaterThan(1);
     // The text of the pin is still whole, whatever the rows beneath it cost.
     expect(carriedCharacters(frame)).toBe(owedCharacters("short"));

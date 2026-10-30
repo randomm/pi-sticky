@@ -140,7 +140,7 @@ export function panelPinRows(
         tail: fullStamp(pin, style.dim, now),
         markerLevel: pin.level,
       },
-      ...optionRows(pin, frameWidth),
+      ...optionRows(pin, frameWidth, style),
     ];
   }
   // A replied pin's text column is dimmed and opens with `↩ ` — the same mark and the same placement the
@@ -201,27 +201,29 @@ export function panelPinRows(
     ...(rows.length > 0
       ? rows
       : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first, markerLevel: pin.level }]),
-    ...optionRows(pin, frameWidth),
+    ...optionRows(pin, frameWidth, style),
   ];
 }
 
 /**
- * The options rows `pin` owns: as many as its labels need at a frame `frameWidth` across, none when it has no
- * options.
+ * The options rows `pin` owns: as many as its labels need at a frame `frameWidth` across under `style`, none
+ * when it has no options.
  *
  * The single place the count is decided, and it is decided by the *drawer's* own packing (`optionRowCount`,
  * `panel-options-wrap.ts`) rather than by a rule of its own: the row table and the drawer used to answer this
  * question twice, once while the window and the bar were counted and once while the row was filled, and the two
- * answers could differ by however many rows the labels needed. Read the way the wrap reads the same field —
- * `undefined` is the key being absent and the entries are strings, because both writers of a `Pin` validate the
- * list (`cleanField` in `pin-fields.ts`, `isPinState` in `state-guards.ts`): a table that reserves a row the
- * drawer has nothing to say about is a row the window counts for nothing.
+ * answers could differ by however many rows the labels needed — and by however many columns a theme wrote that
+ * only one of the two had measured. Hence `style` is passed through: the count is taken on the cells that theme
+ * draws, so a row is only ever reserved when the same style can fill it. Read the way the wrap reads the same
+ * field — `undefined` is the key being absent and the entries are strings, because both writers of a `Pin`
+ * validate the list (`cleanField` in `pin-fields.ts`, `isPinState` in `state-guards.ts`): a table that reserves a
+ * row the drawer has nothing to say about is a row the window counts for nothing.
  *
  * `frameWidth` is the *frame*, not the inner width: the wrap makes the gutter subtraction itself, so the reserve
  * the pins' text rows give up is never charged to a row that carries no tail.
  */
-function optionRows(pin: ViewPin, frameWidth: number): PanelRow[] {
-  return Array.from({ length: optionRowCount(pin.options, frameWidth) }, optionRow);
+function optionRows(pin: ViewPin, frameWidth: number, style: PanelStyle): PanelRow[] {
+  return Array.from({ length: optionRowCount(pin.options, frameWidth, style) }, optionRow);
 }
 
 /**
