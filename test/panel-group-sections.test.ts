@@ -14,6 +14,7 @@
  */
 import { expect, test } from "bun:test";
 
+import { frameTitle } from "../src/panel-frame-title.ts";
 import { hasHeadings, panelSections } from "../src/panel-sections.ts";
 import type { ViewPin } from "../src/types.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
@@ -146,22 +147,53 @@ test("a group's pins keep the level section's within-section order", () => {
   expect(ids(panelSections(pins).flat)).toEqual([5, 4, 6]);
 });
 
-test("a single group section is headed; a single level section is not", () => {
-  // `hasHeadings` is the layout's question, and it is not "more than one section": counting sections own no
-  // rows and are not counted, so a view of one group plus the empty counting sections of the levels its pins
-  // carry is still *one* visible section — and it is still headed, because the group's name is the only place
-  // on the frame that says what these rows are.
+test("one section draws no heading, whether a group or a level; two do", () => {
+  // `hasHeadings` is the layout's question and it is a plain count of the sections that *own rows* (operator's
+  // pins v2 spec, 3.5). Counting sections — a level whose every pin lives in a group — hold no pins, own no
+  // rows and print no heading, so they are not counted here either.
+  //
+  // A view whose every pin carries one group is a *single* drawn section, and it draws no heading: the group's
+  // name is not worth a row of the window when there is nothing else to tell apart (the frame's title still
+  // counts by level, and `/pins` and the model listing still name the group). The old rule headed exactly this
+  // one section, which is the asymmetry this inverts.
   const oneGroup = [grouped(1, "a", "warning", "Now"), grouped(2, "b", "info", "Now")];
-  expect(hasHeadings(panelSections(oneGroup).order)).toBe(true);
-  // One group, one level, nothing else: headed for the same reason.
-  expect(hasHeadings(panelSections([grouped(1, "a", "info", "Now")]).order)).toBe(true);
+  expect(hasHeadings(panelSections(oneGroup).order)).toBe(false);
+  // One group, one level, nothing else: no heading, and the title still counts the warning the group holds.
+  expect(hasHeadings(panelSections([grouped(1, "a", "info", "Now")]).order)).toBe(false);
   // One *level* section says nothing a heading could add — the glyph on each row already names the level — and
   // that is the frame that has to stay byte-for-byte what it was before sections existed (resolution 1).
   expect(hasHeadings(panelSections([levelPin(1, "a", "info")]).order)).toBe(false);
-  // Two levels are two sections and get two headings.
+  // Two sections are two headings, whichever two of the three kinds they are.
   expect(
     hasHeadings(panelSections([levelPin(1, "a", "info"), levelPin(2, "b", "warning")]).order),
   ).toBe(true);
+  // Two groups, whatever their counting sections do beside them.
+  expect(
+    hasHeadings(
+      panelSections([grouped(1, "a", "info", "Now"), grouped(2, "b", "info", "Later")]).order,
+    ),
+  ).toBe(true);
+  // One group *and* one level section: two drawn sections, so both are headed — this is the frame that shows
+  // the group's name at all, and it is unchanged.
+  expect(
+    hasHeadings(panelSections([grouped(1, "a", "info", "Now"), levelPin(2, "b", "warning")]).order),
+  ).toBe(true);
+});
+
+test("the title's counts do not move when a group's heading does", () => {
+  // The invariant the single-group inversion had to leave alone: `hasHeadings` decides whether the frame draws
+  // the `Now` row, and `frameTitle` counts *levels* — so one group's heading can go without the title losing
+  // `1 warning`. If the two were the same question, suppressing a heading would hide a count, and the count is
+  // the thing the operator came to the panel to read.
+  const pins = [grouped(1, "a", "warning", "Now"), grouped(2, "b", "info", "Now")];
+  const sections = panelSections(pins);
+  expect(hasHeadings(sections.order)).toBe(false);
+  expect(frameTitle(sections.order)).toBe("📌 Pinned · 1 warning · 1 more");
+  // Add one ungrouped warning and the heading comes back — and the title moves only for the pin that was added.
+  const withLevel = [...pins, levelPin(3, "c", "warning")];
+  const both = panelSections(withLevel);
+  expect(hasHeadings(both.order)).toBe(true);
+  expect(frameTitle(both.order)).toBe("📌 Pinned · 2 warnings · 1 more");
 });
 
 test("sectioning a grouped list that is already drawn leaves it exactly as it was", () => {

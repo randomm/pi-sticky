@@ -19,6 +19,7 @@ import { expect, test } from "bun:test";
 
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { ELLIPSIS } from "../src/panel-frame.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
@@ -110,10 +111,14 @@ test("a group section is headed by the group's own name, with no level glyph", (
 
 test("a group whose name is hostile text draws as text and closes at the width", () => {
   const hostile = pin(1, "info", { group: "\u001b[31mred\u001b[0m # heading\nsecond line" });
-  const rows = frameOf([hostile]);
-  expect(rows).toHaveLength(2);
+  // A companion of another level, so the view has two drawn sections. One section draws no heading at all
+  // (spec 3.5), so a lone grouped pin's frame would have no heading row left for this to be a promise about.
+  const rows = frameOf([hostile, pin(2, "info")]);
+  expect(rows).toHaveLength(4);
   for (const row of rows) expect(visibleWidth(row)).toBe(WIDTH);
-  const heading = rows[0] ?? "";
+  // Read for its own word rather than by position: which of the two sections leads is ranking's answer, not
+  // this test's.
+  const heading = rows.find((row) => row.includes("red")) ?? "";
   expect(heading).not.toContain("\u001b");
   // The break is folded into the heading's own line rather than becoming a second row of the frame: the
   // builder hands each line to `fitLine` and cannot tell a folded name from a short one.
@@ -171,28 +176,39 @@ test("the options row is one row of its pin, and the bar still lands on the pin"
   expect(unowned[2]?.pin).toBe(0);
 });
 
-test("the digits the frame draws are the positions in the pin's option list", () => {
-  // The row table (`optionRows`, `panel-rows.ts`) and the drawer (`drawOptionRow`) read the same field and
-  // must agree about it: the user answers a pin by typing the digit beside a label, so a table that reserved
-  // a row the drawer answered differently — or a drawer that renumbered the entries it kept — sends the answer
-  // to an option the user never saw. The frame is drawn narrow enough to drop the last two entries, which is
-  // the case a renumbering would show.
+test("the digits the frame draws are the positions in the pin's option list, across the wrapped rows", () => {
+  // The row table (`optionRows`, `panel-rows.ts`) and the drawer (`fillOptionRow`, `panel-options-row.ts`) read
+  // the same field through the same packing (`panel-options-wrap.ts`) and must agree about it: the user answers a
+  // pin by typing the digit beside a label, so a table that reserved rows the drawer filled differently — or a
+  // drawer that renumbered the entries it kept — sends the answer to an option the user never saw. What the
+  // single-row drawer used to do at these widths (drop entries 3 and 4) is now what the wrap does with them:
+  // pack them onto the rows below, each keeping the digit of its own position.
   const options = ["a", "a label much too wide for this frame", "c", "d"];
-  // One pin, so the frame is its row and the options row beneath it — no section heading above them.
-  const drawn = optionsRowOf([pin(1, "info", { options })], 48);
+  // One pin, so the frame is its row and its options rows beneath it — no section heading above them.
+  const rows = frameOf([pin(1, "info", { options })], 0, 48);
+  const drawn = rows.slice(1).join("\n");
+  // Entries 1 and 2 close inside the first row; 3 and 4 are packed onto the next.
   expect(drawn).toContain("1 a");
   expect(drawn).toContain("2 a label much too wide for this frame");
-  // The same list at a width that keeps only the first entry: the digit of the entry the row kept is still
-  // the position it came from, and the entries it gave up leave nothing half-drawn behind.
-  const narrow = optionsRowOf([pin(1, "info", { options })], 34);
+  expect(drawn).toContain("3 c");
+  expect(drawn).toContain("4 d");
+  // At the narrowest width the builder closes, the wide label is the entry that has to give columns up: it keeps
+  // its digit — that digit is the key the user presses — and the label ends in the wrap's ellipsis. No entry is
+  // numbered by how many fitted before it.
+  const narrowRows = frameOf([pin(1, "info", { options })], 0, 34);
+  const narrow = narrowRows.slice(1).join("\n");
   expect(narrow).toContain("1 a");
-  expect(narrow).not.toContain("2 a label");
+  expect(narrow).toContain("2 a label much too wide fo");
+  expect(narrow).toContain(ELLIPSIS);
+  expect(narrow).not.toContain("2 a label much too wide for this frame");
   // And in order: the digit beside each label is that label's 1-based position, never the count of the
-  // labels that happened to fit before it — and the entries the row gave up are absent whole, not drawn
-  // half and not renumbered into the gap they left.
+  // labels that happened to fit before it — and an entry the rows gave up leaves nothing half-drawn behind.
+  const named = (row: string, index: number): boolean =>
+    row.includes(`${index + 1} ${options[index]}`);
   options.forEach((label, index) => {
-    expect(drawn.includes(`${index + 1} ${label}`)).toBe(index < 2);
-    expect(narrow.includes(`${index + 1} ${label}`)).toBe(index === 0);
+    expect(drawn.includes(`${index + 1} ${label}`)).toBe(true);
+    // At 34 the wide entry is the one the wrap cut, so only that entry is not whole on a row of its own.
+    expect(narrowRows.some((row) => named(row, index))).toBe(index !== 1);
   });
 });
 

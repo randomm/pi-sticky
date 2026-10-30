@@ -211,17 +211,19 @@ function rankOf(section: PanelSection): PinLevel {
 }
 
 /**
- * Whether the frame draws any heading at all: more than one section owns rows, *or* the one that does is a
- * group.
+ * Whether the frame draws any heading at all: **two or more** sections own rows.
  *
- * The question the layout asks is not "more than one section". A view whose every pin carries one group
- * is a single drawn section, and a level section of one needs no heading to tell the user what they are
- * looking at — the glyph on each row already says it. A **group** section does: the group's name is the only
- * place the user learns what bundle these rows are, and nothing else on the frame carries it (a pin row never
- * repeats its own group). So one group section is headed and one level section is not — the asymmetry, in
- * one pass over the order rather than two overlapping clauses.
+ * One section draws no heading, whether it is a level section or a single group (operator's pins v2 spec,
+ * 3.5). A level section of one says nothing a heading could add — the glyph on each row already names the
+ * level — and that frame has to stay byte-for-byte the plain list it was before sections existed (resolution
+ * 1). A group's name used to be the exception, on the argument that it is the only place the user learns what
+ * bundle the rows are; it is not load-bearing, because the frame's title still counts by level and the group
+ * name reaches the user through `/pins` and the model listing. So the question is a plain count over the
+ * sections that own rows: counting sections — a level whose every pin lives in a group — hold no pins, own
+ * no rows and are not counted here, exactly as they own no rows in the table.
  */
 export function hasHeadings(order: readonly PanelSection[]): boolean {
-  const drawn = order.filter((section) => section.pins.length > 0);
-  return drawn.length > 1 || drawn.some((section) => section.kind === "group");
+  let drawn = 0;
+  for (const section of order) if (section.pins.length > 0 && ++drawn > 1) return true;
+  return false;
 }

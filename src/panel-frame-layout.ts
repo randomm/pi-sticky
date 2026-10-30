@@ -22,8 +22,8 @@
  */
 import { headingColumns, panelTextColumns, widestMetaColumns } from "./panel-frame-geometry.ts";
 import { panelFrameRows } from "./panel-height.ts";
+import type { PanelRow } from "./panel-row.ts";
 import { panelPinRows } from "./panel-rows.ts";
-import type { PanelRow } from "./panel-rows.ts";
 import { headingCell, headingRow } from "./panel-section-headings.ts";
 import { hasHeadings } from "./panel-sections.ts";
 import type { PanelSection, PanelSections } from "./panel-sections.ts";
@@ -54,13 +54,16 @@ function countRowsOf(all: readonly PanelOwned[], index: number): number {
  * list can drift from the table it was mapped out of, and nothing would notice.
  *
  * A row that belongs to no pin is a section heading, and a heading is read for its position rather than its
- * text — which rows are headings is the `null` the builder stamped on the entry. One such row directly above
- * the selected pin is the heading over it, and the window opens **one row earlier** so the user reads the
- * level of the pin the bar is on rather than inferring it — but only while that heading and every row of the
- * selected pin still fit in the window: a heading whose section has a two-row pin under it would push the
- * rest of that pin out and trade the label for the text. When they do not fit, or when the row above is
- * another pin's, the window opens on the pin's first row as before. A single-section table has no heading
- * rows at all, so its window is byte-for-byte the one it drew before sections existed.
+ * text — which rows are headings is the `null` the builder stamped on the entry. The window opens on the
+ * heading of the section the selected pin belongs to, so the user reads the level of the pin the bar is on
+ * rather than inferring it, and *which* pin of that section is selected does not matter: the walk starts one
+ * row above the pin and keeps going while the rows it passes belong to siblings, because only the *first* pin
+ * of a section has a heading directly above it. The heading is kept only while it and every row of the
+ * selected pin still fit the window — `rowsOfSelected + (start - h) <= contentRows`, heading and pin end to
+ * end — because the pin's own rows outrank the label: one row over, the window opens on the pin's first row
+ * and drops the heading rather than a row of the text. Where the walk walks off the top of the table there is
+ * no heading above this pin to keep. A single-section table has no heading rows at all, so its window is
+ * byte-for-byte the one it drew before sections existed.
  *
  * Focus plays no part: the same selection at the same terminal draws the same rows whether or not the panel
  * holds the keyboard, and only the bar differs.
@@ -79,14 +82,19 @@ export function panelWindowOffset(
   if (start < 0) return total - contentRows;
   const capped = Math.min(start, total - contentRows);
   const rowsOfSelected = countRowsOf(all, selection);
+  // Walk *up* past the rows of the pins above rather than testing only the row directly above: the heading
+  // heads its section, so for the section's second and later pins that heading sits further up the table than
+  // one row and a one-row test kept it for the first pin alone. Every row passed costs the window a row, so
+  // `start - heading` is what the heading costs on top of the pin.
+  let heading = start - 1;
+  while (heading >= 0 && all[heading]?.pin !== null) heading--;
   // The heading **plus every row of the pin**, which is the fit the rule asks for: the window must hold the
-  // heading and the whole pin, so the heading opens only while at least one row is left over after them. At
-  // one row left over the heading and the pin are exactly the window, which is a fit; at none the heading would
-  // cost the pin its last row, and the label is not worth the text. So the arithmetic is spelled out rather
-  // than folded into one subtraction — folding it invites the off-by-one this rule turns on.
-  const fitsHeadingAndPin = contentRows - 1 >= rowsOfSelected;
-  if (rowsOfSelected > 0 && start - 1 >= 0 && all[start - 1]?.pin === null && fitsHeadingAndPin) {
-    return Math.min(start - 1, total - contentRows);
+  // heading and the whole pin end to end. At the exact equality the two are precisely the window, which is a
+  // fit; one row over, the heading is the thing that does not fit, and a label never costs the selected pin a
+  // row of its text — the window opens on the pin instead. A pin the table tags with no row at all owns
+  // nothing to keep, so there is no heading to open on either.
+  if (rowsOfSelected > 0 && heading >= 0 && rowsOfSelected + (start - heading) <= contentRows) {
+    return Math.min(heading, total - contentRows);
   }
   return capped;
 }

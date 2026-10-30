@@ -38,14 +38,20 @@ const pin = (
 
 test("a group whose name is hostile text draws as text and closes at the width", () => {
   const hostile = pin(1, "info", { group: "\u001b[31mred\u001b[0m # heading\nsecond line" });
+  // A companion of another level, so the view has two drawn sections: one section draws no heading at all
+  // (spec 3.5), and a lone grouped pin's frame would have no heading row left to make this promise about.
   const rows = built(
-    { pins: [hostile], selection: 0, focused: true, replyHint: "", ageNow: LATER },
+    { pins: [hostile, pin(2, "info")], selection: 0, focused: true, replyHint: "", ageNow: LATER },
     WIDTH,
     style,
   ).slice(1, -1);
-  expect(rows).toHaveLength(2);
+  // The group's heading, the grouped pin, the `FYI` heading and the companion's row. The grouped pin carries
+  // no level of its own left to draw, so the two sections are the group's and the companion's `FYI`.
+  expect(rows).toHaveLength(4);
   for (const row of rows) expect(visibleWidth(row)).toBe(WIDTH);
-  const heading = rows[0] ?? "";
+  // The heading is read out of the frame rather than assumed to be its first row: which section leads is
+  // ranking's business (`panelSections`), and this test is about what a hostile *name* draws, not the order.
+  const heading = rows.find((row) => row.includes("red")) ?? "";
   expect(heading).not.toContain("\u001b");
   // The break is folded into the heading's own line rather than becoming a second row of the frame: the
   // builder hands each line to `fitLine` and cannot tell a folded name from a short one.
@@ -69,7 +75,8 @@ test("a group name whose escapes the terminal counts as printable cannot widen t
   for (const [name, sequence] of UNTRUSTED) {
     const rows = built(
       {
-        pins: [pin(1, "info", { group: `G${sequence}${"PAYLOAD".repeat(20)}` })],
+        // The companion again: two drawn sections, so the group's heading is a row this frame really draws.
+        pins: [pin(1, "info", { group: `G${sequence}${"PAYLOAD".repeat(20)}` }), pin(2, "info")],
         selection: 0,
         focused: true,
         replyHint: "",
@@ -79,11 +86,11 @@ test("a group name whose escapes the terminal counts as printable cannot widen t
       style,
     ).slice(1, -1);
     // The heading owns one row whatever the sequence did to the measurement, and it closes at the width.
-    expect(rows, name).toHaveLength(2);
+    expect(rows, name).toHaveLength(4);
     for (const row of rows) expect(visibleWidth(row), name).toBe(WIDTH);
     expect(rows.join(""), name).not.toContain("PAYLOAD");
     // The name is still the name: what the cut removes is the sequence and its payload, not the group.
-    expect(rows[0] ?? "", name).toContain("G");
+    expect(rows.find((row) => row.includes("G")) ?? "", name).toContain("G");
   }
 });
 

@@ -38,8 +38,8 @@ import {
   glyph,
 } from "./panel-frame.ts";
 import { isPanelFrameSize } from "./panel-geometry.ts";
+import type { PanelRow } from "./panel-row.ts";
 import { panelPinRows } from "./panel-rows.ts";
-import type { PanelRow } from "./panel-rows.ts";
 import type { PanelSections } from "./panel-sections.ts";
 import { GUTTER_COLUMNS } from "./panel-tail.ts";
 import type { PanelStyle } from "./render.ts";

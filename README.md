@@ -111,8 +111,11 @@ counts are always by level, never by group, so a `Now` group holding your only w
 
 The frame is divided into **sections**, each with a heading row over its pins. The three level headings
 are fixed words the model cannot write — `Warnings`, `Needs you`, `FYI` — and a group's heading is the
-name the agent gave the group. Headings are drawn when there is more than one section, or when any
-section is a group: one level and no group is the ordinary case, and that frame has no headings at all.
+name the agent gave the group. Headings are drawn only when **two or more** sections hold pins: a view of
+one level alone, and a view of a single group alone, both draw the plain list with no heading at all. The
+section the selected pin belongs to is kept on screen with it, so the bar is never stranded under a heading
+that has scrolled away — unless keeping the heading would cost the pin one of its own rows, in which case
+the heading goes and every row of the pin stays.
 
 The panel has **three resting states**, and one question decides which one you are looking at: *does
 something here need you to act?* A shown panel rests as a **peek** — three rows: the counts title, the
@@ -149,10 +152,13 @@ still yours:
   group and nowhere else — one row, one place for the bar, one `d` — and the level it carries is still counted
   in the frame's title, so a `Now` group holding your only warning still titles `1 warning`. A pin with no
   group stays in its level's section.
-- **`options`** are the actions the agent is offering. They are drawn on one row under the pin, each with its
+- **`options`** are the actions the agent is offering. They are drawn on a row under the pin, each with its
   number (`1 Passed on   2 Not yet`), and you type that number into the editor yourself: nothing here acts
-  for you. When the frame is too narrow to name them all, the last ones are left off whole rather than cut
-  mid-word, so a label you can read is a label you can answer.
+  for you. The row spans the frame's full width — it carries no `#id`, so it gives up no columns for one.
+  When the frame is too narrow to name them all, the last ones are left off whole rather than cut mid-word,
+  so a label you can read is a label you can answer. Each row is counted in the window, the bar and the keys
+  before it is drawn, which is why an option that will not close inside its column is dropped rather than
+  wrapped: a row the table did not count is a row `d` and `Enter` would be one out on.
 - **`compact`** asks for the pin to occupy one row instead of several: its text is cut rather than wrapped.
   Use it for a pin whose text is a formality and whose `#id` is the thing you will act on. There is no key to
   expand it back: the row the bar sits on has to be a row the panel counted before the bar moved there.

@@ -44,6 +44,12 @@ const COLD_MODULES = [
   // reserve, both of which are read at module scope by the row table's callers; a cold load is the only way to
   // see whether that edge became a cycle the suite's own ordering hides.
   "src/panel-wrap.ts",
+  // The options packing: it reaches `panel-draw.ts` for the row's closure and `panel-tail.ts` for the gutter
+  // columns, both of which the row table also reads — so it is the newest edge onto the drawing graph, and a
+  // cold load is the only way to see whether it became a cycle the suite's own ordering hides.
+  "src/panel-options-wrap.ts",
+  // The row's own shape, now a leaf module so the packing, the drawer and the table need not import each other.
+  "src/panel-row.ts",
 ];
 
 /**
@@ -99,8 +105,18 @@ function COLD_PROBE(modulePath: string, target: string): string {
   if (modulePath.endsWith("panel-draw.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.fitLine!=="function"||typeof m.pinRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
+  if (modulePath.endsWith("panel-options-wrap.ts")) {
+    // The packing's two exported figures: the count the row table reserves from and the rows the drawer fills.
+    // A cold load that hands back one and not the other is the disagreement this module exists to remove.
+    return `import("${target}").then((m)=>{if(typeof m.drawOptionRows!=="function"||typeof m.optionRowCount!=="function"||typeof m.optionColumns!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-row.ts")) {
+    // The type-only leaf: it must *evaluate* with no runtime bindings and no dependency, which is the whole
+    // point of it — a value import that crept in here would be the cycle back.
+    return `import("${target}").then((m)=>{if(Object.keys(m).length!==0)throw new Error("the row type module exports a value");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
   if (modulePath.endsWith("panel-options-row.ts")) {
-    return `import("${target}").then((m)=>{if(typeof m.drawOptionRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+    return `import("${target}").then((m)=>{if(typeof m.fillOptionRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   if (modulePath.endsWith("panel-frame-title.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.frameTitle!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
