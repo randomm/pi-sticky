@@ -13,12 +13,29 @@
  * The wide-glyph case is the third shape and the narrowest: a CJK ideograph or an astral emoji is *two* columns,
  * and pi-tui's token fallback breaks a token only while it measures over the width it was handed, so a one-column
  * figure handed a two-column grapheme gets it back whole on a row of its own. `whole` breaks it instead, and the
- * assertion is on the row the drawer would have had to cut.
+ * assertion is that the pin's characters come back whole — every code unit of a ZWJ family included, with no row
+ * left holding a lone surrogate. A negative assertion ("no `…` invented") passes over rows that were emptied.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { stripSequences } from "../src/escape.ts";
+import { panelPinRows } from "../src/panel-rows.ts";
 import { wrapAtDrawnWidth } from "../src/panel-wrap.ts";
+import type { PanelStyle } from "../src/render.ts";
+import type { ViewPin } from "../src/types.ts";
+import { pin } from "./fixtures.ts";
+import { figuresOf } from "./panel-rows-frame.ts";
+
+/** Identity colours: nothing the theme adds is measured as a column. */
+const style: PanelStyle = {
+  header: (s) => s,
+  marker: (_level, s) => s,
+  dim: (s) => s,
+  selected: (s) => s,
+  border: (s) => s,
+  borderFocused: (s) => s,
+};
 
 /** A paragraph long enough that no ordinary width leaves it on a row. */
 const TEXT =
@@ -92,11 +109,10 @@ test("a fractional figure is cut to a whole number of columns before it reaches 
   for (const row of fractional) expect(visibleWidth(row)).toBeLessThanOrEqual(30);
 });
 
-test("a two-column glyph is hard-broken rather than handed back whole over the row", () => {
-  // pi-tui's fallback breaks a token only while it measures *over* the width it was handed, and it treats a Han
-  // glyph as a token of its own. At a one-column figure a two-column ideograph is handed back whole — the row
-  // reaches `pinRow` wider than the columns it was packed at, and the drawer's re-cut spends an ellipsis on it.
-  // The wrap breaks the glyph instead, so every row it returns measures within the width it was given.
+test("a two-column glyph handed a two-column figure is handed back whole", () => {
+  // The *wide* side of `whole`, where the packer's own loop already did its job: `textWidth` 2 clamps the pack to
+  // two columns, a single ideograph fits that exactly, and there is nothing left to break. The one-column pack
+  // — the case where the loop actually cuts — is the block below, which asserts the characters survive it.
   const rows = wrapAtDrawnWidth(CJK, 2, META, 60);
   expect(rows.length).toBeGreaterThan(1);
   for (const row of rows) {
@@ -107,15 +123,103 @@ test("a two-column glyph is hard-broken rather than handed back whole over the r
   expect(rows.join("")).toBe(CJK);
 });
 
-test("a run of wide glyphs packed to one column yields the fallback rows, not an invented ellipsis", () => {
-  // The degenerate pack seen from the glyph side rather than the room side: a run of two-column ideographs handed
-  // a one-column pack (`narrow` is 1 at a frame whose room the indent has eaten down to seven). pi-tui's packer
-  // answers with its token fallback and `whole`'s loop runs against it. What the wrap must not do is invent an
-  // ellipsis the pin never wrote, or throw on a row it cannot cut — both of which a naive grapheme split does.
-  // The rows are the packer's, empty and reset-sequence rows included; the assertion is the negative one this
-  // path owns: no `…` appears anywhere in them.
-  const rows = wrapAtDrawnWidth(CJK, 999, META, 19);
-  for (const row of rows) expect(row).not.toContain("\u2026");
+test("a two-column glyph packed to one column is hard-broken, and every glyph survives the break", () => {
+  // The shape `whole`'s loop exists for: `narrow` is 1 at a frame whose room the indent has eaten down to seven
+  // (`room` 7, minus the marker cell twice), and pi-tui hands a two-column ideograph back over that figure.
+  //
+  // The loop cuts with `truncateToWidth`, which closes what it kept with `ESC[0m` *even with no ellipsis* — so
+  // when a grapheme will not fit, the head it returns is those four bytes and nothing else: non-empty, so an
+  // `head === ""` guard cannot see it, but zero columns wide, and slicing the row by its length spends the
+  // grapheme's own code units. Measured before the fix, this call returned 2n rows alternating `[""]` and
+  // `["\u001b[0m"]` with every ideograph gone; the family emoji below came back as two rows of lone low
+  // surrogates. So the assertion is the positive one — the pin's characters, whole and in order — and not the
+  // negative one ("no ellipsis invented"), which the broken rows satisfied by containing nothing at all.
+  const rows = wrapAtDrawnWidth(CJK, 999, META, 21);
+  expect(rows.length, "a one-column pack must split the run").toBeGreaterThan(1);
+  expect(rows.join(""), "every ideograph survives the break").toBe(CJK);
+  for (const row of rows) {
+    // The width the pack was actually cut at, read off the module's own arithmetic rather than restated: `room`
+    // is `inner` less `tailReserve`, and the pack gives up the marker cell twice.
+    expect(visibleWidth(row), JSON.stringify(row)).toBeLessThanOrEqual(room(21) - 2 * CELL);
+    expect(row, JSON.stringify(row)).not.toContain("\u2026");
+  }
+  for (const row of rows) expect(balanced(row), JSON.stringify(row)).toBe(true);
+});
+
+test("a hard break never splits a surrogate pair, whatever the grapheme is", () => {
+  // The astral case of the same loop: a ZWJ family is eleven code units for one grapheme of twenty-one columns,
+  // so a cut that steps by code units lands inside the pairs and hands back `\udc69` on a row of its own. A lone
+  // surrogate is not a character — the terminal draws nothing or a placeholder for it — and it is what the
+  // "kept rather than dropped" promise in `whole` actually breaks on.
+  const families = [
+    "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}",
+    "\u{1F469}\u200D\u{1F469}\u200D\u{1F466}\u200D\u{1F466}",
+    "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+  ];
+  for (const family of families) {
+    for (const width of [1, 2, 3]) {
+      const rows = wrapAtDrawnWidth(family, width, META, 21);
+      for (const row of rows) expect(balanced(row), `${width}: ${JSON.stringify(row)}`).toBe(true);
+      // The family is one grapheme, so the break keeps it as one row's content — and if the pack split it, every
+      // of its code units still has to come back, in order, from the rows joined.
+      expect(rows.join(""), `${width}: lost code units`).toContain(family);
+    }
+  }
+  // ...and the same invariant where the family shares a row with ordinary text, which is the case that puts the
+  // cut *inside* the family rather than around it.
+  const mixed = `a${families[0] ?? ""}b`;
+  for (const width of [1, 2, 3, 4]) {
+    const rows = wrapAtDrawnWidth(mixed, width, META, 21);
+    for (const row of rows) expect(balanced(row), `${width}: ${JSON.stringify(row)}`).toBe(true);
+    // The reset `truncateToWidth` closes a cut with is the only byte between the packer and the pin's own
+    // characters, so it is taken off by the project's own sequence pass rather than by a spelled-out escape.
+    expect(stripSequences(rows.join("")), `${width}: mixed`).toBe(mixed);
+  }
+});
+
+/** Whether `row` holds any lone surrogate — a split pair, which is not a character at all. */
+function balanced(row: string): boolean {
+  for (let i = 0; i < row.length; i++) {
+    const code = row.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = row.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+test("the row table's degenerate text column draws no lone surrogate and loses no character", () => {
+  // The public entry point to that pack: `panelPinRows` forwards the figures straight to the wrap, so a frame
+  // whose room the indent has eaten to one column reaches `whole` through the row table rather than only through
+  // a test. Nothing in the builder hands `panelPinRows` a text column this narrow — `panelTextColumns` keeps it
+  // at seven or more — which is exactly why this needs an assertion of its own: the path is documented,
+  // reachable, and outside every drawn sweep.
+  const mk = (text: string): ViewPin =>
+    pin(7, text, "info", { createdAt: "2026-10-25T09:00:00.000Z" });
+  const family = "\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}";
+  const cases: readonly (readonly [string, string])[] = [
+    ["family", `${family} b`],
+    ["cjk", CJK],
+  ];
+  for (const [name, text] of cases) {
+    const pin = mk(text);
+    const now = "2026-10-25T10:00:00.000Z";
+    // Spread from the fixture rather than spelled: `panelPinRows` takes the reserve and the inner width as two
+    // adjacent numbers, so a call site that wrote them by hand could transpose them silently. Here the pair is
+    // produced by the same subtraction the layout runs, in the order the row table wants them.
+    const rows = panelPinRows(pin, 11, style, ...figuresOf(pin, 11, style, now));
+    const drawn = rows.map((row) => row.text).join("");
+    for (const row of rows)
+      expect(balanced(row.text), `${name}: ${JSON.stringify(row.text)}`).toBe(true);
+    // Every character of the pin's text is on some row of the table, and no `…` was invented for it.
+    for (const character of [...text])
+      expect(drawn, `${name}: lost ${JSON.stringify(character)}`).toContain(character);
+    expect(drawn, `${name}: invented ellipsis`).not.toContain("\u2026");
+  }
 });
 
 test("the marker cell is charged twice to a wrapping pin, once for the indent", () => {

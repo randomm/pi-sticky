@@ -52,6 +52,14 @@ import { MARKER_CELL_COLUMNS } from "./panel-frame.ts";
 import { tailReserve } from "./panel-tail.ts";
 
 /**
+ * The grapheme boundary the hard break cuts on.
+ *
+ * The same granularity `sanitize.ts` counts graphemes at and pi-tui's own packer breaks tokens at, so a row this
+ * module splits is split where the sanitizer counted a character and the packer would have broken it too.
+ */
+const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
  * The columns `pinRow` leaves the text of a row that owns a tail, before its own prefix is charged.
  *
  * `tailReserve` is called rather than restated here on purpose: it is the figure `pinRow` cuts to *and* pads the
@@ -88,7 +96,10 @@ const bounded = (width: number): number =>
  * and the drawer's `fitPlain` re-cuts it, spending `…` on a pin the wrap could have broken itself.
  *
  * Measured with `visibleWidth` — the measure `pinRow` cuts on, not the packer's token sum — because the promise
- * this keeps is drawn columns, and a row `visibleWidth` agrees fits is a row `fitPlain` returns untouched.
+ * this keeps is drawn columns, and a row `visibleWidth` agrees fits is a row `fitPlain` returns untouched. The one
+ * column a grapheme wider than the frame may keep is the column the drawer's own `…` costs, which is how a row that
+ * cannot be made to fit still gets drawn without this module inventing a cut of its own.
+ *
  * `truncateToWidth` is called with no ellipsis: the break is the wrap's, not a cut, and the columns the row was
  * packed at belong to the text, not to a `…` the pin never wrote.
  */
@@ -99,15 +110,33 @@ function whole(rows: readonly string[], width: number): string[] {
       out.push(row);
       continue;
     }
-    // A grapheme that alone exceeds `width` is kept rather than dropped: the row is then one wide glyph, which is
-    // the row the drawer cuts, and a wrap that swallowed the character would lose it from the pin outright.
+    // A grapheme too wide for `width` at all (an ideograph at one column, a ZWJ family at two) is kept whole
+    // rather than dropped, and it is the row `pinRow` then draws with its own `…` — the drawer's cut, on a row no
+    // pack could have fit. `fitPlain` returns a row that already measures `width` untouched, so this loop must
+    // stop at the frame rather than keep breaking: the rows that leave here are exactly the rows the drawer draws
+    // for free, plus that one. A wrap that swallowed the character instead would lose it from the pin outright.
+    //
+    // `truncateToWidth` closes whatever it kept with `ESC[0m` even when the ellipsis is empty, so a head that
+    // could not keep a single grapheme still comes back as those four bytes and draws nothing. Slicing the row by
+    // that head's length would spend the grapheme's own code units — a two-column ideograph is two units, a
+    // ZWJ family eleven — and the character would be gone, or split into lone surrogate halves. So a head that
+    // drew nothing is answered by taking the grapheme whole instead, and only a head that drew something may be
+    // sliced by its length.
+    //
+    // The two rules are the same refusal seen from each side: never spend code units on a head that drew nothing.
+    // Hence the guard below tests the *columns* a head drew and never its length — a row of nothing but the reset
+    // is a row that drew nothing, whatever `truncateToWidth` had to say about it.
     let rest = row;
     while (visibleWidth(rest) > width) {
       const head = truncateToWidth(rest, width, "");
-      if (head === "") {
-        out.push(rest);
-        rest = "";
-        break;
+      if (visibleWidth(head) === 0) {
+        const [first] = segmenter.segment(rest);
+        if (first === undefined) {
+          break;
+        }
+        out.push(first.segment);
+        rest = rest.slice(first.segment.length);
+        continue;
       }
       out.push(head);
       rest = rest.slice(head.length);

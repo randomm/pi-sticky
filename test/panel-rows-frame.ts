@@ -25,11 +25,29 @@ import type { ViewPin } from "../src/types.ts";
  * separator, and the two gutters with their spaces.
  *
  * `at` returns a row-table argument list so a caller spreads it into `panelPinRows` and cannot reorder the two
- * figures — which is the whole reason they are positional in the first place.
+ * figures — which is the risk of positional figures at all, and the reason the spread form below is the one the
+ * suite's own call sites use.
  */
 export function frameAt(pin: ViewPin, textWidth: number, style: PanelStyle, now: string) {
   const metaColumns = widestMetaColumns([pin], style.dim, now);
   return { metaColumns, inner: textWidth + metaColumns + META_SEPARATOR_COLUMNS + GUTTER_COLUMNS };
+}
+
+/**
+ * `frameAt`'s two figures in the order `panelPinRows` takes them, for a caller that has already named its pin.
+ *
+ * The one-call guard against the transpose the header names: a test writes
+ * `panelPinRows(pin, tw, style, ...figuresOf(pin, tw, style, now))` and the two same-typed figures arrive in the
+ * order the layout's own subtraction produced them, rather than in whatever order a caller remembered.
+ */
+export function figuresOf(
+  pin: ViewPin,
+  textWidth: number,
+  style: PanelStyle,
+  now: string,
+): readonly [number, number] {
+  const { metaColumns, inner } = frameAt(pin, textWidth, style, now);
+  return [metaColumns, inner] as const;
 }
 
 /**
