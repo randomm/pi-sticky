@@ -133,9 +133,6 @@ export function panelPinRows(
 ): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
   const glyph = MARKER[pin.level];
-  // The one question the flag answers, asked once: a pin's whole entry is built at once, so the wrap, the
-  // tails and the options rows cannot be decided against three answers to one question.
-  const grown = expands(pin, expanded);
   // The frame the options rows are counted against: `inner` plus the two gutters, i.e. the figure
   // `panelLayoutSections` was handed and the one `optionColumns` subtracts back off. Derived from `inner` rather
   // than passed as a third figure because the two are one fact — the options rows are packed between the
@@ -171,6 +168,11 @@ export function panelPinRows(
   // has. The sanitizer cleans what is stored (`sanitize.ts`), but the view is also built directly — by tests
   // and by any future caller — and a drawn surface that leans on somebody else's pass borrows a guarantee it
   // does not own.
+  //
+  // The one question the flag answers, asked once: a pin's whole entry is built at once, so the wrap, the
+  // tails and the options rows cannot be decided against three answers to one question. Asked *after* the
+  // degenerate frame has returned, because that frame has no rows for an expansion to buy and never reads this.
+  const grown = expands(pin, expanded);
   const body = pin.repliedAt === undefined ? pin.text : style.dim(`↩ ${pin.text}`);
   const plain = stripSequences(body);
   const wrapped = pinTextRows(plain, pin.compact === true, grown, textWidth, metaColumns, inner);

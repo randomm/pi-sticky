@@ -21,6 +21,7 @@
  * decides how often a frame is built, and a sweep that rebuilt a frame per invariant was paying four layout
  * passes for four reads of one table.
  */
+import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { isOptionRow } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -31,6 +32,59 @@ import { sweepStyle } from "./panel-wrapped-sweep.ts";
 
 /** The bar of a one-pin swept frame: on the pin, or at a coordinate that names no pin. */
 export type SweepBar = "pin" | "nowhere";
+
+/**
+ * The grid every band sweep walks, minted once here rather than per test file.
+ *
+ * Three sweeps (`panel-wrapped-sweep.test.ts`, `panel-wrapped-options-sweep.test.ts`,
+ * `panel-compact-sweep.test.ts`) step the same ids over the same widths, and a copy each is a third definition
+ * of "the sweep" that can drift from its siblings without any assertion noticing — the two rejoin ranges in
+ * particular have to stay one range in two files. The figures come from the builder's own floor
+ * (`PANEL_MIN_FRAME_COLUMNS`, `panel-geometry.ts`), not from a remembered 30.
+ *
+ * The bands are the sweeps' budget split, not a narrowing of what is covered: bun caps a test at five seconds
+ * and 91 widths × 143 ids × 7 corpus members is far more frame than one `test()` allows, so each invariant runs
+ * one `test()` per band and a failure names its band rather than "the sweep failed". Together the bands cover
+ * the whole range the sweeps name, and the full 1–999 id walk is the block at the end of the wrapping sweep.
+ */
+
+/** The ids stepped across the sweep. */
+export const IDS: readonly number[] = Array.from({ length: 143 }, (_unused, i) => 1 + i * 7);
+/** Every width the builder closes at, from its own floor to the widest frame a panel reaches. */
+export const WIDTHS: readonly number[] = Array.from(
+  { length: 91 },
+  (_unused, i) => PANEL_MIN_FRAME_COLUMNS + i,
+);
+/**
+ * The widths a rejoin is asked at: four columns of text up.
+ *
+ * Not the whole range, and not as a loophole: at the builder's floor the tail's reserve leaves the text column
+ * one column wide, where a wrap is a spelling rather than a wrap of words. Every width at or above it lays out
+ * words and none of them is exempt from anything — the column-limit and uniform-width sweeps still run `WIDTHS`.
+ */
+export const WRAPPED_WIDTHS: readonly number[] = WIDTHS.filter(
+  (width) => width >= PANEL_MIN_FRAME_COLUMNS + 4,
+);
+/**
+ * The width bands the sweeps are cut into.
+ */
+export const WIDTH_BANDS: readonly (readonly [number, number])[] = [
+  [PANEL_MIN_FRAME_COLUMNS, 40],
+  [41, 52],
+  [53, 64],
+  [65, 78],
+  [79, 92],
+  [93, 106],
+  [107, 120],
+];
+
+/** The band a block covers, spelled for the failure message. */
+export const bandLabel = (band: readonly [number, number]): string =>
+  `${band[0]}–${band[1]} columns`;
+
+/** The widths of `widths` that fall inside `band` — how a block restricts the range it asks over. */
+export const inBand = (band: readonly [number, number], widths: readonly number[]): number[] =>
+  widths.filter((width) => width >= band[0] && width <= band[1]);
 
 /** The bar's coordinate when it names no pin — what an unfocused panel carries, and the collapsed state. */
 const NO_PIN = 1;

@@ -18,7 +18,7 @@ import { expect, test } from "bun:test";
 
 import { optionRowCount } from "../src/panel-options-wrap.ts";
 import { isOptionRow } from "../src/panel-rows.ts";
-import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
+import { IDS, WIDTHS } from "./panel-sweep-frame.ts";
 import {
   SWEEP_CORPORA,
   carriedCharacters,
@@ -29,11 +29,6 @@ import {
 
 /** The options the row-count sweep gives each pin; two labels a roomy frame packs onto one row. */
 const OPTIONS_UNDER_SWEEP = ["Passed on", "Not yet"];
-
-/** The ids stepped across the sweep; the full 1–999 walk lives in `panel-wrapped-sweep.test.ts`. */
-const IDS = Array.from({ length: 143 }, (_unused, i) => 1 + i * 7);
-/** Every width the builder closes at, from its own floor to the widest frame a panel reaches. */
-const WIDTHS = Array.from({ length: 91 }, (_unused, i) => MIN_FRAME_WIDTH + i);
 
 test("the options rows the table reserves are the rows the wrap draws, and are excluded from the rejoin by their tag", () => {
   // The row-count promise the options half of the fix must not disturb, restated against the thing that now

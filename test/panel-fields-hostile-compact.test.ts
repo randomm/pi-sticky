@@ -61,18 +61,24 @@ const companion = (): ViewPin => one(2, "a plain note");
 /** The rows a pin's options pack to at this frame — the drawer's own packing, not a remembered count. */
 const optionRows = (options: string[]): number => optionRowCount(options, 120, plain);
 
-/** The frame's two bar states: the layout reads the drawn focus beside the selection as one signal. */
-const AT_BAR = true;
-const OFF_BAR = false;
+/**
+ * The frame's two states, named by what the test sets: `focused`. The selection is fixed at 0 below, so the
+ * bar sits on the pin under test in both, and `expandedPinOf` (`panel-expand.ts`) is what turns the pair into
+ * the two entries — its answer over the frame's mode, its key gate, its focus, its selection and the pin's
+ * `compact` flag, of which this file moves only the focus: the frames it builds are open and take keys, and
+ * the pin always carries the flag. Focused is therefore the expanded entry, unfocused the collapsed one.
+ */
+const FOCUSED = true;
+const UNFOCUSED = false;
 
-const at = (extra: Partial<ViewPin>, atBar: boolean): string[] =>
-  built(content([pinWith(extra), companion()], 0, atBar), 120, plain, 100);
-const tableAt = (extra: Partial<ViewPin>, atBar: boolean) =>
-  framed(content([pinWith(extra), companion()], 0, atBar), 120, plain, 100);
+const at = (extra: Partial<ViewPin>, focused: boolean): string[] =>
+  built(content([pinWith(extra), companion()], 0, focused), 120, plain, 100);
+const tableAt = (extra: Partial<ViewPin>, focused: boolean) =>
+  framed(content([pinWith(extra), companion()], 0, focused), 120, plain, 100);
 
 /** The pin's own text rows in the table: the options rows are reserved, not written, so they are not counted. */
-const textRowsOf = (extra: Partial<ViewPin>, atBar: boolean): number =>
-  tableAt(extra, atBar).layout.owned.filter(
+const textRowsOf = (extra: Partial<ViewPin>, focused: boolean): number =>
+  tableAt(extra, focused).layout.owned.filter(
     (entry) => entry.pin === 0 && entry.row.kind === undefined,
   ).length;
 
@@ -81,22 +87,22 @@ test("off the bar a hostile compact pin owns one cut row and the options rows it
   // The frame a `compact` pin with no fields at all draws at the same coordinate, plus exactly the rows its
   // labels pack to: one cut text row and nothing else from the group. A cut is not a row, and a hostile field
   // cannot make the collapsed entry taller.
-  expect(at({ compact: true, ...fields }, OFF_BAR)).toHaveLength(
-    at({ compact: true }, OFF_BAR).length + optionRows(fields.options),
+  expect(at({ compact: true, ...fields }, UNFOCUSED)).toHaveLength(
+    at({ compact: true }, UNFOCUSED).length + optionRows(fields.options),
   );
   // The same collapsed frame, byte for byte, whatever the fields' contents: hostility is refused by drawing a
   // field as text, not by drawing fewer or more rows.
-  expect(at({ compact: true, ...fields }, OFF_BAR)).toEqual(
-    at({ compact: true, group: fields.group, options: fields.options }, OFF_BAR),
+  expect(at({ compact: true, ...fields }, UNFOCUSED)).toEqual(
+    at({ compact: true, group: fields.group, options: fields.options }, UNFOCUSED),
   );
   // No line of it carries a break — the shape a "row" the table never counted would take — and nothing in it is
   // a row or a reply the extension did not make.
-  const collapsedLines = at({ compact: true, ...fields }, OFF_BAR);
+  const collapsedLines = at({ compact: true, ...fields }, UNFOCUSED);
   expect(linesOf(collapsedLines.join("\n"))).toHaveLength(collapsedLines.length);
   assertNoForgery(collapsedLines, /! Decide X/);
   // And the entry is really collapsed: one row of the pin's own text, however long that text is. Without this
   // the two comparisons above could be two expanded frames agreeing with each other and certify nothing.
-  expect(textRowsOf({ compact: true, ...fields }, OFF_BAR)).toBe(1);
+  expect(textRowsOf({ compact: true, ...fields }, UNFOCUSED)).toBe(1);
 });
 
 test("under the bar a hostile compact pin is the frame the same pin draws without the flag", () => {
@@ -104,14 +110,14 @@ test("under the bar a hostile compact pin is the frame the same pin draws withou
   // The expansion hands the row table the ordinary wrap and the options packer's own rows; a hostile group or
   // option adds no third of either. Deliberately *not* compared against the collapsed frame above: the flag's
   // whole point is that those two tables differ, and the row the collapsed pin cuts reappears here.
-  expect(at({ compact: true, ...fields }, AT_BAR)).toEqual(at({ ...fields }, AT_BAR));
+  expect(at({ compact: true, ...fields }, FOCUSED)).toEqual(at({ ...fields }, FOCUSED));
   // Which is to say the expansion really did buy rows: the frame at the bar is taller than the same frame off
   // it, and the rows it gained belong to the pin — stamped with its index, never `pin: null`, which is what a
   // heading wears and what the bar could never reach or `d` dismiss.
-  const expanded = tableAt({ compact: true, ...fields }, AT_BAR);
-  const resting = tableAt({ compact: true, ...fields }, OFF_BAR);
+  const expanded = tableAt({ compact: true, ...fields }, FOCUSED);
+  const resting = tableAt({ compact: true, ...fields }, UNFOCUSED);
   expect(expanded.layout.owned.length).toBeGreaterThan(resting.layout.owned.length);
-  expect(textRowsOf({ compact: true, ...fields }, AT_BAR)).toBeGreaterThan(1);
+  expect(textRowsOf({ compact: true, ...fields }, FOCUSED)).toBeGreaterThan(1);
   const gained =
     expanded.layout.owned.filter((entry) => entry.pin === 0).length -
     resting.layout.owned.filter((entry) => entry.pin === 0).length;
@@ -135,23 +141,23 @@ test("the expanded rows carry no escape, no control and no break, at every hosti
   // drawn entry can steer the terminal, and it is asked at the expanded state rather than only at the
   // collapsed one the rest of the file's sweeps are parked at.
   const fields = foldedHostileFields();
-  const drawn = at({ compact: true, ...fields }, AT_BAR);
+  const drawn = at({ compact: true, ...fields }, FOCUSED);
   // Every row of the frame, borders included: no escape byte, no C0/C1 control, no DEL, no bidi override and
   // no lone surrogate anywhere. The untrusted text is drawn with identity colours here, so there is no SGR for
   // the classifier to excuse — a byte in this frame was written by the pin, not by the theme.
   for (const line of drawn) expect(offenders(line)).toEqual([]);
   // …and the same rows through a theme that *does* colour: an SGR sequence is what the panel is allowed to
   // draw, and everything else in the classifier's other set still is not.
-  for (const line of at({ compact: true, ...fields }, AT_BAR))
+  for (const line of at({ compact: true, ...fields }, FOCUSED))
     expect(drawnOffenders(line)).toEqual([]);
   // No line of the expanded frame contains a break shape: an entry that wrapped by *breaking* is a frame whose
   // rows are not the rows the table counted, and the bar, `d` and `Enter` would be one out per break.
-  const joined = at({ compact: true, ...fields }, AT_BAR).join("\n");
-  expect(linesOf(joined)).toHaveLength(at({ compact: true, ...fields }, AT_BAR).length);
+  const joined = at({ compact: true, ...fields }, FOCUSED).join("\n");
+  expect(linesOf(joined)).toHaveLength(at({ compact: true, ...fields }, FOCUSED).length);
   // The expanded rows are the pin's own — the table's owner tags carry that, and it is what keeps a forged
   // row unreachable: the bar can only be parked on an entry the frame numbered, and `d` can only dismiss one.
-  const atBar = tableAt({ compact: true, ...fields }, AT_BAR).layout.owned;
-  const grew = atBar.filter((entry) => entry.pin === 0 && entry.row.kind === undefined);
+  const owned = tableAt({ compact: true, ...fields }, FOCUSED).layout.owned;
+  const grew = owned.filter((entry) => entry.pin === 0 && entry.row.kind === undefined);
   expect(grew.length).toBeGreaterThan(1);
   for (const entry of grew) {
     expect(offenders(entry.row.text)).toEqual([]);

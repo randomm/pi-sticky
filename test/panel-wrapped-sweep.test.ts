@@ -35,9 +35,16 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "../src/escape.ts";
-import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
 import type { SweepBuilder, SweepCheck } from "./panel-sweep-frame.ts";
-import { sweepGrid, sweptExpandedCompact } from "./panel-sweep-frame.ts";
+import {
+  IDS,
+  WIDTHS,
+  WIDTH_BANDS,
+  WRAPPED_WIDTHS,
+  bandLabel,
+  sweepGrid,
+  sweptExpandedCompact,
+} from "./panel-sweep-frame.ts";
 import {
   COMPACT_CORPUS,
   SWEEP_CORPORA,
@@ -49,47 +56,6 @@ import {
   sweptFrameAlongsideWideId,
 } from "./panel-wrapped-sweep.ts";
 import type { SweptFrame } from "./panel-wrapped-sweep.ts";
-
-/** The ids stepped across the sweep; the full 1–999 walk is the block at the bottom of this file. */
-const IDS = Array.from({ length: 143 }, (_unused, i) => 1 + i * 7);
-/** Every width the builder closes at, from its own floor to the widest frame a panel reaches. */
-const WIDTHS = Array.from({ length: 91 }, (_unused, i) => MIN_FRAME_WIDTH + i);
-
-/**
- * The widths the **rejoin** sweep runs over.
- *
- * Not the whole range, and not as a loophole. At the builder's floor the tail's reserve leaves the text column
- * one column wide, and a wrap of one column is not a wrap of *words*: `wrapTextWithAnsi` breaks a long token
- * character by character, so every word of the pin lands on a row of its own and a rejoin that expected the
- * pin's words back in theirs would be asserting that the panel can lay text out at one column. Nothing is let
- * off at those widths for the invariants that can be asked there — the uniform-width sweep and the column-limit
- * sweep below both run the whole range, the floor included, and `test/panel-id-never-cut.test.ts` /
- * `test/panel-id-wide.test.ts` own what the `#id` survives there. Four columns of text is where the reserve
- * stops swallowing the column at any id this sweep mints, so every width at or above it lays out words and none
- * of them is exempt from anything.
- */
-const WRAPPED_WIDTHS = WIDTHS.filter((width) => width >= MIN_FRAME_WIDTH + 4);
-
-/**
- * The width bands the sweeps are cut into.
- *
- * One `test()` per band rather than one per invariant, because bun caps a test at five seconds and 91 widths ×
- * 143 ids × 5 corpus members is far more frame than that allows — the suite already split one id sweep in two
- * for the same reason. The bands together cover the whole range the issue names (30–120, ids 1–999), and a
- * failure names its own band.
- */
-const WIDTH_BANDS: readonly (readonly [number, number])[] = [
-  [MIN_FRAME_WIDTH, 40],
-  [41, 52],
-  [53, 64],
-  [65, 78],
-  [79, 92],
-  [93, 106],
-  [107, 120],
-];
-
-/** The band a block covers, spelled for the failure message. */
-const bandLabel = (band: readonly [number, number]): string => `${band[0]}–${band[1]} columns`;
 
 /**
  * One invariant, swept over every corpus member and every id of one band of widths.

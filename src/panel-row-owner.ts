@@ -1,11 +1,13 @@
 /**
  * The owner of one row of the panel's frame: the row itself and the pin it belongs to.
  *
- * The pair is its own module because three callers need the *shape* and none of them may import the layout
- * that builds it: the layout and the window rule (`panelWindowOffset`, `panel-frame-layout.ts`) both read it,
- * and the drawer (`panel-lines.ts`) reads the rows out of a table it was handed. A type that lived only with
- * the builder would make the drawer import the layout for one field list — the tangle `panel-row.ts` and
- * `panel-tail.ts` were each carved out of, for the same reason.
+ * The pair is its own module because three callers need the *shape* and none of them should take the layout
+ * with it: the layout and the window rule (`panelWindowOffset`, `panel-frame-layout.ts`) both read it, and the
+ * drawer (`panel-lines.ts`) reads the rows out of a table it was handed. A type that lived only with the
+ * builder would make the drawer import the layout builder's whole type surface for one field list — the tangle
+ * `panel-row.ts` and `panel-tail.ts` were each carved out of, for the same reason. The drawer does import
+ * `panelWindowOffset` from the layout: reading one function of it is a different matter from taking the
+ * builder's types, and the window rule stays where it is owned either way.
  *
  * Two coordinates meet on this one entry and neither is redundant. `pin` is the **selection** coordinate —
  * the pin's position in the flattened drawn order (`panelSections`'s `flat`), which is what the keys, `d`,

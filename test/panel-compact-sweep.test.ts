@@ -5,8 +5,8 @@
  * `panel-wrapped-sweep.test.ts` sweeps the four wrapping invariants over both states; this file sweeps the two
  * things that are only true of one state each, which is what turns the sweep's compact carve-out from a hole
  * into a carve-out. Both blocks draw the *same* corpus member (`COMPACT_CORPUS`, the paragraph no frame the
- * panel draws leaves on one row) at the same ids and widths, so the two states are the only difference between
- * them:
+ * panel draws leaves on one row) at the same ids, widths and bands the wrapping sweep walks — all five come from
+ * `panel-sweep-frame.ts` — so the two states are the only difference between them:
  *
  * - **Collapsed — one row, and the id still in its seat.** `compact` means "cut, do not spend the window": one
  *   text row, its tail still naming the pin. If this ever fails, the flag has stopped meaning one row off the
@@ -21,8 +21,15 @@
  */
 import { expect, test } from "bun:test";
 
-import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
-import { sweptFrameAt } from "./panel-sweep-frame.ts";
+import {
+  IDS,
+  WIDTHS,
+  WIDTH_BANDS,
+  WRAPPED_WIDTHS,
+  bandLabel,
+  inBand,
+  sweptFrameAt,
+} from "./panel-sweep-frame.ts";
 import {
   COMPACT_CORPUS,
   carriedCharacters,
@@ -32,30 +39,7 @@ import {
 } from "./panel-wrapped-sweep.ts";
 import type { SweptFrame } from "./panel-wrapped-sweep.ts";
 
-/** The ids stepped across the sweep — the same stride the wrapping sweep uses. */
-const IDS = Array.from({ length: 143 }, (_unused, i) => 1 + i * 7);
-/** Every width the builder closes at, from its own floor to the widest frame a panel reaches. */
-const WIDTHS = Array.from({ length: 91 }, (_unused, i) => MIN_FRAME_WIDTH + i);
-/** The widths a rejoin is asked at: four columns of text up, where a wrap is still a wrap of words. */
-const WRAPPED_WIDTHS = WIDTHS.filter((width) => width >= MIN_FRAME_WIDTH + 4);
-
 const [NAME, TEXT] = COMPACT_CORPUS;
-
-/** The width bands the blocks are cut into, so no block runs past bun's five-second budget. */
-const WIDTH_BANDS: readonly (readonly [number, number])[] = [
-  [MIN_FRAME_WIDTH, 40],
-  [41, 52],
-  [53, 64],
-  [65, 78],
-  [79, 92],
-  [93, 106],
-  [107, 120],
-];
-
-const bandLabel = (band: readonly [number, number]): string => `${band[0]}–${band[1]} columns`;
-
-const inBand = (band: readonly [number, number], widths: readonly number[]): number[] =>
-  widths.filter((width) => width >= band[0] && width <= band[1]);
 
 /** The two collapsed states of one compact frame: a bar that names no pin, and a bar on the pin with no keys. */
 function sweptRestings(id: number, width: number): SweptFrame[] {

@@ -28,17 +28,9 @@ import { wrapAtDrawnWidth } from "./panel-wrap.ts";
  * than through `render.ts`, one of this module's callers) and the drawer's `fitLine` spends the ellipsis on
  * the tail of it.
  *
- * The width a wrap packs a line into is `textWidth` less the cell every row of a *wrapping* pin pays in
- * front of its text — the marker on the first row and the same three blank columns again as the indent of
- * each row below it. `pinRow` (`panel-draw.ts`) measures a row's text with that cell inside the columns its
- * reserve leaves, so a line packed to the full `textWidth` came back over the row's limit and the drawer's
- * re-cut spent the row's last columns on an ellipsis: `…park fix` on the age's row, with `ix` carried down
- * to the line below.
- *
- * Charged once, to the wrap rather than to the row, because the row count is the wrap's answer: a wrap that
- * gave up the cell and still produced one row retried at the full `textWidth` and kept it, so a pin whose
- * text fits the row it owns is never pushed into a second row by an indent it does not draw. Widening can
- * only ever drop a row, never add one, so that retry settles on the first pass.
+ * How wide a wrap packs a line, and why it pays the marker cell twice, is `panel-wrap.ts`'s account —
+ * `wrapAtDrawnWidth` is the one place that answers the drawer's question back to it, and this function only
+ * chooses which of its two answers a pin gets.
  *
  * `plain` is the pin's text already stripped of every escape sequence: the caller runs that pass at the
  * boundary that puts a model's words into a drawn row, so the wrap and the collapsed line are both built
