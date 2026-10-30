@@ -23,9 +23,11 @@
  * often than a minute, and an age changes no faster), why `pins` is the drawn-order array's *identity* and
  * not its contents (`commit`/`reconstruct` publish a fresh array for every change and none without one), and
  * why `replyHint` is in it at all (the operator can rebind the focus key, and the resting border prints
- * what that key is called), and why `expanded` names the *index* of the pin the frame grew rather than the
- * view: the row table grows that one pin's entry, so a frame memorised around an expanded table is not the
- * frame a collapsed one would draw.
+ * what that key is called). `expanded` is the one member whose value is *computed* rather than read, and it
+ * sits with the terms it is computed from rather than instead of them: `expandedPinOf` (`panel-expand.ts`) is
+ * a pure function of `pins`, `mode`, `keys`, `focused` and `selection`, so the term records the answer the
+ * drawn frame's own row table was built around — it closes no case the members above miss, and its member doc
+ * states what it does guarantee.
  */
 import type { PanelMode } from "./panel-mode.ts";
 import { panelSections } from "./panel-sections.ts";
@@ -61,12 +63,14 @@ export interface PanelFrame {
    * expanded nothing — `expandedPinOf` (`panel-expand.ts`) answers it once per frame, and both cache entry
    * points hand it to `frameOf` rather than re-deriving it.
    *
-   * In the key because the row table is no longer selection-independent: the pin under a bar that takes keys
-   * owns its wrapped text and its options rows, and every other frame draws its one cut row. `pins` is compared
-   * by identity and `selection`/`focused` by value, so a move of the bar onto a compact pin is already a miss —
-   * what this member closes is the other direction, a frame memorised *while* a pin was expanded being handed
-   * back for a state in which the table that produced it would have collapsed it. Storing the index rather than
-   * a boolean also names *which* entry grew, which is what the layout was handed, so a frame cannot memorise one
+   * What it guarantees, stated plainly: the memorised frame **carries the number its own row table was built
+   * around**, so the frame and the table it drew cannot name two different expansions. It closes **no** case
+   * the other terms miss — `expandedPinOf` is a pure function of `pins`, `mode`, `keys`, `focused` and
+   * `selection`, all of which are in the key, so a state whose expansion differs from a cached frame's has
+   * already differed in one of them. The term is therefore defence-in-depth, and what it defends against is a
+   * *producer* whose term disagrees with its own fields: a `frameOf` caller handed the term of another frame,
+   * or a candidate that re-derived the rule instead of asking the predicate. Storing the index rather than a
+   * boolean also names *which* entry grew, which is what the layout was handed, so a frame cannot memorise one
    * pin's expansion and claim another's.
    */
   expanded: number | undefined;

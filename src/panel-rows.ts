@@ -98,7 +98,9 @@ function expands(pin: ViewPin, at: ExpandedAt | undefined): boolean {
  * rather than trailing-optional so that "no expansion" is written down at each call site — a caller that
  * forgot to ask is a type error, not a table that silently collapsed a pin it should have grown. A `compact`
  * pin whose text would wrap owns its full entry — the wrapped rows and the options rows — when the frame says
- * it is the pin under a bar that takes keys, and one cut row for every other pin and every other frame.
+ * it is the pin under a bar that takes keys, and one cut *text* row for every other pin and every other frame.
+ * The options rows belong to the pin either way: the collapsed entry reserves them too, so a `compact` pin
+ * never hides the digits the user answers it with.
  */
 export function panelPinRows(
   pin: ViewPin,

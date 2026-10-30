@@ -54,9 +54,10 @@ export function frameCandidate(
   const key = frameKey(host);
   const draw = candidateDraw(pins);
   // The expansion term is computed by the same predicate `render()` asks, over the same five inputs — the
-  // candidate's pins, mode, key gate, focus and bar. A candidate that left it out, or re-derived it, would be
-  // a second spelling of a rule the frame has already settled, and `sameFrame` would answer a redraw of a view
-  // whose expansion moved as a hit.
+  // candidate's pins, mode, key gate, focus and bar. A candidate that left it out, or re-derived it, would be a
+  // second spelling of a rule the frame has already settled, and would disagree with its own fields. What it
+  // does *not* buy is a case the key would otherwise miss: the predicate is a pure function of those five
+  // fields, all of which `sameFrame` compares (`panel-frame-cache.ts`, the `expanded` member doc).
   return frameOf(
     [],
     draw,

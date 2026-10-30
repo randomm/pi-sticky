@@ -54,9 +54,11 @@ sentence break, not the line break, that separates thoughts.
 `options` - 2 to 4 short choices the user can answer by number, for a pin whose answers are known
 ahead. Use it for a yes/no or pick-one question; leave it off when the answer is free text.
 
-`compact` - one row instead of several while the bar is elsewhere, cutting the text. Use it for
-reference-only `info` pins whose `#id` is the thing the user will act on, never for a question you
-need an answer to. It is a density instruction, not a way to hide the text: while the bar of the
-focused open panel rests on the pin it shows its full entry - the whole wrapped text and its option
-rows - and collapses again when the bar moves off. The peek and the rail stay one row whatever the
-bar does. `/pins` does not print it, so a compact pin reads the same as any other one there.
+`compact` - one row for the pin's text instead of several, while the bar is elsewhere. The pin's
+`options` rows are drawn either way - a collapsed question pin still prints its numbered options, and the
+digit keys answer them once the panel has focus - so the flag costs the reader the text, never the answer.
+Use it for reference-only `info` pins whose `#id` is the thing the user will act on, and not for a question
+whose wording the user has to read to answer. It is a density instruction, not a way to hide the text: while
+the bar of the focused open panel rests on the pin the text draws its whole wrap, as an unflagged pin's does,
+and collapses again when the bar moves off. The peek and the rail print no options at all and stay one row
+whatever the bar does. `/pins` does not print it, so a compact pin reads the same as any other one there.

@@ -39,7 +39,11 @@
  * named: `expandedPinOf` (`panel-expand.ts`), called once per frame by `drawFrame` and handed to the frame it
  * builds, to the open frame's table and to the cache's term alike. The compiler guarantees one field list;
  * each term's agreement with the drawing rule that produced it is a property of this producer, and this is
- * where that property lives and is tested.
+ * where that property lives and is tested. The guarantee the term therefore buys is exactly one: the
+ * memorised frame names the number its own table grew, so a producer that handed the frame another frame's
+ * term — or a caller that re-derived the rule and answered differently — is a miss rather than a stale panel.
+ * It is not that the key sees a state the other terms do not: the predicate is a pure function of `pins`,
+ * `mode`, `keys`, `focused` and `selection`, every one of which `sameFrame` already compares.
  */
 import { ageAt, ageBucket } from "./panel-age.ts";
 import type { OpenFrame } from "./panel-component-open.ts";

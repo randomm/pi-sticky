@@ -12,6 +12,7 @@
 import { expect, test } from "bun:test";
 
 import { visibleWidth } from "@earendil-works/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
 
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -193,4 +194,62 @@ test("a resize at the bar on a compact pin re-wraps the expanded entry at the wi
   // not cut back to one row by a frame the width had no part in.
   expect(widenedLines.join("\n")).toContain("lands here");
   expect(widenedLines.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
+});
+
+/** A component over a TUI that states a height the test can move, with the bar on a compact pin. */
+function componentAtBarOn(compact: ViewPin, rows: number) {
+  const h = host([compact]);
+  h.stub.style = () => BAR_STYLE;
+  const tui = { requestRender: () => {}, terminal: { columns: 44, rows } } as unknown as TUI;
+  const c = new PanelComponent(h.stub, tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  c.focus();
+  c.select(0);
+  return { c, tui };
+}
+
+/** The tallest frame a terminal of `rows` may hold: half of it, `panelMaxRows`'s ceiling. */
+const ceilingOf = (rows: number): number => Math.floor(rows / 2);
+
+test("a height-only resize replays the cached frame: the terminal's rows are no term of the key", () => {
+  // The pre-existing gap this case documents rather than fixes (`panel-frame-draw.ts`: `PanelDraw` carries
+  // `terminalRows`, `sameFrame` does not compare it, and the width guard in `drawFrame` cannot cover a height).
+  // A *width*-only resize is a miss because that caller knows the width it was handed; a *height*-only resize
+  // — pi-tui re-resolving the overlay after the terminal shrank, handing `render()` the same width — moves no
+  // term of the key at all, so the tall frame is replayed. Expansion does not cause it (the same thing happens
+  // to any multi-row frame) but it is what makes it visible: an expanded entry is a tall frame, and the ceiling
+  // it was sized at (`panelMaxRows`, half the terminal) no longer exists. Asserted as *current* behaviour, so
+  // the day the height joins the key this case fails and says so.
+  const SHORT = 10;
+  const compact = {
+    ...pin(1, `${"decide ".repeat(20)}lands here`, "info", { createdAt: NOW }),
+    compact: true,
+    options: ["Passed on", "Not yet"],
+  };
+  const drawn = componentAtBarOn(compact, 60);
+  const tall = drawn.c.render(44);
+  // The frame really is the expanded, tall one, and really is taller than the short terminal's ceiling: without
+  // both, the replay below would be a hit on a frame that needed no cutting and would prove nothing.
+  expect(tall.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
+  expect(tall.length).toBeGreaterThan(ceilingOf(SHORT));
+  // …and a request that changes nothing is a hit, so the replay below is the resize's and not a cache that
+  // never answers.
+  expect(drawn.c.render(44)).toBe(tall);
+  // The resize: the terminal shrinks, pi-tui re-resolves the overlay, and the width it hands `render()` is
+  // the same 44. Nothing else about the panel moved.
+  (drawn.tui as unknown as { terminal: { rows: number } }).terminal.rows = SHORT;
+  expect(drawn.c.render(44)).toBe(tall);
+  // …and `update()` — the cache's other entry point, the one `refresh()` calls on every frame — does not
+  // notice either: its candidate asks the same `sameFrame` question, and a height is not in it to compare.
+  drawn.c.update();
+  expect(drawn.c.render(44)).toBe(tall);
+  // What the frame *would* be if it were drawn at the height now on screen: the same wrap cut to the short
+  // terminal's ceiling, so the replayed frame is the taller of the two — a box the overlay clips.
+  const fresh = componentAtBarOn(compact, SHORT).c.render(44);
+  expect(fresh).toHaveLength(ceilingOf(SHORT));
+  // The replay is a stale *height*, not a stale panel: same pins, same bar, same wrap — only the box the
+  // rows were cut to is the one the old terminal afforded.
+  expect(tall.slice(0, fresh.length - 1)).toEqual(fresh.slice(0, fresh.length - 1));
 });

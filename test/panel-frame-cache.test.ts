@@ -50,20 +50,13 @@ interface FrameOverrides {
   keys?: boolean;
   replyHint?: string;
   ageNow?: number;
-  /** Whether the pin `selection` names is `compact` — what the key's `expanded` term is read from. */
-  compact?: boolean;
 }
 
 function frame(over: FrameOverrides = {}): PanelFrame {
-  const base = over.pins ?? PINS;
-  // The selection's pin made `compact` on request: the frame's expansion is read off the pin `selection`
-  // names, so a case that wants an expanded frame names the flag and lets the predicate answer.
-  const pins =
-    over.compact === undefined
-      ? base
-      : base.map((pin, index) =>
-          index === (over.selection ?? 0) ? { ...pin, compact: over.compact } : pin,
-        );
+  // The pins a case hands in are the pins the frame is built from — including any `compact` flag. The
+  // frame's expansion is read off the pin `selection` names, so a case that wants an expanded frame names the
+  // flag on the array and lets the predicate answer it.
+  const pins = over.pins ?? PINS;
   const mode = over.mode ?? "open";
   const keys = over.keys ?? mode === "open";
   const focused = over.focused ?? false;
@@ -119,42 +112,40 @@ test("focus is a frame change, because the bar and the border colour both depend
   expect(sameFrame(frame({ focused: true }), frame())).toBe(false);
 });
 
-test("a compact pin's expansion is a frame change, in both directions", () => {
-  // The row table grew the selected pin's entry under the bar, so a frame memorised around the expanded table
-  // is not the frame a collapsed one would draw — and neither is the way round. `selection` and `focused` move
-  // with it in practice, but the key owes this term on its own: a candidate whose bar and focus still match a
-  // cached frame must not be answered with rows the current table would not have built.
-  const atBar = frame({ selection: 0, focused: true, compact: true });
-  const collapsed = frame({ selection: 0, focused: true });
-  expect(sameFrame(atBar, collapsed)).toBe(false);
-  expect(sameFrame(collapsed, atBar)).toBe(false);
-  // …and two frames of the *same* published array are a hit, which is what the pins' identity comparison
-  // needs: two hand-built literals are two arrays, and `sameFrame` answers that difference first.
-  const atBarView = [pin(1, "One", "info", { compact: true }), pin(2, "Two", "warning")];
-  const atBarViewFrame = frame({ pins: atBarView, selection: 0, focused: true });
-  const atSecondView = [pin(1, "One", "info"), pin(2, "Two", "warning", { compact: true })];
-  // Built from one published array, so only the predicate's reading of the flag can move the term.
-  expect(
-    sameFrame({ ...atBarViewFrame, pins: atBarView }, { ...atBarViewFrame, pins: atBarView }),
-  ).toBe(true);
-  // A compact pin the bar is *not* on draws collapsed: the term names the selected pin, not the view, so the
-  // same array at the same bar hits whether or not another pin carries the flag.
-  const atSecondFrame = frame({ pins: atSecondView, selection: 0, focused: true });
-  expect(sameFrame(atSecondFrame, atSecondFrame)).toBe(true);
-  // …and the bar *on* that compact pin is the miss, against the same view with the bar elsewhere.
+test("the expansion term is compared on its own — and never decides a case the other terms miss", () => {
+  // What this case proves, stated honestly. `expanded` is `expandedPinOf`'s answer over `pins`/`mode`/`keys`/
+  // `focused`/`selection`, and every one of those is already in the key, so no *state* can move the term
+  // without moving a term the key already compares: it is defence-in-depth against a producer whose term
+  // disagrees with its own fields, and it records the answer the drawn frame's table was built around
+  // (`panel-frame-cache.ts`, the `expanded` member doc). Proving it is compared at all therefore needs a pair
+  // whose fields agree and whose terms do not, which only a mutation of a built frame gives.
+  const view = [pin(1, "One", "info", { compact: true }), pin(2, "Two", "warning")];
+  const atBar = frame({ pins: view, selection: 0, focused: true });
+  expect(atBar.expanded).toBe(0);
+  // The term alone moved on one frame: one published array, one bar, one focus, one mode and gate.
+  expect(sameFrame({ ...atBar, expanded: undefined }, atBar)).toBe(false);
+  expect(sameFrame(atBar, { ...atBar, expanded: undefined })).toBe(false);
+  // …and the term names *which* entry grew, so a frame claiming another pin's expansion is a miss too …
+  expect(sameFrame({ ...atBar, expanded: 1 }, atBar)).toBe(false);
+  // …while the same frame copied is a hit, so the three misses above are the term's and not the builder's.
+  expect(sameFrame(atBar, { ...atBar })).toBe(true);
+  // The pair a redraw actually is: the bar onto the compact pin, against the bar one row off it. Both frames
+  // are built from *one* published array, so the only difference `sameFrame` reads is the bar — the expansion
+  // moves with it, and it is the bar that answers here. MUTATION NOTE: two `frame({ compact: … })` calls do
+  // not make this case — the flag is stamped onto a fresh array, so the pins-identity comparison decides such
+  // a pair's false assertions before the term is ever read. A pair built that way tests the pins, not the term.
   expect(
     sameFrame(
-      frame({ pins: atSecondView, selection: 1, focused: true }),
-      frame({ pins: atSecondView, selection: 0, focused: true }),
+      frame({ pins: view, selection: 1, focused: true }),
+      frame({ pins: view, selection: 0, focused: true }),
     ),
   ).toBe(false);
-  // …and a frame that may not take keys expanded nothing, gate or peek alike: one published array for each
-  // pair, so the comparison is the flag's reading and not the pins' identity.
+  // …and the frame that takes no keys, or draws the peek, expanded nothing whatever the flag on the view
+  // says: one published array per pair, so the hit is the predicate's reading and not the pins' identity.
   for (const over of [{ keys: false }, { mode: "peek" as const }]) {
-    const view = [pin(1, "One", "info", { compact: true }), pin(2, "Two", "warning")];
     const one = frame({ pins: view, selection: 0, focused: true, ...over });
-    const other = frame({ pins: view, selection: 0, focused: true, ...over });
-    expect(sameFrame(one, other)).toBe(true);
+    expect(one.expanded).toBeUndefined();
+    expect(sameFrame(one, frame({ pins: view, selection: 0, focused: true, ...over }))).toBe(true);
   }
 });
 

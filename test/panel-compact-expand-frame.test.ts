@@ -192,9 +192,10 @@ test("an unfocused panel draws a compact pin collapsed at the bar it is not show
 });
 
 test("the digits the focused border names follow the expanded pin", () => {
-  // The compact pin's options are invisible while it is collapsed and answered by `1`–`MAX_OPTIONS`
-  // (`pin-fields.ts`) the moment the bar reaches it, so the border has to say so — `focusedHint` reads the
-  // selected pin's own `options`, and the assertion is on the real count rather than a literal.
+  // The digits `1`–`MAX_OPTIONS` answer the pin under the bar (`pin-fields.ts`) whether or not the frame
+  // expanded it — a collapsed compact pin's options rows are drawn too — so the border has to name them:
+  // `focusedHint` reads the selected pin's own `options`, and the assertion is on the real count rather than a
+  // literal.
   const lines = built(
     { pins: [compactPin()], selection: 0, focused: true, replyHint: "", ageNow: LATER },
     WIDTH,
