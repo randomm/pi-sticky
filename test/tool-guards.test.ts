@@ -151,6 +151,23 @@ test("an update that only files a pin under a group is accepted", async () => {
   expect(result.details.pins[0]?.options).toEqual(["yes", "no"]);
 });
 
+test("an update whose group cleans to nothing is refused and leaves the pin's group alone", async () => {
+  // The distinction the fix has to preserve, at the layer the model reads: `{group:""}` clears (the case
+  // below), `{group: ESC[2J}` is refused — it was never a group, only an escape with no group behind it, and
+  // storing it as a clear silently dropped a section name the model did not offer to drop. `details` is the
+  // only copy of the pins on the branch, so the surviving group is asserted there and not just in the text.
+  const h = harness();
+  await h.call({ action: "pin", text: "Decide X", group: "Backlog" });
+  for (const group of [`${ESC}[2J`, " \t ", cp(0x200b), cp(0x202e)]) {
+    const result = await h.call({ action: "update", id: 1, group });
+    expect(result.isError, JSON.stringify(group)).toBe(true);
+    expect(text(result), JSON.stringify(group)).toBe(
+      "group must be 1 to 24 characters after cleaning",
+    );
+    expect(result.details.pins[0]?.group).toBe("Backlog");
+  }
+});
+
 test("an update clears a group and an option list, and turns compact off", async () => {
   const h = harness();
   await h.call({

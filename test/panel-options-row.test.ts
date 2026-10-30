@@ -29,6 +29,7 @@ import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { pin } from "./fixtures.ts";
+import { pipeBearingOptions } from "./panel-hostile-fields.ts";
 
 /**
  * `ESC [ p m`, spelled from code points so the file holds no literal escape (one is rewritten on its way into
@@ -84,6 +85,15 @@ const rowColoured = (style: PanelStyle, options: string[], width: number): strin
 describe("the options row", () => {
   test("the exact row for a short option list (operator resolution 4)", () => {
     expect(row({ options: ["Passed on", "Not yet"] })).toBe("1 Passed on   2 Not yet".padEnd(60));
+  });
+
+  test('the options row prints a " | "-bearing label whole, and keeps its keycap', () => {
+    // The panel's own row uses the same keycap form the model's row now uses, and the reason is the same:
+    // a label that contains a separator must still read as one entry, so the row keeps the label intact and the
+    // digit in front of it naming its position. `hostileOptions` cannot carry this label (it is at
+    // `MAX_OPTIONS`), so the listing surfaces name it themselves — this is the panel's half of that.
+    const drawn = row({ options: pipeBearingOptions() });
+    expect(drawn.trimEnd()).toBe("1 ship | it   2 hold");
   });
 
   test("a single option carries its keycap and its label", () => {

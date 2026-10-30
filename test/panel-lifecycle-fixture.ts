@@ -29,6 +29,7 @@ import type { StickyConfig } from "../src/types.ts";
 import { TOOL_NAME, UI_TYPE } from "../src/types.ts";
 
 import { LATER } from "./fixtures.ts";
+import { pipeBearingOptions } from "./panel-hostile-fields.ts";
 import { piContext } from "./pi-context.ts";
 import type { RecordedCustomCall } from "./recorded-ui-types.ts";
 import type { CustomComponent } from "./recording-ui.ts";
@@ -85,10 +86,12 @@ export const TWO_PINNED: readonly unknown[] = [
 
 /**
  * One pin that offers options — the shape the digit keys answer, and the one the frame's hint names keys
- * for. Two entries, the fewest a pin may carry (`MIN_OPTIONS`, `pin-fields.ts`).
+ * for. Two entries, the fewest a pin may carry (`MIN_OPTIONS`, `pin-fields.ts`), and the first label carries
+ * a `" | "` of its own: the boot path is where a label the listing might have joined by mistake has to come
+ * back through the real reader, the frame's row and the digit key whole.
  */
 export const OPTIONED: readonly unknown[] = [
-  pinEntry([{ id: 1, uid: "aaaa1111", text: "Decide X", options: ["Passed on", "Not yet"] }]),
+  pinEntry([{ id: 1, uid: "aaaa1111", text: "Decide X", options: pipeBearingOptions() }]),
 ];
 
 /** The lifecycle test's context: pi's shape for `ui`, plus the recorder it writes through. */

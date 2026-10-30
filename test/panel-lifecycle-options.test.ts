@@ -10,6 +10,9 @@
  * presses Enter.
  *
  * The sibling `panel-lifecycle-toggles.test.ts` owns the toggles and the Enter/d pair at this same surface.
+ *
+ * The fixture's labels come from `pipeBearingOptions()` (`panel-hostile-fields.ts`): the first carries a
+ * `" | "` of its own, which is the label a joined listing would have split in two.
  */
 import { expect, test } from "bun:test";
 
@@ -38,10 +41,23 @@ test("a digit puts the chosen option behind the marker and hands focus back to t
   ctx.recorder.setEditorText("how about the blue one");
   call?.component?.handleInput?.("2");
 
-  expect(ctx.recorder.getEditorText()).toBe("Re #1: Not yet how about the blue one");
+  expect(ctx.recorder.getEditorText()).toBe("Re #1: hold how about the blue one");
   expect(panelComponent(call)?.isFocused()).toBe(false);
   // Nothing was sent and nothing was notified: the draft is the whole of what the key did.
   expect(ctx.recorder.notifications).toEqual([]);
+});
+
+test('the digit addresses the whole " | "-bearing label, not the fragment before its bar', async () => {
+  // The listing bug, closed at the surface that actually answers: `modelRow` used to join labels with " | ",
+  // so this pin read as three offers and the model could answer `1` meaning the second. Whatever the listing
+  // says, the digit is a *position*, so key 1 must put the entire first label — bars and all — behind the
+  // marker, through the real `replyMarker` merge and not a copy of it.
+  const { ctx, call } = await focused();
+  ctx.recorder.setEditorText("how about the blue one");
+  call?.component?.handleInput?.("1");
+
+  expect(ctx.recorder.getEditorText()).toBe("Re #1: ship | it how about the blue one");
+  expect(panelComponent(call)?.isFocused()).toBe(false);
 });
 
 test("a digit replaces a marker the draft already carries, the same rule Enter obeys", async () => {
@@ -51,7 +67,7 @@ test("a digit replaces a marker the draft already carries, the same rule Enter o
   ctx.recorder.setEditorText("Re #9: keep this draft");
   call?.component?.handleInput?.("1");
 
-  expect(ctx.recorder.getEditorText()).toBe("Re #1: Passed on keep this draft");
+  expect(ctx.recorder.getEditorText()).toBe("Re #1: ship | it keep this draft");
 });
 
 test("a digit the pin has no option for leaves the draft and the focus alone", async () => {

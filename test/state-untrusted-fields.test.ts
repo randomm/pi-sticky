@@ -3,10 +3,11 @@
  * `compact` — as `reconstruct` reads them back.
  *
  * Split out of `state-untrusted.test.ts` because these fields are a different promise from pin text: a
- * snapshot shapes them, the reader re-cleans each one through `cleanPinText` (a rebuild has no config, so
- * there is no budget), and the value is dropped outright rather than stored when cleaning empties it —
- * `isPinState` refuses `group: ""` and a `""` among the options, and a snapshot it refuses is *skipped*,
- * which loses every pin on the branch rather than one field.
+ * snapshot shapes them, the reader holds each one to the writer's rules through `storedField`
+ * (`pin-fields.ts`) — clean, one line, bounded, unique — and the value is dropped outright rather than stored
+ * when a rule rejects it (`session-entries-fields.test.ts` owns those rules). It matters that the value is
+ * dropped rather than stored, because `isPinState` refuses `group: ""` and a `""` among the options, and a
+ * snapshot it refuses is *skipped*, which loses every pin on the branch rather than one field.
  *
  * The digit edge is the regression this file exists for. The class that spells "edge whitespace" is built
  * at runtime from numeric code points, and one of those numbers is CR — 0x0d. Written as the *number*

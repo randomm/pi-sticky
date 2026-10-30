@@ -78,6 +78,20 @@ export const hostileOptions = (brk: string): string[] => [
   "ship it",
 ];
 
+/**
+ * A label whose own text is the separator a listing might join entries with.
+ *
+ * `" | "` is the join the model's row used to use, which made one offer read as two and the digit the user
+ * answers with a position into a miscount; the label is kept as the fixture that says a surface must never
+ * join labels with a sequence a label can contain. Surfaces that print it assert the label whole, so it is a
+ * named entry rather than a fourth `hostileOptions` member — that list is at `MAX_OPTIONS` and its sweeps
+ * count keycaps.
+ */
+export const PIPE_BEARING_OPTION = "ship | it";
+
+/** The label and a plain partner: the smallest list a pin may carry, with the separator inside a label. */
+export const pipeBearingOptions = (): string[] => [PIPE_BEARING_OPTION, "hold"];
+
 /** The group and the options, each carrying a forgery, once per break shape. */
 export interface HostileFields {
   group: string;
@@ -192,7 +206,10 @@ export function assertStoredFieldsAreOneLine(): void {
   for (const brk of BREAKS) {
     const fields = checkPinFields({
       group: hostileGroup(brk),
-      options: hostileOptions(brk),
+      // The `" | "`-bearing label rides along with the forgeries: it is a field a drawn surface has to print
+      // as *text* too, and the store must be seen to keep it whole (one grapheme-capped one-liner) rather than
+      // treat the bars as structure. Added here rather than to `hostileOptions`, which is at `MAX_OPTIONS`.
+      options: [...hostileOptions(brk), PIPE_BEARING_OPTION],
     });
     expect(fields.ok).toBe(true);
     if (!fields.ok) return;
