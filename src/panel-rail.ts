@@ -19,10 +19,7 @@ import type { PanelMode } from "./panel-mode.ts";
  * question, one answerer.
  *
  * The **frame** is a term beside that verdict rather than folded into it, because the verdict alone cannot
- * see every move that hands the pins back. `isVisible()` answers false for want of pins as readily as for
- * want of a shown panel, so a demote under an emptied view — the last pin dismissed while the frame was
- * open, then `Esc` — leaves the verdict at `false` before and after, and a key that spelled only the verdict
- * answered "already installed" to the one frame whose job was to put the rail back under those pins.
+ * see every move that hands the pins back — see `#frame` for the one case that proves it.
  *
  * The view is in the key by *what it draws* rather than by reference (`railStamp`, in
  * `panel-geometry.ts`): `RailComponent` snapshots the view it was built with, so a same-count change to
@@ -40,15 +37,15 @@ import type { PanelMode } from "./panel-mode.ts";
 
 /**
  * The frame term of the guard's key: the cell's own name for the two frames that own the pins, and `"none"`
- * for the frame in which the rail owes the user its strip. Named rather than left as `string` so a mode the
- * guard has no name for is a compile error at the switch below, not a silent `"none"`.
+ * for the frame in which the rail owes the user its strip. Not exported: `#frame` below is its only producer
+ * and the key is a string, so nothing outside this class can name one or be checked against one.
  */
-export type RailFrame = Extract<PanelMode, "open" | "peek"> | "none";
+type RailFrame = Extract<PanelMode, "open" | "peek"> | "none";
 
 /**
- * The deps the rail path reads: the pins it stamps, the frame it would draw, and the clock the handoff
- * falls back to when no draw has reported a minute. Narrower than `PanelDeps` on purpose — see
- * `RailGuard.consider` for the first two and `RailWiring` in `panel-rail-handoff.ts` for the third.
+ * The deps the rail path reads, narrowed from `PanelDeps` on purpose so a wider reach has to be a change
+ * here: the pins it stamps and the frame it would draw (`RailGuard.consider`), and the clock the handoff
+ * falls back to when no draw has reported a minute (`RailWiring`, `panel-rail-handoff.ts`).
  */
 export type RailDeps = Pick<PanelDeps, "getView" | "panelMode" | "now">;
 
@@ -96,36 +93,36 @@ export class RailGuard {
     // The verdict is read once, into a local, so the two terms of the key that speak about the same question
     // are answered by one call rather than by two that could disagree.
     const owns = ownsPins();
-    // The frame the panel would draw is a term of the key beside the ownership verdict, and not folded into
-    // it: the two answer different questions and the rail is installed for the difference between them. A
-    // demote that hands the pins back *without* moving `ownsPins()` — an empty view under a panel, where
-    // `isVisible()` already answered false for want of pins both before and after — is invisible to a key
-    // that spells only the verdict, and the pins end up drawn by neither surface.
+    // The frame is a term of the key beside the ownership verdict, and not folded into it — the case that
+    // proves it is in `#frame`: a demote can hand the pins back without moving `ownsPins()` at all.
     const key = `${columns}|${owns}|${this.#frame(deps)}|${railStamp(view.pins)}|${ageBucket}`;
     if (this.#same(key)) return;
     this.#install(key, redraw);
   }
 
   /**
-   * The frame the panel would draw: `"open"`, `"peek"` or `"none"`.
+   * The frame name the key spells: the cell's own, or the rail's strip for a panel that draws nothing.
    *
    * Read from the cell **alone**, deliberately: it is a term beside the ownership verdict, not a refinement of
-   * it, and folding the verdict in here would collapse two distinct answers into one string. A panel the owner
-   * has forgotten (a failed open: the record gone, the cell still saying *shown*) and a panel that has lost
-   * its pins both draw nothing, and both are `"none"` — but for the first the rail must be installed and for
-   * the second it must stay down, and the term that tells those apart is `ownsPins()`, which the key spells
-   * beside this one. The cell answers for what the panel *would* draw and the verdict for whether it draws
-   * anything at all; a frame name qualified by the verdict would make the key report one question twice.
+   * it, and folding the verdict in here would collapse two distinct answers into one string. The case the term
+   * exists for is a demote under an emptied view — the last pin dismissed while the frame was open, then
+   * `Esc`: `isVisible()` answers false for want of pins both before and after, so a key that spelled only the
+   * verdict would answer "already installed" to the one frame whose job was to put the rail back.
+   *
+   * Exhaustive `switch`, with no `default`: a fourth `PanelMode` would fail to compile here rather than be
+   * silently stamped `"none"` and never redrawn for. The two frames the cell names are not collapsed into a
+   * ternary either — a cell between them is a *resting* panel, and a name that called both an `open` would
+   * let a hide-to-peek and a peek-to-hidden move the key identically.
    */
-  /** The frame name the key spells: the cell's own, or the rail's strip for a panel that draws nothing. */
   #frame(deps: RailDeps): RailFrame {
-    const mode = deps.panelMode().mode();
-    // Not a ternary on `"open"`: a cell between the two is a *resting* panel, and a name that called both an
-    // `open` would let a hide-to-peek and a peek-to-hidden move the key identically — the two are not the same
-    // answer, and the one that matters here is `none`, the frame in which the rail owes the user its strip.
-    // The union is the point: a fourth `PanelMode` would be a compile error here rather than a frame the
-    // guard silently stamps as `none` and never redraws for.
-    return mode === "open" || mode === "peek" ? mode : "none";
+    switch (deps.panelMode().mode()) {
+      case "open":
+        return "open";
+      case "peek":
+        return "peek";
+      case "hidden":
+        return "none";
+    }
   }
 
   /**

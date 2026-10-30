@@ -57,6 +57,17 @@ export interface PanelFrame {
    * ask (`PanelHost.mode`), so the key always names one.
    */
   mode: PanelMode;
+  /**
+   * Whether the frame may name the keys at all (`PanelHost.interactiveOpen`) — the **legend's** term, beside
+   * `mode`, which is the **frame's**.
+   *
+   * In the key because the two come apart: under `PI_STICKY_PANEL=open` the cell keeps answering `open` from
+   * the resting mode after the earned open has ended, so `mode` alone cannot tell the frame that advertises
+   * `d`/`Enter`/the digits from the one that must advertise the focus key instead. A key that spelled only
+   * `mode` hits on the frame drawn before the ending and keeps drawing the keys a refused keystroke no longer
+   * answers. The drawn bytes depend on it — the bottom border's label is chosen by it — so the key owes it.
+   */
+  keys: boolean;
   /** The resting border's label, read from the host at draw time. */
   replyHint: string;
   /**
@@ -88,6 +99,7 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
     frame.focused === candidate.focused &&
     frame.replyHint === candidate.replyHint &&
     frame.mode === candidate.mode &&
+    frame.keys === candidate.keys &&
     frame.ageNow === candidate.ageNow
   );
 }

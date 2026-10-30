@@ -7,6 +7,13 @@
  * has two ways to go wrong — a peek that dismisses a pin the user never saw a bar on, and a host with no
  * mode cell (`undefined`) refusing the keys of an ordinary open panel.
  *
+ * The gate reads `interactiveOpen()` and not `mode()`, and the two only come apart under
+ * `PI_STICKY_PANEL=open` — so the file drives both answers as separate levers. The `mode: "open"` with
+ * `interactiveOpen: false` pair is that configuration: pi-tui is still routing keystrokes to a full frame,
+ * and the cell says nothing in it is addressable. `panel-lifecycle-autoshow-keyboard.test.ts` reaches the
+ * same state by booting the extension; this file asks the dispatcher directly, where the four keys that do
+ * damage are each pressed and the handle handed back is counted.
+ *
  * The component is driven with the focus pi-tui would have given it, and the host's `unfocus` is counted:
  * that member is the owner's only notice that the interaction ended, so the assertion is about the round
  * trip rather than about a flag on the component.
@@ -138,5 +145,68 @@ test("a hidden panel refuses its keys whatever the mode says", () => {
   c.focus();
   c.handleInput?.("d");
   expect(state.dismissals).toEqual([]);
+  expect(state.unfocusCalls).toBe(1);
+});
+
+// --- `mode()` and `interactiveOpen()` disagreeing ---------------------------------------------------------
+//
+// `PI_STICKY_PANEL=open` after an earned open ended: the cell answers the full frame from the resting mode
+// alone and the gate answers false. The pair is what the earlier rounds got wrong in both directions — a
+// gate on `mode()` alone kept dismissing pins from a panel the user had left, and a legend drawn from
+// `mode()` alone advertises keys the gate refuses. Each case below names the answer the host gives rather
+// than the configuration that produces it.
+
+/** The four keys that do damage: a dismissal, a rewritten draft, an option answer, and a moved bar. */
+const DAMAGE_KEYS = ["d", "\r", "1", "j"];
+
+test("a frame the gate has stopped answering hands every key back, whatever mode it draws", () => {
+  // `d` dismisses, Enter and a digit rewrite the editor's draft, and `j` moves the bar: none may happen in a
+  // frame the dispatcher will refuse, and each one must instead end the interaction — which is the owner's
+  // notice to put the pins back on the rail, so the count is the whole answer.
+  const { c, state } = at("open", ["Decide X", "Watch out"], {
+    interactiveOpen: () => false,
+  });
+  c.focus(); // the state the user is in: pi-tui routes to this frame, the cell says it answers nothing
+  const renders = state.renders;
+  for (const key of DAMAGE_KEYS) c.handleInput?.(key);
+  expect(state.dismissals).toEqual([]);
+  expect(state.replies).toEqual([]);
+  expect(c.selection).toBe(0); // the bar the user focused with, unmoved
+  expect(state.unfocusCalls).toBe(DAMAGE_KEYS.length);
+  expect(c.isFocused()).toBe(false);
+  // The hand-back reaches the owner, which is what asks for the frame with the rail back on it.
+  expect(state.renders).toBeGreaterThan(renders);
+});
+
+test("the same frame with the gate up answers all four keys, so the case above is not a stub", () => {
+  // The counterpart on an identical host but one answer: `interactiveOpen()` true. If the four keys reached
+  // nothing here too, the case above would be pinning a fixture rather than a gate.
+  const { c, state } = at("open", ["Decide X", "Watch out", "Another"], {
+    interactiveOpen: () => true,
+  });
+  c.focus();
+  c.handleInput?.("j");
+  expect(c.selection).toBe(1); // the bar moved, so the keys that follow address a different pin
+  c.handleInput?.("d");
+  c.handleInput?.("\r");
+  expect(state.dismissals).toEqual([2]); // `d` addressed the pin the bar had moved onto
+  // …and Enter answered the pin still under the bar: the recording host's view does not shrink on a
+  // dismissal, so this is the pin `d` named rather than the one a live dismissal would have left there.
+  expect(state.replies).toEqual([2]);
+  // Only Enter ended the interaction — `d` and `j` are the keys of a panel the user is still in.
+  expect(state.unfocusCalls).toBe(1);
+});
+
+test("a digit on a frame the gate has stopped answering does not even start a draft", () => {
+  // The digit path is the one that writes the editor and *keeps* the focus when the selected pin has options
+  // (`panel-input.ts`), so it is the key whose refusal is easiest to get half-right: refused, it must not
+  // reach `startReply` at all, and must still hand the focus back like every other key.
+  const { c, state } = at("open", ["Decide X", "Watch out"], {
+    interactiveOpen: () => false,
+  });
+  c.focus();
+  c.handleInput?.("1");
+  expect(state.replies).toEqual([]);
+  expect(state.answers).toEqual([]);
   expect(state.unfocusCalls).toBe(1);
 });

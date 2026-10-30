@@ -72,10 +72,21 @@ export interface PanelDraw {
   terminalRows: number | undefined;
 }
 
-/** Everything one frame needs from the host, read once: the label, the mode, the age instant and its bucket. */
+/**
+ * Everything one frame needs from the host, read once: the label, the two answers the cell gives about the
+ * panel, the age instant and its bucket.
+ *
+ * `mode` and `keys` are read together here, from one cell, because they are the two halves of one question
+ * (`panel-mode.ts`): which frame to draw, and whether that frame may name the keys. Reading them apart is
+ * what let a frame under `PI_STICKY_PANEL=open` advertise `d` after the keystroke that would have pressed it
+ * was refused.
+ */
 export interface FrameKey {
   replyHint: string;
+  /** The frame to draw — the peek's three rows or the open panel's box. */
   mode: PanelMode;
+  /** Whether the drawn frame may advertise the keys — the gate `dispatchPanelKey` obeys, not the frame. */
+  keys: boolean;
   /** The instant every age in the frame is stamped at. */
   ageNow: string;
   /** The minute `ageNow` falls in — what the key compares, since the ages move once a minute at most. */
@@ -142,19 +153,27 @@ export function frameOf(
     focused,
     replyHint: key.replyHint,
     mode: key.mode,
+    keys: key.keys,
     ageNow: key.ageKey,
   };
 }
 
 /**
- * Read the host's contributions once — the label, the mode and the age instant — so the key and the rows
- * cannot name two different instants. Both cache entry points ask for this key: `update()`'s candidate
- * (`panel-component-frame.ts`) must read the host the same way or the two halves of the key can drift.
+ * Read the host's contributions once — the label, the two answers the cell gives, and the age instant — so
+ * the key and the rows cannot name two different instants or two different states. Both cache entry points
+ * ask for this key: `update()`'s candidate (`panel-component-frame.ts`) must read the host the same way or
+ * the two halves of the key can drift.
  */
 export function frameKey(host: PanelHost): FrameKey {
   const clock = host.ageNow;
   const ageNow = ageAt(clock === undefined ? undefined : () => clock());
-  return { replyHint: host.replyHint(), mode: host.mode(), ageNow, ageKey: ageBucket(ageNow) };
+  return {
+    replyHint: host.replyHint(),
+    mode: host.mode(),
+    keys: host.interactiveOpen(),
+    ageNow,
+    ageKey: ageBucket(ageNow),
+  };
 }
 
 /** The open frame's layout arguments, over the content's drawn order. */
@@ -164,7 +183,10 @@ function openFrame(draw: PanelDraw, key: FrameKey, selection: number, focused: b
       // The *drawn order* — what `selection` indexes — and the sections the title's counts are read off.
       pins: draw.sections.flat,
       selection,
-      focused,
+      // The bar, the frame's colours and the keys legend all answer the gate rather than the flag alone: a
+      // frame the dispatcher will refuse is a resting frame however pi-tui routed to it, and must not
+      // advertise keys no keystroke reaches (`panel-input.ts`).
+      focused: keysLive(key, focused),
       replyHint: key.replyHint,
       sections: draw.sections.order,
       ageNow: key.ageNow,
@@ -174,6 +196,19 @@ function openFrame(draw: PanelDraw, key: FrameKey, selection: number, focused: b
     style: draw.style,
     ageNow: key.ageNow,
   };
+}
+
+/**
+ * Whether this frame draws as one the user is in: the component's flag, and the gate the dispatcher obeys.
+ *
+ * Both, not either. The flag is the only fact that knows the user is *looking at* the frame (an unfocused
+ * panel that highlighted its top row would claim the bar sits where the user is not); the gate is the only
+ * fact that knows a keystroke would be answered. Under `PI_STICKY_PANEL=open` they come apart — the cell
+ * keeps answering `open` from the resting mode after the earned open ended — and the honest frame is the
+ * resting one: no bar, the focus key in the border, and no keys advertised.
+ */
+function keysLive(key: FrameKey, focused: boolean): boolean {
+  return focused && key.keys;
 }
 
 /**

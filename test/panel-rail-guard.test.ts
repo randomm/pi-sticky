@@ -18,28 +18,24 @@ import { expect, test } from "bun:test";
 import type { PanelModeState } from "../src/panel-mode.ts";
 import type { RailWiring } from "../src/panel-rail-handoff.ts";
 import { createRailHandoff } from "../src/panel-rail-handoff.ts";
-import type { RailDeps as GuardDeps } from "../src/panel-rail.ts";
+import type { RailDeps } from "../src/panel-rail.ts";
 import { RailGuard } from "../src/panel-rail.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
 import { PEEK, cell } from "./panel-rail-cells.ts";
 
 /**
- * The deps the guard reads: the view it stamps, and the frame the panel would draw.
+ * The deps this file hands the guard: the view it stamps and the frame the panel would draw.
  *
- * Typed as the two members the guard and the handoff actually call, plus the clock, rather than as the whole
- * of `PanelDeps` behind a cast: the cast was what let this file keep building after the guard grew a term
- * (`interactiveOpen`) that a `{ getView, panelMode }` literal does not answer, and the only thing that
- * surface needs is a compiler that complains. `now` is the handoff's, not the guard's — the one case below
- * that drives `createRailHandoff` reads it, and the guard never does.
+ * Typed as the source's own `RailDeps` rather than as a `{ getView, panelMode }` literal behind a cast to
+ * `PanelDeps`: the cast was what let this file keep building after the guard grew a term (`interactiveOpen`)
+ * that the literal does not answer, and the only thing this surface needs is a compiler that complains. `now`
+ * is the handoff's, not the guard's — the one case below that drives `createRailHandoff` reads it.
  *
  * `panelMode` is a *real* cell rather than a hand-built one, because the frame is a term this file's cases
  * move: a stub that answered one mode for every state would make the term constant and the case that pins it
  * pass on nothing.
  */
-/** The deps this file hands the guard: the two reads its key is spelled from, and the handoff's clock. */
-type RailDeps = GuardDeps;
-
 function railDeps(state: { view: PinView; cell?: PanelModeState; now?: string }): RailDeps {
   return {
     getView: () => state.view,

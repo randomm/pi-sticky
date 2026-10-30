@@ -1,4 +1,3 @@
-import { DEFAULT_CONFIG } from "../src/config.ts";
 /**
  * The shared opening for the two files that drive a pin into a booted panel.
  *
@@ -9,6 +8,7 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
  * The width is always 120 columns. At a narrow terminal the rail is the only surface, and every assertion
  * these files makes about the auto-show would be about the width instead of about the auto-show.
  */
+import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { PinLevel, StickyConfig } from "../src/types.ts";
 import { boot } from "./panel-lifecycle-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";

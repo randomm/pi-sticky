@@ -8,18 +8,22 @@
  * one session, and a reload that restored a transient auto-open would put a panel back over the transcript
  * nobody asked to keep open.
  *
- * One cell with both halves in it, rather than two flags the caller has to keep in step: they move together
- * or not at all. An earned open that outlived its demote would reopen the panel on the next redraw, and a
- * flag cleared while the panel still read it would leave the user looking at an open panel nothing remembers
- * opening. `mode()` is the only read and `settle`/`autoOpen`/`endEarnedOpen` the only writes, so the pair
- * cannot be moved half-way.
+ * One cell with three halves in it, rather than flags the caller has to keep in step: `shown`, `earned` and
+ * the resting mode move together or not at all, and only through the writes below — an earned open that
+ * outlived its demote would reopen the panel on the next redraw, and a flag cleared while the panel still
+ * read it would leave the user looking at an open panel nothing remembers opening. `mode()` and
+ * `interactiveOpen()` are the only reads and `settle`/`autoOpen`/`endEarnedOpen`/`forgetEarnedOpen` the only
+ * writes, so no pair can be moved half-way.
  *
  * What the state is asked for:
  *
  * - `PanelOwner.isVisible()` reads `mode()` through `PanelDeps` and answers the pins question with the
  *   mode itself: the panel owns the pins in peek *and* in open, and the rail draws only in hidden (or at
  *   a terminal too narrow for a frame) — U11: a pin is drawn by exactly one surface.
- * - `PanelComponent` reads the same mode and draws the peek (`panel-peek.ts`) or the open frame.
+ * - `PanelComponent` reads `mode()` for the **frame** — the peek (`panel-peek.ts`) or the open panel — and
+ *   `interactiveOpen()` for the **keys** it accepts and the legend it advertises. The two are one answer
+ *   while a peek exists to separate them, and not one under `PI_STICKY_PANEL=open`, where the resting mode
+ *   keeps the frame up after the earned open has ended.
  * - The auto-open rule (U11/U12): an action or warning pin opens the panel fully and it
  *   *stays* open across redraws, further pins and agent turns, until the user leaves it — Esc, Enter from a
  *   key, or a keystroke into a panel that is not open. `endEarnedOpen` is the only ending an *interaction*
@@ -38,7 +42,7 @@
  */
 import { PANEL_DEFAULT_MODE, panelResting } from "./panel-resting.ts";
 import type { PanelResting } from "./panel-resting.ts";
-import type { PinLevel, ViewPin } from "./types.ts";
+import type { PinLevel } from "./types.ts";
 
 /** The three states the panel's on-screen answer has. */
 export type PanelMode = "hidden" | "peek" | "open";
@@ -172,30 +176,26 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
   /** Whether the current open was earned rather than asked for, and by whom — see `EarnedKind`. */
   let earned: EarnedKind | undefined;
   /**
-   * Where an ended earned open goes: the resting mode for the model's auto-show, the user's own choice for
-   * the open their focus key earned.
+   * Where an ended earned open goes, and whether it keeps the full frame — one decision, not two, because the
+   * two questions have the same answer for the same reason: the provenance.
    *
    * The operator's decision this encodes: a panel that came out of hiding to deliver a blocker comes back to
    * the peek once it has been read, even though the user had hidden it — a `/pins hide` holds until the next
-   * auto-show and is not a permanent answer to "show me the blocker". The focus key is the opposite case:
-   * the user pulled the panel over their transcript, and putting it back where they left it is theirs, not
-   * the session's. Under `PI_STICKY_PANEL=open` both answers are `true`, which is what never-peek means.
-   */
-  const shownAfter = (kind: EarnedKind): boolean => (kind === "autoshow" ? true : chosen);
-  /**
-   * Whether an ended focus-key open keeps the full frame: the user pulled the panel over their transcript
-   * while they had it *shown*, so `Esc` hands the keyboard back and leaves the frame they are reading. The
-   * auto-show never keeps it — that one is the model covering the transcript, and it comes down to the
-   * resting frame whichever way the record reads.
+   * auto-show and is not a permanent answer to "show me the blocker". The focus key is the opposite case: the
+   * user pulled the panel over *their* transcript, so the screen they had chosen is restored and the frame
+   * they are reading is left standing — putting it back where they left it is theirs, not the session's.
+   * Under `PI_STICKY_PANEL=open` both answers are `true`, which is what never-peek means.
    *
-   * A panel the user had *hidden* takes the frame back too: `ctrl+alt+p` over a hide is a look, not a
-   * decision to keep the panel, and `settle` already took the open away the moment the panel went out of
-   * sight — so `Esc` from there returns the hide the user wrote and the rail takes the pins back.
-   *
-   * `resting` is deliberately not read here: under `PI_STICKY_PANEL=open` a shown panel answers `open`
-   * through `mode()` anyway, so an operator who refused the peek is not put into one by either ending.
+   * A panel the user had *hidden* takes the frame back with the keys: `ctrl+alt+p` over a hide is a look, not
+   * a decision to keep the panel, and `settle` already took the open away the moment the panel went out of
+   * sight — so `Esc` from there returns the hide the user wrote and the rail takes the pins back. `resting`
+   * is deliberately read by neither: under `PI_STICKY_PANEL=open` a shown panel answers `open` through
+   * `mode()` anyway, so an operator who refused the peek is not put into one by either ending.
    */
-  const keepsOpen = (kind: EarnedKind): boolean => kind === "focus" && chosen;
+  const ending = (kind: EarnedKind): { shown: boolean; keepsOpen: boolean } => ({
+    shown: kind === "autoshow" || chosen,
+    keepsOpen: kind === "focus" && chosen,
+  });
   /**
    * Whether the panel is *recorded* as shown — what the user's verbs chose, and the only thing a hide or a
    * show moves.
@@ -209,22 +209,27 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
 
   /**
    * The answer, in one expression: hidden unless shown, open while a pin earned it or the operator asked to
-   * keep the panel open, and peek otherwise. `resting === "open"` is checked with the earned open because
-   * that is what "never peek" means — a demote must not put an operator-configured panel into a state the
-   * operator refused.
+   * keep the panel open, and peek otherwise. `resting === "open"` is checked with the earned open because that
+   * is what "never peek" means — a demote must not put an operator-configured panel into a state the operator
+   * refused. The frame, and nothing else: what a keystroke may do is `interactiveOpen` below.
    */
-  /**
-   * Open *and* taking keys — the half of `mode()` that comes from an open the session earned. The other half
-   * is `resting`, and it is not interactive: `PI_STICKY_PANEL=open` says the full frame whether or not
-   * anything earned it, and a resting frame the operator asked for never took the keyboard to give back.
-   */
-  const interactiveOpen = (): boolean => shown && earned !== undefined;
-
   const mode = (): PanelMode => {
     if (!shown) return "hidden";
     if (interactiveOpen() || resting === "open") return "open";
     return "peek";
   };
+
+  /**
+   * Open *and* taking keys — the half of `mode()` that comes from an open the session earned. The other half
+   * is `resting`, and it is not interactive: `PI_STICKY_PANEL=open` says the full frame whether or not
+   * anything earned it, and a resting frame the operator asked for never took the keyboard to give back.
+   *
+   * The answer the key gate asks (`panel-input.ts`) and the answer the frame's legend is drawn from
+   * (`keysLive`, `panel-frame-draw.ts`) — one fact, asked in two places, which is what keeps the border from
+   * advertising a key the dispatcher hands back to the editor. Reading `mode()` for either instead is how a
+   * panel the user had left went on dismissing pins under `PI_STICKY_PANEL=open`.
+   */
+  const interactiveOpen = (): boolean => shown && earned !== undefined;
 
   /**
    * The one write of the screen: what is drawn, and whether it was earned.
@@ -239,11 +244,9 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
   }
 
   /**
-   * The earned open is over, and the panel goes where its provenance says.
-   *
-   * Both kinds clear `earned`, which is the whole of the transience: the open was the session's and now it
-   * is not. What they differ about is the screen, and only the open the user reached for keeps it — see
-   * `keepsOpen`. `resting` deliberately survives either way: it is the operator's, not the session's.
+   * The earned open is over, and the panel goes where its provenance says — see `ending` for the decision and
+   * why it is the operator's rather than the session's. Clearing `earned` is the whole of the transience;
+   * `resting` deliberately survives either way, because it is the operator's, not the session's.
    *
    * Under `resting === "open"` the cleared provenance is *invisible* in `mode()`, which keeps answering the
    * full frame from the resting mode alone. Nothing here compensates, and nothing should: `interactiveOpen`
@@ -253,10 +256,8 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
   function demote(): void {
     const kind = earned;
     if (kind === undefined) return;
-    // Back to what the user chose for the open their own focus key earned, and to the resting frame for the
-    // model's auto-show. `resting` decides the *frame* through `mode()`, so an operator who refused the peek
-    // is not put into one by either ending.
-    screen(shownAfter(kind), keepsOpen(kind) ? kind : undefined);
+    const where = ending(kind);
+    screen(where.shown, where.keepsOpen ? kind : undefined);
   }
 
   return {

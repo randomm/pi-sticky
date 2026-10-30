@@ -1,39 +1,40 @@
 /**
- * What the panel *holds* at the moment an earned open ends — the keyboard — on a booted extension.
+ * What the panel *holds* at the moment an earned open ends — the keyboard and the legend — on a booted
+ * extension.
  *
  * The two sibling files are about where the panel **goes** (`mode()`): the auto-show's endings in
  * `panel-lifecycle-autoshow.test.ts`, the provenance and the non-endings in
  * `panel-lifecycle-autoshow-earned.test.ts`. Both assert the frame moved and neither asks what the component
- * is still holding, which is the half a security review flagged: an ending that folded the panel back while
- * the overlay kept the keyboard would pass every one of those tests and leave the user typing into a frame
- * that no longer answers. pi-tui routes input to the focused component alone, so "released" is two facts and
- * not one — the component's own flag and pi's overlay handle — and the flag also decides what the frame
- * *advertises*: the focused border draws the keys legend and the resting one the focus key instead
- * (`panel-lines.ts`, `panel-hint.ts`).
+ * is still holding. pi-tui routes input to the focused component alone, so "released" is two facts and not
+ * one — the component's own flag and pi's overlay handle — and a third decides what the frame *advertises*:
+ * the keys legend in the bottom border is drawn for a panel the dispatcher will answer, and the resting
+ * border carries the focus key instead (`panel-frame-draw.ts`, `panel-hint.ts`).
  *
- * So each case asks the two holding questions and one behavioural one:
+ * So each case asks three holding questions and one behavioural one:
  *
  * - `component.isFocused()` is false — the flag `unfocusPanel` moves (`panel-component-focus.ts`);
  * - the overlay handle is released — pi's half, and the one the recorder cannot answer for: its own handle
  *   starts focused and one is shared per `custom()` call, so `panelHandle()` gives the component a handle
  *   that begins released, the way an overlay opened `nonCapturing` is;
- * - the frame names the resting border rather than the keys (`released`), which only the flag decides;
+ * - the frame names the resting border rather than the keys (`released`), which the flag *and* the key gate
+ *   decide together — under `PI_STICKY_PANEL=open` the flag can be down while the frame is still the open
+ *   one, and there the gate is what keeps the legend honest (`advertisesNothing`);
  * - and the keys the user types afterwards reach nothing. `d` dismisses and Enter rewrites the editor draft,
  *   so both are asked of the component after the ending and neither may do anything. A panel still holding
  *   the keyboard does both (`panel-input.ts`), which is what makes this the user-visible question rather than
  *   a restatement of the first two.
  *
- * **The finding this file was written to settle.** The claim was that an ending re-raises the frame with a
- * keyboard nobody can put down. It is not true of the keyboard — at every ending the flag goes down and pi's
- * handle is released, under either resting mode, and the first seven cases pin that. It *was* true of the
- * keys, and only under one configuration: **`PI_STICKY_PANEL=open`**. `mode()` answers the full frame from
- * the resting mode alone (`panel-mode.ts`) and `dispatchPanelKey` gated a keystroke on that one answer, so
- * there the provenance cleared, the keyboard went back to the editor — and the frame kept answering `d` and
- * `Enter` anyway, dismissing pins and rewriting the user's draft from a panel they had already left. A
- * never-peek operator could not see the ending at all, which is why the review read it as the keyboard and
- * the keyboard as the frame. `interactiveOpen` (`panel-mode.ts`) is the fact the gate was missing: open *and*
- * still earned. Both `open` cases below assert the behaviour rather than the two booleans — the booleans on
- * their own passed the bug, and still do, because they are the half that was always right.
+ * **The two findings this file settled.** The first was that an ending re-raises the frame with a keyboard
+ * nobody can put down: not true of the keyboard — at every ending the flag goes down and pi's handle is
+ * released, under either resting mode — but true of the keys, and only under **`PI_STICKY_PANEL=open`**,
+ * where `mode()` answers the full frame from the resting mode alone (`panel-mode.ts`) and the dispatcher
+ * gated a keystroke on that one answer. `interactiveOpen` is the fact the gate was missing: open *and* still
+ * earned. The second is the same split one layer over — the gate fixed the keys and left the *legend* reading
+ * `mode()`, so a never-peek panel the user had taken the focus in drew `↑↓/jk move · Enter reply · d dismiss`
+ * for a keystroke the dispatcher refused and could not reach. `advertisesNothing` therefore draws through the
+ * component's own `render()` after the ending, which is where the legend is chosen; the counterfactual case
+ * below walks the state with the cell's own verbs rather than by moving the component's flag, so what it
+ * leaves behind is a state the extension can actually be in.
  *
  * `Re #1:` is deliberately not one of the endings here: it is the sibling file's, and a reply *re-raises*
  * the earned open on the way out (`startReply` hands the draft to the editor while the auto-show's pin is
@@ -47,9 +48,8 @@ import type { OverlayHandle } from "@earendil-works/pi-tui";
 import type { PanelComponent } from "../src/panel-component.ts";
 import { FOCUS_KEY } from "../src/panel-keys.ts";
 import type { StickyConfig } from "../src/types.ts";
-import { panelHandle } from "./panel-handle.ts";
+import { onScreen, panelHandle, withHandle } from "./panel-handle.ts";
 import { blocked, blockedAction } from "./panel-lifecycle-autoshow-fixture.ts";
-import { panelComponent } from "./panel-lifecycle-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
 
 /** The keys whose effects the user feels: a dismissal, a rewrite of their draft, and leaving. */
@@ -58,32 +58,41 @@ const REPLY = "\r";
 /** The terminal's Escape, as pi-tui hands it (`matchesKey(data, "escape")`). */
 const ESCAPE = "\x1b";
 
+/**
+ * What no frame the user cannot act on may say: the keys legend, in either of its two spellings — the plain
+ * one and the one with the option digits in front (`panel-option-hint.ts`). The two together are every byte
+ * the bottom border can spend on keys, and the border is the frame's last row.
+ */
+const KEY_LEGEND = /Enter reply|d dismiss|answer ·/;
+/** The bar's own glyph: the selection marker that replaces a row's level glyph (`selectionCell`). */
+const BAR = "›";
+/** The resting border's label — the focus key the user presses to *get into* the keys. */
+const RESTING = `${FOCUS_KEY} to reply`;
+
+/**
+ * The rows the component would draw *now*, read through its own `render()`.
+ *
+ * The cache is cleared first because the question is what the frame says for the state the cell is in *now*,
+ * and a hit would answer it with the bytes drawn before the ending — the stale-frame bug in the other
+ * direction, and `panel-frame-cache.test.ts`'s subject rather than this file's.
+ */
+const frameOf = (c: PanelComponent): string[] => {
+  c.invalidate();
+  return c.render(120);
+};
+
+/** The border must not name a single key the dispatcher has stopped answering. */
+function advertisesNothing(c: PanelComponent): void {
+  const border = frameOf(c).at(-1) ?? "";
+  expect(border.match(KEY_LEGEND)).toBeNull();
+  expect(border).toContain(RESTING);
+}
+
 /** What the ending was asked to give up: the flag, pi's handle, and the border's own claim. */
 function released(c: PanelComponent, held: () => boolean): void {
   expect([c.isFocused(), held()]).toEqual([false, false]);
-  c.invalidate();
-  const frame = c.render(120).join("\n");
-  expect(frame.includes("d dismiss")).toBe(false);
-  expect(frame.includes(`${FOCUS_KEY} to reply`)).toBe(true);
+  advertisesNothing(c);
 }
-
-/** A panel, its component, and a handle this file holds rather than the recorder's. */
-async function withHandle(
-  booted: Booted,
-): Promise<Booted & { c: PanelComponent; held: () => boolean }> {
-  const c = panelComponent(booted.ctx.recorder.customCalls.at(-1));
-  if (!c) throw new Error("no panel component to take the keyboard");
-  const hh = panelHandle();
-  c.setHandle(hh.handle);
-  return { ...booted, c, held: hh.held };
-}
-
-/** The component on screen now. The overlay's component changes when a panel goes out of sight and back. */
-const componentOf = (booted: Booted): PanelComponent => {
-  const c = panelComponent(booted.ctx.recorder.customCalls.at(-1));
-  if (!c) throw new Error("no panel component on screen");
-  return c;
-};
 
 /** A hidden panel with a warning on screen: the state an auto-show has just earned. */
 const autoShow = async (config?: Partial<StickyConfig>) =>
@@ -136,12 +145,15 @@ test("the focus key's Esc over a hidden panel releases the keyboard, the hide an
   // The hide coming back is this provenance's difference from the auto-show; the keyboard is not.
   const booted = await actionOverHidden();
   booted.stub.fireShortcut(FOCUS_KEY, booted.ctx);
-  const c = componentOf(booted);
+  // The shortcut replaces the overlay when the panel came out of hiding, so the component is read back.
+  const c = onScreen(booted);
+  const hh = panelHandle();
+  c.setHandle(hh.handle);
   c.focus();
   expect(booted.panel.mode()).toBe("open");
   c.handleInput(ESCAPE);
   expect(booted.panel.mode()).toBe("hidden");
-  released(c, booted.held);
+  released(c, hh.held);
   keysReachNothing({ ...booted, c });
 });
 
@@ -185,21 +197,33 @@ test("an ending whose overlay handle throws releases the keyboard on the user's 
   keysReachNothing(booted);
 });
 
-test("an ending that released the keyboard but not the cell leaves a panel that still dismisses", async () => {
-  // The counterfactual that says the assertions above are not decoration: with the flag and the handle both
-  // down and the cell left `open`, the component still dismisses the pin under the bar. `mode()` is the
-  // dispatcher's gate, so an ending which released the keyboard and forgot the open would read as released
-  // from every angle the keyboard can be read from — and this is the one that cannot.
+test("a focused frame whose open has ended draws neither the keys nor the bar", async () => {
+  // The counterfactual that says the assertions above are not decoration, in both halves at once: the flag
+  // still up and pi's handle still held over a frame the gate has stopped answering — reached by the cell's
+  // own verbs, never by moving the component's state by hand. A frame in that state owes the user two honest
+  // answers rather than one: the border must not name keys no keystroke reaches, and the bar must not sit on
+  // a pin the dispatcher will not `d`. Both are drawn from the gate (`keysLive`, `panel-frame-draw.ts`); an
+  // ending that released the keyboard and left the open standing reads as released from every angle the
+  // *keyboard* can be read from, which is why the drawing is asked.
   const booted = await autoShow();
-  booted.c.setFocused(false);
-  expect([booted.c.isFocused(), booted.held(), booted.panel.mode()]).toEqual([
-    false,
-    false,
-    "open",
-  ]);
-  const entries = booted.stub.entries.length;
-  booted.c.handleInput(DISMISS);
-  expect(booted.stub.entries.length - entries).toBe(1);
+  booted.c.focus();
+  // Re-earning the open through the cell is the move a further action pin makes (`panel-autoshow.ts`): the
+  // open is live again, while the component was never told — the flag and the handle are the ones above.
+  booted.panel.autoOpen("autoshow");
+  expect([booted.c.isFocused(), booted.held(), booted.panel.mode()]).toEqual([true, true, "open"]);
+  expect(frameOf(booted.c).some((row) => row.includes(BAR))).toBe(true); // a bar to lose
+  booted.panel.endEarnedOpen();
+  expect([booted.c.isFocused(), booted.held(), booted.panel.mode()]).toEqual([true, true, "peek"]);
+  // The peek draws three rows and no legend at all, which is the same answer by the other branch.
+  expect(frameOf(booted.c)).toHaveLength(3);
+  booted.panel.autoOpen("autoshow");
+  booted.panel.endEarnedOpen();
+  advertisesNothing(booted.c);
+  // And the bar: still the open frame, and no row of it carries the selection marker.
+  expect(booted.panel.mode()).toBe("peek");
+  expect(frameOf(booted.c).some((row) => row.includes(BAR))).toBe(false);
+  // The keyboard the user typed with afterwards: handed back, and nothing reached the session.
+  keysReachNothing(booted);
 });
 
 test("the focus key's Esc over a shown panel keeps frame, keyboard and cell — all three", async () => {
@@ -225,18 +249,16 @@ test("the focus key's Esc over a shown panel keeps frame, keyboard and cell — 
 
 // --- `PI_STICKY_PANEL=open` ---------------------------------------------------------------------------
 //
-// The operator's never-peek, where the review's HIGH advisory turns out to have a real case under it. The
-// resting mode is the operator's answer to "how does a shown panel rest", and `mode()` reads it *instead of*
-// the earned open — so `open` is the one resting mode in which an ending cannot be seen from the panel's own
-// answer, and `dispatchPanelKey` gates a keystroke on nothing but that answer. Both provenances are walked,
-// because both are earned opens and the mode does not care which earned it.
+// The operator's never-peek, the one configuration in which the frame and the gate can disagree, because
+// `mode()` reads the resting mode *instead of* the earned open. Both provenances are walked, because both
+// are earned opens and the mode does not care which earned it.
 
 test("under PI_STICKY_PANEL=open an auto-show's Esc releases the keyboard", async () => {
   const booted = await autoShow({ panel: "open" });
   booted.c.focus();
   booted.c.unfocus();
   // The full frame is what never-peek means, so the panel answers `open` after the ending too; the keyboard
-  // is the only fact here naming that the user left.
+  // is the only fact naming that the user left.
   expect(booted.panel.mode()).toBe("open");
   released(booted.c, booted.held);
   keysReachNothing(booted);
@@ -245,10 +267,29 @@ test("under PI_STICKY_PANEL=open an auto-show's Esc releases the keyboard", asyn
 test("under PI_STICKY_PANEL=open a focus key's Esc over a hidden panel releases the keyboard", async () => {
   const booted = await actionOverHidden({ panel: "open" });
   booted.stub.fireShortcut(FOCUS_KEY, booted.ctx);
-  const c = componentOf(booted);
+  const c = onScreen(booted);
+  const hh = panelHandle();
+  c.setHandle(hh.handle);
   c.focus();
   c.handleInput(ESCAPE);
   expect(booted.panel.mode()).toBe("hidden");
-  released(c, booted.held);
+  released(c, hh.held);
   keysReachNothing({ ...booted, c });
+});
+
+test("under PI_STICKY_PANEL=open the frame the gate has stopped answering never advertises its keys", async () => {
+  // The legend's own case, at the surface where the two halves of the cell come apart. The user focused the
+  // auto-shown panel — so the frame is the full one and pi-tui routes keys to it — and the open then ended,
+  // which under never-peek does *not* take the frame away. `mode()` still answers `open`, the gate answers
+  // false, and the border has to follow the gate: a frame that named `d`, Enter or the digits here would be
+  // advertising three destructive keys the dispatcher hands straight back to the editor.
+  const booted = await autoShow({ panel: "open" });
+  booted.c.focus();
+  expect(frameOf(booted.c).at(-1)).toContain("d dismiss"); // the keys are live, and said to be
+  booted.panel.endEarnedOpen();
+  // Still the full frame — `mode()` reads the resting mode — with the gate down.
+  expect([booted.c.isFocused(), booted.held(), booted.panel.mode()]).toEqual([true, true, "open"]);
+  expect(booted.panel.interactiveOpen()).toBe(false);
+  advertisesNothing(booted.c);
+  keysReachNothing(booted);
 });
