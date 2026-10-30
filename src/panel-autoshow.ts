@@ -55,7 +55,8 @@ export function autoShowForCommits(
   const touched = new Set(affected);
   if (!demandsAttention(pins.filter((pin) => touched.has(pin.id)))) return false;
   // `autoOpen` and not the cell's `settle`: an auto-show is not a statement about whether the panel should
-  // *stay* shown, so it records nothing and the user's recorded choice survives it.
-  panel.autoOpen();
+  // *stay* shown, so it records nothing and the user's recorded choice survives it. `"autoshow"` is the
+  // provenance that ending reads: the open goes back to the resting frame, not to the hide it overrode.
+  panel.autoOpen("autoshow");
   return true;
 }

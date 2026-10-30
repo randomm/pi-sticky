@@ -136,9 +136,12 @@ test("one commit answers the draws of its own window, and no later one", () => {
 
   // What ends the entitlement is the branch, not a draw: once a rebuild has read the pins off it (`landed`),
   // the commit is over and every later draw of the same view is an ordinary one — a command's listing, a
-  // tick, a resize — which draws what the cell says and asks nothing of the panel.
+  // tick, a resize — which draws what the cell says and asks nothing of the panel. The user's own hide is
+  // still an available verb after the peek ending above, which is what makes `"hidden"` the answer here
+  // rather than the peek an auto-show ends in.
   ledger.landed();
   cell.endEarnedOpen();
+  cell.settle(false);
   ledger.autoShow(cell, view(pin(1, "action")));
   expect(cell.mode()).toBe("hidden");
   ledger.autoShow(cell, view(pin(1, "action")));

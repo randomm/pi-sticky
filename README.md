@@ -102,7 +102,8 @@ Once focused:
   draft and press Enter. While the pin under the bar has options its row's border says `1–4 answer`.
 - `d` dismisses the selected pin. The dismissal is recorded on the session, so it sticks across
   `/tree` and a reload.
-- `Esc` returns to the editor. The panel stays open.
+- `Esc` returns to the editor. If the agent's pin opened the panel, it comes down to the three-row peek;
+  if you opened it yourself with `ctrl+alt+p`, it stays exactly as you left it.
 
 The frame's title counts what is pinned rather than just naming it: `📌 Pinned · 2 warnings · 1 needs
 you`, with `· <n> more` for the facts and a bare `📌 Pinned · 3` when there is nothing but facts. The
@@ -123,19 +124,26 @@ single best-ranked pin on one line, and the border carrying the focus key — so
 something here" in a third of the rows and your transcript keeps the rest. What earns the **full** panel is
 a pin you have to act on: an `action` or a `warning` pin that arrives while the panel is hidden or peeking
 shows the whole frame once, and the frame comes back down when you leave it (`Esc`, or `Enter` from a key)
-or send your next message — either one says you have read it. `info` pins never earn it, so a chatty agent
-cannot decide when your transcript gets covered. `PI_STICKY_PANEL=open` refuses the peek altogether: the
-panel rests at the full frame, and nothing ever puts it into the three-row one.
+or send your next message — either one says you have read it. What it comes down **to** depends on who
+opened it. A frame the **agent** opened for you rests as a peek afterwards, even if you had hidden the
+panel: `/pins hide` holds until the next auto-show, because closing a panel is not the same as agreeing to
+miss your blockers. A frame you opened **yourself** with `ctrl+alt+p` goes back where you had it — a panel
+you had hidden stays hidden. `info` pins never earn the full frame, so a chatty agent cannot decide when
+your transcript gets covered. `PI_STICKY_PANEL=open` refuses the peek altogether: the panel rests at the
+full frame, and nothing ever puts it into the three-row one.
 
 **While the panel rests as a peek the rail stands down.** A pin is drawn by exactly one surface: the panel
 owns it in the peek exactly as it does in the full frame, and the rail draws it only when the panel draws
 nothing at all. So a peek is not a smaller copy of the panel with the rail beside it — the counts, the pin
 and its age appear once, in the panel's three rows. When you hide the panel, or when a wide terminal becomes
-a narrow one, the same pins come back on the rail unchanged.
+a narrow one, the same pins come back on the rail unchanged — including the moment the last one is dismissed
+from an open frame, which is the panel drawing nothing with the frame still around it.
 
 Your own show/hide choice is recorded on the session and read back on the next `session_start`, so it
-survives a `/reload` or a resume. The open a pin earned records nothing: it was the agent speaking, not you,
-and the hide you chose is still the record when that open ends. A message the agent is steering you through
+survives a `/reload` or a resume. The open a pin earned records nothing: it was the agent speaking, not you.
+It ends in the peek rather than in your hide, though — the hide stays the record, and it is honoured from
+the next auto-show onwards. The open you earned with `ctrl+alt+p` is the other case: leaving it restores
+what you had chosen, hidden included. A message the agent is steering you through
 does not end it either — only a message you send does. A pin the user has replied to stays on screen until the agent unpins it or
 the user dismisses it, marked as described under Replying to a pin.
 
@@ -374,13 +382,13 @@ Without noni the bridge declines rather than inventing a record.
 | Key | Effect |
 | --- | --- |
 | `ctrl+alt+t` | Toggle the panel. Rebind with `PI_STICKY_TOGGLE_KEY`, disable with `off`. |
-| `ctrl+alt+p` | Focus the panel and put it in the **full** frame — from hidden, from a peek, or from where it already is — so the keys below have a frame to answer from. Records nothing: reaching for a pin to read it is not a choice about keeping the panel open. While the panel is unfocused its bottom border reads `ctrl+alt+p to reply`; with `off` there is no such label. Rebind with `PI_STICKY_FOCUS_KEY`, disable with `off`. |
+| `ctrl+alt+p` | Focus the panel and put it in the **full** frame — from hidden, from a peek, or from where it already is — so the keys below have a frame to answer from. Records nothing: reaching for a pin to read it is not a choice about keeping the panel open, and leaving that frame (`Esc`) puts the panel back where you had it. While the panel is unfocused its bottom border reads `ctrl+alt+p to reply`; with `off` there is no such label. Rebind with `PI_STICKY_FOCUS_KEY`, disable with `off`. |
 | `↑` / `k` | Move the selection up. |
 | `↓` / `j` | Move the selection down. |
 | `Enter` | Put `Re #<id>: ` in the editor, keep the draft, return focus to the editor. Recognised only as a bare carriage return or line feed: under the Kitty keyboard protocol type `Re #<id>: ` by hand. |
 | `1`–`4` | On a pin with `options`, put `Re #<id>: <that option> ` in the editor and return focus to it. The digit is the position the option row numbered. `0` and a digit past the list do nothing. |
 | `d` | Dismiss the selected pin. |
-| `Esc` | Back to the editor; the panel stays open. |
+| `Esc` | Back to the editor. An open the agent's pin earned comes down to the peek; an open you earned with `ctrl+alt+p` leaves the panel where you had it. |
 
 The in-panel keys work while the panel holds focus. The two shortcuts are global and reach the panel
 even when it is hidden; turn one off with `off` and that way in is gone, so `/pins show` and
@@ -412,7 +420,7 @@ change.
 | `PI_STICKY_MAX_LINES` | `8` | 3–30 | Lines in the rail, header included. |
 | `PI_STICKY_TOGGLE_KEY` | `ctrl+alt+t` | a pi key id, or `off` | The shortcut that toggles the panel. |
 | `PI_STICKY_FOCUS_KEY` | `ctrl+alt+p` | a pi key id, or `off` | The shortcut that focuses the panel. |
-| `PI_STICKY_PANEL` | `peek` | `peek` or `open` | How a shown panel rests: the three-row peek, or the full frame. Anything else — a typo, `hidden`, an empty value — is read as `peek`, the state that covers the least. Ignored in `rpc`, `print` and `json`, where there is no overlay. |
+| `PI_STICKY_PANEL` | `peek` | `peek` or `open` | How a shown panel rests: the three-row peek, or the full frame. Also where an auto-show's open ends once you have read it — the peek, or the full frame under `open`. Anything else — a typo, `hidden`, an empty value — is read as `peek`, the state that covers the least. Ignored in `rpc`, `print` and `json`, where there is no overlay. |
 
 A numeric value outside its range, or one that is not a run of ASCII digits, falls back to the
 default. `PI_STICKY_MAX_LINES` is clamped to 10 in RPC mode, because pi caps a string widget there. The

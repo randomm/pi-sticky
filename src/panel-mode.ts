@@ -22,9 +22,17 @@
  * - `PanelComponent` reads the same mode and draws the peek (`panel-peek.ts`) or the open frame.
  * - The auto-open rule (U11/U12): an action or warning pin opens the panel fully and it
  *   *stays* open across redraws, further pins and agent turns, until the user leaves it — Esc, Enter from a
- *   key, or a keystroke into a panel that is not open. `endEarnedOpen` is the only ending, because it is the
- *   only event that reports an interaction the *user* ended; `settle` states why every other writer must
- *   leave an earned open standing.
+ *   key, or a keystroke into a panel that is not open. `endEarnedOpen` is the only ending an *interaction*
+ *   reaches, because it is the only event that reports one the *user* ended; `settle` states why every other
+ *   writer must leave an earned open standing. The ending depends on *who opened it*, which is why an earned
+ *   open carries provenance (`EarnedKind`): the two ways in are the model's auto-show and the user's focus
+ *   key, and the operator decided they end differently — an auto-show goes back to the resting mode (the
+ *   peek, so the panel keeps saying "there is something here" after the pin was read), while an open the user
+ *   reached for by hand stays the full frame over a panel they had shown and returns to their hide otherwise.
+ *   `resting` is never restored over, so `PI_STICKY_PANEL=open` ends both in the full frame.
+ * - A session boundary ends an open the other way: `forgetEarnedOpen` reads no provenance and puts the panel
+ *   out of sight, because the frame the dead session drew is going away whatever the user was looking at in
+ *   it (the alternative would hand a new session an open overlay and a held keyboard).
  * - `PI_STICKY_PANEL=open` means peek never happens (`panelResting` in `panel-resting.ts`, the one read of the
  *   resolved value).
  */
@@ -50,6 +58,16 @@ export type PanelMode = "hidden" | "peek" | "open";
 export function demandsAttention(changed: readonly { level: PinLevel }[]): boolean {
   return changed.some((pin) => pin.level === "action" || pin.level === "warning");
 }
+
+/**
+ * Who asked for the current open: the model's auto-show, or the user's focus key.
+ *
+ * The reason the ending cannot be one rule for both is that the two are different acts. An auto-show is the
+ * agent covering the transcript to deliver a blocker the user has now read, and it should come back down to
+ * the resting frame; the focus key is the user reaching for the pins, and taking the panel away from under
+ * them when they look away is the bug the operator's decision closes.
+ */
+export type EarnedKind = "autoshow" | "focus";
 
 /**
  * The mode cell of one extension instance, and the reads the rest of the panel makes of it.
@@ -91,19 +109,31 @@ export interface PanelModeState {
    */
   settle(shown: boolean, recorded?: boolean): void;
   /**
-   * Open the panel fully for a pin that asked for attention, from whatever state it was in — hidden
-   * included, which is what the auto-show needs and what the rail then stands down for.
-   */
-  autoOpen(): void;
-  /**
-   * The interaction the user had with the panel is over: the open they did not ask for ends, and the panel
-   * goes back to what they chose.
+   * Open the panel fully, from whatever state it was in — hidden included, which is what the auto-show needs
+   * and what the rail then stands down for.
    *
-   * The *only* ending (U12), reached from Escape, Enter-from-a-key or a keystroke into a peek. It is also
-   * what a session boundary calls when it forgets the dead session's transience: an earned open from the
-   * branch the user left has no claim on the panel the branch they moved to draws.
+   * `kind` is the provenance the ending reads: `"autoshow"` for the pin that asked for attention, `"focus"`
+   * for the user's focus key. It is a parameter rather than two members because there is one open and the
+   * only thing the two writers differ about is where it goes when it ends.
+   */
+  autoOpen(kind: EarnedKind): void;
+  /**
+   * The interaction the user had with the panel is over: the open ends, and where the panel goes depends on
+   * who earned it — the resting frame for the model's auto-show, the frame the user opened for their own.
+   *
+   * The only ending an *interaction* reaches (U12): Escape, Enter-from-a-key or a keystroke into a peek.
    */
   endEarnedOpen(): void;
+  /**
+   * What a session boundary calls to forget the dead session's transience: the open goes, and the screen
+   * goes with it.
+   *
+   * Provenance-blind, and that is the whole difference from `endEarnedOpen`. An open from the branch the
+   * user left has no claim on the panel the branch they moved to draws, whichever of the two asked for it,
+   * and a boundary is not the user looking away from the frame they opened — it is the frame going away.
+   * A shown panel is left resting in its configured frame, which the next rebuild settles from the entries.
+   */
+  forgetEarnedOpen(): void;
 }
 
 /** The mode cell of one extension instance, resting where its configuration says. */
@@ -130,8 +160,33 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
    * `recorded()` is the one the rail's guard and the refusal messages answer.
    */
   let shown = true;
-  /** Whether the current open was earned by a pin rather than asked for by the user. */
-  let earned = false;
+  /** Whether the current open was earned rather than asked for, and by whom — see `EarnedKind`. */
+  let earned: EarnedKind | undefined;
+  /**
+   * Where an ended earned open goes: the resting mode for the model's auto-show, the user's own choice for
+   * the open their focus key earned.
+   *
+   * The operator's decision this encodes: a panel that came out of hiding to deliver a blocker comes back to
+   * the peek once it has been read, even though the user had hidden it — a `/pins hide` holds until the next
+   * auto-show and is not a permanent answer to "show me the blocker". The focus key is the opposite case:
+   * the user pulled the panel over their transcript, and putting it back where they left it is theirs, not
+   * the session's. Under `PI_STICKY_PANEL=open` both answers are `true`, which is what never-peek means.
+   */
+  const shownAfter = (kind: EarnedKind): boolean => (kind === "autoshow" ? true : chosen);
+  /**
+   * Whether an ended focus-key open keeps the full frame: the user pulled the panel over their transcript
+   * while they had it *shown*, so `Esc` hands the keyboard back and leaves the frame they are reading. The
+   * auto-show never keeps it — that one is the model covering the transcript, and it comes down to the
+   * resting frame whichever way the record reads.
+   *
+   * A panel the user had *hidden* takes the frame back too: `ctrl+alt+p` over a hide is a look, not a
+   * decision to keep the panel, and `settle` already took the open away the moment the panel went out of
+   * sight — so `Esc` from there returns the hide the user wrote and the rail takes the pins back.
+   *
+   * `resting` is deliberately not read here: under `PI_STICKY_PANEL=open` a shown panel answers `open`
+   * through `mode()` anyway, so an operator who refused the peek is not put into one by either ending.
+   */
+  const keepsOpen = (kind: EarnedKind): boolean => kind === "focus" && chosen;
   /**
    * Whether the panel is *recorded* as shown — what the user's verbs chose, and the only thing a hide or a
    * show moves.
@@ -151,7 +206,7 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
    */
   const mode = (): PanelMode => {
     if (!shown) return "hidden";
-    if (earned || resting === "open") return "open";
+    if (earned !== undefined || resting === "open") return "open";
     return "peek";
   };
 
@@ -162,21 +217,25 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
    * screen, and something caused it". A pair that could be moved half-way is a peek that is also an open, or
    * an open nothing is drawing, and both are frames the user cannot act on.
    */
-  function screen(next: boolean, nextEarned: boolean): void {
+  function screen(next: boolean, nextEarned: EarnedKind | undefined): void {
     shown = next;
     earned = nextEarned;
   }
 
   /**
-   * The earned open is over and the panel goes back to what the user chose.
+   * The earned open is over, and the panel goes where its provenance says.
    *
-   * Restoring `chosen` rather than leaving `shown` as the auto-show set it is the whole of the transience —
-   * the panel came out of hiding for a pin the user has now answered, and it goes back into it. `resting`
-   * deliberately survives: it is the operator's, not the session's.
+   * Both kinds clear `earned`, which is the whole of the transience: the open was the session's and now it
+   * is not. What they differ about is the screen, and only the open the user reached for keeps it — see
+   * `keepsOpen`. `resting` deliberately survives either way: it is the operator's, not the session's.
    */
   function demote(): void {
-    // Back to what the user chose, and to the resting frame.
-    screen(chosen, false);
+    const kind = earned;
+    if (kind === undefined) return;
+    // Back to what the user chose for the open their own focus key earned, and to the resting frame for the
+    // model's auto-show. `resting` decides the *frame* through `mode()`, so an operator who refused the peek
+    // is not put into one by either ending.
+    screen(shownAfter(kind), keepsOpen(kind) ? kind : undefined);
   }
 
   return {
@@ -190,19 +249,27 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
       // too, and it does not: an auto-show that followed a hide must not teach the cell that the user asked
       // for a shown panel.
       if (recorded !== false) chosen = next;
-      // The earned open is *kept*. `settle` is reached on every redraw, every rebuild and every command line,
+      // The earned open is *kept*, with its provenance, so a later ending still knows who asked for it —
+      // unless the panel goes out of sight, which is the one move that is never a redraw re-asking the last
+      // one (see below).
       // and U12 requires an open to persist across all three; `screen(next, false)` here
       // would fold a panel the user has not read yet back into the peek the moment anything asked the cell a
       // question — a `/pins show`, a `session_tree`, a submitted message. Hiding is the exception: a hidden
       // panel that still drew an open frame is not a state, and `settle(false)` is the one move that is never
       // a redraw re-asking the last one. Ending an open the user *read* is `endEarnedOpen`'s alone.
-      screen(next, next && earned);
+      screen(next, next ? earned : undefined);
     },
-    autoOpen() {
+    autoOpen(kind) {
       // Deliberately not `settle`: the auto-show is the model speaking, and the model does not get to
       // rewrite what the user chose. The screen changes; the record does not.
-      screen(true, true);
+      screen(true, kind);
     },
     endEarnedOpen: demote,
+    // The boundary's one write, and it reads no provenance: `screen(shown, undefined)` would be the
+    // provenance-aware ending with the provenance removed, which is a no-op for exactly the state the
+    // boundary exists to clear — the open the focus key earned over a panel the user had shown.
+    forgetEarnedOpen() {
+      screen(false, undefined);
+    },
   };
 }

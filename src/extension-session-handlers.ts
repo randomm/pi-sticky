@@ -12,9 +12,10 @@
  * - The live context and the state go next. The panel's own close fires host handles that may throw, and a
  *   host that cannot close its overlay is no reason to keep a dead session's pins, flag and width in this
  *   instance.
- * - The cell's *transience* goes and its configuration stays: `endEarnedOpen` forgets an open no entry ever
- *   wrote and keeps the operator's resting mode; the recorded flag is settled from the new session when it
- *   starts (`session-rebuild.ts`).
+ * - The cell's *transience* goes and its configuration stays: `forgetEarnedOpen` forgets an open no entry ever
+ *   wrote — whichever of the two ways in earned it, since a boundary is not the user looking away from the
+ *   frame they opened — and keeps the operator's resting mode; the recorded flag is settled from the new
+ *   session when it starts (`session-rebuild.ts`).
  * - The terminal is *forgotten*, not zeroed: a session belongs to a terminal, the next one has stated
  *   nothing about its width, and what is forgotten is the number, never the fact that the host gets asked
  *   again (`panel-width.ts`).

@@ -68,8 +68,9 @@ export interface EarnedOpenCells {
 export function earnedOpenCells(cells: EarnedOpenCells): Pick<StickyDeps, "endEarnedOpen"> {
   return {
     endEarnedOpen() {
-      // Only a panel open because a pin asked has a transient to end; `demote` alone restores what the user
-      // chose for every other state, so a peek or a hidden panel is left exactly as it was.
+      // Only a panel open because a pin asked has a transient to end, and `demote` is what puts it back —
+      // to the resting frame for the model's auto-show, to the user's own choice for the open their focus
+      // key earned (`panel-mode.ts`). A peek or a hidden panel has nothing to end and is left exactly as it was.
       if (cells.panel.mode() !== "open") return;
       const component = cells.component();
       if (component) {

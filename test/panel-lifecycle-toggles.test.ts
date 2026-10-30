@@ -169,12 +169,12 @@ test("ctrl+alt+p leaves the panel open, not resting as a peek (spec 3.6)", async
   // The rail stands down while the panel holds them, which is the visible half of the same fact.
   expect(ctx.recorder.widgets.has(KEY)).toBe(false);
 
-  // The open the key earned is the transient kind: leaving the panel takes it back to the resting frame
-  // (`endEarnedOpen`, reached by Escape and by a keystroke into a peek), and the record the user's `/pins hide`
-  // wrote is untouched throughout — `stub.entries` stayed empty above for the same reason. The *other* end,
-  // the user's next submitted message, is `test/panel-lifecycle-autoshow.test.ts`'s "the user's next
-  // submitted message ends the open a pin earned": both are endings of one earned open, and the panel has to
-  // come down for either of them.
+  // The open the key earned is the transient kind, and its provenance is what decides where it goes: a
+  // focus-key open restores the record the user's `/pins hide` wrote, so `stub.entries` stayed empty above
+  // for the same reason it stays empty here. That ending — hidden, with the rail taking the pins back — is
+  // `test/panel-lifecycle-autoshow-earned.test.ts`'s "a focus key from a hidden panel, and Esc there, restores
+  // the hide"; the contrast case, where an *auto-show's* open ends in the peek instead of the hide, lives in
+  // `test/panel-lifecycle-autoshow.test.ts`. The other end of either open is the user's next message.
 });
 
 test("a focused panel answers a keystroke, which a peek would not", async () => {
@@ -221,13 +221,14 @@ test("with no pi-sticky.ui entry the panel starts shown, so a toggle first recor
  * A booted session whose panel is *open*, which is the only state with rows a key can address.
  *
  * `createPanelMode` builds the cell the extension runs on — the same object its wiring hands the overlay and
- * the rail — and `autoOpen()` is the move an action pin's `redraw()` makes. Doing it this way rather than
- * focusing a resting panel is the point: a peek hands a keystroke back to the editor, so a test that pressed
- * `d` into one would be asserting on the dismissal it was supposed to prove impossible.
+ * the rail — and `autoOpen("focus")` is the move the focus key makes: the outright open, not the peek an
+ * auto-show ends in. Doing it this way rather than focusing a resting panel is the point: a peek hands a
+ * keystroke back to the editor, so a test that pressed `d` into one would be asserting on the dismissal it
+ * was supposed to prove impossible.
  */
 async function openPanel(entries: readonly unknown[] = TWO_PINNED) {
   const booted = await boot(entries, 120);
-  booted.panel.autoOpen();
+  booted.panel.autoOpen("focus");
   return booted;
 }
 
