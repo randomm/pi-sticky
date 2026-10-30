@@ -20,11 +20,16 @@
 import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { foldBreaks, stripSequences } from "./escape.ts";
-import { widestMetaColumns } from "./panel-frame-geometry.ts";
+import {
+  FRAME_COLUMNS,
+  META_SEPARATOR_COLUMNS,
+  widestMetaColumns,
+} from "./panel-frame-geometry.ts";
 import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
+import { wrapAtDrawnWidth } from "./panel-wrap.ts";
 /**
  * The columns the two gutters own, re-exported so the callers that lay these rows out keep naming the module
  * whose rows they lay out. The tail's format is *not* re-exported: `panel-tail.ts` is its owner and the two
@@ -120,6 +125,16 @@ export function panelPinRows(
    * figure the drawer pads to. A row that guessed it would put a pair on a line the builder then cut.
    */
   metaColumns: number = widestMetaColumns([pin], style.dim, now),
+  /**
+   * The columns between the frame's gutters, which is the width `pinRow` (`panel-draw.ts`) closes a row to.
+   *
+   * Named by the callers that lay these rows out, because the wrap has to be sized against a row and not only
+   * against a text column: the reserve `pinRow` cuts to is `tailReserve`, which *clamps at the inner width*, so a
+   * wrap that only ever saw `textWidth` could not know how many columns the row keeps. The default recovers it
+   * from the figures the caller already handed over — `panelTextColumns` cut `textWidth` out of the frame by
+   * taking the tail's reserve, the two gutters and the separators beside them off the frame's width.
+   */
+  inner: number = textWidth + metaColumns + META_SEPARATOR_COLUMNS + FRAME_COLUMNS,
 ): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
   const glyph = MARKER[pin.level];
@@ -166,7 +181,20 @@ export function panelPinRows(
   // the rest of this module exists to avoid (research-summary U13). The flag is also the cost lever, not
   // decoration: a non-compact pin is re-wrapped at the frame's text column on every frame the panel redraws
   // — a moving bar included — so for a long pin this one branch is what bounds the draw.
-  const wrapped = pin.compact === true ? [foldBreaks(plain)] : wrapTextWithAnsi(plain, textWidth);
+  // The width the wrap packs a line into is `textWidth` less the cell every row of a *wrapping* pin pays in
+  // front of its text — the marker on the first row and the same three blank columns again as the indent of each
+  // row below it. `pinRow` (`panel-draw.ts`) measures a row's text with that cell inside the columns its reserve
+  // leaves, so a line packed to the full `textWidth` came back over the row's limit and the drawer's re-cut spent
+  // the row's last columns on an ellipsis: `…park fix` on the age's row, with `ix` carried down to the line below.
+  //
+  // Charged once, to the wrap rather than to the row, because the row count is the wrap's answer: a wrap that
+  // gave up the cell and still produced one row retried at the full `textWidth` and kept it, so a pin whose text
+  // fits the row it owns is never pushed into a second row by an indent it does not draw. Widening can only ever
+  // drop a row, never add one, so that retry settles on the first pass.
+  const wrapped =
+    pin.compact === true
+      ? [foldBreaks(plain)]
+      : wrapAtDrawnWidth(plain, textWidth, metaColumns, inner);
   // Which row carries the age is decided by how many rows the wrap produced, so the wrap runs first and the
   // tails are stamped against its answer: a pin that fits on one line is the case the id/age pair belongs
   // to. `count` below is that count, and the empty-text fallback is one row for the same reason.
