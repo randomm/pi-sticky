@@ -19,8 +19,12 @@
  */
 import { describe, expect, test } from "bun:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
+import { ELLIPSIS, INJECTED_RESET } from "../src/panel-frame.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
-import { drawOptionRow } from "../src/panel-options-row.ts";
+import { optionLine } from "../src/panel-options-row.ts";
+import { optionRowCount } from "../src/panel-options-wrap.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -34,14 +38,48 @@ const sgr = (parameters: string): string => `${String.fromCharCode(0x1b)}[${para
 /** The one SGR that closes every attribute, spelled the same way. */
 const SGR_RESET = sgr("0m");
 
+/**
+ * The reset `truncateToWidth` injects on each side of its own `…`.
+ *
+ * Read from its owner rather than spelled: `panel-frame.ts`'s `INJECTED_RESET` is the pattern that matches
+ * this pair, so the pair is its source string with the pattern's two `\\` escapes taken back out. A copy
+ * written as `sgr("0m")` here would be a second spelling of a byte string the frame owns, and the assertion
+ * below compares a *drawn line* against it — where "did the test invent the bytes it expected" is exactly the
+ * question nobody wants to answer.
+ */
+const RESET = `${String.fromCharCode(0x1b)}[0m`;
+
 /** The identity frame: no member wraps anything in visible bytes. */
 const identity: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
 
 /** The fields a test asks for, on a pin whose identity the row does not read. */
 type OptionFields = Pick<ViewPin, "options">;
 
-const row = (extra: Partial<OptionFields>, width = 60) =>
-  drawOptionRow({ ...pin(1, "text", "info"), ...extra }, width, identity);
+/**
+ * The option rows of a pin, as the frame draws them: one string per row, each `width` columns wide.
+ *
+ * The drawer fills the rows the row table reserved (`fillOptionRow`, which is what `buildPanelLines` calls), and
+ * this asks the same question for every index the table could have numbered, stopping where the pin runs out of
+ * rows. The count is the wrap's, so a test that asked for a fixed number of rows would be asserting a second
+ * answer to it.
+ */
+const rowsOf = (extra: Partial<OptionFields>, width = 60): string[] => {
+  const view = { ...pin(1, "text", "info"), ...extra } as ViewPin;
+  const out: string[] = [];
+  for (let index = 0; index < 8; index++) {
+    const line = optionLine(view, width, identity, index);
+    if (line === null) break;
+    out.push(line);
+  }
+  return out;
+};
+
+/** The single row of a pin whose options fit one row, or `""` when it owns none — the shape the file reads. */
+const row = (extra: Partial<OptionFields>, width = 60): string => rowsOf(extra, width)[0] ?? "";
+
+/** One row of a pin with these `options`, drawn with a sentinel style that records what it was asked. */
+const rowColoured = (style: PanelStyle, options: string[], width: number): string =>
+  optionLine({ ...pin(1, "t", "info"), options } as ViewPin, width, style, 0) ?? "";
 
 describe("the options row", () => {
   test("the exact row for a short option list (operator resolution 4)", () => {
@@ -57,36 +95,63 @@ describe("the options row", () => {
     expect(row({ options: [] }).trimEnd()).toBe("");
   });
 
-  test("one row at every width, down to a single column", () => {
+  test("every row is exactly the width it was drawn at, from one column up", () => {
     const options = [
       "Passed on",
       "Not yet",
       "Escalated to the on-call",
       "Deferred to next quarter",
     ];
+    // Not one row any more, and that is the change: at a narrow column the labels pack onto the rows below.
+    // What the wrap still owes the frame at *every* width is the closure — the panel is flush right, so a row
+    // that came back short would let the chat behind it show through, and a row that came back long would be
+    // re-cut by the drawer. Both are refused here rather than at the one width a bug happened to show up at.
     for (let width = 1; width <= 80; width++) {
-      const drawn = row({ options }, width);
-      // The pad keeps the row a row: `padPlain` fills the columns the frame offered, so the drawer's
-      // `fitLine` never sees a short line and never lets the chat behind it show through.
-      expect(drawn.length).toBe(width);
+      for (const drawn of rowsOf({ options }, width)) {
+        expect(visibleWidth(drawn)).toBe(width);
+      }
     }
   });
 
-  test("entries are dropped whole from the end rather than truncated", () => {
+  test("entries are packed whole, and only an entry wider than the row is cut", () => {
     const options = ["alpha", "beta", "gamma", "delta"];
-    // Wide enough for all four: the last option is named.
+    // Wide enough for all four on one row: the last option is named.
     expect(row({ options }, 40)).toContain("4 delta");
-    // Two entries narrower: the last two are *absent*, not cut, and what remains is intact — every entry
-    // still carries its digit and its whole label, so nothing on the row can be read as a different option.
-    const narrow = row({ options }, 24);
-    expect(narrow).not.toContain("gamma");
-    expect(narrow).not.toContain("delta");
-    expect(narrow).toContain("1 alpha");
-    expect(narrow).toContain("2 beta");
-    // So narrow that the first entry's digit and label do not fit together: the row is blank (and still a
-    // whole row of columns). `1 alpha` needs seven columns, so six is none — the column the keycap glyph used
-    // to spend on every entry now belongs to the label, which is decision 4 of #70.
-    expect(row({ options }, 6).trimEnd()).toBe("");
+    // Two entries narrower: the last two are not cut *and not dropped* — they are packed onto the row below,
+    // each still carrying its own digit and its whole label, so nothing on either row reads as a different
+    // option. The one-row drawer used to answer this width by losing `gamma` and `delta` outright.
+    const rows = rowsOf({ options }, 24);
+    expect(rows.length).toBeGreaterThan(1);
+    const onRows = rows.join("\n");
+    for (const [index, label] of options.entries()) {
+      expect(onRows).toContain(`${index + 1} ${label}`);
+    }
+    // No row ever opens with a half-label: every entry that appears is followed by its own whole label, because
+    // an entry's digit and label are packed together or not at all.
+    for (const drawn of rows) {
+      for (const [index, label] of options.entries()) {
+        if (drawn.includes(`${index + 1} ${label.charAt(0)}`)) {
+          expect(drawn).toContain(`${index + 1} ${label}`);
+        }
+      }
+    }
+    // So narrow that an entry's digit and its whole label cannot sit together: what the row keeps is the *digit*
+    // and as much of the label as closes — `1 al…` at six columns, `1 a…` at five — and the label ends in the
+    // wrap's ellipsis rather than in a word the user would answer by mistake. The whole row is spelled out because
+    // "still shows its digit" is the promise, and a cut that spent the row on the ellipsis alone would pass a
+    // `toContain("1")` written against a padded line. The resets are pi-tui's own: `truncateToWidth` wraps its `…`
+    // in `ESC[0m` on each side, and this row is closed by `fitPlain` (`panel-draw.ts`) without `normaliseCut` —
+    // the wrap chose the ellipsis, so nothing rewrites the pair. The column after it is `padPlain`'s, which pads
+    // to the *drawn* width and charges a theme's SGR nothing.
+    expect(row({ options }, 6)).toBe(`1 al${RESET}${ELLIPSIS}${RESET} `);
+    expect(row({ options }, 5)).toBe(`1 a${RESET}${ELLIPSIS}${RESET} `);
+    // And no width, however small, leaves the pin with a row the table counted and the wrap has nothing for: the
+    // reserve is the wrap's own list at that width, so a row is only ever reserved when the same style can fill it.
+    // At a frame whose inner column cannot hold even `1 a…` the answer is *no rows* — nothing for the window to
+    // scroll past, nothing for the bar to sit on — and at the first width that holds one, four rows for four
+    // entries, each of them fillable.
+    expect(optionRowCount(options, 5, identity)).toBe(0);
+    expect(optionRowCount(options, 9, identity)).toBe(4);
   });
 
   test("the digit and label are counted against the row together, so a row never overflows", () => {
@@ -162,17 +227,13 @@ describe("the options row", () => {
       },
     };
     // Wide enough for both entries: `1 a` is three columns, the separator three and `2 bb` four.
-    expect(
-      drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 14, coloured).trimEnd(),
-    ).toBe("\u0031 a   \u0032 bb");
+    expect(rowColoured(coloured, ["a", "bb"], 14).trimEnd()).toBe("\u0031 a   \u0032 bb");
     expect(asked).toEqual(["header:\u0031", "dim:a", "header:\u0032", "dim:bb"]);
     asked.length = 0;
     // Too narrow for the separator *and* the second entry: the row drops it whole and keeps a row of columns.
     // Seven is the widest row of one and eight the narrowest of two — the two columns the keycap glyph used to
     // charge per entry are what this budget no longer pays.
-    expect(
-      drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 7, coloured).trimEnd(),
-    ).toBe("\u0031 a");
+    expect(rowColoured(coloured, ["a", "bb"], 7).trimEnd()).toBe("\u0031 a");
     // ...and the four calls are the two entries the wide row above drew, each digit before its own label.
     expect(asked).toEqual(["header:\u0031", "dim:a", "header:\u0032", "dim:bb"]);
     // The narrow row cannot be checked that way: `entryCell` asks the two verbs *before* the loop knows the
@@ -192,7 +253,7 @@ describe("the options row", () => {
         return `${sgr("2m")}${s}${SGR_RESET}`;
       },
     };
-    const narrow = drawOptionRow({ ...pin(1, "t", "info"), options: ["a", "bb"] }, 7, wrapped);
+    const narrow = rowColoured(wrapped, ["a", "bb"], 7);
     // What the theme was asked to colour, in order: the kept entry's digit and label, then the dropped
     // entry's. `entryCell` composes an entry before the loop has measured it, so the calls alone can never
     // show a dropped entry to be unstyled — the next three lines are the row, which is what can.

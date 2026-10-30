@@ -23,8 +23,10 @@ import { expect, test } from "bun:test";
 
 import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
-import { drawOptionRow } from "../src/panel-options-row.ts";
+import { optionLine } from "../src/panel-options-row.ts";
+import { optionRowCount } from "../src/panel-options-wrap.ts";
 import { isOptionRow, panelPinRows } from "../src/panel-rows.ts";
+import { GUTTER_COLUMNS } from "../src/panel-tail.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -35,6 +37,15 @@ const style: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
 
 /** The instant the rows are aged at — the same one the reserve is measured at, which is the pair's whole point. */
 const atOnce = (): string => new Date().toISOString();
+
+/**
+ * The frame whose text column a `rowsOf` call names — the inverse of the inner width that call hands the rows.
+ *
+ * `optionRowCount` asks for a *frame* and makes the gutter subtraction itself, so a test that compares a row
+ * count against it has to name the frame `innerAt` derived its `inner` from. One spelling per width, on both
+ * sides of the comparison.
+ */
+const frameOfText = (textWidth: number): number => innerAt(textWidth) + GUTTER_COLUMNS;
 
 /**
  * The row table of one pin, at a text column wide enough to make wrapping interesting.
@@ -67,13 +78,19 @@ test("a grouped pin owns the same rows as an ungrouped one", () => {
   expect(textOf(grouped).join("")).not.toContain("Now");
 });
 
-test("a pin with options owns one more row than the same pin without them", () => {
+test("a pin with options owns the rows its labels need, and the same pin without them owns none of those", () => {
   const plain = levelPin(1, "one line", "info");
   const withOptions = { ...plain, options: ["Passed on"] };
   expect(rowsOf(withOptions)).toHaveLength(rowsOf(plain).length + 1);
-  // One row, whatever the count or the length of the labels: the count is what the window and the bar count.
-  const four = { ...plain, options: ["a", "b", "c", "d".repeat(200)] };
-  expect(rowsOf(four)).toHaveLength(rowsOf(plain).length + 1);
+  // The count is what the window, the bar and the keys count, so it is the *wrap's* answer
+  // (`optionRowCount`, `panel-options-wrap.ts`) read back rather than a number this file remembers: four labels
+  // that will not close inside one row own more than one row, and a pin with no labels owns none.
+  for (const options of [["a"], ["a", "b", "c", "d"], ["a", "b", "c", "d".repeat(200)]]) {
+    const pin = { ...plain, options };
+    expect(rowsOf(pin)).toHaveLength(
+      rowsOf(plain).length + optionRowCount(options, frameOfText(60), style),
+    );
+  }
 });
 
 test("the reserved options row is the blank the drawer fills, and it carries no tail", () => {
@@ -85,12 +102,13 @@ test("the reserved options row is the blank the drawer fills, and it carries no 
   expect(reserved?.tail).toBe("");
 });
 
-test("the row table and the drawer read pin.options the same way, so a reserved row is a drawn row", () => {
-  // The two readers of one field, pinned against each other. The table decides how many rows a pin owns — the
-  // window scrolls, the bar sits and the keys index that count — and the drawer fills the row it reserved. If
-  // they disagree about what `options` is, the user gets a counted row of padding that names no option, or (in
-  // the shape this replaces) a table that reserved a row from `options.length` while the drawer answered it
-  // blank after filtering every entry out. One rule, read once: absent or empty owns no row, a list owns one.
+test("the row table and the drawer read pin.options through one packing, so a reserved row is a drawn row", () => {
+  // The two halves of the frame, pinned against the one packing they now share. The table decides how many rows
+  // a pin owns — the window scrolls, the bar sits and the keys index that count — and the drawer fills the rows
+  // it reserved. If they disagree about what `options` is, the user gets a counted row of padding that names no
+  // option, or (in the shape this replaces) a table that reserved a row from `options.length` while the drawer
+  // answered it blank after filtering every entry out. So the assertion is the identity, not a number: the
+  // reserve is exactly the count of the lines the drawer can produce, at the same width.
   const cases: readonly (readonly [unknown, number])[] = [
     [undefined, 1],
     [[], 1],
@@ -108,13 +126,15 @@ test("the row table and the drawer read pin.options the same way, so a reserved 
       atOnce(),
     );
     expect(rows).toHaveLength(expected);
-    // The reserved row is the last one the pin owns, tagged for the drawer, and the drawer fills it with the
-    // entries whose digits name their positions — never a counted row the drawer had nothing to say about.
-    const reserved = rows[rows.length - 1];
-    expect(reserved === undefined ? null : isOptionRow(reserved)).toBe(expected === 2);
-    const filled = drawOptionRow(view, 40, style).trimEnd();
-    if (expected === 2) expect(filled).toContain("1 a");
-    else expect(filled).toBe("");
+    // The reserved rows are the last ones the pin owns, tagged for the drawer, and the drawer fills each with
+    // the entries whose digits name their positions — never a counted row the drawer had nothing to say about.
+    const reserved = rows.filter(isOptionRow).length;
+    const fillable = [0, 1, 2, 3].filter(
+      (index) => optionLine(view, innerAt(40), style, index) !== null,
+    ).length;
+    expect(reserved).toBe(fillable);
+    expect(reserved).toBe(expected - 1);
+    if (expected === 2) expect(optionLine(view, innerAt(40), style, 0)).toContain("1 a");
   }
 });
 

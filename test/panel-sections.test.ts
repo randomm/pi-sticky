@@ -12,7 +12,7 @@ import { expect, test } from "bun:test";
 
 import { hasHeadings, panelSections } from "../src/panel-sections.ts";
 import { orderPins } from "../src/render.ts";
-import type { PinLevel } from "../src/types.ts";
+import type { PinLevel, ViewPin } from "../src/types.ts";
 import { infoView, levelPin, mixedView } from "./panel-sections-fixture.ts";
 
 /** Each section spelled as the frame reads it: a level by its level, a group by its name. */
@@ -93,6 +93,21 @@ test("two levels is multiple sections; one is not (resolution 1)", () => {
   expect(hasHeadings(panelSections(mixedView()).order)).toBe(true);
   expect(hasHeadings(panelSections(infoView(3)).order)).toBe(false);
   expect(hasHeadings(panelSections([]).order)).toBe(false);
+  // The third shape of "one section": every pin carries one group, so the view has a single *drawn* section
+  // (the levels its pins hold keep counting sections, which own no rows). It draws no heading either, and the
+  // distinction matters: `hasHeadings` counts the sections that own rows, not the entries of `order`, so the
+  // counting sections cannot turn a one-panel frame into a headed one.
+  const grouped = (id: number): ViewPin => ({
+    ...levelPin(id, `note ${id}`, "info"),
+    group: "Now",
+  });
+  const oneGroup = panelSections([grouped(1), grouped(2)]);
+  expect(hasHeadings(oneGroup.order)).toBe(false);
+  expect(oneGroup.order.length).toBeGreaterThan(1);
+  expect(oneGroup.order.filter((section) => section.pins.length > 0)).toHaveLength(1);
+  // Two groups are two drawn sections, and both are headed — the frame that shows a group's name at all.
+  const twoGroups = panelSections([grouped(1), { ...grouped(2), group: "Later" }]);
+  expect(hasHeadings(twoGroups.order)).toBe(true);
 });
 
 test("an empty view has no sections, no pins and no title counts to print", () => {

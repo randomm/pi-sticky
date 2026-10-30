@@ -14,8 +14,10 @@
 import { expect, test } from "bun:test";
 
 import { PanelComponent } from "../src/panel-component.ts";
+import { panelLayoutSections } from "../src/panel-frame-layout.ts";
+import { panelSections } from "../src/panel-sections.ts";
 import { createOverlayHandle } from "./harness.ts";
-import { host, pins, withOptions } from "./panel-component-host.ts";
+import { host, pins, style, withOptions } from "./panel-component-host.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
 
 /**
@@ -54,6 +56,58 @@ test("the digit names the option by position, on the pin under the bar and not t
   c.handleInput("1");
   expect([state.replies, state.answers]).toEqual([[2], ["a"]]);
 });
+test("the keys still address the pin under the bar when its own rows wrap", () => {
+  // The row-count contract the wrapped pin is the whole point of: one pin owns many rows, so `j` moves the bar
+  // by a *pin* and lands it on another pin's first row, and `d`/a digit must follow the bar rather than the row
+  // it started on. A component that indexed rows would dismiss the pin the bar left behind.
+  const long = withOptions(1, "word ".repeat(40), [
+    "Passed on",
+    "Not yet",
+    "Escalated",
+    "Deferred",
+  ]);
+  const view = [long, withOptions(2, "second", ["a", "b", "c"]), withOptions(3, "third", ["x"])];
+  const h = host(view);
+  const c = new PanelComponent(h.stub, h.tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  c.focus();
+  // The wrapped pin owns several rows and the options row, and it is one bar position: `j` from it lands on
+  // the *next pin*, not on its second row — otherwise the digit below would answer a row, not a pin.
+  // The component's own drawn order, read out once and reused for both the bar's index and the pin it names:
+  // a test that re-derived the ranking in its own expected values would be asserting on its own guess rather
+  // than on the array the keys actually index. `orderPins` ranks newest-id-first, so id 1 — the wrapped pin —
+  // is last and the bar's target after one `j` is id 2.
+  const drawn = c.pins.map((pin) => pin.id);
+  expect(drawn).toEqual([3, 2, 1]);
+  const wrapped = panelLayoutSections(panelSections([long]), 40, undefined, 0, style).owned.filter(
+    (entry) => entry.pin === 0,
+  ).length;
+  // The pin that owns many rows is still one bar position: `j` from it lands on the *next pin*, not on its
+  // second row — otherwise the digit below would answer a row rather than a pin.
+  expect(wrapped).toBeGreaterThan(2);
+
+  c.handleInput("j");
+  expect(c.selection).toBe(1);
+  c.handleInput("d");
+  expect(h.state.dismissals).toEqual([2]);
+
+  const answer = host(view);
+  const keyed = new PanelComponent(answer.stub, answer.tui);
+  const second = createOverlayHandle();
+  second.unfocus();
+  keyed.setHandle(second);
+  keyed.focus();
+  keyed.handleInput("j");
+  keyed.handleInput("3");
+  // The digit is the third *option of the pin under the bar*, and that pin is the one `j` moved to — the wrap
+  // of the pin above bought it no extra keypress and did not shift the numbering.
+  // ranked newest-id-first, so the wrapped pin is `drawn.at(2)` and the bar's target `drawn.at(1)`.
+  expect(answer.state.replies).toEqual([2]);
+  expect(answer.state.answers).toEqual(["c"]);
+});
+
 test("a digit beyond the pin's options, 0, and a digit on a pin without options each do nothing", () => {
   for (const data of ["0", "3", "4", "9"]) {
     const { c, handle, state } = optioned(["Passed on", "Not yet"]);

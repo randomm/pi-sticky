@@ -228,29 +228,6 @@ test("a compact pin is one cut row at every width, which is why the sweep does n
   }
 });
 
-test("the options row the table reserves stays one row and is excluded from the rejoin by its tag", () => {
-  // The row-count promise the options half of the fix must not disturb: whatever the labels, the pin owns one
-  // extra row and no more, and it is the *tag* — not the pad character — that keeps it out of the rejoin.
-  for (const width of WIDTHS) {
-    // The baseline frame does not depend on the id: the row table's height for one pin whose text is
-    // `SWEEP_CORPORA[0]` is the same whatever number stamps it, so it is built once per width and compared
-    // against each id's `withOptions` frame. This keeps the row-count delta, the tag exclusion and the rejoin
-    // under test at every id while halving the frames this sweep draws — the point of the test is that the
-    // reserved row is exactly one, which is a property of the text and the options, not of the id's width.
-    const plain = sweptFrame(IDS[0] ?? 1, SWEEP_CORPORA[0]?.[1] ?? "", width);
-    for (const id of IDS) {
-      const withOptions = sweptFrame(id, SWEEP_CORPORA[0]?.[1] ?? "", width, {
-        options: ["Passed on", "Not yet"],
-      });
-      expect(withOptions.rows.length).toBe(plain.rows.length + 1);
-      const reserved = withOptions.rows[withOptions.rows.length - 1];
-      expect(withOptions.textRows).not.toContain(reserved ?? null);
-      // The rejoin sees the pin's text and nothing of the row the drawer fills.
-      expect(carriedCharacters(withOptions)).toBe(owedCharacters(SWEEP_CORPORA[0]?.[1] ?? ""));
-    }
-  }
-});
-
 test("every id from 1 to 999 keeps its text whole at two widths where the reserve is tightest", () => {
   // The full 999-id walk, at the two widths where a tail's reserve comes closest to eating the text column
   // while still leaving room for words: the id sweep already owns the floor and 33 columns, so the work here

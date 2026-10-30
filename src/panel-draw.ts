@@ -66,7 +66,7 @@ import {
   selectionReset,
   themeBytes,
 } from "./panel-frame.ts";
-import type { PanelRow } from "./panel-rows.ts";
+import type { PanelRow } from "./panel-row.ts";
 import { drawnTail, tailReserve } from "./panel-tail.ts";
 import type { PanelStyle } from "./render.ts";
 

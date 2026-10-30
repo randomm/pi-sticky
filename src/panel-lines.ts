@@ -43,7 +43,7 @@ import {
 } from "./panel-frame.ts";
 import { isPanelFrameSize } from "./panel-geometry.ts";
 import { focusedHint } from "./panel-option-hint.ts";
-import { drawOptionRow } from "./panel-options-row.ts";
+import { fillOptionRow } from "./panel-options-row.ts";
 import { panelContentRows } from "./panel-rows.ts";
 import { isOptionRow } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";
@@ -178,9 +178,12 @@ export function buildPanelLines(
   // row of that content and no blank row of padding — the only rows it cannot reach are the ones the
   // ceiling cut off, which is what the offset scrolls through.
   for (let i = 0; i < budget; i++) {
-    const entry = owned[offset + i];
+    // The window's row in the *table's* own numbering: the offset is where the window opens and `i` is how far
+    // into it this row sits, and the two are absolute table positions — the row is sliced out of `owned` below.
+    const tableRow = offset + i;
+    const entry = owned[tableRow];
     if (entry === undefined) break;
-    const row = entry.row;
+    const row = optionFilled(entry, owned, tableRow, inner, style, content.pins);
     // The bar is on the row the keys moved to *and only while the panel holds focus* — an unfocused
     // panel highlighting its top row would claim the bar sits where the user is not.
     //
@@ -193,16 +196,7 @@ export function buildPanelLines(
     // existed, and now a heading owns a row and no pin while a wrapped pin owns several rows and one pin. A
     // heading's tag is `null`, so no selection can match it and the bar cannot be parked on a section title.
     const selected = content.focused && entry.pin === content.selection && i === bar;
-    lines.push(
-      pinRow(
-        optionFilled(entry, inner, style, content.pins),
-        inner,
-        style,
-        selected,
-        gutterAt,
-        metaColumns,
-      ),
-    );
+    lines.push(pinRow(row, inner, style, selected, gutterAt, metaColumns));
   }
   // The hint is drawn only while focused: an unfocused panel advertising keys it cannot receive would
   // be a lie, and it has nowhere else to be written — the bottom border is the frame's own. What the
@@ -224,15 +218,21 @@ export function buildPanelLines(
 }
 
 /**
- * The row as the frame prints it, with a pin's options filled into the row the table only reserved (the row
- * `optionRows` builds in `panel-rows.ts`, which tags it so this is the only thing that can match it).
- * Filling happens here because it is the only place the frame's inner width is known; `drawOptionRow` drops
- * whole entries from the end rather than truncating one. The width it fills at is the frame's *full inner
- * width*, not the text column the pin's own rows wrapped at — the row carries no tail, so it pays for no
- * id/age reserve (see `panel-options-row.ts`).
+ * The row as the frame prints it, with a pin's options filled into one of the rows the table only reserved (the
+ * rows `optionRows` builds in `panel-rows.ts`, which tags them so this is the only thing that can match them).
+ * Filling happens here because it is the only place the frame's inner width is known, and the content comes from
+ * the very packing that counted the rows (`panel-options-wrap.ts`): the table reserves *N* rows and the wrap
+ * returns *N* lines, so a counted row is a filled row by construction rather than by agreement.
+ *
+ * `tableRow` is the entry's position in the whole table, from which this row's index *among its own pin's option
+ * rows* is counted: the table numbers the rows as it builds them, and the drawer has only the window it is
+ * drawing. The width it fills at is the frame's *full inner width*, not the text column the pin's own rows
+ * wrapped at — the rows carry no tail, so they pay for no id/age reserve (see `panel-options-wrap.ts`).
  */
 function optionFilled(
   entry: PanelOwned,
+  owned: readonly PanelOwned[],
+  tableRow: number,
   inner: number,
   style: PanelStyle,
   pins: readonly ViewPin[],
@@ -240,5 +240,13 @@ function optionFilled(
   if (entry.pin === null || !isOptionRow(entry.row)) return entry.row;
   const pin = pins[entry.pin];
   if (pin === undefined) return entry.row;
-  return { text: drawOptionRow(pin, inner, style), tail: "" };
+  // Which of this pin's option rows is it? The rows a pin owns are contiguous in the table, so counting the
+  // reserved rows above this one that belong to the same pin gives the index the wrap's answer sits at.
+  let index = 0;
+  for (let row = tableRow - 1; row >= 0; row--) {
+    const earlier = owned[row];
+    if (earlier === undefined || earlier.pin !== entry.pin) break;
+    if (isOptionRow(earlier.row)) index++;
+  }
+  return fillOptionRow(pin, inner, style, index);
 }
