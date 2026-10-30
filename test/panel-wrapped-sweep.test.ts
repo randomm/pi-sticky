@@ -35,9 +35,9 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "../src/escape.ts";
-import type { ViewPin } from "../src/types.ts";
 import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
-import { sweptFrameAt } from "./panel-sweep-frame.ts";
+import type { SweepBuilder, SweepCheck } from "./panel-sweep-frame.ts";
+import { sweepGrid, sweptExpandedCompact } from "./panel-sweep-frame.ts";
 import {
   COMPACT_CORPUS,
   SWEEP_CORPORA,
@@ -96,26 +96,17 @@ const bandLabel = (band: readonly [number, number]): string => `${band[0]}–${b
  *
  * The shape every sweep in this file shares, so the banding is stated once and each block says only what it
  * asserts. `check` is handed a frame already built through `framed`, so no block can size a table and draw
- * another.
+ * another. The frame of a cell is built **once per band** and read by all four invariants of that band
+ * (`sweepGrid`, `panel-sweep-frame.ts`): they are four `test()`s over one grid, and each used to lay the same
+ * table out for itself.
  */
 function sweepBand(
   band: readonly [number, number],
   widths: readonly number[],
-  check: (frame: SweptFrame, name: string, text: string, id: number) => void,
-  build: (
-    id: number,
-    text: string,
-    width: number,
-    extra: Partial<ViewPin>,
-  ) => SweptFrame = sweptFrame,
+  check: SweepCheck,
+  build: SweepBuilder = sweptFrame,
 ): void {
-  const [from, to] = band;
-  for (const [name, text, extra] of SWEEP_CORPORA) {
-    for (const width of widths) {
-      if (width < from || width > to) continue;
-      for (const id of IDS) check(build(id, text, width, extra), name, text, id);
-    }
-  }
+  sweepGrid({ band, widths, members: SWEEP_CORPORA, ids: IDS }, build, check);
 }
 
 /**
@@ -128,19 +119,14 @@ function sweepBand(
  * work here would be a second pass over the same tables for no new coverage. That byte-for-byte claim is not
  * swept, it is checked once at its source: `expandedPinOf` answers `undefined` for a pin without the flag
  * (`test/panel-expand-predicate.test.ts`) and `expands` (`panel-rows.ts`) refuses to grow one whatever the
- * signal says.
+ * signal says. The four invariants of a band share the frames that band built, exactly as in `sweepBand`.
  */
 function sweepBandExpanded(
   band: readonly [number, number],
   widths: readonly number[],
-  check: (frame: SweptFrame, name: string, text: string, id: number) => void,
+  check: SweepCheck,
 ): void {
-  const [from, to] = band;
-  const [name, text, extra] = COMPACT_CORPUS;
-  for (const width of widths) {
-    if (width < from || width > to) continue;
-    for (const id of IDS) check(sweptFrameAt(id, text, width, extra, "pin", true), name, text, id);
-  }
+  sweepGrid({ band, widths, members: [COMPACT_CORPUS], ids: IDS }, sweptExpandedCompact, check);
 }
 
 /** The invariant that no row is built wider than the columns the drawer gives it, over one band of widths. */
@@ -216,11 +202,7 @@ function assertUniformWidth(frame: SweptFrame, name: string, _text: string, id: 
  * untested in the one place it bites. The rejoin still runs `WRAPPED_WIDTHS`: at a one-column text column the
  * wrap is a spelling, not a wrap of words, and no amount of honesty about columns makes that a rejoin.
  */
-const SWEEPS: readonly (readonly [
-  string,
-  (frame: SweptFrame, name: string, text: string, id: number) => void,
-  readonly number[],
-])[] = [
+const SWEEPS: readonly (readonly [string, SweepCheck, readonly number[]])[] = [
   ["no row is wider than the columns its tail leaves it", assertNoRowOverrunsItsColumns, WIDTHS],
   [
     "its drawn text rows reproduce every character of its text",
@@ -231,8 +213,10 @@ const SWEEPS: readonly (readonly [
   ["every drawn line measures the frame", assertUniformWidth, WIDTHS],
 ];
 
-for (const [promise, check, widths] of SWEEPS) {
-  for (const band of WIDTH_BANDS) {
+// The band is the outer loop in both blocks below: the four invariants of a band are four `test()`s over one
+// grid, and `sweepGrid` builds that grid's frames once and hands the same objects to all four.
+for (const band of WIDTH_BANDS) {
+  for (const [promise, check, widths] of SWEEPS) {
     test(`a wrapped pin ${promise} from ${bandLabel(band)}`, () => {
       sweepBand(band, widths, check);
     });
@@ -246,10 +230,11 @@ for (const [promise, check, widths] of SWEEPS) {
  * this runs the same four invariants over the state in which the row table wraps — the bar on the swept pin of
  * a frame that takes keys. Only the compact member is swept: the two sweeps ask that one corpus member two
  * different tables (one cut, one wrapped), and ask the six plain members the same table twice. That is the
- * whole reversal of U13, swept over ids and widths instead of asserted once.
+ * whole reversal of U13, swept over ids and widths instead of asserted once. Its tests are registered band by
+ * band, like the block above, so the four invariants read the four tables that band built rather than sixteen.
  */
-for (const [promise, check, widths] of SWEEPS) {
-  for (const band of WIDTH_BANDS) {
+for (const band of WIDTH_BANDS) {
+  for (const [promise, check, widths] of SWEEPS) {
     test(`an expanded compact pin ${promise} from ${bandLabel(band)}`, () => {
       sweepBandExpanded(band, widths, check);
     });

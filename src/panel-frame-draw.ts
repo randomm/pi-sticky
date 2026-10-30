@@ -27,13 +27,17 @@
  * reason — they are the shape of its arguments, not this file's business alone.
  *
  * What this file does **not** own is the cost of a miss. The row table a frame is cut from is a function of
- * the sections, the width, the colours, the age instant — and of the bar and the focus, since the one pin the
- * layout expands is read out of this module's own `expandedPinOf` call, which reads those two. A move of the
- * bar therefore re-wraps every pin rather than cutting back the one gutter glyph that changed: once per
- * keypress today, and once per frame while something else animates the
- * terminal. Fixing it means caching the row table beside the lines in `PanelFrame` and re-running only
- * `buildPanelLines` when only the fields that did not enter the table moved — a change to the layout
- * seam, not to this file, and deliberately not made here.
+ * the sections, the width, the colours, the age instant, and `expanded` — the **one** bar/focus-derived value
+ * the table reads, computed once per frame by this module's `expandedPinOf` call and handed to
+ * `panelLayoutSections`. The bar and the focus themselves stay outside the table, which is what they are in
+ * `panel-frame-layout.ts`: the bar reaches the layout only as the guard that the `expanded` index names the
+ * bar's own pin, and elsewhere it moves the bar's glyph and the window's start (`panel-lines.ts`), while the
+ * focus moves the border and the hint. Nothing reads either coordinate to decide how a pin wraps. A move of
+ * the bar therefore re-wraps every pin today rather than costing the one gutter glyph that changed — the table
+ * is simply not cached: once per keypress, and once per frame while something else animates the terminal.
+ * Fixing it means caching the row table beside the lines in `PanelFrame` on the inputs named above, so a frame
+ * whose `expanded` did not move re-runs only `buildPanelLines` — a change to the layout seam, not to this
+ * file, and deliberately not made here.
  *
  * The one term of the key whose *value* is computed rather than read is the expansion, and its producer is
  * named: `expandedPinOf` (`panel-expand.ts`), called once per frame by `drawFrame` and handed to the frame it

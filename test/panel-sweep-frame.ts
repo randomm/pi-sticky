@@ -16,6 +16,10 @@
  * - **The two-pin view** (`sweptWideIdFrame`) exists only for the reserve invariant, which a one-pin frame cannot
  *   express: there the view's widest stamp *is* the swept pin's, so the honest limit and the lenient one are equal
  *   by construction. Its bar is parked on the wide warning, where no compact pin of that frame expands.
+ *
+ * The band grid driver (`sweepGrid`) is here for the same reason the builders are: it is the one place that
+ * decides how often a frame is built, and a sweep that rebuilt a frame per invariant was paying four layout
+ * passes for four reads of one table.
  */
 import { isOptionRow } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -87,6 +91,20 @@ export function sweptFrameAt(
 }
 
 /**
+ * The swept pin's frame in the state the row table *wraps* it: the bar on the pin of a frame that takes keys.
+ *
+ * The mirror of `sweptFrame`'s resting default, and the state in which a `compact` pin loses its cut. Named so
+ * a sweep asks for the state rather than spelling the two coordinates that make it (`at`/`focused` together
+ * are the expansion signal, `panel-expand.ts`).
+ */
+export const sweptExpandedCompact = (
+  id: number,
+  text: string,
+  width: number,
+  extra: Partial<ViewPin> = {},
+): SweptFrame => sweptFrameAt(id, text, width, extra, "pin", true);
+
+/**
  * The swept pin's frame with a **wide id beside it**, so the reserve the drawer charges is not the swept row's own.
  *
  * The one-pin view cannot see the bug this fixture exists for: its widest stamp is the swept pin's, so charging
@@ -112,4 +130,80 @@ export function sweptWideIdFrame(
     false,
     style,
   );
+}
+
+/** How one cell of a band becomes a frame: the pin's id and text, the width, the member's own fields. */
+export type SweepBuilder = (
+  id: number,
+  text: string,
+  width: number,
+  extra: Partial<ViewPin>,
+) => SweptFrame;
+
+/** What one invariant does with the frame it was handed. */
+export type SweepCheck = (frame: SweptFrame, name: string, text: string, id: number) => void;
+
+/** One corpus member: its name for the failure message, its text, and the fields that make it a shape. */
+export type SweepMember = readonly [name: string, text: string, extra: Partial<ViewPin>];
+
+/** The grid one block of a band sweep walks: the band, the widths it asks over, the members, the ids. */
+export interface SweepGrid {
+  /** The width band this block covers; `widths` is read inside it. */
+  band: readonly [number, number];
+  /** The widths the invariant is asked over — a subset of the band's own range. */
+  widths: readonly number[];
+  /** The corpus members each width is drawn as. */
+  members: readonly SweepMember[];
+  /** The ids minted at each width. */
+  ids: readonly number[];
+}
+
+/**
+ * Every cell of one band, drawn **once** and handed to one invariant.
+ *
+ * A band's invariants are separate `test()`s — bun caps a test at five seconds and a failure must name the
+ * promise it broke — and they all walk the same (member, width, id) grid. Each used to build its own frame per
+ * cell, so four invariants meant four `panelLayoutSections` + `buildPanelLines` passes for four reads of one
+ * table. No check writes to a frame, so the band is a cache epoch: the first invariant of a band builds the
+ * band's frames and its three siblings take the very same objects.
+ *
+ * The cache is keyed by the *builder* as well as the cell, so two sweeps over one grid that draw different
+ * views (the one-pin frame and the wide-id one) can never read each other's cells; a caller whose tests
+ * interleave across bands only pays the build again. Sharing is a cost, never a correctness dependency.
+ */
+export function sweepGrid(grid: SweepGrid, build: SweepBuilder, check: SweepCheck): void {
+  const { band, widths, members, ids } = grid;
+  const [from, to] = band;
+  const cells = cellCache(band, build);
+  for (const [name, text, extra] of members) {
+    for (const width of widths) {
+      if (width < from || width > to) continue;
+      for (const id of ids) {
+        // The cell is named by everything the frame is built from, so two members that differ only in their
+        // text can never read each other's row table; the builder namespaces the *view*.
+        const key = `${name}\u0000${text}\u0000${JSON.stringify(extra)}\u0000${id}\u0000${width}`;
+        const seen = cells.get(key);
+        const frame = seen ?? build(id, text, width, extra);
+        if (seen === undefined) cells.set(key, frame);
+        check(frame, name, text, id);
+      }
+    }
+  }
+}
+
+/** The frames built for the band under test; the map is dropped whole when the sweep moves to the next band. */
+let cachedBand: readonly [number, number] | undefined;
+let cachedCells = new Map<SweepBuilder, Map<string, SweptFrame>>();
+
+/** The cells already drawn for `build` inside `band`, with the epoch moved to `band` first. */
+function cellCache(band: readonly [number, number], build: SweepBuilder): Map<string, SweptFrame> {
+  if (cachedBand?.[0] !== band[0] || cachedBand?.[1] !== band[1]) {
+    cachedBand = band;
+    cachedCells = new Map();
+  }
+  const cells = cachedCells.get(build);
+  if (cells !== undefined) return cells;
+  const fresh = new Map<string, SweptFrame>();
+  cachedCells.set(build, fresh);
+  return fresh;
 }
