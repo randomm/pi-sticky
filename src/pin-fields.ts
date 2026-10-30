@@ -12,6 +12,10 @@
  *
  * `toOneLine` runs last so no field can split a row a surface draws, the promise pin text already
  * makes through `renderList`.
+ *
+ * A read-back is not a second writer, so it borrows only `storedField` — a present string measured by the
+ * same bound, answered with the cleaned value or nothing. It never takes a `clearing` flag: the reader has
+ * no "the user asked to remove this" to express, so there is no sentinel for it to honour.
  */
 import { MAX_TEXT_UNITS } from "./bounds.ts";
 import { isDense } from "./dense.ts";
@@ -89,14 +93,29 @@ function withinBudget(text: string): boolean {
  * A field as it may be stored: cleaned, folded onto one line, and inside the grapheme bound — or
  * `null` when the value is present and will not store, which is what makes the tool and the reducer
  * refuse the same body instead of one of them quietly dropping the field. `undefined` is only ever "no
- * field was sent", so an omitted field never reads as a refusal. `clearing` is the one exception to
- * the empty rule: `""` is storable only as the clear an `update` sends.
+ * field was sent", so an omitted field never reads as a refusal. The empty case is decided by `clearing`
+ * *and* by the raw body: only the literal `""` an `update` sends is the clear, so a group that is non-empty
+ * as sent but empty after cleaning (`ESC[2J`, `" \t "`, U+200B) is refused on an update exactly as it is on
+ * a pin — the pin keeps the group it had instead of losing it to a value that never had any content.
  */
 function cleanField(value: unknown, clearing: boolean): string | null {
   if (typeof value !== "string") return null;
   const oneLine = toOneLine(cleanPinText(value));
-  if (oneLine === "") return clearing ? "" : null;
+  if (oneLine === "") return clearing && value === "" ? "" : null;
   return withinBudget(oneLine) ? oneLine : null;
+}
+
+/**
+ * A value the *reader* may store: the same clean, fold and bound `cleanField` applies, answered as
+ * `string | undefined`. No `clearing` flag reaches this path, so no sentinel is storable here — the
+ * read-back has nothing to clear, and a value that cleans to nothing or runs past the bound answers
+ * `undefined` so the caller drops the key rather than storing an empty one. `session-entries.ts` is the
+ * only caller.
+ */
+export function storedField(value: string): string | undefined {
+  const oneLine = toOneLine(cleanPinText(value));
+  if (oneLine === "") return undefined;
+  return withinBudget(oneLine) ? oneLine : undefined;
 }
 
 /**

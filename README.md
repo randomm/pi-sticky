@@ -181,7 +181,10 @@ still yours:
 The peek shows neither group nor options and is always one line; the rail shows neither group nor options,
 and `compact` changes nothing about it. `/pins` lists the group after the level and puts the options on their
 own indented line (`options: 1) Passed on  2) Not yet`), and does not print `compact` — that is an instruction
-to the panel, not something you asked to read. The tool result's listing carries all three.
+to the panel, not something you asked to read. The tool result's listing carries all three, and spells the
+options the same numbered way (`(options: 1) Passed on  2) Not yet)`) rather than joining the labels with a
+separator: a label that contains one would read to the agent as two offers, and the digit you answer with is a
+position, so a miscount is an answer given to the wrong option.
 
 ### The rail
 
@@ -240,7 +243,8 @@ What the tool refuses rather than quietly fixes — each answer names the field 
 - A pin whose text and level match one already shown is not added: `Already pinned as #<id>.`
 - A list already at `PI_STICKY_MAX_PINS` is refused, with the current listing quoted.
 - `group` is one line of at most 24 graphemes after sanitizing; a longer one is refused, not cut with
-  an ellipsis. `group: ""` on an `update` clears it.
+  an ellipsis. `group: ""` on an `update` clears it — a group that only *looks* filled (`\u001b[2J`, `" \t "`,
+  an invisible character) is refused, so the pin keeps the group it had.
 - `options` is 2 to 4 entries, each at most 24 graphemes after sanitizing, unique once cleaned. `[]`
   on an `update` clears them.
 - `compact` is a boolean.

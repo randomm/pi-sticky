@@ -120,3 +120,17 @@ test("README quotes the panel's refusals byte-for-byte", () => {
   expect(readme, "README quotes TOO_NARROW").toContain(TOO_NARROW);
   expect(readme, "README quotes NOTHING_PINNED").toContain(NOTHING_PINNED);
 });
+
+test("README spells the model's options the way the row does", () => {
+  // The two surfaces tell the operator the fields are spelled alike, so the spelling in the README is a
+  // claim about `optionsPart` (`pin-rows-text.ts`): the numbered form, two spaces apart, inside one
+  // parenthesis. A rejoin of the labels with a separator — the bug this replaced, which made one offer read
+  // as two to a model that counts them — would break this line and that row together.
+  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  expect(readme, "README quotes the model row's options").toContain(
+    "(options: 1) Passed on  2) Not yet)",
+  );
+  expect(readme, "README still shows the /pins options line").toContain(
+    "options: 1) Passed on  2) Not yet",
+  );
+});

@@ -29,7 +29,7 @@ describe("renderList draws group, options and compact", () => {
       },
     ]);
     expect(renderList(listed, 5)).toBe(
-      "Pinned for the user now (1 of 5):\n#4 [warning] (group: Now) Fix the gate (options: Pass | Block) (compact)",
+      "Pinned for the user now (1 of 5):\n#4 [warning] (group: Now) Fix the gate (options: 1) Pass  2) Block) (compact)",
     );
   });
 
@@ -44,7 +44,7 @@ describe("renderList draws group, options and compact", () => {
       " (group: Backlog) text",
     );
     expect(renderList(view([withFields({ options: ["Yes", "No"] })]), 5)).toContain(
-      "text (options: Yes | No)",
+      "text (options: 1) Yes  2) No)",
     );
     expect(renderList(view([withFields({ compact: true })]), 5)).toEndWith("(compact)");
     // `compact: false` is the model's answer "not compact", and says nothing.
@@ -65,8 +65,19 @@ describe("renderList draws group, options and compact", () => {
       5,
     ).split("\n")[1];
     expect(row).toBe(
-      `#2 [action] (group: Now) decide (replied by the user at ${LATER_TIME}) (options: a | b) (compact)`,
+      `#2 [action] (group: Now) decide (replied by the user at ${LATER_TIME}) (options: 1) a  2) b) (compact)`,
     );
+  });
+
+  test('an option label that carries a " | " still reads as one option', () => {
+    // The bug: the model's row joined the labels with " | ", so `["yes | no", "maybe"]` was drawn as three
+    // bar-separated fragments and the model read two offers as three — and the digit it answers with is a
+    // *position*, so a miscount is a wrong answer rather than a cosmetic one. The numbered form cannot be
+    // split by a character a label contains.
+    const row = renderList(view([withFields({ options: ["yes | no", "maybe"] })]), 5).split(
+      "\n",
+    )[1];
+    expect(row).toBe("#1 [info] text (options: 1) yes | no  2) maybe)");
   });
 
   test("an option list the reducer would never store draws no empty parenthesis", () => {
