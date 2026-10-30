@@ -10,7 +10,11 @@
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
+import {
+  META_COLUMNS,
+  META_SEPARATOR_COLUMNS,
+  widestMetaColumns,
+} from "../src/panel-frame-geometry.ts";
 import { HINT } from "../src/panel-lines.ts";
 import { GUTTER_COLUMNS, panelAllRows, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
 import { panelSections } from "../src/panel-sections.ts";
@@ -122,8 +126,22 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
   const width = 44;
   const inner = width - GUTTER_COLUMNS;
   const drawn = panelSections(pins).flat;
-  const all = panelAllRows(drawn, inner - META_RESERVE, plainStyle);
-  const wrapped = panelPinRows(drawn[0] as ViewPin, inner - META_RESERVE, plainStyle).length;
+  const all = panelAllRows(
+    drawn,
+    inner - META_RESERVE,
+    plainStyle,
+    widestMetaColumns(drawn, plainStyle.dim, LATER),
+    inner,
+    LATER,
+  );
+  const wrapped = panelPinRows(
+    drawn[0] as ViewPin,
+    inner - META_RESERVE,
+    plainStyle,
+    widestMetaColumns(drawn, plainStyle.dim, LATER),
+    inner,
+    LATER,
+  ).length;
   const lines = built(content(pins, 0, false), width, style, 6);
   // The second pin owns `wrapped` rows, so a four-row window cannot show the whole of it — and what it
   // does show is the *start* of that pin, not a continuation row dropped in mid-entry.
@@ -218,19 +236,21 @@ test("a single-section view at the same short terminal scrolls exactly as it alw
 });
 
 test("a heading is left out when it and the selected pin cannot both fit the window", () => {
-  // The warning owns four rows of a three-row window, so a heading above it would cost the pin its last row:
-  // the window opens on the pin, exactly as it did before the heading knew about the window. Two facts sit
-  // under it so the table is longer than the frame whatever the offset, and the second section is what makes
-  // the warning's heading a row at all.
-  const pins = [levelPin(1, "a".repeat(40), "warning"), levelPin(2, "far below", "info")];
+  // The arithmetic this shape is built on, asserted before the behaviour so a change to the wrap is caught here
+  // rather than as a mystery in the two lines below. `panelWindowOffset` opens on the pin rather than the heading
+  // when `contentRows - 1 < rowsOfSelected`: the heading would cost the pin its last row, and the level label is
+  // not worth the text. So the case needs a pin of exactly `budget + 1` rows in a window of `budget` — one row
+  // too many for the heading and the pin to share the window. At a 30-column frame and a 2h age that is a run of
+  // 58 `a`s: measured here, because it is a product of the wrap rather than a number to remember.
+  const pins = [levelPin(1, "a".repeat(20), "warning"), levelPin(2, "far below", "info")];
   const { layout } = framed({ ...content(pins, 0, true), ageNow: LATER }, 30, style, 8);
   const rowsOfSelected = layout.owned.filter((entry) => entry.pin === 0).length;
   const budget = panelContentRows(layout.height);
-  expect(rowsOfSelected).toBe(4);
+  expect(rowsOfSelected).toBe(budget + 1);
   expect(budget).toBe(2);
   const rows = built({ ...content(pins, 0, true), ageNow: LATER }, 30, style, 8).slice(1, -1);
   expect(rows).toHaveLength(budget);
-  expect(rows[0]).toContain("a".repeat(10));
+  expect(rows[0]).toContain("a".repeat(8));
   expect(rows[0]).not.toContain("Warnings");
   // The bar is on that first row — the pin's own — and not on the heading that was left out.
   expect(rows.filter((row) => row.includes("["))[0]).toBe(rows[0]);

@@ -21,20 +21,40 @@
  */
 import { expect, test } from "bun:test";
 
+import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { drawOptionRow } from "../src/panel-options-row.ts";
 import { isOptionRow, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
+import { innerAt } from "./panel-rows-frame.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 
-const LONG = "x".repeat(400);
-
-/** The row table of one pin, at a text column wide enough to make wrapping interesting. */
 const style: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
 
-const rowsOf = (pin: ViewPin, textWidth = 60) => panelPinRows(pin, textWidth, style);
+/** The instant the rows are aged at — the same one the reserve is measured at, which is the pair's whole point. */
+const atOnce = (): string => new Date().toISOString();
+
+/**
+ * The row table of one pin, at a text column wide enough to make wrapping interesting.
+ *
+ * The frame's two figures are named rather than guessed: the reserve is measured on this pin's own tail (what
+ * `panelPinRows` falls back to for a caller with no view) and `inner` is the width `panelTextColumns` leaves it
+ * — the inverse of the subtraction that produced `textWidth`. A row-count test that guessed either would be
+ * counting rows no drawer cut.
+ */
+const rowsOf = (pin: ViewPin, textWidth = 60) =>
+  panelPinRows(
+    pin,
+    textWidth,
+    style,
+    widestMetaColumns([pin], style.dim, atOnce()),
+    innerAt(textWidth),
+    atOnce(),
+  );
+
+const LONG = "x".repeat(400);
 
 const textOf = (pin: ViewPin, textWidth = 60) => rowsOf(pin, textWidth).map((row) => row.text);
 
@@ -79,7 +99,14 @@ test("the row table and the drawer read pin.options the same way, so a reserved 
   ];
   for (const [options, expected] of cases) {
     const view = { ...levelPin(1, "one line", "info"), options } as ViewPin;
-    const rows = panelPinRows(view, 40, style);
+    const rows = panelPinRows(
+      view,
+      40,
+      style,
+      widestMetaColumns([view], style.dim, atOnce()),
+      innerAt(40),
+      atOnce(),
+    );
     expect(rows).toHaveLength(expected);
     // The reserved row is the last one the pin owns, tagged for the drawer, and the drawer fills it with the
     // entries whose digits name their positions — never a counted row the drawer had nothing to say about.

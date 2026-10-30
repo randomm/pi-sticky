@@ -17,14 +17,17 @@
  * for the reserve the text column gives up, so a theme whose `dim` adds columns is paid for by the layout
  * that wrapped the row.
  */
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
-
 import { foldBreaks, stripSequences } from "./escape.ts";
-import { widestMetaColumns } from "./panel-frame-geometry.ts";
+import {
+  FRAME_COLUMNS,
+  META_SEPARATOR_COLUMNS,
+  widestMetaColumns,
+} from "./panel-frame-geometry.ts";
 import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { pinTails } from "./panel-row-tail.ts";
 import { fullStamp } from "./panel-tail.ts";
+import { wrapAtDrawnWidth } from "./panel-wrap.ts";
 /**
  * The columns the two gutters own, re-exported so the callers that lay these rows out keep naming the module
  * whose rows they lay out. The tail's format is *not* re-exported: `panel-tail.ts` is its owner and the two
@@ -111,7 +114,6 @@ export function panelPinRows(
   pin: ViewPin,
   textWidth: number,
   style: PanelStyle,
-  now: string = atOnce(),
   /**
    * The reserve the tail is drawn into, as `widestMetaColumns` measured it for this frame.
    *
@@ -119,7 +121,27 @@ export function panelPinRows(
    * pins — and because deciding whether `#<id> <age>` fits beside the id has to be decided against the very
    * figure the drawer pads to. A row that guessed it would put a pair on a line the builder then cut.
    */
-  metaColumns: number = widestMetaColumns([pin], style.dim, now),
+  metaColumns: number,
+  /**
+   * The columns between the frame's gutters, which is the width `pinRow` (`panel-draw.ts`) closes a row to.
+   *
+   * Required, and named by every caller that lays these rows out, because the wrap has to be sized against a
+   * row and not only against a text column: the reserve `pinRow` cuts to is `tailReserve`, which *clamps at the
+   * inner width*, so a wrap that only ever saw `textWidth` could not know how many columns the row keeps.
+   *
+   * It cannot be recovered from the figures the caller handed over. `panelTextColumns` does take the tail's
+   * reserve, the gutters and the separators off the frame to reach a text column, so adding them back would
+   * answer the question for *that* caller — but the peek hands this function the inner width as its text column,
+   * because it draws one row and asks for it at the width it draws at. Inverting the layout's subtraction on
+   * that call reconstructs an `inner` nineteen columns wider than the frame, the wrap packs a row to it, and the
+   * drawer re-cuts the row: the defect this parameter exists to prevent, arriving through the parameter's own
+   * default.
+   *
+   * Both this and `metaColumns` are required and sit ahead of `now` for that reason and for Biome's: a required
+   * parameter may not follow an optional one, and neither figure can be guessed, so neither may be defaulted.
+   */
+  inner: number,
+  now: string = atOnce(),
 ): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
   const glyph = MARKER[pin.level];
@@ -166,7 +188,20 @@ export function panelPinRows(
   // the rest of this module exists to avoid (research-summary U13). The flag is also the cost lever, not
   // decoration: a non-compact pin is re-wrapped at the frame's text column on every frame the panel redraws
   // — a moving bar included — so for a long pin this one branch is what bounds the draw.
-  const wrapped = pin.compact === true ? [foldBreaks(plain)] : wrapTextWithAnsi(plain, textWidth);
+  // The width the wrap packs a line into is `textWidth` less the cell every row of a *wrapping* pin pays in
+  // front of its text — the marker on the first row and the same three blank columns again as the indent of each
+  // row below it. `pinRow` (`panel-draw.ts`) measures a row's text with that cell inside the columns its reserve
+  // leaves, so a line packed to the full `textWidth` came back over the row's limit and the drawer's re-cut spent
+  // the row's last columns on an ellipsis: `…park fix` on the age's row, with `ix` carried down to the line below.
+  //
+  // Charged once, to the wrap rather than to the row, because the row count is the wrap's answer: a wrap that
+  // gave up the cell and still produced one row retried at the full `textWidth` and kept it, so a pin whose text
+  // fits the row it owns is never pushed into a second row by an indent it does not draw. Widening can only ever
+  // drop a row, never add one, so that retry settles on the first pass.
+  const wrapped =
+    pin.compact === true
+      ? [foldBreaks(plain)]
+      : wrapAtDrawnWidth(plain, textWidth, metaColumns, inner);
   // Which row carries the age is decided by how many rows the wrap produced, so the wrap runs first and the
   // tails are stamped against its answer: a pin that fits on one line is the case the id/age pair belongs
   // to. `count` below is that count, and the empty-text fallback is one row for the same reason.
@@ -236,15 +271,30 @@ export function isOptionRow(row: PanelRow): boolean {
  *
  * Callers hand this the order the panel draws, not the order the view was pinned in: the component reads
  * `panelSections` once and every surface of one frame — rows, bar, keys — walks that one array.
+ *
+ * `metaColumns` and `inner` are the frame's own figures, passed through to `panelPinRows` for the reason that
+ * function names: the tail's reserve is the view's, not the pin's, and the wrap is sized against a row. They
+ * are optional here only for a caller that has no frame to name — a test that counts rows, or a table asked for
+ * outside a frame — and such a caller measures the reserve on the pins it passed and derives `inner` from the
+ * subtraction `panelTextColumns` ran to get `textWidth`. A caller that *is* laying a frame out names both.
  */
 export function panelAllRows(
   pins: readonly ViewPin[],
   textWidth: number,
   style: PanelStyle,
-  now: string = atOnce(),
   metaColumns?: number,
+  inner?: number,
+  now: string = atOnce(),
 ): PanelRow[] {
   const rows: PanelRow[] = [];
-  for (const pin of pins) rows.push(...panelPinRows(pin, textWidth, style, now, metaColumns));
+  for (const pin of pins) {
+    // The two figures are derived together or not at all: an `inner` reconstructed from a reserve the function
+    // did not use is a row wrapped against a frame the caller never named, which is the failure mode the
+    // required parameter on `panelPinRows` exists to close. So a caller that gave neither gets both derived
+    // from its own `textWidth`, and a caller that gave one gets exactly the pair it asked the frame to pay.
+    const reserve = metaColumns ?? widestMetaColumns([pin], style.dim, now);
+    const betweenGutters = inner ?? textWidth + reserve + META_SEPARATOR_COLUMNS + FRAME_COLUMNS;
+    rows.push(...panelPinRows(pin, textWidth, style, reserve, betweenGutters, now));
+  }
   return rows;
 }

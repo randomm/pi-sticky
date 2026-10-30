@@ -26,6 +26,7 @@ import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, localTime, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
+import { frameAt } from "./panel-rows-frame.ts";
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
 function content(
   pins: readonly ViewPin[],
@@ -244,13 +245,14 @@ test("a word wider than the frame is cut, not drawn past the gutter, and its id 
 });
 
 test("a text that carries a newline becomes two rows under the text column", () => {
-  const rows = panelPinRows(one(1, "first\nsecond"), 20, plainStyle, LATER);
+  const newline = one(1, "first\nsecond");
+  const frame = frameAt(newline, 20, plainStyle, LATER);
+  const rows = panelPinRows(newline, 20, plainStyle, frame.metaColumns, frame.inner, LATER);
   expect(rows).toHaveLength(2);
   expect(rows[0]?.text).toContain("first");
   expect(rows[1]?.text).toContain("second");
   expect(rows[1]?.text.startsWith("   ")).toBe(true);
-  // The second row is where the age lives: the row table gives the id's row a text column and the age's row
-  // a tail, so the age of a two-row pin is drawn under its text rather than beside its id.
+  // The age lives on the second row: the id's row gets the text column, the age's row the tail.
   expect(rows[1]?.tail).toBe(` ${NOW_AGE}`);
 });
 

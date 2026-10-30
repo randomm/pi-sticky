@@ -117,6 +117,20 @@ export function markerCell(marked: string, glyphText: string): string {
 }
 
 /**
+ * The drawn columns `markerCell` owns — the space before the level's glyph, the glyph's own column and the
+ * space after it (` ${markerCell(...)}`, `panelPinRows`, `panel-rows.ts`).
+ *
+ * Named beside the function that closes the cell, because three callers measure the same cell and none of them
+ * may invent its width: the row table indents every row below a pin's first by exactly this many columns,
+ * `textAfterMarkerCell` (`panel-draw.ts`) walks that many *drawn* columns off the front of a row to put the
+ * selection marker in the glyph's seat, and the wrap (`panel-wrap.ts`) charges the cell to every row of a
+ * wrapping pin before it packs a line. The level glyphs (`MARKER`, `panel-rows.ts`) are all one column, so the
+ * cell is this wide whatever the theme coloured it with — which is the only reason a constant can stand for a
+ * string the theme is handed.
+ */
+export const MARKER_CELL_COLUMNS = 3;
+
+/**
  * Theme bytes closed to `columns`: cut to them if they are over, padded to them if they are under.
  *
  * The cut runs over the colour-free form because `truncateToWidth` measures the bytes a terminal draws and a

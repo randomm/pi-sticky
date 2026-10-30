@@ -25,6 +25,7 @@ import {
   META_COLUMNS,
   META_SEPARATOR_COLUMNS,
   MIN_COLUMNS_FOR_META,
+  widestMetaColumns,
 } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
@@ -35,6 +36,7 @@ import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
+import { innerAt } from "./panel-rows-frame.ts";
 
 const style: PanelStyle = {
   ...plainStyle,
@@ -193,7 +195,14 @@ test("the row table itself keeps the id on the first row and the age below it", 
   // rows the layout builds must still carry the id. With a text column at all, the id owns the first row
   // and the age the second, so neither is ever the thing a cut takes.
   for (const textWidth of [0, 1, 2, 5, 40]) {
-    const rows = panelPinRows(at(777, "a text that will not fit"), textWidth, style, LATER);
+    const rows = panelPinRows(
+      at(777, "a text that will not fit"),
+      textWidth,
+      style,
+      widestMetaColumns([at(777, "")], style.dim, LATER),
+      innerAt(textWidth),
+      LATER,
+    );
     // The degenerate frame has no second row, so its one row carries the whole tail; every other width
     // gives the age a line of its own, and the first row's tail is then the id alone — unless the frame is
     // wide enough for the pair to share it, which is the shape a short one-row pin draws. Either way the

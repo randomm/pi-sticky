@@ -40,6 +40,10 @@ const COLD_MODULES = [
   // The frame path evaluates it: `panel-frame-layout.ts` builds each heading through it, and it reaches
   // `panel-rows.ts` for the level glyph — so it is on the graph whose import order used to matter.
   "src/panel-section-headings.ts",
+  // The wrap. It reaches `panel-frame.ts` for the marker cell's width and `panel-tail.ts` for the tail's
+  // reserve, both of which are read at module scope by the row table's callers; a cold load is the only way to
+  // see whether that edge became a cycle the suite's own ordering hides.
+  "src/panel-wrap.ts",
 ];
 
 /**
@@ -85,6 +89,12 @@ function COLD_PROBE(modulePath: string, target: string): string {
     // The headings of the frame path: both of its exported builders must survive a cold load, since
     // `panel-frame-layout.ts` builds a heading row and its cell on every frame it lays out.
     return `import("${target}").then((m)=>{if(typeof m.headingRow!=="function"||typeof m.headingCell!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-wrap.ts")) {
+    // The wrap's own binding, plus the constant it now imports rather than duplicates: a cold load that returns
+    // the function but hands back `undefined` for `MARKER_CELL_COLUMNS` is the same cycle wearing a different
+    // hat, and this module is the newest edge onto `panel-frame.ts`.
+    return `import("${target}").then((m)=>{if(typeof m.wrapAtDrawnWidth!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   if (modulePath.endsWith("panel-draw.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.fitLine!=="function"||typeof m.pinRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;

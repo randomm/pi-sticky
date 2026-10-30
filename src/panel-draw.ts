@@ -58,6 +58,7 @@ import { META_SEPARATOR_COLUMNS } from "./panel-frame-geometry.ts";
 import {
   ELLIPSIS,
   INJECTED_RESET,
+  MARKER_CELL_COLUMNS,
   gutter,
   markerCell,
   padPlain,
@@ -196,12 +197,3 @@ function textAfterMarkerCell(text: string): string {
   }
   return text.slice(at);
 }
-
-/**
- * The drawn columns the row table puts in front of a pin's text: the space before the marker, the marker's
- * own column and the space after it (` ${markerCell(...)} `, `panelPinRows`, `panel-rows.ts`) — the width
- * the layout paid for and the width the selection marker's cell takes back whole. The level glyphs
- * (`MARKER`, `panel-rows.ts`) are all one column, so the cell is always this wide whatever the theme
- * coloured it with.
- */
-const MARKER_CELL_COLUMNS = 3;
