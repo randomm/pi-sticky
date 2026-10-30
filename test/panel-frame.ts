@@ -1,7 +1,3 @@
-import { expandedPinOf } from "../src/panel-expand.ts";
-import { panelLayoutSections } from "../src/panel-frame-layout.ts";
-import { buildPanelLines } from "../src/panel-lines.ts";
-import type { PanelContent } from "../src/panel-lines.ts";
 /**
  * The one way a test draws a panel frame.
  *
@@ -24,6 +20,10 @@ import type { PanelContent } from "../src/panel-lines.ts";
  * the view and then drew it against a differently-ordered `content.pins`, or a title that grouped them again,
  * would highlight one pin's row for a selection that names another and print counts no heading agrees with.
  */
+import { expandedPinOf } from "../src/panel-expand.ts";
+import { panelLayoutSections } from "../src/panel-frame-layout.ts";
+import { buildPanelLines } from "../src/panel-lines.ts";
+import type { PanelContent } from "../src/panel-lines.ts";
 import type { PanelLayout } from "../src/panel-row-owner.ts";
 import type { PanelSection } from "../src/panel-sections.ts";
 import { panelSections } from "../src/panel-sections.ts";

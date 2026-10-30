@@ -3,16 +3,17 @@
  *
  * A pin is either **collapsed** — a `compact` pin held to the single row the panel's own promise about
  * density depends on — or **expanded**, which is the same pin drawn as though the flag were not set: every
- * row its text wraps to, at the frame's own arithmetic. Nothing else in the panel decides that, and the
- * decision cannot live in the drawer: the window scrolls, the bar sits and `d`/`Enter` index *this* row
- * count, so rows the table did not count are rows the keys are out on, in either direction.
+ * row its text wraps to, at the frame's own arithmetic. This module is the *branch* — which wrap each of the
+ * two states gets — and the decision cannot live in the drawer: the window scrolls, the bar sits and
+ * `d`/`Enter` index *this* row count, so rows the table did not count are rows the keys are out on, in either
+ * direction.
  *
- * Whether a pin is expanded is the caller's answer (`ExpandedAt`, `panel-expand.ts`), never a cell this module
- * reads and never a rule it holds: the frame decides which pin expands (`expandedPinOf`, same module), and
- * this function is handed that answer as one boolean beside the pin it is building. The peek, the rail and
- * every caller outside a frame has no bar to name and must be handed the collapsed rows whatever the frame's
- * bar is doing — which is why the boolean is an argument and not a lookup, and why `compact` alone can never
- * reach this branch.
+ * The other two parts live elsewhere and both arrive as arguments: `expands()` (`panel-rows.ts`) is the per-pin
+ * rule that says *this* pin is the expanded one, and the frame is the input that chose it (`expandedPinOf` /
+ * `ExpandedAt`, `panel-expand.ts`). This function reads no cell and holds no rule of its own; the answer lands
+ * as one boolean beside the pin it is building. The peek, the rail and every caller outside a frame has no bar
+ * to name and must be handed the collapsed rows whatever the frame's bar is doing — which is why the boolean is
+ * an argument and not a lookup, and why `compact` alone can never reach this branch.
  */
 import { foldBreaks } from "./escape.ts";
 import { wrapAtDrawnWidth } from "./panel-wrap.ts";

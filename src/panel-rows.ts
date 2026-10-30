@@ -221,9 +221,9 @@ export function panelAllRows(
 ): PanelRow[] {
   const rows: PanelRow[] = [];
   for (const pin of pins) {
-    // Derived together or not at all: an `inner` reconstructed from a reserve the function did not use is a
-    // row wrapped against a frame the caller never named, which is the failure the required parameters of
-    // `panelPinRows` exist to close.
+    // Each figure defaults on its own. Name `inner` alone and the reserve is measured from this pin alone;
+    // name `metaColumns` alone and `betweenGutters` is reconstructed below at that reserve's floor. A caller
+    // that is laying a frame out names both and gets neither default — which is why frame callers do.
     const reserve = metaColumns ?? widestMetaColumns([pin], style.dim, now);
     // Derived at the *reserve's floor* and not at a measured one: the floor is the smallest frame whose text
     // column could have been `textWidth`, so the options rows can only be under-counted, never counted against
