@@ -25,19 +25,23 @@
  * the honest figure differs from the lenient one — see the note on `sweptFrameAlongsideWideId`.
  *
  * Two corpus members are excluded from the rejoin, and neither exclusion is a loophole: `compact` is cut
- * rather than wrapped by design (README, research-summary U13) and is asserted to own exactly one row — the
- * promise it does make; the reserved options row is excluded by `isOptionRow` because its text is filled in by
- * the drawer and was never part of the pin.
+ * rather than wrapped **while the frame keeps it collapsed** (README, research-summary U13) — so the carve-out
+ * below is `isCollapsedCompact`, a fact about the bar and the focus, and not the bare flag: the same pin with
+ * the bar on it in a frame that takes keys is wrapped by the row table and *does* rejoin, which is the half of
+ * this sweep that #63 added and what `test/panel-compact-sweep.test.ts` states on its own. The reserved options
+ * row is excluded by `isOptionRow` because its text is filled in by the drawer and was never part of the pin.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "../src/escape.ts";
+import type { ViewPin } from "../src/types.ts";
 import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
+import { sweptFrameAt } from "./panel-sweep-frame.ts";
 import {
   SWEEP_CORPORA,
   carriedCharacters,
-  isCompact,
+  isCollapsedCompact,
   limitOf,
   owedCharacters,
   sweptFrame,
@@ -97,13 +101,41 @@ function sweepBand(
   band: readonly [number, number],
   widths: readonly number[],
   check: (frame: SweptFrame, name: string, text: string, id: number) => void,
-  build: typeof sweptFrame = sweptFrame,
+  build: (
+    id: number,
+    text: string,
+    width: number,
+    extra: Partial<ViewPin>,
+  ) => SweptFrame = sweptFrame,
 ): void {
   const [from, to] = band;
   for (const [name, text, extra] of SWEEP_CORPORA) {
     for (const width of widths) {
       if (width < from || width > to) continue;
       for (const id of IDS) check(build(id, text, width, extra), name, text, id);
+    }
+  }
+}
+
+/**
+ * The same sweep over the frames in which the compact carve-out does **not** apply.
+ *
+ * `sweepBand` draws every corpus member at the bar's resting position, which is the collapsed state; this runs
+ * the identical invariant over the expanded state of the same corpus — the bar on the swept pin of a frame that
+ * takes keys. For the six non-compact members the two frames are the same table (the expansion signal can only
+ * reach a pin that carries the flag), and for `compact` it is the whole difference.
+ */
+function sweepBandExpanded(
+  band: readonly [number, number],
+  widths: readonly number[],
+  check: (frame: SweptFrame, name: string, text: string, id: number) => void,
+): void {
+  const [from, to] = band;
+  for (const [name, text, extra] of SWEEP_CORPORA) {
+    for (const width of widths) {
+      if (width < from || width > to) continue;
+      for (const id of IDS)
+        check(sweptFrameAt(id, text, width, extra, "pin", true), name, text, id);
     }
   }
 }
@@ -115,11 +147,13 @@ function assertNoRowOverrunsItsColumns(
   _text: string,
   id: number,
 ): void {
-  // `compact` is exempt, and exempt for a reason the drawer owns: its one row is *meant* to overhang — the row
-  // table hands the drawer the folded text whole and `fitLine` spends the ellipsis on the tail of it, which is
-  // the whole content of what `compact` promises. Its row-count half is asserted in its own block below; this
-  // one is about a row the drawer re-cuts *after* the wrap, which is a different cut entirely.
-  if (isCompact(frame)) return;
+  // The carve-out, restated for #63: it is the *collapsed* compact row that is exempt, and exempt for a reason
+  // the drawer owns — that one row is *meant* to overhang, the table handing the drawer the folded text whole
+  // and `fitLine` spending the ellipsis on the tail of it, which is the whole content of what `compact`
+  // promises. Its row-count half is asserted in its own block below; this one is about a row the drawer re-cuts
+  // *after* the wrap, a different cut entirely. Under a bar that takes keys the pin is wrapped like any other
+  // and pays this invariant in full, which is why the test is `isCollapsedCompact` and not the flag.
+  if (isCollapsedCompact(frame)) return;
   for (const row of frame.rows) {
     expect(
       visibleWidth(row.text),
@@ -135,7 +169,12 @@ function assertTextSurvivesTheWrap(
   text: string,
   id: number,
 ): void {
-  if (isCompact(frame)) return;
+  // The rejoin is asked of every frame that *wrapped* the pin. A collapsed compact frame is the one that did
+  // not: its row is cut, the ellipsis is a character the cut wrote rather than the pin, and asking it for the
+  // whole text would be asking `compact` to mean the opposite of what it means. Under the bar the same pin is
+  // wrapped and stands here with every other member, ellipsis included — `carriedCharacters` is the bare
+  // comparison, so an expanded compact pin that fell back to a cut would fail it by printing one.
+  if (isCollapsedCompact(frame)) return;
   const carried = carriedCharacters(frame);
   const owed = owedCharacters(text);
   // A wrapped pin lost nothing: the same characters, in the same order, and none added.
@@ -198,6 +237,23 @@ for (const [promise, check, widths] of SWEEPS) {
 }
 
 /**
+ * The expanded counterpart of the collapsed compact block at the bottom of this file.
+ *
+ * `sweptFrame` parks the bar on the companion and takes no keys, which is the state in which `compact` cuts;
+ * this runs the same four invariants over the state in which the row table wraps — the bar on the swept pin of
+ * a frame that takes keys. The carve-out in each check is `isCollapsedCompact`, so for the six members that
+ * carry no flag the two sweeps ask the same frame, and for `compact` they ask two different tables: one cut,
+ * one wrapped. That is the whole reversal of U13, swept over ids and widths instead of asserted once.
+ */
+for (const [promise, check, widths] of SWEEPS) {
+  for (const band of WIDTH_BANDS) {
+    test(`an expanded compact pin and every plain pin ${promise} from ${bandLabel(band)}`, () => {
+      sweepBandExpanded(band, widths, check);
+    });
+  }
+}
+
+/**
  * The same column-limit sweep over a view whose widest tail belongs to *another* pin.
  *
  * With one pin in the frame, the view's widest stamp is that pin's own and the honest limit equals the lenient
@@ -211,23 +267,6 @@ for (const band of WIDTH_BANDS) {
   });
 }
 
-test("a compact pin is one cut row at every width, which is why the sweep does not rejoin it", () => {
-  // The exclusion, asserted rather than assumed. `compact` means "cut, do not spend the window" — so its one
-  // row keeps its ellipsis, and a rejoin sweep that included it would be asking for the opposite of the
-  // guarantee. If this block ever fails, `compact` has stopped meaning one row and the sweep's exclusion has
-  // become a hole rather than a carve-out.
-  for (const [name, text] of [["compact", SWEEP_CORPORA[6]?.[1] ?? ""]] as [string, string][]) {
-    expect(name).toBe("compact");
-    for (const width of WIDTHS) {
-      for (const id of IDS) {
-        const frame = sweptFrame(id, text, width, { compact: true });
-        expect(frame.textRows.length, `compact id ${id} at ${width}`).toBe(1);
-        expect(frame.rows[0]?.tail).toContain(`#${id}`);
-      }
-    }
-  }
-});
-
 test("every id from 1 to 999 keeps its text whole at two widths where the reserve is tightest", () => {
   // The full 999-id walk, at the two widths where a tail's reserve comes closest to eating the text column
   // while still leaving room for words: the id sweep already owns the floor and 33 columns, so the work here
@@ -236,7 +275,7 @@ test("every id from 1 to 999 keeps its text whole at two widths where the reserv
     for (const [name, text, extra] of SWEEP_CORPORA) {
       for (let id = 1; id <= 999; id++) {
         const frame = sweptFrame(id, text, width, extra);
-        if (isCompact(frame)) {
+        if (isCollapsedCompact(frame)) {
           expect(frame.textRows.length).toBe(1);
           continue;
         }

@@ -20,6 +20,15 @@
  *    content in either can buy neither a third nor lose one, and the window, the bar and `d`/`Enter` all index
  *    that count.
  *
+ * Promise 3 is measured at the bar's **resting** position, selection 0, in every sweep below. That coordinate is
+ * part of the promise and not an oversight: since #63 a `compact` pin the bar rests on in a frame that takes
+ * keys draws its full entry, so a row-count sweep parked on the pin would have been counting an *expanded*
+ * entry — the row count of a second rule the sweep has no business certifying, and one whose count is the wrap's
+ * answer rather than the field's. Either off-selection counts (`selection` naming no pin) or the expanded row
+ * count, spelled out, are what these counts may be. `at()` fixes the coordinate for the whole file, so the
+ * counts below are the collapsed entry's; the expanded half of the promise is `panel-hostile-compact.test.ts`,
+ * which drives the same fields with the bar *on* the pin and asserts the forgery sweep at that row count.
+ *
  * Promise 3 is measured against a frame that has a *heading to lose*: one section draws no heading at all
  * (spec 3.5), so every sweep below pairs the grouped pin with a plain ungrouped fact of another level. Two
  * drawn sections are both headed, and then a hostile group name really does cost the frame its one heading
@@ -27,7 +36,9 @@
  */
 import { expect, test } from "bun:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { optionRowCount } from "../src/panel-options-wrap.ts";
+
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
 import { built, framed } from "./panel-frame.ts";
@@ -41,6 +52,7 @@ import {
 } from "./panel-hostile-fields.ts";
 import { MIN_FRAME_WIDTH, TERMINAL_ROWS, offenders } from "./panel-hostile.ts";
 import { expectUniformWidth, one, plain } from "./panel-lines-hostile-fixture.ts";
+import { levelPin } from "./panel-sections-fixture.ts";
 
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
 const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
@@ -49,6 +61,21 @@ const content = (pins: readonly ViewPin[], selection = 0, focused = false) => ({
   focused,
   replyHint: "",
   ageNow: TERMINAL_ROWS === 40 ? "2026-10-23T14:30:00.000Z" : "2026-10-23T14:30:00.000Z",
+});
+
+/** The pin's text every row-count comparison below holds constant while the fields move. */
+const DECIDE = "Decide X";
+
+/**
+ * The pin the sweeps draw: the text every row count is measured over, plus whatever field is under test.
+ *
+ * Built through `levelPin` so this file's sweeps and the compact half of the promise
+ * (`panel-fields-hostile-compact.test.ts`) mint the same shape, and so the marker `assertNoForgery`'s
+ * genuine-row pattern names stays `! Decide X` whichever field is bolted on.
+ */
+const fieldPin = (extra: Partial<ViewPin> = {}): ViewPin => ({
+  ...levelPin(1, DECIDE, "warning"),
+  ...extra,
 });
 
 /**
@@ -64,7 +91,7 @@ const companion = (): ViewPin => one(2, "a plain note");
 /** The same frame with the *same* fields cleaned: one line each, no forgery in them. */
 const benign = (width: number, terminalRows: number, focused: boolean): string[] => {
   const fields = foldedHostileFields();
-  const pin = one(1, "Decide X", { level: "warning", ...fields });
+  const pin = one(1, DECIDE, { level: "warning", ...fields });
   return built(content([pin, companion()], 0, focused), width, plain, terminalRows);
 };
 
@@ -81,7 +108,7 @@ test("hostile group and options forge no pin row and no reply line, at the sizes
   for (const focused of [false, true]) {
     for (const terminalRows of [TERMINAL_ROWS, 100]) {
       for (const width of [MIN_FRAME_WIDTH, 33, 60, 100, 120]) {
-        const pin = withHostileFields(one(1, "Decide X", { level: "warning" }));
+        const pin = withHostileFields(fieldPin());
         const lines = built(content([pin, companion()], 0, focused), width, plain, terminalRows);
         expectUniformWidth(lines, width);
         for (const line of lines) expect(offenders(line)).toEqual([]);
@@ -114,7 +141,7 @@ test("the field's own fold is what keeps a hostile group to one heading, every b
   // drawer, not to whatever pass order happened to clean the field on the way in. A tall terminal so the
   // sweep measures the fold rather than the window's ceiling.
   for (const brk of BREAKS) {
-    const pin = withHostileFields(one(1, "Decide X", { level: "warning" }), brk);
+    const pin = withHostileFields(fieldPin(), brk);
     const lines = built(content([pin, companion()], 0, true), 120, plain, 100);
     expectUniformWidth(lines, 120);
     // One heading and one options row for a field that carried a break: the fold collapsed it, so the table
@@ -137,7 +164,7 @@ test("a hostile group name costs the frame one heading and a hostile option list
   // be measuring nothing. A group adds the heading it is entitled to and nothing else; an options list adds
   // the rows its labels wrap to and nothing else; hostile content in either buys neither a further row nor
   // loses one.
-  const base = one(1, "Decide X", { level: "warning" });
+  const base = fieldPin();
   const at = (extra: Partial<ViewPin>): string[] =>
     built(content([{ ...base, ...extra }, companion()], 0, true), 120, plain, 100);
   const bare = at({});

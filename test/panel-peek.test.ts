@@ -34,6 +34,7 @@ import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW } from "./fixtures.ts";
+import { framed } from "./panel-frame.ts";
 import {
   BREAKS,
   assertNoForgery,
@@ -71,6 +72,15 @@ function content(
 ): PeekContent {
   return { sections: panelSections(pins), ageNow: NOW, replyHint };
 }
+
+/** The frame request of an open panel drawn for `pins` with the bar on `selection`. */
+const content2 = (pins: readonly ViewPin[], selection: number, focused: boolean) => ({
+  pins,
+  selection,
+  focused,
+  replyHint: "",
+  ageNow: NOW,
+});
 
 /** The rows stripped of their border glyphs, so an assertion reads what the peek *says*. */
 const text = (lines: string[]): string[] => lines.map((line) => line.replace(/[─╭╮╰╯│]/g, ""));

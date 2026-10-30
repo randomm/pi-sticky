@@ -14,6 +14,11 @@
  * the reserved options row each change what the row table owns, and each changed the arithmetic the fix
  * touches — so both are corpus members, and both are *exclusions* from the round trip, on the two grounds
  * this file's helpers make explicit rather than leaving to a caller's comment.
+ *
+ * `compact` is excluded where the frame keeps it collapsed, and **included** where the frame expands it: the
+ * cut that makes the exclusion true is a property of the collapsed entry, and the bar taking the pin off the
+ * cut is the one thing that removes it (`ExpandedAt`, `panel-rows.ts`). So every frame here is drawn at a bar
+ * and a focus, and the carve-out asks those two rather than the flag.
  */
 import { foldBreaks, stripSequences } from "../src/escape.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "../src/panel-frame-geometry.ts";
@@ -23,7 +28,8 @@ import { GUTTER_COLUMNS, tailReserve } from "../src/panel-tail.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, pin } from "./fixtures.ts";
-import { framed } from "./panel-frame.ts";
+import { sweptPinOf } from "./panel-sweep-frame.ts";
+import { sweptFrameAt, sweptWideIdFrame } from "./panel-sweep-frame.ts";
 
 /** Identity colours: a drawn row is measured on what the panel asked for, never on a theme's bytes. */
 export const sweepStyle: PanelStyle = {
@@ -89,11 +95,20 @@ export const CJK_PARAGRAPH =
  *
  * `replied` puts a mark in front of the text *before* the wrap, so a row that lost a column lost it from
  * there; `options` reserves a row whose text the drawer fills and the pin never wrote; `compact` is the one
- * member the round trip must not cover, because a compact pin's text is cut rather than wrapped (README,
- * research-summary U13) and asserting a rejoin on it would be asserting the opposite of what it promises.
+ * member whose rows the round trip covers only under a bar — its text is cut rather than wrapped while the
+ * frame keeps it collapsed (README, research-summary U13), and asserting a rejoin there would be asserting
+ * the opposite of what the flag promises. Under the bar of a frame that takes keys it is an ordinary wrapped
+ * pin and rejoins like one, which is what the frame's own expansion is for.
  * `nbsp` and `cjk` are the two shapes the wrap reaches outside its word rule: a token no space separates, and
  * glyphs too wide to pack into the columns a narrow frame leaves.
  */
+/** The corpus member the round trip covers only under a bar — see `isCollapsedCompact`. */
+export const COMPACT_CORPUS: readonly [string, string, Partial<ViewPin>] = [
+  "compact",
+  PARAGRAPH,
+  { compact: true },
+];
+
 export const SWEEP_CORPORA: readonly (readonly [string, string, Partial<ViewPin>])[] = [
   ["plain", PARAGRAPH, {}],
   ["token", LONG_TOKEN, {}],
@@ -101,7 +116,7 @@ export const SWEEP_CORPORA: readonly (readonly [string, string, Partial<ViewPin>
   ["cjk", CJK_PARAGRAPH, {}],
   ["replied", PARAGRAPH, { repliedAt: LATER }],
   ["options", PARAGRAPH, { options: ["Passed on", "Not yet"] }],
-  ["compact", PARAGRAPH, { compact: true }],
+  COMPACT_CORPUS,
 ];
 
 /** One frame of the sweep: the pin, the rows the layout built for it, and the lines cut from those rows. */
@@ -112,24 +127,27 @@ export interface SweptFrame {
   width: number;
   /** The pin's own rows: the table's rows with the reserved options row taken back out. */
   textRows: readonly PanelRow[];
+  /** Whether the bar rests on the swept pin — half of what decides whether a compact pin is expanded. */
+  selected: boolean;
+  /** Whether the frame takes keys — the other half. See `isCollapsedCompact`. */
+  focused: boolean;
 }
 
-/** One frame drawn the way the component draws it, at one width, from one sectioning. */
-export function sweptFrame(
+/**
+ * One frame drawn the way the component draws it, at one width, from one sectioning.
+ *
+ * The bar and the focus of a swept frame are `sweptFrameAt`'s to name (`panel-sweep-frame.ts`), because the
+ * compact carve-out is a fact about them and not about the flag: a bar on a companion is the sweep asking for
+ * the *collapsed* frame of a compact pin, and a bar on the pin itself in a frame that takes keys is the sweep
+ * asking for its full entry. Either way the frame comes from `framed`, so the rows and the lines are cut from
+ * one table.
+ */
+export const sweptFrame = (
   id: number,
   text: string,
   width: number,
   extra: Partial<ViewPin> = {},
-): SweptFrame {
-  const pins = [pin(id, text, "info", { createdAt: NOW, ...extra })];
-  const { lines, layout } = framed(
-    { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
-    width,
-    sweepStyle,
-  );
-  const rows = layout.owned.map((entry) => entry.row);
-  return { lines, pins, rows, width, textRows: rows.filter((row) => !isOptionRow(row)) };
-}
+): SweptFrame => sweptFrameAt(id, text, width, extra);
 
 /**
  * A frame whose **widest tail belongs to a different pin** than the one whose rows are asserted on.
@@ -151,18 +169,7 @@ export function sweptFrameAlongsideWideId(
   width: number,
   extra: Partial<ViewPin> = {},
 ): SweptFrame {
-  const tested = pin(id, text, "info", { createdAt: NOW, ...extra });
-  const wide = pin(987_654_321_098, "a wide id that owns the frame's reserve", "warning", {
-    createdAt: NOW,
-  });
-  const pins = [tested, wide];
-  const { lines, layout } = framed(
-    { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
-    width,
-    sweepStyle,
-  );
-  const rows = layout.owned.map((entry) => entry.row);
-  return { lines, pins, rows, width, textRows: rows.filter((row) => !isOptionRow(row)) };
+  return sweptWideIdFrame(id, text, width, extra, sweepStyle);
 }
 
 /**
@@ -246,5 +253,30 @@ export function carriedCharacters(frame: SweptFrame): string {
     .replace(new RegExp(`^${REPLIED}`), "");
 }
 
-/** Whether this frame's pin is the one shape the round trip cannot cover: cut by design, not by accident. */
-export const isCompact = (frame: SweptFrame): boolean => frame.pins[0]?.compact === true;
+/** Whether this frame's swept pin carries the flag whose cut is the sweep's carve-out. */
+export const isCompact = (frame: SweptFrame): boolean => sweptPinOf(frame)?.compact === true;
+
+/**
+ * Whether this frame keeps its compact pin collapsed: the flag, and the absence of the one thing that lifts
+ * it — a bar on the pin in a frame that takes keys.
+ *
+ * This, and not the flag alone, is the sweep's carve-out. A collapsed compact pin's one row is *meant* to
+ * overhang its columns and to lose its tail to an ellipsis, which is what the round trip cannot survive; the
+ * same pin under the bar of a frame that takes keys is wrapped by the row table (`pinTextRows`,
+ * `panel-pin-rows.ts`) and owes the sweep the same characters any other wrapped pin owes.
+ */
+export const isCollapsedCompact = (frame: SweptFrame): boolean =>
+  isCompact(frame) && !(frame.selected && frame.focused);
+
+/**
+ * The characters of the swept pin's text its rows carry, with the cut's ellipsis taken back out.
+ *
+ * A collapsed compact frame rejoining is not the sweep's promise — the ellipsis *is* what that row promises —
+ * but its characters still are, and `…` is one of the two bytes the cut owns (the other is the space `fitPlain`
+ * pads with). Removing them is what lets one character comparison cover the collapsed row too, instead of the
+ * sweep having to look the other way whenever the flag is set: the carve-out below is about the row a cut
+ * produces, never about what that row may print.
+ */
+export function carriedCharactersOfCut(frame: SweptFrame): string {
+  return carriedCharacters(frame).replace(/\u2026/g, "");
+}

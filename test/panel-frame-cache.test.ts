@@ -14,8 +14,10 @@
  */
 import { expect, test } from "bun:test";
 
+import { expandedPinOf } from "../src/panel-expand.ts";
 import type { PanelFrame } from "../src/panel-frame-cache.ts";
 import { sameFrame } from "../src/panel-frame-cache.ts";
+import type { FrameKey } from "../src/panel-frame-draw.ts";
 import { frameOf } from "../src/panel-frame-draw.ts";
 import { railStamp } from "../src/panel-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
@@ -41,13 +43,41 @@ interface FrameOverrides {
   selection?: number;
   focused?: boolean;
   mode?: PanelFrame["mode"];
+  /**
+   * Whether the frame may name the keys: the legend's term, beside `mode`, and the gate the expansion obeys —
+   * a frame that advertises no keys expands nothing whatever its bar and focus answer.
+   */
   keys?: boolean;
   replyHint?: string;
   ageNow?: number;
+  /** Whether the pin `selection` names is `compact` — what the key's `expanded` term is read from. */
+  compact?: boolean;
 }
 
 function frame(over: FrameOverrides = {}): PanelFrame {
-  const pins = over.pins ?? PINS;
+  const base = over.pins ?? PINS;
+  // The selection's pin made `compact` on request: the frame's expansion is read off the pin `selection`
+  // names, so a case that wants an expanded frame names the flag and lets the predicate answer.
+  const pins =
+    over.compact === undefined
+      ? base
+      : base.map((pin, index) =>
+          index === (over.selection ?? 0) ? { ...pin, compact: over.compact } : pin,
+        );
+  const mode = over.mode ?? "open";
+  const keys = over.keys ?? mode === "open";
+  const focused = over.focused ?? false;
+  const selection = over.selection ?? 0;
+  // The key's expansion term comes from `expandedPinOf` — the one predicate the component, its candidate and
+  // the layout all call — and not from a literal of this file's own: a case that *wrote* the term would assert
+  // on its own guess about the rule rather than on what the frame stores.
+  const key: FrameKey = {
+    replyHint: over.replyHint ?? "",
+    mode,
+    keys,
+    ageNow: NOW,
+    ageKey: over.ageNow ?? 29_725_800,
+  };
   return {
     ...frameOf(
       over.lines ?? ["╭──╮", "│One│", "╰──╯"],
@@ -57,19 +87,10 @@ function frame(over: FrameOverrides = {}): PanelFrame {
         style: NO_PANEL_COLOUR,
         terminalRows: 24,
       },
-      {
-        replyHint: over.replyHint ?? "",
-        mode: over.mode ?? "open",
-        // Whether the frame may name the keys. Defaults to the answer the open frame implies; the case
-        // below moves it on its own to prove the legend is a term of the key and not a consequence of `mode`.
-        keys: over.keys ?? over.mode === "open",
-        ageNow: NOW,
-        // The minute the frame's ages were drawn at; the case below moves it by one to prove the key reads
-        // the bucket and not the instant.
-        ageKey: over.ageNow ?? 29_725_800,
-      },
-      over.focused ?? false,
-      over.selection ?? 0,
+      key,
+      focused,
+      selection,
+      expandedPinOf(pins, key.mode, key.keys, focused, selection),
     ),
     pins,
   };
@@ -96,6 +117,45 @@ test("moving the bar is a frame change", () => {
 
 test("focus is a frame change, because the bar and the border colour both depend on it", () => {
   expect(sameFrame(frame({ focused: true }), frame())).toBe(false);
+});
+
+test("a compact pin's expansion is a frame change, in both directions", () => {
+  // The row table grew the selected pin's entry under the bar, so a frame memorised around the expanded table
+  // is not the frame a collapsed one would draw — and neither is the way round. `selection` and `focused` move
+  // with it in practice, but the key owes this term on its own: a candidate whose bar and focus still match a
+  // cached frame must not be answered with rows the current table would not have built.
+  const atBar = frame({ selection: 0, focused: true, compact: true });
+  const collapsed = frame({ selection: 0, focused: true });
+  expect(sameFrame(atBar, collapsed)).toBe(false);
+  expect(sameFrame(collapsed, atBar)).toBe(false);
+  // …and two frames of the *same* published array are a hit, which is what the pins' identity comparison
+  // needs: two hand-built literals are two arrays, and `sameFrame` answers that difference first.
+  const atBarView = [pin(1, "One", "info", { compact: true }), pin(2, "Two", "warning")];
+  const atBarViewFrame = frame({ pins: atBarView, selection: 0, focused: true });
+  const atSecondView = [pin(1, "One", "info"), pin(2, "Two", "warning", { compact: true })];
+  // Built from one published array, so only the predicate's reading of the flag can move the term.
+  expect(
+    sameFrame({ ...atBarViewFrame, pins: atBarView }, { ...atBarViewFrame, pins: atBarView }),
+  ).toBe(true);
+  // A compact pin the bar is *not* on draws collapsed: the term names the selected pin, not the view, so the
+  // same array at the same bar hits whether or not another pin carries the flag.
+  const atSecondFrame = frame({ pins: atSecondView, selection: 0, focused: true });
+  expect(sameFrame(atSecondFrame, atSecondFrame)).toBe(true);
+  // …and the bar *on* that compact pin is the miss, against the same view with the bar elsewhere.
+  expect(
+    sameFrame(
+      frame({ pins: atSecondView, selection: 1, focused: true }),
+      frame({ pins: atSecondView, selection: 0, focused: true }),
+    ),
+  ).toBe(false);
+  // …and a frame that may not take keys expanded nothing, gate or peek alike: one published array for each
+  // pair, so the comparison is the flag's reading and not the pins' identity.
+  for (const over of [{ keys: false }, { mode: "peek" as const }]) {
+    const view = [pin(1, "One", "info", { compact: true }), pin(2, "Two", "warning")];
+    const one = frame({ pins: view, selection: 0, focused: true, ...over });
+    const other = frame({ pins: view, selection: 0, focused: true, ...over });
+    expect(sameFrame(one, other)).toBe(true);
+  }
 });
 
 test("the keys the border advertises are a term of the key beside the mode", () => {
@@ -163,6 +223,7 @@ test("every field of the key is a field of the frame, so a new one cannot be lef
   expect(Object.keys(frame()).sort()).toEqual(
     [
       "ageNow",
+      "expanded",
       "focused",
       "keys",
       "lines",

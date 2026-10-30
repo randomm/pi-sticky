@@ -238,23 +238,44 @@ test("the options row closes at the frame's width at every width the panel draws
 });
 
 test("compact changes how many rows the pin owns, which is how the user sees it", () => {
-  // The flag has no glyph of its own: what it buys is one row instead of many, and a frame whose window is
-  // not spent on a wall of text. Asserting on the row count is asserting on the only effect it has on screen.
-  const long = (id: number) => ({ ...levelPin(id, "x".repeat(300), "info"), compact: true });
-  const [compactRows, plainRows] = [
-    frameOf([long(1)]).length,
-    frameOf([levelPin(1, "x".repeat(300), "info")]).length,
-  ];
+  // The flag's whole effect on screen is a row count, and the frame it is counted in is the frame the bar is
+  // *not* on: the pin beside the bar is the one pin a compact entry is drawn long for (`test/panel-compact-
+  // expand-frame.test.ts`), so this pair has to draw the two pins with the bar on neither of them — which is
+  // what a second, plain pin takes the bar off to.
+  // The companion is a *warning*: the drawn order ranks warnings first, so the bar at selection 0 rests on
+  // it and both shapes of the long pin are read with the bar on neither of them.
+  const long = (id: number): ViewPin => ({
+    ...levelPin(id, "x".repeat(300), "info"),
+    compact: true,
+  });
+  const companion: ViewPin = levelPin(9, "the pin the bar is on", "warning");
+  // The continuation rows carry no id — only the pin's first row prints its stamp — so the owner is the row
+  // the id is on and the rows under it that belong to the same entry: counted the way the window counts them,
+  // which is between this pin's row and the next section's heading or the frame's end.
+  const rowsOf = (pin: ViewPin): number => {
+    const rows = frameOf([pin, companion]);
+    const own = rows.findIndex((row) => row.includes(`#${pin.id}`));
+    let last = own;
+    while (last + 1 < rows.length && !rows[last + 1]?.includes("#")) last++;
+    return last - own + 1;
+  };
+  const [compactRows, plainRows] = [rowsOf(long(1)), rowsOf(levelPin(1, "x".repeat(300), "info"))];
   expect(compactRows).toBe(1);
   expect(plainRows).toBeGreaterThan(3);
   // A compact pin whose text fits is indistinguishable from a plain one — the flag adds no marker to draw.
-  expect(frameOf([pin(1, "info", { compact: true })])[0]).toContain("pin 1");
+  expect(frameOf([pin(1, "info", { compact: true }), companion]).join("\n")).toContain("pin 1");
 });
 
-test("a compact pin's text is cut, not wrapped, and its id keeps its seat", () => {
-  const rows = frameOf([{ ...levelPin(1, "x".repeat(300), "info"), compact: true }]);
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toContain("#1");
+test("a compact pin the bar is not on draws its text cut, not wrapped, and keeps its id's seat", () => {
+  // The collapsed half of the flag, drawn: one row, its id on it, and the row closed at the frame's width with
+  // its ellipsis — the expansion belongs to the pin under the bar alone.
+  const rows = frameOf([
+    { ...levelPin(1, "x".repeat(300), "info"), compact: true },
+    levelPin(9, "the pin the bar is on", "warning"),
+  ]);
+  const own = rows.filter((row) => row.includes("#1"));
+  expect(own).toHaveLength(1);
+  expect(own[0]).toContain("#1");
   // Cut, not run over: the row closes at the frame's width with its ellipsis.
-  expect(visibleWidth(rows[0] ?? "")).toBe(WIDTH);
+  expect(visibleWidth(own[0] ?? "")).toBe(WIDTH);
 });

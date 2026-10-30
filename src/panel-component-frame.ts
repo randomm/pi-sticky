@@ -20,6 +20,7 @@
  * reads of one clock — and the read itself is `frameKey` (`panel-frame-draw.ts`), the same one `render()`
  * asks for, so the key cannot drift in the half that is not the frame's field list.
  */
+import { expandedPinOf } from "./panel-expand.ts";
 import type { PanelFrame } from "./panel-frame-cache.ts";
 import { frameKey, frameOf } from "./panel-frame-draw.ts";
 import type { PanelDraw } from "./panel-frame-draw.ts";
@@ -50,7 +51,20 @@ export function frameCandidate(
   selection: number,
   host: PanelHost,
 ): PanelFrame {
-  return frameOf([], candidateDraw(pins), frameKey(host), focused, selection);
+  const key = frameKey(host);
+  const draw = candidateDraw(pins);
+  // The expansion term is computed by the same predicate `render()` asks, over the same five inputs — the
+  // candidate's pins, mode, key gate, focus and bar. A candidate that left it out, or re-derived it, would be
+  // a second spelling of a rule the frame has already settled, and `sameFrame` would answer a redraw of a view
+  // whose expansion moved as a hit.
+  return frameOf(
+    [],
+    draw,
+    key,
+    focused,
+    selection,
+    expandedPinOf(pins, key.mode, key.keys, focused, selection),
+  );
 }
 
 /** The candidate's stand-in for "what one frame is drawn from": the drawn order, and nothing drawn at. */

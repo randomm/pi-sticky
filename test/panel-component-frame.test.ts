@@ -101,3 +101,50 @@ test("a render() alone pulls an out-of-range bar back onto the list it just drew
   c.render(44);
   expect(c.selection).toBe(0);
 });
+
+test("an unfocused→focused move onto a compact pin repaints the expanded frame", () => {
+  // The stale-frame this cache exists to refuse, drawn through the component rather than through
+  // `sameFrame`. The resting frame is an **open frame the user is not in** — `mode`/`keys` still answer the
+  // open panel, only `focused` is false, which is the `PI_STICKY_PANEL=open` shape and the one the cache can
+  // actually be caught on: mode, the gate, the pins, the bar and the label all match across the move, so the
+  // only term that can answer the focus move is the key's own. A key that missed it would hand back the
+  // collapsed rows, and the bar, `d`, `Enter` and the digits would then index rows that are not on screen.
+  const compact = {
+    ...pin(1, `${"decide ".repeat(20)}lands here`, "info", { createdAt: NOW }),
+    compact: true,
+    options: ["Passed on", "Not yet"],
+  };
+  const h = host([compact]);
+  h.stub.style = () => BAR_STYLE;
+  // The hand-built host answers `mode()`/`interactiveOpen()` from the *cell*, not from the component's flag
+  // (both default to the open panel that takes keys), so the component can sit unfocused while the frame the
+  // host reports is the full, key-taking one. That is the `PI_STICKY_PANEL=open` shape — the cell still
+  // answers the open frame after the earned open ended — and the only arrangement in which the frame cache is
+  // caught out by a focus move: every other term of the key matches across it.
+  const c = new PanelComponent(h.stub, h.tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  const resting = c.render(44);
+  // Collapsed: one cut row of text, and the tail of it nowhere in the frame.
+  expect(resting.filter((row) => row.includes("decide"))).toHaveLength(1);
+  expect(resting.join("\n")).not.toContain("here");
+  expect(c.render(44)).toBe(resting); // the fast path is alive at the resting state
+  // …and the focus arrives with the bar already on the compact pin, nothing else about the panel having
+  // moved: one frame drawn from the same array at the same bar, now expanded.
+  // The frame that changes is the *row table*: the collapsed entry owns one cut text row, the expanded one
+  // owns its whole wrap. (The options row is reserved in both frames and the host reports the open frame as
+  // taking keys, so its labels are drawn either way — the cut is what the expansion buys.)
+  c.setFocused(true);
+  const focused = c.render(44);
+  expect(focused).not.toBe(resting);
+  expect(focused.join("\n")).toContain("here");
+  expect(focused.at(-1)).toContain("1–2 answer");
+  // …and leaving the panel gives the collapsed frame back, so the repaint is the focus's and not a flag the
+  // component forgets to clear.
+  c.setFocused(false);
+  const left = c.render(44);
+  expect(left.filter((row) => row.includes("decide"))).toHaveLength(1);
+  expect(left.join("\n")).not.toContain("here");
+  expect(c.render(44)).toBe(left);
+});

@@ -1,0 +1,57 @@
+/**
+ * The rows one pin's text turns into, and the one question that decides how many of them there are.
+ *
+ * A pin is either **collapsed** — a `compact` pin held to the single row the panel's own promise about
+ * density depends on — or **expanded**, which is the same pin drawn as though the flag were not set: every
+ * row its text wraps to, at the frame's own arithmetic. Nothing else in the panel decides that, and the
+ * decision cannot live in the drawer: the window scrolls, the bar sits and `d`/`Enter` index *this* row
+ * count, so rows the table did not count are rows the keys are out on, in either direction.
+ *
+ * Whether a pin is expanded is the caller's answer (`ExpandedAt`, `panel-expand.ts`), never a cell this module
+ * reads and never a rule it holds: the frame decides which pin expands (`expandedPinOf`, same module), and
+ * this function is handed that answer as one boolean beside the pin it is building. The peek, the rail and
+ * every caller outside a frame has no bar to name and must be handed the collapsed rows whatever the frame's
+ * bar is doing — which is why the boolean is an argument and not a lookup, and why `compact` alone can never
+ * reach this branch.
+ */
+import { foldBreaks } from "./escape.ts";
+import { wrapAtDrawnWidth } from "./panel-wrap.ts";
+
+/**
+ * The rows `pin`'s text owns: one cut line for a collapsed `compact` pin, the whole wrap for every other
+ * pin and for a `compact` pin the frame has expanded.
+ *
+ * Collapsing happens *here*, in the table, rather than as a cut the drawer makes afterwards: a pin that
+ * wrapped into four rows and was then trimmed would leave three rows counted for a pin that shows one.
+ * `foldBreaks` folds what breaks the model put in (the fold `toOneLine` wraps, read from its owner rather
+ * than through `render.ts`, one of this module's callers) and the drawer's `fitLine` spends the ellipsis on
+ * the tail of it.
+ *
+ * The width a wrap packs a line into is `textWidth` less the cell every row of a *wrapping* pin pays in
+ * front of its text — the marker on the first row and the same three blank columns again as the indent of
+ * each row below it. `pinRow` (`panel-draw.ts`) measures a row's text with that cell inside the columns its
+ * reserve leaves, so a line packed to the full `textWidth` came back over the row's limit and the drawer's
+ * re-cut spent the row's last columns on an ellipsis: `…park fix` on the age's row, with `ix` carried down
+ * to the line below.
+ *
+ * Charged once, to the wrap rather than to the row, because the row count is the wrap's answer: a wrap that
+ * gave up the cell and still produced one row retried at the full `textWidth` and kept it, so a pin whose
+ * text fits the row it owns is never pushed into a second row by an indent it does not draw. Widening can
+ * only ever drop a row, never add one, so that retry settles on the first pass.
+ *
+ * `plain` is the pin's text already stripped of every escape sequence: the caller runs that pass at the
+ * boundary that puts a model's words into a drawn row, so the wrap and the collapsed line are both built
+ * from text that can no longer carry one.
+ */
+export function pinTextRows(
+  plain: string,
+  compact: boolean,
+  expanded: boolean,
+  textWidth: number,
+  metaColumns: number,
+  inner: number,
+): string[] {
+  return expanded || !compact
+    ? wrapAtDrawnWidth(plain, textWidth, metaColumns, inner)
+    : [foldBreaks(plain)];
+}

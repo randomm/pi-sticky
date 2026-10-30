@@ -58,7 +58,18 @@ function pinsOf(count: number): ViewPin[] {
 function frameRows(count: number, terminalRows: number | undefined) {
   // Sectioned here the way `framed` sections them below: the table this answers with is the table the frame
   // was drawn from, so the row count compared against `layout.height` is one pass's own answer.
-  return panelLayoutSections(panelSections(pinsOf(count)), 40, terminalRows, 0, style, LATER);
+  return panelLayoutSections(
+    panelSections(pinsOf(count)),
+    40,
+    terminalRows,
+    0,
+    style,
+    LATER,
+    true,
+    // No pin is expanded: this file counts rows a plain view owns, and the signal is explicit rather than
+    // defaulted so the omission is this file's answer and not an oversight.
+    undefined,
+  );
 }
 
 /** The frame and the height it was counted at, from one `panel-frame.ts` pass at one width/terminal. */

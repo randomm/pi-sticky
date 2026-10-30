@@ -10,15 +10,22 @@
  * There is **one** way to build a frame and **one** way to compare two: `frameOf`
  * (`panel-frame-draw.ts`) spells both the memorised frame and the candidate `update()` compares against, and
  * `sameFrame` below answers both entry points of the cache. That is what the module header of
- * `panel-frame-draw.ts` calls the correctness of the cache — two callers, one field list — and it is a
- * compiler-level guarantee now rather than a prose rule two hand-written field lists can drift away from.
+ * `panel-frame-draw.ts` calls the correctness of the cache — two callers, one field list. It is a
+ * compiler-level guarantee for the *field list*: a member added to the key is one edit in `frameOf` and cannot
+ * be left out of either caller. It is **not** a guarantee about a term's *value* — no type can say that a term
+ * agrees with the drawing rule that produced it. That agreement is a property of the producer, and each term
+ * names where its producer is: the bar and the focus are the component's state, read by the caller that also
+ * draws them, and the expansion is `expandedPinOf` (`panel-frame-draw.ts`), the one predicate the layout, the
+ * drawer and both cache entry points call.
  *
  * The rule the key obeys: every member is something the drawn bytes depend on, and nothing is in it that
  * the drawn bytes do not. That is why `ageNow` is a minute bucket and not an instant (pi-tui asks more
  * often than a minute, and an age changes no faster), why `pins` is the drawn-order array's *identity* and
  * not its contents (`commit`/`reconstruct` publish a fresh array for every change and none without one), and
  * why `replyHint` is in it at all (the operator can rebind the focus key, and the resting border prints
- * what that key is called).
+ * what that key is called), and why `expanded` names the *index* of the pin the frame grew rather than the
+ * view: the row table grows that one pin's entry, so a frame memorised around an expanded table is not the
+ * frame a collapsed one would draw.
  */
 import type { PanelMode } from "./panel-mode.ts";
 import { panelSections } from "./panel-sections.ts";
@@ -48,6 +55,21 @@ export interface PanelFrame {
   selection: number;
   /** Focus decides the bar, the hint and which border colour is asked for. */
   focused: boolean;
+  /**
+   * Which pin's entry this frame's row table expanded: the bar's **selection** coordinate when the pin
+   * `selection` names is `compact` and the frame is an open one that takes keys, and `undefined` when it
+   * expanded nothing — `expandedPinOf` (`panel-frame-draw.ts`) answers it once per frame, and both cache entry
+   * points hand it to `frameOf` rather than re-deriving it.
+   *
+   * In the key because the row table is no longer selection-independent: the pin under a bar that takes keys
+   * owns its wrapped text and its options rows, and every other frame draws its one cut row. `pins` is compared
+   * by identity and `selection`/`focused` by value, so a move of the bar onto a compact pin is already a miss —
+   * what this member closes is the other direction, a frame memorised *while* a pin was expanded being handed
+   * back for a state in which the table that produced it would have collapsed it. Storing the index rather than
+   * a boolean also names *which* entry grew, which is what the layout was handed, so a frame cannot memorise one
+   * pin's expansion and claim another's.
+   */
+  expanded: number | undefined;
   /**
    * Which of the three states the frame was drawn for — hidden, the three-row peek, or the open panel.
    *
@@ -97,6 +119,7 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
     frame.pins === candidate.pins &&
     frame.selection === candidate.selection &&
     frame.focused === candidate.focused &&
+    frame.expanded === candidate.expanded &&
     frame.replyHint === candidate.replyHint &&
     frame.mode === candidate.mode &&
     frame.keys === candidate.keys &&
