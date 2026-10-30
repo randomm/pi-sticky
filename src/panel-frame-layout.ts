@@ -136,14 +136,8 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  * `now` is the instant every age in the table is measured against; the component passes the extension's
  * clock so a minute's passage re-ages the frame.
  *
- * `focused` is whether the frame draws as one the user is in — the component's flag and the key gate ANDed by
- * `keysLive` (`panel-frame-draw.ts`) — and decides only the bar, the border colour and the legend. It is not
- * the expansion gate: that is `expanded`, named by every caller and defaulted by none. A focused caller that
- * must not expand an entry says so by handing `undefined`, which is what the peek, the rail and every
- * row-counting caller outside a frame do.
- *
  * `expanded` is the **selection** coordinate of the one `compact` pin whose entry the frame grows, or
- * `undefined` to expand nothing. Resolved once by `expandedPinOf` (`panel-frame-draw.ts`) from the mode, the
+ * `undefined` to expand nothing. Resolved once by `expandedPinOf` (`panel-expand.ts`) from the mode, the
  * key gate, the focus, the drawn pins and the bar, and handed here by the frame that was built from it — so
  * the row table cannot grow a pin the drawer's bar is not on, and the cache's term and this layout are the
  * same number rather than two readings of `selection`.
@@ -166,7 +160,6 @@ export function panelLayoutSections(
   selection: number,
   style: PanelStyle,
   now: string,
-  focused: boolean,
   /** The selection coordinate of the compact pin to expand, from `expandedPinOf`; `undefined` expands none. */
   expanded: number | undefined,
 ): PanelLayout {

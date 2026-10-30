@@ -17,7 +17,7 @@
  *
  * `compact` is excluded where the frame keeps it collapsed, and **included** where the frame expands it: the
  * cut that makes the exclusion true is a property of the collapsed entry, and the bar taking the pin off the
- * cut is the one thing that removes it (`ExpandedAt`, `panel-rows.ts`). So every frame here is drawn at a bar
+ * cut is the one thing that removes it (`ExpandedAt`, `panel-expand.ts`). So every frame here is drawn at a bar
  * and a focus, and the carve-out asks those two rather than the flag.
  */
 import { foldBreaks, stripSequences } from "../src/escape.ts";
@@ -254,7 +254,7 @@ export function carriedCharacters(frame: SweptFrame): string {
 }
 
 /** Whether this frame's swept pin carries the flag whose cut is the sweep's carve-out. */
-export const isCompact = (frame: SweptFrame): boolean => sweptPinOf(frame)?.compact === true;
+const isCompact = (frame: SweptFrame): boolean => sweptPinOf(frame)?.compact === true;
 
 /**
  * Whether this frame keeps its compact pin collapsed: the flag, and the absence of the one thing that lifts

@@ -141,6 +141,8 @@ test("the window starts at the selected pin's first row, so a wrapped pin scroll
     widestMetaColumns(drawn, plainStyle.dim, LATER),
     inner,
     LATER,
+    // Rows counted outside a frame: no bar, so no expansion.
+    undefined,
   ).length;
   const lines = built(content(pins, 0, false), width, style, 6);
   // The second pin owns `wrapped` rows, so a four-row window cannot show the whole of it — and what it

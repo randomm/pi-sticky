@@ -36,11 +36,9 @@
  */
 import { expect, test } from "bun:test";
 
-import { visibleWidth } from "@earendil-works/pi-tui";
 import { optionRowCount } from "../src/panel-options-wrap.ts";
 
 import type { ViewPin } from "../src/types.ts";
-import { LATER } from "./fixtures.ts";
 import { built, framed } from "./panel-frame.ts";
 import {
   BREAKS,

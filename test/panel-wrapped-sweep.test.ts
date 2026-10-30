@@ -39,6 +39,7 @@ import type { ViewPin } from "../src/types.ts";
 import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
 import { sweptFrameAt } from "./panel-sweep-frame.ts";
 import {
+  COMPACT_CORPUS,
   SWEEP_CORPORA,
   carriedCharacters,
   isCollapsedCompact,
@@ -118,12 +119,16 @@ function sweepBand(
 }
 
 /**
- * The same sweep over the frames in which the compact carve-out does **not** apply.
+ * The same sweep over the one frame in which the compact carve-out does **not** apply.
  *
  * `sweepBand` draws every corpus member at the bar's resting position, which is the collapsed state; this runs
- * the identical invariant over the expanded state of the same corpus — the bar on the swept pin of a frame that
- * takes keys. For the six non-compact members the two frames are the same table (the expansion signal can only
- * reach a pin that carries the flag), and for `compact` it is the whole difference.
+ * the identical invariant over the expanded state — the bar on the swept pin of a frame that takes keys. Only
+ * the `compact` member is swept: the expansion signal can reach a pin that carries the flag and no other, so
+ * for the six plain members the expanded frame is *byte-for-byte the frame `sweepBand` already drew* and the
+ * work here would be a second pass over the same tables for no new coverage. That byte-for-byte claim is not
+ * swept, it is checked once at its source: `expandedPinOf` answers `undefined` for a pin without the flag
+ * (`test/panel-expand-predicate.test.ts`) and `expands` (`panel-rows.ts`) refuses to grow one whatever the
+ * signal says.
  */
 function sweepBandExpanded(
   band: readonly [number, number],
@@ -131,12 +136,10 @@ function sweepBandExpanded(
   check: (frame: SweptFrame, name: string, text: string, id: number) => void,
 ): void {
   const [from, to] = band;
-  for (const [name, text, extra] of SWEEP_CORPORA) {
-    for (const width of widths) {
-      if (width < from || width > to) continue;
-      for (const id of IDS)
-        check(sweptFrameAt(id, text, width, extra, "pin", true), name, text, id);
-    }
+  const [name, text, extra] = COMPACT_CORPUS;
+  for (const width of widths) {
+    if (width < from || width > to) continue;
+    for (const id of IDS) check(sweptFrameAt(id, text, width, extra, "pin", true), name, text, id);
   }
 }
 
@@ -241,13 +244,13 @@ for (const [promise, check, widths] of SWEEPS) {
  *
  * `sweptFrame` parks the bar on the companion and takes no keys, which is the state in which `compact` cuts;
  * this runs the same four invariants over the state in which the row table wraps — the bar on the swept pin of
- * a frame that takes keys. The carve-out in each check is `isCollapsedCompact`, so for the six members that
- * carry no flag the two sweeps ask the same frame, and for `compact` they ask two different tables: one cut,
- * one wrapped. That is the whole reversal of U13, swept over ids and widths instead of asserted once.
+ * a frame that takes keys. Only the compact member is swept: the two sweeps ask that one corpus member two
+ * different tables (one cut, one wrapped), and ask the six plain members the same table twice. That is the
+ * whole reversal of U13, swept over ids and widths instead of asserted once.
  */
 for (const [promise, check, widths] of SWEEPS) {
   for (const band of WIDTH_BANDS) {
-    test(`an expanded compact pin and every plain pin ${promise} from ${bandLabel(band)}`, () => {
+    test(`an expanded compact pin ${promise} from ${bandLabel(band)}`, () => {
       sweepBandExpanded(band, widths, check);
     });
   }

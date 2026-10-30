@@ -25,8 +25,8 @@ import { built, framed } from "./panel-frame.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 import { barRowOf, componentAt, contentRows } from "./panel-window-fixture.ts";
 
-/** Identity colours with a bar visible in the drawn string. */
-const HEADING = { warning: "Warnings", action: "Needs you", info: "FYI" } as const;
+/** The label the info section's heading row prints (`panel-section-headings.ts`). */
+const HEADING = { info: "FYI" } as const;
 
 const style: PanelStyle = {
   header: (s) => s,
@@ -42,7 +42,6 @@ const WIDTH = 60;
 /** Tall enough that the window is the whole table: these cases are about which rows exist, not which are scrolled. */
 const TALL = 100;
 
-/** A compact pin whose text needs several rows and whose options need one. */
 /** The four labels the border names digits for, and the rows the collapsed entry pays for. */
 const OPTIONS = ["Passed on", "Not yet", "Escalated to the on-call", "Deferred to next quarter"];
 
@@ -56,18 +55,6 @@ const compactPin = (id = 1): ViewPin => ({
 });
 
 const plainPin = (id = 1): ViewPin => ({ ...levelPin(id, TEXT(id), "info"), options: OPTIONS });
-
-/** The window rows of a frame at a given terminal height — the height the window rule reads. */
-function rowsAt(pins: readonly ViewPin[], selection: number, terminalRows: number): string[] {
-  return contentRows(
-    built(
-      { pins, selection, focused: true, replyHint: "", ageNow: LATER },
-      WIDTH,
-      style,
-      terminalRows,
-    ),
-  );
-}
 
 /** The content rows of a frame drawn for `pins` with the bar on `selection`, focused or not. */
 const rows = (pins: readonly ViewPin[], selection: number, focused = true): string[] =>
@@ -108,6 +95,10 @@ test("a compact pin draws its full text and its options while the bar sits on it
   // assumed: the two frames differ by exactly the expansion, and whichever selection produced the taller one
   // is the one the bar was on the compact pin.
   const [collapsed, expanded, pinSelection] = locatedPair();
+  // The coordinate the expansion turns on, pinned: the bar has to sit on the compact pin for its entry to
+  // grow, and the pair above was taken by height alone — so this is the one place the file names the index
+  // it *believes* the compact pin to be, and ranking's answer is what it checks rather than a remembered 1.
+  expect(pinSelection).toBe(ON_PIN);
   // Collapsed, the pin owns one cut text row and the options rows its labels need — the drawer's own packing
   // read back, so a change to the wrap moves this line and says so rather than breaking a remembered count.
   expect(collapsed.filter((row) => row.includes("#1"))).toHaveLength(1);
@@ -143,7 +134,11 @@ test("a compact pin draws its full text and its options while the bar sits on it
  * `panelSections` ranks the view (newest id first within a level, warnings first across levels), so a test that
  * hardcoded an index would be asserting on ranking's answer as much as on the expansion. The pair is therefore
  * taken as the two frames this view can draw and read for which is taller — and the equality assertions below
- * still name the *same* two frames, so nothing here can pass by comparing a frame with itself.
+ * still name the *same* two frames, so nothing here can pass by comparing a frame with itself. The third
+ * element is the bar's coordinate, which is where the expansion starts: `sameFrame` compares `selection`, so
+ * an expansion never reaches the cache unless the bar moved onto the pin — and this file cannot observe that
+ * directly (its `built`/`framed` helpers are stateless), which is why it reads the coordinate back off the
+ * pair instead of trusting a literal.
  */
 function locatedPair(): [string[], string[], number] {
   const pins = view(compactPin());

@@ -20,6 +20,7 @@
  * table's row owners already speak. Storing a number rather than a `ViewPin` keeps the frame's key, the layout
  * and the drawer naming one fact in one shape.
  */
+import type { PanelMode } from "./panel-mode.ts";
 import type { ViewPin } from "./types.ts";
 
 /**
@@ -37,7 +38,7 @@ import type { ViewPin } from "./types.ts";
  */
 export function expandedPinOf(
   pins: readonly ViewPin[],
-  mode: string,
+  mode: PanelMode,
   keys: boolean,
   focused: boolean,
   selection: number,

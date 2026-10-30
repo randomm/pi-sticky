@@ -49,6 +49,8 @@ test("an empty pin text still owns a row, so the bar has something to sit on", (
     widestMetaColumns([one(1, "")], plainStyle.dim, LATER),
     innerAt(20),
     LATER,
+    // Rows built outside a frame: no bar, so no expansion.
+    undefined,
   );
   expect(rows).toHaveLength(1);
   expect(rows[0]?.text).not.toBe("");
@@ -64,6 +66,8 @@ test("a zero text width falls back to one row rather than none", () => {
       widestMetaColumns([one(1, "text")], plainStyle.dim, LATER),
       innerAt(0),
       LATER,
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     ),
   ).toHaveLength(1);
 });

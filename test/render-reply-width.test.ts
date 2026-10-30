@@ -212,6 +212,8 @@ describe("a replied panel row", () => {
       widestMetaColumns([wrappedPin], plainPanel.dim, LATER),
       innerAt(20),
       LATER,
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     expect(rows.length).toBeGreaterThan(1);
     expect(rows[0]?.text).toInclude("↩ a decision");
@@ -230,6 +232,8 @@ describe("a replied panel row", () => {
       widestMetaColumns([blank], plainPanel.dim, LATER),
       innerAt(20),
       LATER,
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text).toInclude("↩");

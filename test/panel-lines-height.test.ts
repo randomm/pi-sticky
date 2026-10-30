@@ -65,7 +65,6 @@ function frameRows(count: number, terminalRows: number | undefined) {
     0,
     style,
     LATER,
-    true,
     // No pin is expanded: this file counts rows a plain view owns, and the signal is explicit rather than
     // defaulted so the omission is this file's answer and not an oversight.
     undefined,

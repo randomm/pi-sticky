@@ -12,9 +12,12 @@
  *   and *every* row of the selected pin fit; expansion is what made that rule bite, because a compact pin
  *   first owned several rows under the bar. The synthetic arithmetic is
  *   `test/panel-window-heading.test.ts`; what only a drawn frame shows is that the budget the window is
- *   fitted against is the expanded row count.
+ *   fitted against is the expanded row count — and that a frame the terminal caps still draws *exactly* the
+ *   height the layout counted, no matter how tall the expanded entry is.
  */
 import { expect, test } from "bun:test";
+
+import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { BORDER_ROWS } from "../src/panel-height.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -24,7 +27,8 @@ import { built, framed } from "./panel-frame.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 import { contentRows } from "./panel-window-fixture.ts";
 
-const HEADING = { warning: "Warnings", action: "Needs you", info: "FYI" } as const;
+/** The label the info section's heading row prints (`panel-section-headings.ts`). */
+const HEADING = { info: "FYI" } as const;
 
 const style: PanelStyle = {
   header: (s) => s,
@@ -56,30 +60,24 @@ const view = (pin: ViewPin): ViewPin[] => [pin, levelPin(2, "a plain note", "war
 const ON_PIN = 1;
 const OFF_PIN = 0;
 
-/** The content rows of a frame drawn for `pins` with the bar on `selection`, keys and focus as named. */
 /** The table of a frame drawn for `pins` with the bar on `selection`, focused or not. */
 const table = (pins: readonly ViewPin[], selection: number, focused: boolean) =>
   framed({ pins, selection, focused, replyHint: "", ageNow: LATER }, WIDTH, style, TALL).layout
     .owned;
 
-/** The window rows of a frame drawn for `pins` with the bar on `selection`, taking keys. */
+/** The window rows of a frame drawn for `pins` with the bar on `selection`, taking keys (the host's answer). */
 const rows = (pins: readonly ViewPin[], selection: number, focused = true): string[] =>
-  rowsAt(pins, selection, focused);
+  rowsAt(pins, selection, focused, TALL);
 
+/** `rows` at a named terminal height — the height the window rule and the frame's ceiling are fitted against. */
 const rowsAt = (
   pins: readonly ViewPin[],
   selection: number,
   focused: boolean,
-  terminalRows: number = TALL,
-  keys?: boolean,
+  terminalRows: number,
 ): string[] =>
   contentRows(
-    built(
-      { pins, selection, focused, replyHint: "", ageNow: LATER, keys },
-      WIDTH,
-      style,
-      terminalRows,
-    ),
+    built({ pins, selection, focused, replyHint: "", ageNow: LATER }, WIDTH, style, terminalRows),
   );
 
 test("an open frame that may not take keys expands nothing, however it is focused", () => {
@@ -146,4 +144,36 @@ test("the window keeps every row of the expanded pin and drops the heading inste
   expect(short).toHaveLength(rows - 1);
   expect(short.filter((row) => row.includes(HEADING.info))).toHaveLength(0);
   expect(short.some((row) => row.includes("#1"))).toBe(true);
+});
+
+test("a compact pin expanded in a short terminal draws exactly the frame the layout counted", () => {
+  // The ceiling is the one thing an expanded entry can push a frame against: `panelFrameRows` puts the two
+  // border rows over the table and cuts the result at half the terminal, and `buildPanelLines` draws the
+  // `height` it was handed rather than counting one of its own. So a tall entry in a short terminal must come
+  // back as *exactly* the layout's height — not the table's row count (that would draw past the screen) and
+  // not one row less (that would be an open box). Every figure below is read off the layout the frame was
+  // built from, so neither number is one this file invented.
+  const pins = view(compactPin());
+  // Well below the expanded table, so the entry's rows are scrolled by the window rather than drawn whole —
+  // the ceiling case drawn through the file's own helper, at the same terminal the layout is counted for.
+  const drawn = rowsAt(pins, ON_PIN, true, 10);
+  const { lines, layout } = framed(
+    { pins, selection: ON_PIN, focused: true, replyHint: "", ageNow: LATER },
+    WIDTH,
+    style,
+    10,
+  );
+  expect(drawn).toEqual(contentRows(lines));
+  expect(lines.length).toBe(layout.height);
+  // The ceiling really bites at this terminal: the table is taller than the frame the layout counted, which is
+  // what makes the equality above a statement about the cap and not about a frame that never needed one.
+  expect(layout.owned.length).toBeGreaterThan(layout.height);
+  // The content rows are the frame less its two borders, and the border glyphs close the box: a frame that
+  // drew the whole table here would be taller than the terminal that holds it.
+  expect(drawn).toHaveLength(layout.height - BORDER_ROWS);
+  expect(lines[0]).toContain("╭");
+  expect(lines.at(-1)).toContain("╰");
+  // …and every drawn line still measures the frame's width at the ceiling, which is the promise a flush-right
+  // overlay makes to the chat beside it while the expanded entry scrolls.
+  for (const line of lines) expect(visibleWidth(line)).toBe(WIDTH);
 });

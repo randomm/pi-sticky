@@ -24,9 +24,9 @@ import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
-import { LATER, NOW, localTime, pin } from "./fixtures.ts";
+import { LATER, NOW, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
-import { frameAt } from "./panel-rows-frame.ts";
+import { figuresOf } from "./panel-rows-frame.ts";
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
 function content(
   pins: readonly ViewPin[],
@@ -246,8 +246,8 @@ test("a word wider than the frame is cut, not drawn past the gutter, and its id 
 
 test("a text that carries a newline becomes two rows under the text column", () => {
   const newline = one(1, "first\nsecond");
-  const frame = frameAt(newline, 20, plainStyle, LATER);
-  const rows = panelPinRows(newline, 20, plainStyle, frame.metaColumns, frame.inner, LATER);
+  // Rows built outside a frame: `figuresOf` hands the figures, the instant and the absent expansion.
+  const rows = panelPinRows(newline, 20, plainStyle, ...figuresOf(newline, 20, plainStyle, LATER));
   expect(rows).toHaveLength(2);
   expect(rows[0]?.text).toContain("first");
   expect(rows[1]?.text).toContain("second");

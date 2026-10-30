@@ -93,7 +93,6 @@ test("the keys still address the pin under the bar when its own rows wrap", () =
     // The instant the rows are aged at is not what this counts, but it is no longer defaulted: the table a
     // frame is cut from is stamped at one named instant (`panel-rows.ts`).
     LATER,
-    true,
     // No expansion to measure: this is a plain wrapping pin, and the layout takes the signal explicitly.
     undefined,
   ).owned.filter((entry) => entry.pin === 0).length;

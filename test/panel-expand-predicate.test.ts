@@ -27,6 +27,7 @@ import { expandedPinOf } from "../src/panel-expand.ts";
 import { frameOf } from "../src/panel-frame-draw.ts";
 import { panelLayoutSections } from "../src/panel-frame-layout.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
+import type { PanelMode } from "../src/panel-mode.ts";
 import type { PanelOwned } from "../src/panel-row-owner.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -42,20 +43,20 @@ const compact = (id = 1): ViewPin => ({
 });
 const plain = (): ViewPin => pin(2, "a plain note", "warning");
 
-/** The predicate's answer for one view, at the five coordinates the frame reads. */
 /** The two-pin view whose bar the cases below park on the compact pin, then on the plain one. */
 const both = (): ViewPin[] => [compact(), plain()];
 
+/** The predicate's answer for one view, at the five coordinates the frame reads. */
 const at = (
   pins: readonly ViewPin[],
-  mode: string,
+  mode: PanelMode,
   keys: boolean,
   focused: boolean,
   selection: number,
 ): number | undefined => expandedPinOf(pins, mode, keys, focused, selection);
 
 test("the predicate names the bar's index only for an open frame that takes keys, on a compact pin", () => {
-  const view = [compact(), plain()];
+  const view = both();
   expect(at(view, "open", true, true, 0)).toBe(0);
   // Each of the five inputs refuses on its own, and no pair of them substitutes for the third: the peek has a
   // bar index and a focus and still expands nothing; `PI_STICKY_PANEL=open` keeps the open frame after the
@@ -74,25 +75,22 @@ test("the predicate names the bar's index only for an open frame that takes keys
 const table = (
   pins: readonly ViewPin[],
   selection: number,
-  focused: boolean,
   expanded: number | undefined,
 ): PanelOwned[] =>
-  panelLayoutSections(panelSections(pins), 60, 100, selection, style, LATER, focused, expanded)
-    .owned;
+  panelLayoutSections(panelSections(pins), 60, 100, selection, style, LATER, expanded).owned;
 
 /** The rows of the table tagged with `index` that carry no options tag — the pin's own text rows. */
 const textRows = (
   pins: readonly ViewPin[],
   selection: number,
-  focused: boolean,
   expanded: number | undefined,
   index: number,
 ): number =>
-  table(pins, selection, focused, expanded).filter(
+  table(pins, selection, expanded).filter(
     (entry) => entry.pin === index && entry.row.kind === undefined,
   ).length;
 
-test("the layout expands the pin its argument names, and the focused flag alone never does", () => {
+test("the layout expands the pin its argument names, and nothing else ever does", () => {
   // Ranking draws the warning first, so the compact pin is the *second* slot of this view: `panelSections`'
   // answer is what the bar indexes, and a case that wrote selection 0 for it would be asserting on a pin the
   // bar is not on — which is exactly the disagreement this layout guard exists to catch.
@@ -102,20 +100,20 @@ test("the layout expands the pin its argument names, and the focused flag alone 
   const ON = panelSections(view).flat.findIndex((candidate) => candidate.compact === true);
   expect(ON).toBe(1);
   // A wrapping compact pin: its collapsed entry is one text row, so anything above one is the expansion.
-  const collapsed = textRows(view, ON, false, undefined, ON);
+  const collapsed = textRows(view, ON, undefined, ON);
   expect(collapsed).toBe(1);
-  // Focused, bar on the compact pin, and the frame handed the index: the entry grew.
-  expect(textRows(view, ON, true, ON, ON)).toBeGreaterThan(1);
-  // Focused and the bar on the same pin, but the frame handed no index: the table is the collapsed one. The
-  // layout no longer owns this decision, and cannot make it from `focused` + `selection` on its own.
-  expect(textRows(view, ON, true, undefined, ON)).toBe(collapsed);
+  // The bar on the compact pin and the frame handed its index: the entry grew.
+  expect(textRows(view, ON, ON, ON)).toBeGreaterThan(1);
+  // The bar on the same pin, but the frame handed no index: the table is the collapsed one. The layout no
+  // longer owns this decision, and cannot make it from `selection` on its own.
+  expect(textRows(view, ON, undefined, ON)).toBe(collapsed);
   // An index that is not the bar's own expands nothing either: the two coordinates have to agree, which is the
   // half the layout checks so a hand-built frame cannot grow an entry the bar is not on.
-  expect(textRows(view, ON, true, 0, ON)).toBe(collapsed);
+  expect(textRows(view, ON, 0, ON)).toBe(collapsed);
   // …and the index grows the pin it names and no other: with the bar on the compact pin and the frame handing
-  // the *plain* pin's index, the compact pin keeps its one cut row — the entry that grew would be an entry no
-  // bar, no `d` and no `Enter` addresses.
-  expect(textRows(view, ON, true, 0, ON)).toBe(collapsed);
+  // that index, the *plain* pin beside it keeps the one row it always owned — the entry that grew would be an
+  // entry no bar, no `d` and no `Enter` addresses.
+  expect(textRows(view, ON, ON, 0)).toBe(textRows(view, ON, undefined, 0));
 });
 
 test("a frame stores the expansion it was handed, so the cache cannot re-derive it differently", () => {
@@ -123,7 +121,7 @@ test("a frame stores the expansion it was handed, so the cache cannot re-derive 
   // the predicate are two different frames. If `frameOf` read the flag off its own fields again, this pair
   // would be identical and a frame memorised around the expanded table could be handed back for a collapsed
   // one — the exact stale frame the term exists to close.
-  const view = [compact(), plain()];
+  const view = both();
   const key = {
     replyHint: "",
     mode: "open" as const,

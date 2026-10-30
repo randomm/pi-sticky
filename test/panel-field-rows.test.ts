@@ -24,12 +24,12 @@
  */
 import { expect, test } from "bun:test";
 
+import type { ExpandedAt } from "../src/panel-expand.ts";
 import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { ELLIPSIS } from "../src/panel-frame.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { optionLine } from "../src/panel-options-row.ts";
 import { optionRowCount } from "../src/panel-options-wrap.ts";
-import type { ExpandedAt } from "../src/panel-rows.ts";
 import { isOptionRow, panelPinRows } from "../src/panel-rows.ts";
 import { GUTTER_COLUMNS } from "../src/panel-tail.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -143,6 +143,8 @@ test("the row table and the drawer read pin.options through one packing, so a re
       widestMetaColumns([view], style.dim, atOnce()),
       innerAt(40),
       atOnce(),
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     expect(rows).toHaveLength(expected);
     // The reserved rows are the last ones the pin owns, tagged for the drawer, and the drawer fills each with

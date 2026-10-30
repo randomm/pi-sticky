@@ -11,6 +11,8 @@
  */
 import { expect, test } from "bun:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -147,4 +149,48 @@ test("an unfocused→focused move onto a compact pin repaints the expanded frame
   expect(left.filter((row) => row.includes("decide"))).toHaveLength(1);
   expect(left.join("\n")).not.toContain("here");
   expect(c.render(44)).toBe(left);
+});
+
+test("a resize at the bar on a compact pin re-wraps the expanded entry at the width just asked for", () => {
+  // The HIGH the round-1 review asked for, and the answer is *no stale frame*: `sameFrame` has no width term
+  // and cannot have one (`panel-frame-cache.ts`: `update()` runs on every frame and a redraw is not a resize),
+  // but `drawFrame` is the one caller that knows the width it was handed and compares it itself, and the row
+  // table is rebuilt from `draw.width` on that miss. This draws the pair a resize actually is — one expanded
+  // frame, then the same component asked at another width — and refuses the failure the cache could have had:
+  // the wide frame's lines still wrapped at the narrow width, or sized at it.
+  const compact = {
+    ...pin(1, `${"decide ".repeat(20)}lands here`, "info", { createdAt: NOW }),
+    compact: true,
+    options: ["Passed on", "Not yet"],
+  };
+  const widened = staleFrameComponent([compact]);
+  widened.c.focus();
+  widened.c.select(0);
+  const narrow = widened.c.render(44);
+  // The pin really is expanded at the bar, and really is a multi-row entry: at 44 columns its cut row cannot
+  // fit whole (its last words are cut), so the wrap owns more rows than the collapsed entry would. Without
+  // both the two frames below could be equal and this test would prove nothing. (`lands here` spans a wrap
+  // break at this width, so the assertions name the wrap's own rows rather than a joined string.)
+  expect(narrow.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
+  expect(narrow.at(-2)).toContain("1 Passed on");
+  // …and a frame request at 44 columns again costs nothing: the fast path is alive at a steady width, so the
+  // miss the resize pays for is not a miss every render pays for.
+  expect(widened.c.render(44)).toBe(narrow);
+  // The resize itself: pi-tui hands the overlay's new resolved width to `render()` and nothing else moves.
+  const widenedLines = widened.c.render(100);
+  // The frame drawn by a component that only ever saw 100 columns — one wrap, at the width it is drawn at.
+  const fresh = staleFrameComponent([compact]);
+  fresh.c.focus();
+  fresh.c.select(0);
+  const atFreshWidth = fresh.c.render(100);
+  // Byte-for-byte the same frame. A cache that answered the resize from the 44-column frame keeps the narrow
+  // frame's rows (too many) and its wrap, and the lines below would differ in both length and content.
+  expect(widenedLines).toEqual(atFreshWidth);
+  // Every drawn line measures the width just asked for — the promise a flush-right overlay makes to the chat
+  // beside it, which a stale width breaks by padding to the old figure.
+  for (const line of widenedLines) expect(visibleWidth(line)).toBe(100);
+  // …and the entry is still expanded after the resize: the tail of its text is on screen at the new width,
+  // not cut back to one row by a frame the width had no part in.
+  expect(widenedLines.join("\n")).toContain("lands here");
+  expect(widenedLines.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
 });

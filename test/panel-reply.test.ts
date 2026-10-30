@@ -137,6 +137,8 @@ describe("the replied row of the panel", () => {
       widestMetaColumns([pin], style.dim, LATER),
       innerAt(18),
       LATER,
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     expect(rows.length).toBeGreaterThan(1);
     expect(rows[0]?.text.indexOf("↩")).toBeLessThan((rows[0]?.text.indexOf("one") ?? 0) + 1);

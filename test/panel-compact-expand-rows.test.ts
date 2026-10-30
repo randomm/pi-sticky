@@ -6,8 +6,8 @@
  * scrolls, the bar sits and `d`/`Enter` index that count. A compact pin is held to one row by that same
  * table, and the one case in which it is not is the case the user is looking at: the pin the bar is on, in a
  * frame that takes keys. That is what `ExpandedAt` names — an index and a focus flag the *caller* hands in —
- * and the two tests below are the halves of the rule that cannot be seen from a frame: the flag alone expands
- * nothing, and the index alone expands nothing.
+ * and the first two tests below are the halves of the rule that cannot be seen from a frame: the flag alone
+ * expands nothing, and the index alone expands nothing.
  *
  * The last case is the regression pair for the peek: `buildPeekLines` passes no selection and no focus
  * (`PeekContent` is `{ sections, ageNow, replyHint }`), so the peek's row table is the collapsed one by
@@ -16,6 +16,7 @@
  */
 import { expect, test } from "bun:test";
 
+import type { ExpandedAt } from "../src/panel-expand.ts";
 import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
@@ -27,8 +28,6 @@ import { innerAt } from "./panel-rows-frame.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 
 const style: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
-
-const LONG = "x".repeat(120);
 
 const compact = (id = 1): ViewPin => ({
   ...levelPin(id, `${"note ".repeat(30)}${id}`, "info"),
@@ -43,12 +42,7 @@ const compact = (id = 1): ViewPin => ({
  * `isSelf` is spelled by the caller rather than assumed, because the predicate is the whole argument: a test
  * that let the table decide which pin was selected would be testing its own fixture.
  */
-const rowsOf = (
-  pin: ViewPin,
-  expanded:
-    | { isSelected: (candidate: ViewPin) => boolean; focused: boolean }
-    | undefined = undefined,
-) =>
+const rowsOf = (pin: ViewPin, expanded: ExpandedAt | undefined = undefined) =>
   panelPinRows(
     pin,
     60,
@@ -104,13 +98,19 @@ test("the index alone does not expand: an unfocused frame has no bar to read the
 
 test("a selection that names another pin leaves this one collapsed, whatever the frame", () => {
   const [first, second] = [compact(1), compact(2)];
-  const at = (index: number) =>
-    panelAllRows([first, second], 60, style, undefined, undefined, LATER);
-  // `panelAllRows` has no expansion argument at all: it is the caller that counts rows outside a frame, and
-  // it gets the collapsed table for every pin — asserted here so the omission is the module's answer and not
-  // an oversight of this file.
-  expect(at(0)).toEqual(at(1));
-  expect(at(0).filter((row) => row.tail !== "")).toHaveLength(2);
+  // `panelAllRows` takes **no** expansion argument at all: it is the caller that counts rows outside a frame,
+  // so it builds the collapsed table for every pin and no coordinate of any frame can reach it. The claim is
+  // therefore about one table, not about two bar positions — spelling it as `at(0)` vs `at(1)` would have
+  // compared a call with itself. What is checked is that the collapsed answer really is the collapsed answer:
+  // each of the two compact pins owns exactly one tail-bearing row (its cut row — an expanded entry owns
+  // several), and neither pin grew rows the other's presence could account for.
+  const rows = panelAllRows([first, second], 60, style, undefined, undefined, LATER);
+  // One tail-bearing row per pin: the id/age stamp the cut row carries, and no continuation row behind it.
+  expect(rows.filter((row) => row.tail !== "")).toHaveLength(2);
+  // …and each pin's entry is the same one `panelPinRows` builds for it with no expansion signal — the table
+  // this file's other cases call collapsed — so the absence above is the module's answer, not an artefact of
+  // the width or the reserve this call named.
+  expect(rows).toEqual([...rowsOf(first), ...rowsOf(second)]);
 });
 
 test("no expansion argument is the collapsed table byte-for-byte, which is what the peek draws", () => {
@@ -124,6 +124,8 @@ test("no expansion argument is the collapsed table byte-for-byte, which is what 
     widestMetaColumns([pin], style.dim, LATER),
     innerAt(60),
     LATER,
+    // The peek's own argument: the caller with no bar names the absence rather than omitting it.
+    undefined,
   );
   expect(noArgument).toHaveLength(1);
   // …and the same question with the argument present but the pin not under the bar: identical, which is the

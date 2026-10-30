@@ -163,6 +163,8 @@ test("a heading's glyph is its level's MARKER, coloured through the theme's mark
         widestMetaColumns([levelPin(1, "x", kind)], style.dim, LATER),
         innerAt(30),
         LATER,
+        // Rows built outside a frame: no bar, so no expansion.
+        undefined,
       )[0]?.text ?? "";
     expect(prefixOf(cell)).toBe(prefixOf(pinRow));
   }
@@ -218,6 +220,8 @@ test("a theme whose marker adds visible bytes cuts the pin row's marker the same
       widestMetaColumns([subject], wrapping.dim, LATER),
       innerAt(30),
       LATER,
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     expect(rows[0]?.text.slice(0, 3)).toBe(cell.slice(0, 3));
     // ...and neither string carries the wrapper's bytes.

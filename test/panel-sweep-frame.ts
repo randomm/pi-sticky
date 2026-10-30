@@ -1,4 +1,3 @@
-import type { PanelRow } from "../src/panel-row.ts";
 /**
  * The bar a swept frame is drawn with, and the pin the sweep asserts on.
  *

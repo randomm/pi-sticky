@@ -50,6 +50,20 @@ const COLD_MODULES = [
   "src/panel-options-wrap.ts",
   // The row's own shape, now a leaf module so the packing, the drawer and the table need not import each other.
   "src/panel-row.ts",
+  // The row's owner pair (row + pin), a leaf the layout, the window rule and the drawer all read: it reaches
+  // `panel-row.ts` and `panel-sections.ts` and nothing reaches back, so a cold load is the check that it stayed
+  // that way.
+  "src/panel-row-owner.ts",
+  // The expansion predicate and the table's signal: the newest seam on the row graph, reached by the frame
+  // builder, the candidate and the layout, and read at module scope by none of them — cold because that is the
+  // only way to see whether it became a cycle the suite's own ordering hides.
+  "src/panel-expand.ts",
+  // The one question a pin's text answers — collapsed or wrapped — now asked through its own module rather than
+  // inline in the row table, so it is a fresh edge onto `panel-wrap.ts` and `escape.ts`.
+  "src/panel-pin-rows.ts",
+  // The frame's row table: the walk that stamps an owner on every row, which reaches the row table, the
+  // headings and the sections, and is reached by the layout. Newest edge of the #63 split.
+  "src/panel-frame-table.ts",
 ];
 
 /**
@@ -114,6 +128,21 @@ function COLD_PROBE(modulePath: string, target: string): string {
     // The type-only leaf: it must *evaluate* with no runtime bindings and no dependency, which is the whole
     // point of it — a value import that crept in here would be the cycle back.
     return `import("${target}").then((m)=>{if(Object.keys(m).length!==0)throw new Error("the row type module exports a value");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-row-owner.ts")) {
+    // Also type-only: the owner pair is a shape, and a value import here would be the edge back into the layout.
+    return `import("${target}").then((m)=>{if(Object.keys(m).length!==0)throw new Error("the row owner module exports a value");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-expand.ts")) {
+    // The one predicate the frame asks, and the type the table reads its answer through — both must survive a
+    // cold load, since the frame's key and the layout name this module for the same fact.
+    return `import("${target}").then((m)=>{if(typeof m.expandedPinOf!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-pin-rows.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.pinTextRows!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-frame-table.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.panelOwnedRows!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   if (modulePath.endsWith("panel-options-row.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.fillOptionRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;

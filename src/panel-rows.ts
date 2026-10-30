@@ -14,7 +14,9 @@
  * `panel-frame-layout.ts`. This file is the row: what a pin's text turns into at a given width, and nothing
  * about the box around it. It is also the one place the row count is turned into rows, which is why the
  * expansion arrives here as the frame's argument (`ExpandedAt`, `panel-expand.ts`) and never as a cell this
- * module reads: the peek, the rail and every caller outside a frame have no bar to name. The *decision* about
+ * module reads: the peek, the rail and every caller outside a frame have no bar to name, and they say so by
+ * handing `undefined` — the argument is required precisely so that omitting it is a type error rather than a
+ * silent collapsed table. The *decision* about
  * which pin a frame expands — the mode, the key gate, the focus and the bar — is not this module's either;
  * `expandedPinOf` (`panel-expand.ts`) owns it and the frame hands its answer down. The tail each first row
  * carries is stamped by `metaStamp` (`panel-tail.ts`) — the one string the row prints — and
@@ -73,13 +75,6 @@ export function panelContentRows(height: number): number {
   return Math.max(0, height - BORDER_ROWS);
 }
 
-/**
- * The frame's expansion signal, as the row table reads it: which pin the frame chose, and whether it chose
- * one at all. Re-exported from its own module (`panel-expand.ts`) so a caller of the row table names this
- * module for the argument it hands the rows, and the predicate that produced the value lives beside the type.
- */
-export type { ExpandedAt } from "./panel-expand.ts";
-
 /** Whether this pin is the one the frame expands: the pin the frame chose, and a frame that chose one. */
 function expands(pin: ViewPin, at: ExpandedAt | undefined): boolean {
   return pin.compact === true && at !== undefined && at.focused && at.isSelected(pin);
@@ -98,7 +93,10 @@ function expands(pin: ViewPin, at: ExpandedAt | undefined): boolean {
  * `now` is the instant the ages are measured against; the panel passes the extension's clock so a tick
  * re-ages every row, and leaves it out to mean this instant.
  *
- * `expanded` is the frame's expansion signal and is absent for every caller with no bar to name. A `compact`
+ * `expanded` is the frame's expansion signal, named by every caller: `undefined` for every caller with no bar
+ * to name (the peek, the rail, a row-counting test), and the frame's `ExpandedAt` otherwise. It is required
+ * rather than trailing-optional so that "no expansion" is written down at each call site — a caller that
+ * forgot to ask is a type error, not a table that silently collapsed a pin it should have grown. A `compact`
  * pin whose text would wrap owns its full entry — the wrapped rows and the options rows — when the frame says
  * it is the pin under a bar that takes keys, and one cut row for every other pin and every other frame.
  */
@@ -128,8 +126,8 @@ export function panelPinRows(
    * neither it nor `metaColumns` may be defaulted or follow an optional parameter.
    */
   inner: number,
-  now: string = atOnce(),
-  expanded?: ExpandedAt,
+  now: string,
+  expanded: ExpandedAt | undefined,
 ): PanelRow[] {
   const marker = style.marker(pin.level, MARKER[pin.level]);
   const glyph = MARKER[pin.level];
@@ -230,7 +228,7 @@ export function panelAllRows(
     // columns the drawer never had. A caller that is laying a frame out names both figures and gets none of this.
     const betweenGutters =
       inner ?? textWidth + META_COLUMNS + META_SEPARATOR_COLUMNS + GUTTER_COLUMNS;
-    rows.push(...panelPinRows(pin, textWidth, style, reserve, betweenGutters, now));
+    rows.push(...panelPinRows(pin, textWidth, style, reserve, betweenGutters, now, undefined));
   }
   return rows;
 }

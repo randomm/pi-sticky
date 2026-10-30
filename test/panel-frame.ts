@@ -97,10 +97,9 @@ function drawnFrame(
     content.selection,
     style,
     content.ageNow,
-    // The flag the drawer's bar is drawn from, handed to the layout as the component hands it (`buildOpenLines`):
-    // a test that draws a focused frame and withholds it would be laying out a table the frame it draws was
-    // not cut from.
-    content.focused,
+    // The pin the table grows, from the same predicate the component asks — `content.focused` never reaches
+    // the layout itself, only the frame's decision about which pin to expand (see `test/panel-frame.ts`'s
+    // header): a test that draws a focused frame gets the table the component would have laid out for it.
     expanded,
   );
   // The pins the frame draws are the flattened drawn order, and the sections its title prints are the ones

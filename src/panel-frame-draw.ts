@@ -27,10 +27,10 @@
  * reason — they are the shape of its arguments, not this file's business alone.
  *
  * What this file does **not** own is the cost of a miss. The row table a frame is cut from is a function of
- * the sections, the width, the colours and the age instant — and of the one pin the layout expands, which is
- * read out of this module's own `expandedPinOf` call. The bar moves re-wraps every pin rather than cutting
- * back the one
- * gutter glyph that changed: once per keypress today, and once per frame while something else animates the
+ * the sections, the width, the colours, the age instant — and of the bar and the focus, since the one pin the
+ * layout expands is read out of this module's own `expandedPinOf` call, which reads those two. A move of the
+ * bar therefore re-wraps every pin rather than cutting back the one gutter glyph that changed: once per
+ * keypress today, and once per frame while something else animates the
  * terminal. Fixing it means caching the row table beside the lines in `PanelFrame` and re-running only
  * `buildPanelLines` when only the fields that did not enter the table moved — a change to the layout
  * seam, not to this file, and deliberately not made here.

@@ -15,7 +15,7 @@
  * be left out of either caller. It is **not** a guarantee about a term's *value* — no type can say that a term
  * agrees with the drawing rule that produced it. That agreement is a property of the producer, and each term
  * names where its producer is: the bar and the focus are the component's state, read by the caller that also
- * draws them, and the expansion is `expandedPinOf` (`panel-frame-draw.ts`), the one predicate the layout, the
+ * draws them, and the expansion is `expandedPinOf` (`panel-expand.ts`), the one predicate the layout, the
  * drawer and both cache entry points call.
  *
  * The rule the key obeys: every member is something the drawn bytes depend on, and nothing is in it that
@@ -58,7 +58,7 @@ export interface PanelFrame {
   /**
    * Which pin's entry this frame's row table expanded: the bar's **selection** coordinate when the pin
    * `selection` names is `compact` and the frame is an open one that takes keys, and `undefined` when it
-   * expanded nothing — `expandedPinOf` (`panel-frame-draw.ts`) answers it once per frame, and both cache entry
+   * expanded nothing — `expandedPinOf` (`panel-expand.ts`) answers it once per frame, and both cache entry
    * points hand it to `frameOf` rather than re-deriving it.
    *
    * In the key because the row table is no longer selection-independent: the pin under a bar that takes keys
