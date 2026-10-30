@@ -20,10 +20,11 @@
  * the view and then drew it against a differently-ordered `content.pins`, or a title that grouped them again,
  * would highlight one pin's row for a selection that names another and print counts no heading agrees with.
  */
-import type { PanelLayout } from "../src/panel-frame-layout.ts";
+import { expandedPinOf } from "../src/panel-expand.ts";
 import { panelLayoutSections } from "../src/panel-frame-layout.ts";
 import { buildPanelLines } from "../src/panel-lines.ts";
 import type { PanelContent } from "../src/panel-lines.ts";
+import type { PanelLayout } from "../src/panel-row-owner.ts";
 import type { PanelSection } from "../src/panel-sections.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle } from "../src/render.ts";
@@ -53,8 +54,15 @@ export function content(
   return { pins, selection, focused, replyHint, ageNow };
 }
 
-/** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
-export type FrameRequest = ReturnType<typeof content>;
+/**
+ * What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints.
+ *
+ * `keys` is the host's second answer — whether the open frame may name the keys (`PanelHost.interactiveOpen`)
+ * — and defaults to the answer a shown panel gives. A case that wants the `PI_STICKY_PANEL=open` divergence
+ * (the frame stays the full one once the earned open has ended, so the gate answers `false`) sets it, and the
+ * pin under the bar then draws collapsed whatever `focused` says.
+ */
+export type FrameRequest = ReturnType<typeof content> & { keys?: boolean };
 
 /**
  * One frame drawn the way the component draws it: the view's pins put into sections, then one layout pass
@@ -70,6 +78,18 @@ function drawnFrame(
   terminalRows: number,
 ): DrawnFrame {
   const sections = panelSections(content.pins);
+  // The frame's one expansion, computed by the predicate the component computes: a test draws a focused frame
+  // whose bar names a `compact` pin and gets the entry the component would have grown, and a test that hands
+  // `focused: false`, a bar past the end or `keys: false` gets the collapsed table. A helper that decided the
+  // expansion for itself would be a second rule, and the one the tests were written against. The frame a test
+  // asks for is always the open one — the peek is drawn by `panel-peek.ts` and takes no keys to expand under.
+  const expanded = expandedPinOf(
+    sections.flat,
+    "open",
+    content.keys ?? true,
+    content.focused,
+    content.selection,
+  );
   const layout = panelLayoutSections(
     sections,
     width,
@@ -77,6 +97,10 @@ function drawnFrame(
     content.selection,
     style,
     content.ageNow,
+    // The pin the table grows, from the same predicate the component asks — `content.focused` never reaches
+    // the layout itself, only the frame's decision about which pin to expand (see `test/panel-frame.ts`'s
+    // header): a test that draws a focused frame gets the table the component would have laid out for it.
+    expanded,
   );
   // The pins the frame draws are the flattened drawn order, and the sections its title prints are the ones
   // the table was built from — so the builder's `selection` indexes the same list the table's owners were

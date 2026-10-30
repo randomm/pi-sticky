@@ -25,19 +25,31 @@
  * the honest figure differs from the lenient one — see the note on `sweptFrameAlongsideWideId`.
  *
  * Two corpus members are excluded from the rejoin, and neither exclusion is a loophole: `compact` is cut
- * rather than wrapped by design (README, research-summary U13) and is asserted to own exactly one row — the
- * promise it does make; the reserved options row is excluded by `isOptionRow` because its text is filled in by
- * the drawer and was never part of the pin.
+ * rather than wrapped **while the frame keeps it collapsed** (README, research-summary U13) — so the carve-out
+ * below is `isCollapsedCompact`, a fact about the bar and the focus, and not the bare flag: the same pin with
+ * the bar on it in a frame that takes keys is wrapped by the row table and *does* rejoin, which is the half of
+ * this sweep that #63 added and what `test/panel-compact-sweep.test.ts` states on its own. The reserved options
+ * row is excluded by `isOptionRow` because its text is filled in by the drawer and was never part of the pin.
  */
 import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "../src/escape.ts";
-import { MIN_FRAME_WIDTH } from "./panel-hostile.ts";
+import type { SweepBuilder, SweepCheck } from "./panel-sweep-frame.ts";
 import {
+  IDS,
+  WIDTHS,
+  WIDTH_BANDS,
+  WRAPPED_WIDTHS,
+  bandLabel,
+  sweepGrid,
+  sweptExpandedCompact,
+} from "./panel-sweep-frame.ts";
+import {
+  COMPACT_CORPUS,
   SWEEP_CORPORA,
   carriedCharacters,
-  isCompact,
+  isCollapsedCompact,
   limitOf,
   owedCharacters,
   sweptFrame,
@@ -45,67 +57,42 @@ import {
 } from "./panel-wrapped-sweep.ts";
 import type { SweptFrame } from "./panel-wrapped-sweep.ts";
 
-/** The ids stepped across the sweep; the full 1–999 walk is the block at the bottom of this file. */
-const IDS = Array.from({ length: 143 }, (_unused, i) => 1 + i * 7);
-/** Every width the builder closes at, from its own floor to the widest frame a panel reaches. */
-const WIDTHS = Array.from({ length: 91 }, (_unused, i) => MIN_FRAME_WIDTH + i);
-
-/**
- * The widths the **rejoin** sweep runs over.
- *
- * Not the whole range, and not as a loophole. At the builder's floor the tail's reserve leaves the text column
- * one column wide, and a wrap of one column is not a wrap of *words*: `wrapTextWithAnsi` breaks a long token
- * character by character, so every word of the pin lands on a row of its own and a rejoin that expected the
- * pin's words back in theirs would be asserting that the panel can lay text out at one column. Nothing is let
- * off at those widths for the invariants that can be asked there — the uniform-width sweep and the column-limit
- * sweep below both run the whole range, the floor included, and `test/panel-id-never-cut.test.ts` /
- * `test/panel-id-wide.test.ts` own what the `#id` survives there. Four columns of text is where the reserve
- * stops swallowing the column at any id this sweep mints, so every width at or above it lays out words and none
- * of them is exempt from anything.
- */
-const WRAPPED_WIDTHS = WIDTHS.filter((width) => width >= MIN_FRAME_WIDTH + 4);
-
-/**
- * The width bands the sweeps are cut into.
- *
- * One `test()` per band rather than one per invariant, because bun caps a test at five seconds and 91 widths ×
- * 143 ids × 5 corpus members is far more frame than that allows — the suite already split one id sweep in two
- * for the same reason. The bands together cover the whole range the issue names (30–120, ids 1–999), and a
- * failure names its own band.
- */
-const WIDTH_BANDS: readonly (readonly [number, number])[] = [
-  [MIN_FRAME_WIDTH, 40],
-  [41, 52],
-  [53, 64],
-  [65, 78],
-  [79, 92],
-  [93, 106],
-  [107, 120],
-];
-
-/** The band a block covers, spelled for the failure message. */
-const bandLabel = (band: readonly [number, number]): string => `${band[0]}–${band[1]} columns`;
-
 /**
  * One invariant, swept over every corpus member and every id of one band of widths.
  *
  * The shape every sweep in this file shares, so the banding is stated once and each block says only what it
  * asserts. `check` is handed a frame already built through `framed`, so no block can size a table and draw
- * another.
+ * another. The frame of a cell is built **once per band** and read by all four invariants of that band
+ * (`sweepGrid`, `panel-sweep-frame.ts`): they are four `test()`s over one grid, and each used to lay the same
+ * table out for itself.
  */
 function sweepBand(
   band: readonly [number, number],
   widths: readonly number[],
-  check: (frame: SweptFrame, name: string, text: string, id: number) => void,
-  build: typeof sweptFrame = sweptFrame,
+  check: SweepCheck,
+  build: SweepBuilder = sweptFrame,
 ): void {
-  const [from, to] = band;
-  for (const [name, text, extra] of SWEEP_CORPORA) {
-    for (const width of widths) {
-      if (width < from || width > to) continue;
-      for (const id of IDS) check(build(id, text, width, extra), name, text, id);
-    }
-  }
+  sweepGrid({ band, widths, members: SWEEP_CORPORA, ids: IDS }, build, check);
+}
+
+/**
+ * The same sweep over the one frame in which the compact carve-out does **not** apply.
+ *
+ * `sweepBand` draws every corpus member at the bar's resting position, which is the collapsed state; this runs
+ * the identical invariant over the expanded state — the bar on the swept pin of a frame that takes keys. Only
+ * the `compact` member is swept: the expansion signal can reach a pin that carries the flag and no other, so
+ * for the six plain members the expanded frame is *byte-for-byte the frame `sweepBand` already drew* and the
+ * work here would be a second pass over the same tables for no new coverage. That byte-for-byte claim is not
+ * swept, it is checked once at its source: `expandedPinOf` answers `undefined` for a pin without the flag
+ * (`test/panel-expand-predicate.test.ts`) and `expands` (`panel-rows.ts`) refuses to grow one whatever the
+ * signal says. The four invariants of a band share the frames that band built, exactly as in `sweepBand`.
+ */
+function sweepBandExpanded(
+  band: readonly [number, number],
+  widths: readonly number[],
+  check: SweepCheck,
+): void {
+  sweepGrid({ band, widths, members: [COMPACT_CORPUS], ids: IDS }, sweptExpandedCompact, check);
 }
 
 /** The invariant that no row is built wider than the columns the drawer gives it, over one band of widths. */
@@ -115,11 +102,13 @@ function assertNoRowOverrunsItsColumns(
   _text: string,
   id: number,
 ): void {
-  // `compact` is exempt, and exempt for a reason the drawer owns: its one row is *meant* to overhang — the row
-  // table hands the drawer the folded text whole and `fitLine` spends the ellipsis on the tail of it, which is
-  // the whole content of what `compact` promises. Its row-count half is asserted in its own block below; this
-  // one is about a row the drawer re-cuts *after* the wrap, which is a different cut entirely.
-  if (isCompact(frame)) return;
+  // The carve-out, restated for #63: it is the *collapsed* compact row that is exempt, and exempt for a reason
+  // the drawer owns — that one row is *meant* to overhang, the table handing the drawer the folded text whole
+  // and `fitLine` spending the ellipsis on the tail of it, which is the whole content of what `compact`
+  // promises. Its row-count half is asserted in its own block below; this one is about a row the drawer re-cuts
+  // *after* the wrap, a different cut entirely. Under a bar that takes keys the pin is wrapped like any other
+  // and pays this invariant in full, which is why the test is `isCollapsedCompact` and not the flag.
+  if (isCollapsedCompact(frame)) return;
   for (const row of frame.rows) {
     expect(
       visibleWidth(row.text),
@@ -135,7 +124,12 @@ function assertTextSurvivesTheWrap(
   text: string,
   id: number,
 ): void {
-  if (isCompact(frame)) return;
+  // The rejoin is asked of every frame that *wrapped* the pin. A collapsed compact frame is the one that did
+  // not: its row is cut, the ellipsis is a character the cut wrote rather than the pin, and asking it for the
+  // whole text would be asking `compact` to mean the opposite of what it means. Under the bar the same pin is
+  // wrapped and stands here with every other member, ellipsis included — `carriedCharacters` is the bare
+  // comparison, so an expanded compact pin that fell back to a cut would fail it by printing one.
+  if (isCollapsedCompact(frame)) return;
   const carried = carriedCharacters(frame);
   const owed = owedCharacters(text);
   // A wrapped pin lost nothing: the same characters, in the same order, and none added.
@@ -174,11 +168,7 @@ function assertUniformWidth(frame: SweptFrame, name: string, _text: string, id: 
  * untested in the one place it bites. The rejoin still runs `WRAPPED_WIDTHS`: at a one-column text column the
  * wrap is a spelling, not a wrap of words, and no amount of honesty about columns makes that a rejoin.
  */
-const SWEEPS: readonly (readonly [
-  string,
-  (frame: SweptFrame, name: string, text: string, id: number) => void,
-  readonly number[],
-])[] = [
+const SWEEPS: readonly (readonly [string, SweepCheck, readonly number[]])[] = [
   ["no row is wider than the columns its tail leaves it", assertNoRowOverrunsItsColumns, WIDTHS],
   [
     "its drawn text rows reproduce every character of its text",
@@ -189,10 +179,30 @@ const SWEEPS: readonly (readonly [
   ["every drawn line measures the frame", assertUniformWidth, WIDTHS],
 ];
 
-for (const [promise, check, widths] of SWEEPS) {
-  for (const band of WIDTH_BANDS) {
+// The band is the outer loop in both blocks below: the four invariants of a band are four `test()`s over one
+// grid, and `sweepGrid` builds that grid's frames once and hands the same objects to all four.
+for (const band of WIDTH_BANDS) {
+  for (const [promise, check, widths] of SWEEPS) {
     test(`a wrapped pin ${promise} from ${bandLabel(band)}`, () => {
       sweepBand(band, widths, check);
+    });
+  }
+}
+
+/**
+ * The expanded counterpart of the collapsed compact block at the bottom of this file.
+ *
+ * `sweptFrame` parks the bar on the companion and takes no keys, which is the state in which `compact` cuts;
+ * this runs the same four invariants over the state in which the row table wraps — the bar on the swept pin of
+ * a frame that takes keys. Only the compact member is swept: the two sweeps ask that one corpus member two
+ * different tables (one cut, one wrapped), and ask the six plain members the same table twice. That is the
+ * whole reversal of U13, swept over ids and widths instead of asserted once. Its tests are registered band by
+ * band, like the block above, so the four invariants read the four tables that band built rather than sixteen.
+ */
+for (const band of WIDTH_BANDS) {
+  for (const [promise, check, widths] of SWEEPS) {
+    test(`an expanded compact pin ${promise} from ${bandLabel(band)}`, () => {
+      sweepBandExpanded(band, widths, check);
     });
   }
 }
@@ -211,23 +221,6 @@ for (const band of WIDTH_BANDS) {
   });
 }
 
-test("a compact pin is one cut row at every width, which is why the sweep does not rejoin it", () => {
-  // The exclusion, asserted rather than assumed. `compact` means "cut, do not spend the window" — so its one
-  // row keeps its ellipsis, and a rejoin sweep that included it would be asking for the opposite of the
-  // guarantee. If this block ever fails, `compact` has stopped meaning one row and the sweep's exclusion has
-  // become a hole rather than a carve-out.
-  for (const [name, text] of [["compact", SWEEP_CORPORA[6]?.[1] ?? ""]] as [string, string][]) {
-    expect(name).toBe("compact");
-    for (const width of WIDTHS) {
-      for (const id of IDS) {
-        const frame = sweptFrame(id, text, width, { compact: true });
-        expect(frame.textRows.length, `compact id ${id} at ${width}`).toBe(1);
-        expect(frame.rows[0]?.tail).toContain(`#${id}`);
-      }
-    }
-  }
-});
-
 test("every id from 1 to 999 keeps its text whole at two widths where the reserve is tightest", () => {
   // The full 999-id walk, at the two widths where a tail's reserve comes closest to eating the text column
   // while still leaving room for words: the id sweep already owns the floor and 33 columns, so the work here
@@ -236,7 +229,7 @@ test("every id from 1 to 999 keeps its text whole at two widths where the reserv
     for (const [name, text, extra] of SWEEP_CORPORA) {
       for (let id = 1; id <= 999; id++) {
         const frame = sweptFrame(id, text, width, extra);
-        if (isCompact(frame)) {
+        if (isCollapsedCompact(frame)) {
           expect(frame.textRows.length).toBe(1);
           continue;
         }

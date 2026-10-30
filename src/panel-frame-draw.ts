@@ -27,18 +27,33 @@
  * reason — they are the shape of its arguments, not this file's business alone.
  *
  * What this file does **not** own is the cost of a miss. The row table a frame is cut from is a function of
- * the sections, the width, the colours and the age instant — not of the bar or the focus — but the layout
- * (`panelLayoutSections`) is handed the selection to size the scroll window, and `buildPanelLines` re-measures
- * the id/age reserve while it draws. So moving the bar re-wraps every pin rather than re-cutting the one
- * gutter glyph that changed: once per keypress today, and once per frame while something else animates the
- * terminal. Fixing it means caching the row table beside the lines in `PanelFrame` and re-running only
- * `buildPanelLines` when the two fields that did not enter the table are what moved — a change to the layout
- * seam, not to this file, and deliberately not made here.
+ * the sections, the width, the colours, the age instant, and `expanded` — the **one** bar/focus-derived value
+ * the table reads, computed once per frame by this module's `expandedPinOf` call and handed to
+ * `panelLayoutSections`. The bar and the focus themselves stay outside the table, which is what they are in
+ * `panel-frame-layout.ts`: the bar reaches the layout only as the guard that the `expanded` index names the
+ * bar's own pin, and elsewhere it moves the bar's glyph and the window's start (`panel-lines.ts`), while the
+ * focus moves the border and the hint. Nothing reads either coordinate to decide how a pin wraps. A move of
+ * the bar therefore re-wraps every pin today rather than costing the one gutter glyph that changed — the table
+ * is simply not cached: once per keypress, and once per frame while something else animates the terminal.
+ * Fixing it means caching the row table beside the lines in `PanelFrame` on the inputs named above, so a frame
+ * whose `expanded` did not move re-runs only `buildPanelLines` — a change to the layout seam, not to this
+ * file, and deliberately not made here.
+ *
+ * The one term of the key whose *value* is computed rather than read is the expansion, and its producer is
+ * named: `expandedPinOf` (`panel-expand.ts`), called once per frame by `drawFrame` and handed to the frame it
+ * builds, to the open frame's table and to the cache's term alike. The compiler guarantees one field list;
+ * each term's agreement with the drawing rule that produced it is a property of this producer, and this is
+ * where that property lives and is tested. The guarantee the term therefore buys is exactly one: the
+ * memorised frame names the number its own table grew, so a producer that handed the frame another frame's
+ * term — or a caller that re-derived the rule and answered differently — is a miss rather than a stale panel.
+ * It is not that the key sees a state the other terms do not: the predicate is a pure function of `pins`,
+ * `mode`, `keys`, `focused` and `selection`, every one of which `sameFrame` already compares.
  */
 import { ageAt, ageBucket } from "./panel-age.ts";
 import type { OpenFrame } from "./panel-component-open.ts";
 import { buildOpenLines } from "./panel-component-open.ts";
 import type { PanelComponentState } from "./panel-component-state.ts";
+import { expandedPinOf } from "./panel-expand.ts";
 import type { PanelFrame, PanelMemory } from "./panel-frame-cache.ts";
 import { sameFrame } from "./panel-frame-cache.ts";
 import type { PanelHost } from "./panel-host.ts";
@@ -113,7 +128,8 @@ export function drawFrame(
   const key = frameKey(host);
   const selection = clampSelection(state.selection, draw.sections.flat.length);
   const focused = state.focused;
-  const candidate = frameOf([], draw, key, focused, selection);
+  const expanded = expandedPinOf(draw.sections.flat, key.mode, key.keys, focused, selection);
+  const candidate = frameOf([], draw, key, focused, selection, expanded);
   const cached = memory.frame;
   // The width is compared here and not in `sameFrame` because it is the one thing a candidate cannot name:
   // `update()` must ignore it (a redraw is not a resize), while this caller knows the width it was asked for.
@@ -132,18 +148,26 @@ export function drawFrame(
           draw.width,
           draw.style,
         )
-      : buildOpenLines(draw.terminalRows, openFrame(draw, key, selection, focused));
-  memory.frame = frameOf(lines, draw, key, focused, selection);
+      : buildOpenLines(draw.terminalRows, openFrame(draw, key, selection, focused, expanded));
+  memory.frame = frameOf(lines, draw, key, focused, selection, expanded);
   return lines;
 }
 
-/** The frame to memorise, or to compare against: the lines, and everything the next frame is read against. */
+/**
+ * The frame to memorise, or to compare against: the lines, and everything the next frame is read against.
+ *
+ * `expanded` is the value `expandedPinOf` (`panel-expand.ts`) answered for this frame — a term of the key, and
+ * deliberately not re-derived here from `mode`/`keys`/`focused`/`pins`/`selection`: a frame's key that computes
+ * a term is a key that can disagree with the table the same frame was drawn from.
+ */
 export function frameOf(
   lines: string[],
   draw: PanelDraw,
   key: FrameKey,
   focused: boolean,
   selection: number,
+  /** The index `expandedPinOf` answered for this frame — a term of the key, never re-derived from it. */
+  expanded: number | undefined,
 ): PanelFrame {
   return {
     lines,
@@ -151,6 +175,9 @@ export function frameOf(
     pins: draw.sections.flat,
     selection,
     focused,
+    // The pin whose entry this frame's row table expanded, handed in rather than read back off the fields
+    // above.
+    expanded,
     replyHint: key.replyHint,
     mode: key.mode,
     keys: key.keys,
@@ -177,7 +204,13 @@ export function frameKey(host: PanelHost): FrameKey {
 }
 
 /** The open frame's layout arguments, over the content's drawn order. */
-function openFrame(draw: PanelDraw, key: FrameKey, selection: number, focused: boolean): OpenFrame {
+function openFrame(
+  draw: PanelDraw,
+  key: FrameKey,
+  selection: number,
+  focused: boolean,
+  expanded: number | undefined,
+): OpenFrame {
   return {
     content: {
       // The *drawn order* — what `selection` indexes — and the sections the title's counts are read off.
@@ -191,6 +224,9 @@ function openFrame(draw: PanelDraw, key: FrameKey, selection: number, focused: b
       sections: draw.sections.order,
       ageNow: key.ageNow,
     },
+    // The pin whose entry the row table expands, from the same call that built the frame it is drawn into:
+    // the table grows the pin the bar, `d` and `Enter` index, or none at all.
+    expanded,
     sections: draw.sections,
     width: draw.width,
     style: draw.style,

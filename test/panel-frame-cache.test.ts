@@ -14,8 +14,10 @@
  */
 import { expect, test } from "bun:test";
 
+import { expandedPinOf } from "../src/panel-expand.ts";
 import type { PanelFrame } from "../src/panel-frame-cache.ts";
 import { sameFrame } from "../src/panel-frame-cache.ts";
+import type { FrameKey } from "../src/panel-frame-draw.ts";
 import { frameOf } from "../src/panel-frame-draw.ts";
 import { railStamp } from "../src/panel-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
@@ -41,13 +43,34 @@ interface FrameOverrides {
   selection?: number;
   focused?: boolean;
   mode?: PanelFrame["mode"];
+  /**
+   * Whether the frame may name the keys: the legend's term, beside `mode`, and the gate the expansion obeys —
+   * a frame that advertises no keys expands nothing whatever its bar and focus answer.
+   */
   keys?: boolean;
   replyHint?: string;
   ageNow?: number;
 }
 
 function frame(over: FrameOverrides = {}): PanelFrame {
+  // The pins a case hands in are the pins the frame is built from — including any `compact` flag. The
+  // frame's expansion is read off the pin `selection` names, so a case that wants an expanded frame names the
+  // flag on the array and lets the predicate answer it.
   const pins = over.pins ?? PINS;
+  const mode = over.mode ?? "open";
+  const keys = over.keys ?? mode === "open";
+  const focused = over.focused ?? false;
+  const selection = over.selection ?? 0;
+  // The key's expansion term comes from `expandedPinOf` — the one predicate the component, its candidate and
+  // the layout all call — and not from a literal of this file's own: a case that *wrote* the term would assert
+  // on its own guess about the rule rather than on what the frame stores.
+  const key: FrameKey = {
+    replyHint: over.replyHint ?? "",
+    mode,
+    keys,
+    ageNow: NOW,
+    ageKey: over.ageNow ?? 29_725_800,
+  };
   return {
     ...frameOf(
       over.lines ?? ["╭──╮", "│One│", "╰──╯"],
@@ -57,19 +80,10 @@ function frame(over: FrameOverrides = {}): PanelFrame {
         style: NO_PANEL_COLOUR,
         terminalRows: 24,
       },
-      {
-        replyHint: over.replyHint ?? "",
-        mode: over.mode ?? "open",
-        // Whether the frame may name the keys. Defaults to the answer the open frame implies; the case
-        // below moves it on its own to prove the legend is a term of the key and not a consequence of `mode`.
-        keys: over.keys ?? over.mode === "open",
-        ageNow: NOW,
-        // The minute the frame's ages were drawn at; the case below moves it by one to prove the key reads
-        // the bucket and not the instant.
-        ageKey: over.ageNow ?? 29_725_800,
-      },
-      over.focused ?? false,
-      over.selection ?? 0,
+      key,
+      focused,
+      selection,
+      expandedPinOf(pins, key.mode, key.keys, focused, selection),
     ),
     pins,
   };
@@ -96,6 +110,43 @@ test("moving the bar is a frame change", () => {
 
 test("focus is a frame change, because the bar and the border colour both depend on it", () => {
   expect(sameFrame(frame({ focused: true }), frame())).toBe(false);
+});
+
+test("the expansion term is compared on its own — and never decides a case the other terms miss", () => {
+  // What this case proves, stated honestly. `expanded` is `expandedPinOf`'s answer over `pins`/`mode`/`keys`/
+  // `focused`/`selection`, and every one of those is already in the key, so no *state* can move the term
+  // without moving a term the key already compares: it is defence-in-depth against a producer whose term
+  // disagrees with its own fields, and it records the answer the drawn frame's table was built around
+  // (`panel-frame-cache.ts`, the `expanded` member doc). Proving it is compared at all therefore needs a pair
+  // whose fields agree and whose terms do not, which only a mutation of a built frame gives.
+  const view = [pin(1, "One", "info", { compact: true }), pin(2, "Two", "warning")];
+  const atBar = frame({ pins: view, selection: 0, focused: true });
+  expect(atBar.expanded).toBe(0);
+  // The term alone moved on one frame: one published array, one bar, one focus, one mode and gate.
+  expect(sameFrame({ ...atBar, expanded: undefined }, atBar)).toBe(false);
+  expect(sameFrame(atBar, { ...atBar, expanded: undefined })).toBe(false);
+  // …and the term names *which* entry grew, so a frame claiming another pin's expansion is a miss too …
+  expect(sameFrame({ ...atBar, expanded: 1 }, atBar)).toBe(false);
+  // …while the same frame copied is a hit, so the three misses above are the term's and not the builder's.
+  expect(sameFrame(atBar, { ...atBar })).toBe(true);
+  // The pair a redraw actually is: the bar onto the compact pin, against the bar one row off it. Both frames
+  // are built from *one* published array, so the only difference `sameFrame` reads is the bar — the expansion
+  // moves with it, and it is the bar that answers here. MUTATION NOTE: two `frame({ compact: … })` calls do
+  // not make this case — the flag is stamped onto a fresh array, so the pins-identity comparison decides such
+  // a pair's false assertions before the term is ever read. A pair built that way tests the pins, not the term.
+  expect(
+    sameFrame(
+      frame({ pins: view, selection: 1, focused: true }),
+      frame({ pins: view, selection: 0, focused: true }),
+    ),
+  ).toBe(false);
+  // …and the frame that takes no keys, or draws the peek, expanded nothing whatever the flag on the view
+  // says: one published array per pair, so the hit is the predicate's reading and not the pins' identity.
+  for (const over of [{ keys: false }, { mode: "peek" as const }]) {
+    const one = frame({ pins: view, selection: 0, focused: true, ...over });
+    expect(one.expanded).toBeUndefined();
+    expect(sameFrame(one, frame({ pins: view, selection: 0, focused: true, ...over }))).toBe(true);
+  }
 });
 
 test("the keys the border advertises are a term of the key beside the mode", () => {
@@ -163,6 +214,7 @@ test("every field of the key is a field of the frame, so a new one cannot be lef
   expect(Object.keys(frame()).sort()).toEqual(
     [
       "ageNow",
+      "expanded",
       "focused",
       "keys",
       "lines",

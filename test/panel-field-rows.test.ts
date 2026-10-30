@@ -14,14 +14,19 @@
  *   wrapped into four rows and was then cut to one would leave the window, the bar and the keys counting
  *   four.
  *
- * `compact` holds at the bar too: the bar's row is chosen by the table, and a row the table never built is a
- * row nothing can select. (The issue's "expands when selected" half is left out on purpose — see the PR — an
- * expanded row has to be in the table for the keys to reach it, and growing the table under the bar for one
- * frame is the disagreement this module's callers go to lengths to avoid.)
+ * `compact` holds at the bar *except* on the one row the user is looking at: the row table expands a compact
+ * pin to its full text and its options rows when the caller names it as the selected pin of a focused frame
+ * (`ExpandedAt`), and draws it collapsed for every other pin and for every caller that names no selection —
+ * the peek and the rail among them. The expansion is the caller's argument, not a cell this module reads, so
+ * the collapsed table is the one built before the bar moved and the expanded one is built for the frame the
+ * bar is drawn in: the two are the same function at the same width, and only the rows the drawer fills — and
+ * the keys, which index this very count — can differ.
  */
 import { expect, test } from "bun:test";
 
+import type { ExpandedAt } from "../src/panel-expand.ts";
 import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
+import { ELLIPSIS } from "../src/panel-frame.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { optionLine } from "../src/panel-options-row.ts";
 import { optionRowCount } from "../src/panel-options-wrap.ts";
@@ -55,7 +60,14 @@ const frameOfText = (textWidth: number): number => innerAt(textWidth) + GUTTER_C
  * — the inverse of the subtraction that produced `textWidth`. A row-count test that guessed either would be
  * counting rows no drawer cut.
  */
-const rowsOf = (pin: ViewPin, textWidth = 60) =>
+/**
+ * The row table of one pin at a text column of `textWidth`, expanded or not.
+ *
+ * `expanded` is the frame's signal spelled the way the frame spells it — a predicate over the very pin the
+ * call is building — so the test, not the table, decides which pin the bar is on. Omitting it is the caller
+ * that has no frame to name and passes no signal at all, which is the row table before this argument existed.
+ */
+const rowsOf = (pin: ViewPin, textWidth = 60, expanded?: ExpandedAt) =>
   panelPinRows(
     pin,
     textWidth,
@@ -63,7 +75,14 @@ const rowsOf = (pin: ViewPin, textWidth = 60) =>
     widestMetaColumns([pin], style.dim, atOnce()),
     innerAt(textWidth),
     atOnce(),
+    expanded,
   );
+
+/** The signal of a frame whose bar sits on `pin` and which takes keys. */
+const selected = (pin: ViewPin): ExpandedAt => ({
+  isSelected: (candidate) => candidate === pin,
+  focused: true,
+});
 
 const LONG = "x".repeat(400);
 
@@ -124,6 +143,8 @@ test("the row table and the drawer read pin.options through one packing, so a re
       widestMetaColumns([view], style.dim, atOnce()),
       innerAt(40),
       atOnce(),
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     expect(rows).toHaveLength(expected);
     // The reserved rows are the last ones the pin owns, tagged for the drawer, and the drawer fills each with
@@ -179,4 +200,66 @@ test("a compact pin in a degenerate frame is that frame's one row plus its optio
 test("a compact pin whose text fits is the same pin as a plain one", () => {
   const short = levelPin(1, "short", "info");
   expect(rowsOf({ ...short, compact: true })).toEqual(rowsOf(short));
+});
+
+test("an expanded compact pin is byte-for-byte the non-compact pin of the same one-line text", () => {
+  // The comparison the rule is stated as — "exactly as a non-compact pin does" — is exact only for a text that
+  // fits the row it owns: `pinTails` puts the id/age pair on one row only when the wrap produced one, so the
+  // wrapping case gets its own pair of assertions below rather than being folded into this one.
+  const short = levelPin(1, "short", "info");
+  expect(rowsOf({ ...short, compact: true }, 60, selected(short))).toEqual(
+    rowsOf({ ...short, compact: false }, 60),
+  );
+});
+
+test("an expanded compact pin wraps its text, keeps the id on its first row and its age on the next", () => {
+  const pin = { ...levelPin(1, LONG, "info"), compact: true };
+  const rows = rowsOf(pin, 60, selected(pin));
+  // Collapsed it is one row (`a compact pin owns exactly one text row however long its text is`); expanded it
+  // is the multi-row entry the same text without the flag draws, and the tail lands where `pinTails` puts it:
+  // the id alone on the first row, the age on the second, because a wrapping pin has a second row to give it.
+  expect(rows.length).toBeGreaterThan(1);
+  expect(rowsOf({ ...pin, compact: false }, 60)).toEqual(rows);
+  // The tails are compared to each other rather than to a literal age: `pinTails` splits the pair once the
+  // wrap owns more than one row — the id alone on the first, the age alone on the second.
+  expect(rows[0]?.tail).toContain("#1");
+  expect(rows[1]?.tail).not.toContain("#1");
+  expect(rows[1]?.tail).not.toBe("");
+  // No continuation row carries an ellipsis: the cut was the collapsed row's, and the expansion is a wrap.
+  expect(rows.join("")).not.toContain(ELLIPSIS);
+});
+
+test("an expanded compact pin reserves its options rows, and the collapsed one does not", () => {
+  const pin = { ...levelPin(1, LONG, "info"), compact: true, options: ["a", "b", "c", "d"] };
+  const expanded = rowsOf(pin, 60, selected(pin));
+  const collapsed = rowsOf(pin, 60);
+  // The count the expansion adds is the wrap's own answer at this frame, read at the same width the rows were
+  // built at — the same figure `optionRows` charged the collapsed table's options to, so the two tables differ
+  // by the pin's *text* rows and by nothing else.
+  const options = optionRowCount(pin.options ?? [], frameOfText(60), style);
+  expect(collapsed).toHaveLength(1 + options);
+  expect(expanded).toHaveLength(rowsOf({ ...pin, compact: false }, 60).length);
+  expect(expanded.filter(isOptionRow)).toHaveLength(collapsed.filter(isOptionRow).length);
+});
+
+test("the expansion is opt-in: no argument, and the pin is collapsed whatever its selection would be", () => {
+  // The peek, the rail and every test that counts rows outside a frame call the table with no third figure and
+  // must keep getting the one-row table byte-for-byte — the peek passes no selection or focus at all
+  // (`PeekContent` is `{ sections, ageNow, replyHint }`), so there is no "selected pin in the peek" to expand.
+  const pin = { ...levelPin(1, LONG, "info"), compact: true, options: ["a", "b"] };
+  // The signal present but this pin not under the bar is the peek's answer for every pin it draws...
+  expect(rowsOf(pin, 60, { isSelected: () => false, focused: true })).toEqual(rowsOf(pin));
+  // ...and a caller that hands no signal at all gets it too, byte for byte.
+  expect(rowsOf(pin)).toHaveLength(2);
+  expect(rowsOf(pin)[0]?.text).not.toContain("…");
+});
+
+test("an expanded compact pin in a degenerate frame is that frame's one row plus its options rows", () => {
+  // `textWidth <= 0` is the frame with no text column at all: expansion cannot buy rows a frame has no room
+  // for, so the expanded flag and the collapsed one draw the same one-row entry here — which is also the
+  // branch's only coverage of the options reserve under expansion.
+  const pin = { ...levelPin(1, LONG, "info"), compact: true, options: ["a"] };
+  expect(rowsOf(pin, 0, selected(pin))).toEqual(rowsOf(pin, 0));
+  expect(rowsOf(pin, 0, selected(pin))).toHaveLength(2);
+  expect(rowsOf(pin, 0, selected(pin))[0]?.tail).toContain("#1");
 });

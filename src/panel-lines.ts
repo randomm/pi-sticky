@@ -29,7 +29,6 @@
 import { borderLine, frameIsOneColumn } from "./panel-border.ts";
 import { fitLine, pinRow } from "./panel-draw.ts";
 import { META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
-import type { PanelLayout, PanelOwned } from "./panel-frame-layout.ts";
 import { panelWindowOffset } from "./panel-frame-layout.ts";
 import { frameTitle } from "./panel-frame-title.ts";
 import {
@@ -44,6 +43,7 @@ import {
 import { isPanelFrameSize } from "./panel-geometry.ts";
 import { focusedHint } from "./panel-option-hint.ts";
 import { fillOptionRow } from "./panel-options-row.ts";
+import type { PanelLayout, PanelOwned } from "./panel-row-owner.ts";
 import { panelContentRows } from "./panel-rows.ts";
 import { isOptionRow } from "./panel-rows.ts";
 import type { PanelRow } from "./panel-rows.ts";

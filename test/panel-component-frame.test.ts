@@ -11,6 +11,9 @@
  */
 import { expect, test } from "bun:test";
 
+import { visibleWidth } from "@earendil-works/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
+
 import { PanelComponent } from "../src/panel-component.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -100,4 +103,153 @@ test("a render() alone pulls an out-of-range bar back onto the list it just drew
   h.state.view = { pins: [], removed: [] };
   c.render(44);
   expect(c.selection).toBe(0);
+});
+
+test("an unfocused→focused move onto a compact pin repaints the expanded frame", () => {
+  // The stale-frame this cache exists to refuse, drawn through the component rather than through
+  // `sameFrame`. The resting frame is an **open frame the user is not in** — `mode`/`keys` still answer the
+  // open panel, only `focused` is false, which is the `PI_STICKY_PANEL=open` shape and the one the cache can
+  // actually be caught on: mode, the gate, the pins, the bar and the label all match across the move, so the
+  // only term that can answer the focus move is the key's own. A key that missed it would hand back the
+  // collapsed rows, and the bar, `d`, `Enter` and the digits would then index rows that are not on screen.
+  const compact = {
+    ...pin(1, `${"decide ".repeat(20)}lands here`, "info", { createdAt: NOW }),
+    compact: true,
+    options: ["Passed on", "Not yet"],
+  };
+  const h = host([compact]);
+  h.stub.style = () => BAR_STYLE;
+  // The hand-built host answers `mode()`/`interactiveOpen()` from the *cell*, not from the component's flag
+  // (both default to the open panel that takes keys), so the component can sit unfocused while the frame the
+  // host reports is the full, key-taking one. That is the `PI_STICKY_PANEL=open` shape — the cell still
+  // answers the open frame after the earned open ended — and the only arrangement in which the frame cache is
+  // caught out by a focus move: every other term of the key matches across it.
+  const c = new PanelComponent(h.stub, h.tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  const resting = c.render(44);
+  // Collapsed: one cut row of text, and the tail of it nowhere in the frame.
+  expect(resting.filter((row) => row.includes("decide"))).toHaveLength(1);
+  expect(resting.join("\n")).not.toContain("here");
+  expect(c.render(44)).toBe(resting); // the fast path is alive at the resting state
+  // …and the focus arrives with the bar already on the compact pin, nothing else about the panel having
+  // moved: one frame drawn from the same array at the same bar, now expanded.
+  // The frame that changes is the *row table*: the collapsed entry owns one cut text row, the expanded one
+  // owns its whole wrap. (The options row is reserved in both frames and the host reports the open frame as
+  // taking keys, so its labels are drawn either way — the cut is what the expansion buys.)
+  c.setFocused(true);
+  const focused = c.render(44);
+  expect(focused).not.toBe(resting);
+  expect(focused.join("\n")).toContain("here");
+  expect(focused.at(-1)).toContain("1–2 answer");
+  // …and leaving the panel gives the collapsed frame back, so the repaint is the focus's and not a flag the
+  // component forgets to clear.
+  c.setFocused(false);
+  const left = c.render(44);
+  expect(left.filter((row) => row.includes("decide"))).toHaveLength(1);
+  expect(left.join("\n")).not.toContain("here");
+  expect(c.render(44)).toBe(left);
+});
+
+test("a resize at the bar on a compact pin re-wraps the expanded entry at the width just asked for", () => {
+  // The HIGH the round-1 review asked for, and the answer is *no stale frame*: `sameFrame` has no width term
+  // and cannot have one (`panel-frame-cache.ts`: `update()` runs on every frame and a redraw is not a resize),
+  // but `drawFrame` is the one caller that knows the width it was handed and compares it itself, and the row
+  // table is rebuilt from `draw.width` on that miss. This draws the pair a resize actually is — one expanded
+  // frame, then the same component asked at another width — and refuses the failure the cache could have had:
+  // the wide frame's lines still wrapped at the narrow width, or sized at it.
+  const compact = {
+    ...pin(1, `${"decide ".repeat(20)}lands here`, "info", { createdAt: NOW }),
+    compact: true,
+    options: ["Passed on", "Not yet"],
+  };
+  const widened = staleFrameComponent([compact]);
+  widened.c.focus();
+  widened.c.select(0);
+  const narrow = widened.c.render(44);
+  // The pin really is expanded at the bar, and really is a multi-row entry: at 44 columns its cut row cannot
+  // fit whole (its last words are cut), so the wrap owns more rows than the collapsed entry would. Without
+  // both the two frames below could be equal and this test would prove nothing. (`lands here` spans a wrap
+  // break at this width, so the assertions name the wrap's own rows rather than a joined string.)
+  expect(narrow.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
+  expect(narrow.at(-2)).toContain("1 Passed on");
+  // …and a frame request at 44 columns again costs nothing: the fast path is alive at a steady width, so the
+  // miss the resize pays for is not a miss every render pays for.
+  expect(widened.c.render(44)).toBe(narrow);
+  // The resize itself: pi-tui hands the overlay's new resolved width to `render()` and nothing else moves.
+  const widenedLines = widened.c.render(100);
+  // The frame drawn by a component that only ever saw 100 columns — one wrap, at the width it is drawn at.
+  const fresh = staleFrameComponent([compact]);
+  fresh.c.focus();
+  fresh.c.select(0);
+  const atFreshWidth = fresh.c.render(100);
+  // Byte-for-byte the same frame. A cache that answered the resize from the 44-column frame keeps the narrow
+  // frame's rows (too many) and its wrap, and the lines below would differ in both length and content.
+  expect(widenedLines).toEqual(atFreshWidth);
+  // Every drawn line measures the width just asked for — the promise a flush-right overlay makes to the chat
+  // beside it, which a stale width breaks by padding to the old figure.
+  for (const line of widenedLines) expect(visibleWidth(line)).toBe(100);
+  // …and the entry is still expanded after the resize: the tail of its text is on screen at the new width,
+  // not cut back to one row by a frame the width had no part in.
+  expect(widenedLines.join("\n")).toContain("lands here");
+  expect(widenedLines.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
+});
+
+/** A component over a TUI that states a height the test can move, with the bar on a compact pin. */
+function componentAtBarOn(compact: ViewPin, rows: number) {
+  const h = host([compact]);
+  h.stub.style = () => BAR_STYLE;
+  const tui = { requestRender: () => {}, terminal: { columns: 44, rows } } as unknown as TUI;
+  const c = new PanelComponent(h.stub, tui);
+  const handle = createOverlayHandle();
+  handle.unfocus();
+  c.setHandle(handle);
+  c.focus();
+  c.select(0);
+  return { c, tui };
+}
+
+/** The tallest frame a terminal of `rows` may hold: half of it, `panelMaxRows`'s ceiling. */
+const ceilingOf = (rows: number): number => Math.floor(rows / 2);
+
+test("a height-only resize replays the cached frame: the terminal's rows are no term of the key", () => {
+  // The pre-existing gap this case documents rather than fixes (`panel-frame-draw.ts`: `PanelDraw` carries
+  // `terminalRows`, `sameFrame` does not compare it, and the width guard in `drawFrame` cannot cover a height).
+  // A *width*-only resize is a miss because that caller knows the width it was handed; a *height*-only resize
+  // — pi-tui re-resolving the overlay after the terminal shrank, handing `render()` the same width — moves no
+  // term of the key at all, so the tall frame is replayed. Expansion does not cause it (the same thing happens
+  // to any multi-row frame) but it is what makes it visible: an expanded entry is a tall frame, and the ceiling
+  // it was sized at (`panelMaxRows`, half the terminal) no longer exists. Asserted as *current* behaviour, so
+  // the day the height joins the key this case fails and says so.
+  const SHORT = 10;
+  const compact = {
+    ...pin(1, `${"decide ".repeat(20)}lands here`, "info", { createdAt: NOW }),
+    compact: true,
+    options: ["Passed on", "Not yet"],
+  };
+  const drawn = componentAtBarOn(compact, 60);
+  const tall = drawn.c.render(44);
+  // The frame really is the expanded, tall one, and really is taller than the short terminal's ceiling: without
+  // both, the replay below would be a hit on a frame that needed no cutting and would prove nothing.
+  expect(tall.filter((row) => row.includes("decide")).length).toBeGreaterThan(1);
+  expect(tall.length).toBeGreaterThan(ceilingOf(SHORT));
+  // …and a request that changes nothing is a hit, so the replay below is the resize's and not a cache that
+  // never answers.
+  expect(drawn.c.render(44)).toBe(tall);
+  // The resize: the terminal shrinks, pi-tui re-resolves the overlay, and the width it hands `render()` is
+  // the same 44. Nothing else about the panel moved.
+  (drawn.tui as unknown as { terminal: { rows: number } }).terminal.rows = SHORT;
+  expect(drawn.c.render(44)).toBe(tall);
+  // …and `update()` — the cache's other entry point, the one `refresh()` calls on every frame — does not
+  // notice either: its candidate asks the same `sameFrame` question, and a height is not in it to compare.
+  drawn.c.update();
+  expect(drawn.c.render(44)).toBe(tall);
+  // What the frame *would* be if it were drawn at the height now on screen: the same wrap cut to the short
+  // terminal's ceiling, so the replayed frame is the taller of the two — a box the overlay clips.
+  const fresh = componentAtBarOn(compact, SHORT).c.render(44);
+  expect(fresh).toHaveLength(ceilingOf(SHORT));
+  // The replay is a stale *height*, not a stale panel: same pins, same bar, same wrap — only the box the
+  // rows were cut to is the one the old terminal afforded.
+  expect(tall.slice(0, fresh.length - 1)).toEqual(fresh.slice(0, fresh.length - 1));
 });

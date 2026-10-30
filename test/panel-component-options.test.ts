@@ -16,6 +16,9 @@ import { expect, test } from "bun:test";
 import { PanelComponent } from "../src/panel-component.ts";
 import { panelLayoutSections } from "../src/panel-frame-layout.ts";
 import { panelSections } from "../src/panel-sections.ts";
+import { MAX_OPTIONS } from "../src/pin-fields.ts";
+import type { ViewPin } from "../src/types.ts";
+import { LATER } from "./fixtures.ts";
 import { createOverlayHandle } from "./harness.ts";
 import { host, pins, style, withOptions } from "./panel-component-host.ts";
 import { HOSTILE_KEY_INPUTS } from "./panel-hostile.ts";
@@ -81,9 +84,18 @@ test("the keys still address the pin under the bar when its own rows wrap", () =
   // is last and the bar's target after one `j` is id 2.
   const drawn = c.pins.map((pin) => pin.id);
   expect(drawn).toEqual([3, 2, 1]);
-  const wrapped = panelLayoutSections(panelSections([long]), 40, undefined, 0, style).owned.filter(
-    (entry) => entry.pin === 0,
-  ).length;
+  const wrapped = panelLayoutSections(
+    panelSections([long]),
+    40,
+    undefined,
+    0,
+    style,
+    // The instant the rows are aged at is not what this counts, but it is no longer defaulted: the table a
+    // frame is cut from is stamped at one named instant (`panel-rows.ts`).
+    LATER,
+    // No expansion to measure: this is a plain wrapping pin, and the layout takes the signal explicitly.
+    undefined,
+  ).owned.filter((entry) => entry.pin === 0).length;
   // The pin that owns many rows is still one bar position: `j` from it lands on the *next pin*, not on its
   // second row — otherwise the digit below would answer a row rather than a pin.
   expect(wrapped).toBeGreaterThan(2);
@@ -150,4 +162,55 @@ test("a digit whose host throws is contained, and the panel does not stay focuse
   expect(() => c.handleInput("1")).not.toThrow();
   expect(c.isFocused()).toBe(false);
   expect(state.unfocusCalls).toBe(1);
+});
+
+test("a digit answers an expanded compact pin exactly as it answers a plain one", () => {
+  // The point of the expansion is that the options a collapsed pin hides become answerable: the same digits
+  // `1`..`MAX_OPTIONS` (`pin-fields.ts`), the same marker, the same release of the focus. Nothing about the
+  // digit path reads `compact` — it addresses `pins[selection]` by position — so the assertion is that the
+  // *expanded* pin behaves byte-for-byte like the non-compact one drawn at the same coordinate, rather than
+  // about a digit path that learned a new flag.
+  const OPTIONS = ["Passed on", "Not yet", "Escalated", "Deferred"];
+  const view = (compact: boolean): ViewPin[] => [
+    { ...withOptions(1, `${"decide ".repeat(20)}keep provider A`, OPTIONS), compact },
+  ];
+  const answer = (compact: boolean, digit: string) => {
+    const h = host(view(compact));
+    const c = new PanelComponent(h.stub, h.tui);
+    const handle = createOverlayHandle();
+    handle.unfocus();
+    c.setHandle(handle);
+    c.focus();
+    c.handleInput(digit);
+    return { replies: h.state.replies, answers: h.state.answers, focused: c.isFocused() };
+  };
+  // Every digit a pin may carry — `MAX_OPTIONS` is the bound the keys and the row share — fills the draft with
+  // its own option, for the compact pin and the plain one alike.
+  for (let digit = 1; digit <= MAX_OPTIONS; digit++) {
+    const expanded = answer(true, String(digit));
+    expect(expanded.replies).toEqual([1]);
+    expect(expanded.answers).toEqual([OPTIONS[digit - 1]]);
+    expect(expanded.focused).toBe(false);
+    expect(answer(false, String(digit))).toEqual(expanded);
+  }
+  // `0` and a digit past the list stay inert — no draft write, no unfocus — the same rule the panel already
+  // obeys for a plain pin, which the expansion inherits rather than reimplements.
+  const inert = (compact: boolean, digit: string) => {
+    const h = host(view(compact));
+    const c = new PanelComponent(h.stub, h.tui);
+    const handle = createOverlayHandle();
+    handle.unfocus();
+    c.setHandle(handle);
+    c.focus();
+    c.handleInput(digit);
+    return {
+      replies: h.state.replies.length,
+      answers: h.state.answers.length,
+      focused: c.isFocused(),
+    };
+  };
+  for (const digit of ["0", String(MAX_OPTIONS + 1)]) {
+    expect(inert(true, digit)).toEqual({ replies: 0, answers: 0, focused: true });
+    expect(inert(false, digit)).toEqual({ replies: 0, answers: 0, focused: true });
+  }
 });

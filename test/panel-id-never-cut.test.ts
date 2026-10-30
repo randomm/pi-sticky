@@ -202,6 +202,8 @@ test("the row table itself keeps the id on the first row and the age below it", 
       widestMetaColumns([at(777, "")], style.dim, LATER),
       innerAt(textWidth),
       LATER,
+      // Rows built outside a frame: no bar, so no expansion.
+      undefined,
     );
     // The degenerate frame has no second row, so its one row carries the whole tail; every other width
     // gives the age a line of its own, and the first row's tail is then the id alone — unless the frame is

@@ -17,7 +17,7 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { panelWindowOffset } from "../src/panel-frame-layout.ts";
-import type { PanelOwned } from "../src/panel-frame-layout.ts";
+import type { PanelOwned } from "../src/panel-row-owner.ts";
 import { panelContentRows } from "../src/panel-rows.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
@@ -233,4 +233,28 @@ test("the walk up reaches the heading over a pin that is not its section's first
   // And a heading the walk would have to leave the top of the table to reach is not a heading this window can
   // open on: at `start` of 0 the walk has nothing above the pin at all.
   expect(panelWindowOffset(2, 0, table(owners), 0)).toBe(0);
+});
+
+test("an expanded compact pin is counted by its rows, so the heading loses when they cannot share", () => {
+  // The offset already keeps a section's heading only while it and *every* row of the selected pin fit. That
+  // rule was nearly vacuous while a compact pin owned one row; expansion is what makes it bite. The tables are
+  // synthetic so the budget is a number this file names — the frame-level twin of each case is in
+  // `panel-compact-expand-frame.test.ts`.
+  // The bar on the pin directly under its heading, whose entry the wrap grew from one row to three.
+  const entry = table([null, 0, 0, 0, 1, 1, 2]);
+  // Heading + three rows is exactly a four-row window: the label is kept and the window opens on it.
+  expect(panelWindowOffset(4, 0, entry, 1), "heading + expanded entry = 4-row window").toBe(0);
+  // One row short, and the label is the thing that goes — the pin's own rows are never the cost.
+  expect(panelWindowOffset(3, 0, entry, 1), "three rows of the pin alone: no heading").toBe(1);
+  // Collapsed, the same pin is one row, so a two-row window holds it *and* its heading: the budget at which a
+  // pin keeps its label moves with the bar, which is the whole point of expanding only under it.
+  expect(panelWindowOffset(2, 0, table([null, 0, 1, 1, 2]), 1), "collapsed: heading + 1 row").toBe(
+    0,
+  );
+  // …and a one-row window cannot hold both, whatever the flag — the rule did not change shape, only the count
+  // of rows it is asked to fit.
+  expect(
+    panelWindowOffset(1, 0, table([null, 0, 1, 1, 2]), 1),
+    "collapsed, one row: the pin wins",
+  ).toBe(1);
 });

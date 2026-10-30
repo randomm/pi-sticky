@@ -26,7 +26,8 @@ import type { ViewPin } from "../src/types.ts";
  *
  * `at` returns a row-table argument list so a caller spreads it into `panelPinRows` and cannot reorder the two
  * figures — which is the risk of positional figures at all, and the reason the spread form below is the one the
- * suite's own call sites use.
+ * suite's own call sites use. The trailing `now` is the instant the ages are stamped at and the `undefined` the
+ * expansion signal these callers never have: they build rows outside a frame, so both are named.
  */
 export function frameAt(pin: ViewPin, textWidth: number, style: PanelStyle, now: string) {
   const metaColumns = widestMetaColumns([pin], style.dim, now);
@@ -34,7 +35,8 @@ export function frameAt(pin: ViewPin, textWidth: number, style: PanelStyle, now:
 }
 
 /**
- * `frameAt`'s two figures in the order `panelPinRows` takes them, for a caller that has already named its pin.
+ * `frameAt`'s two figures in the order `panelPinRows` takes them, beside the age instant and the no-frame
+ * expansion signal, for a caller that has already named its pin.
  *
  * The one-call guard against the transpose the header names: a test writes
  * `panelPinRows(pin, tw, style, ...figuresOf(pin, tw, style, now))` and the two same-typed figures arrive in the
@@ -45,9 +47,9 @@ export function figuresOf(
   textWidth: number,
   style: PanelStyle,
   now: string,
-): readonly [number, number] {
+): [number, number, string, undefined] {
   const { metaColumns, inner } = frameAt(pin, textWidth, style, now);
-  return [metaColumns, inner] as const;
+  return [metaColumns, inner, now, undefined];
 }
 
 /**

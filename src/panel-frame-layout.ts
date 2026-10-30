@@ -4,11 +4,19 @@
  * `panelLayoutSections` is the one place a frame's rows are built, so the table `buildPanelLines` draws *is*
  * the table the frame's height was counted from — a pin is wrapped once per frame, and a caller cannot ask
  * for one frame and draw another. It is also the one place the frame is *grouped*: the caller hands over the
- * sections `panelSections` produced — one grouping per frame — and the layout carries that same `order` back
- * out on the layout it returns, which is the only copy the frame's title reads. Ranking and sectioning both
- * happen in `panel-sections.ts`; this module consumes its answer and never asks the question again.
+ * sections `panelSections` produced — one grouping per frame — and the layout carries that same `order`
+ * back out on the layout it returns, which is the only copy the frame's title reads. Ranking and sectioning
+ * both happen in `panel-sections.ts`; this module consumes its answer and never asks the question again.
  *
- * Two coordinates run through this file and only one of them is the caller's. `selection` is the pin's
+ * The rows are counted *after* the expansion has been decided: a `compact` pin owns its full entry while it
+ * is the pin the bar is on in a frame that takes keys, and one cut row otherwise — the rule U13 once denied.
+ * The frame hands this module the answer (`OpenFrame.expanded`, `panel-component-open.ts`), an index in the
+ * same selection coordinate as `selection` or `undefined`, and this function expands exactly the pin that
+ * index names — never a pin re-read off `selection` here, which is how a hand-built frame came to grow one
+ * entry while its bar was drawn over another. The predicate that decided it is `expandedPinOf`
+ * (`panel-expand.ts`); the peek, the rail and every caller outside a frame hand nothing.
+ *
+ * Two coordinates run through this module and only one of them is the caller's. `selection` is the pin's
  * position in the flattened drawn order (`panelSections`'s `flat`), which is what the keys, the bar's clamp,
  * `d` and `Enter` index; the *table position* of a row is what the window scrolls by and what the bar is
  * drawn on. They are the same numbering until a heading appears: a section heading owns a row and no pin, so
@@ -16,27 +24,19 @@
  * of the table therefore carries both — `pin` for the first, its index in the array for the second — and
  * `null` in `pin` is what makes a heading impossible to select, scroll onto, dismiss or answer.
  *
- * The rows themselves — what one pin's text turns into at a given width — are `panel-rows.ts`; the strings
- * a heading prints are `panel-section-headings.ts`; the columns are `panel-frame-geometry.ts`. This module
- * assembles the three and owns the height, and nothing here draws a glyph or colours a byte.
+ * The rows themselves — what one pin's text turns into at a given width — are `panel-rows.ts`; the window rule
+ * that cuts them is `panelWindowOffset`, below, and the table's assembly is `panel-frame-table.ts`; the strings
+ * a heading prints are `panel-section-headings.ts`; the columns are `panel-frame-geometry.ts`. Nothing here
+ * draws a glyph or colours a byte.
  */
 import { headingColumns, panelTextColumns, widestMetaColumns } from "./panel-frame-geometry.ts";
+import { panelOwnedRows } from "./panel-frame-table.ts";
 import { panelFrameRows } from "./panel-height.ts";
-import type { PanelRow } from "./panel-row.ts";
-import { panelPinRows } from "./panel-rows.ts";
-import { headingCell, headingRow } from "./panel-section-headings.ts";
-import { hasHeadings } from "./panel-sections.ts";
-import type { PanelSection, PanelSections } from "./panel-sections.ts";
+import type { PanelLayout, PanelOwned } from "./panel-row-owner.ts";
+import type { PanelSections } from "./panel-sections.ts";
 import { GUTTER_COLUMNS } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
-import type { ViewPin } from "./types.ts";
-
-/**
- * The instant an age is measured against when the caller has none: `new Date()` at the moment the table is
- * built, which is what the rows themselves answer with when their own `now` is left out.
- */
-const atOnce = (): string => new Date().toISOString();
 
 /** Rows of the table the pin at `index` owns; zero when the table tags no row with it. */
 function countRowsOf(all: readonly PanelOwned[], index: number): number {
@@ -100,118 +100,6 @@ export function panelWindowOffset(
 }
 
 /**
- * The pin a row of the table belongs to, or `null` for a row that belongs to no pin: the heading over a
- * level section. `null` rather than an out-of-range sentinel, because "no pin" is what a heading is and an
- * index of `-1` would be a pin number one before the first — which `panelRowStartOf` reads as "no such pin",
- * and a heading must not be answerable at all.
- */
-export type RowOwner = number | null;
-
-/**
- * One drawn row together with the *pin* that owns it (or nothing, for a heading), as the window needs it.
- *
- * Two coordinates meet on this one entry and neither is redundant. `pin` is the **selection** coordinate —
- * the pin's position in the flattened drawn order (`panelSections`'s `flat`), which is what the keys, `d`,
- * `Enter` and the bar's clamp index. The entry's *position in the table* is the **row** coordinate — what
- * the window scrolls by and what the bar is drawn on. A heading owns a row and no pin, and a pin that wraps
- * owns several rows and one pin, so the two come apart and only this pair holds both.
- */
-export interface PanelOwned {
-  row: PanelRow;
-  /** The pin this row belongs to, or `null` when the row is a section heading. */
-  pin: RowOwner;
-}
-
-/**
- * One frame's rows, the row the selection starts at, the rows the frame needs, and the sections the rows
- * were laid out from. Returned by `panelLayoutSections`, the one place the pins are wrapped for a frame.
- */
-export interface PanelLayout {
-  owned: PanelOwned[];
-  /** Table position of the selected pin's first row, or -1 when the selection names no pin. */
-  start: number;
-  height: number;
-  /**
-   * The very `PanelSections.order` the caller handed in, carried back out so the drawer prints its frame's
-   * counts off the grouping the rows were built from rather than asking the pins again — a second grouping
-   * is a second answer to the same question, and one value in and back out is what makes a title that
-   * disagrees with its headings unrepresentable rather than merely unlikely.
-   */
-  sections: readonly PanelSection[];
-}
-
-/**
- * A pin's rows, in order, each tagged with the *position* `offset` numbers it at — the owner stamped on the
- * row as it is built, which is the only way the question stays answerable. `offset` is where the section
- * starts in the flattened drawn order, so the tag is the index the selection, the bar and the keys use
- * rather than one each section numbers from zero and someone has to translate.
- */
-function panelPinRowOwners(
-  pins: readonly ViewPin[],
-  textWidth: number,
-  style: PanelStyle,
-  now: string,
-  metaColumns: number,
-  offset: number,
-  inner: number,
-): PanelOwned[] {
-  const owned: PanelOwned[] = [];
-  for (const [index, pin] of pins.entries()) {
-    for (const row of panelPinRows(pin, textWidth, style, metaColumns, inner, now))
-      owned.push({ row, pin: offset + index });
-  }
-  return owned;
-}
-
-/**
- * The whole table: every section's heading row followed by the rows of its pins, each row tagged by the pin
- * it belongs to and a heading tagged by none.
- *
- * Headings are inserted between the sections *after* their pin rows are built, because a heading owns a row
- * and not a slot: the pin tags are numbered over the flattened pins alone, so adding a heading row never
- * moves the index the bar, `d` and `Enter` address, while the row count the window scrolls by does include
- * it. A view with **nothing to head** takes the shortcut at the top and is built as one run of pins, which is
- * what keeps a one-panel frame byte-for-byte what it was before sections existed (operator resolution 1).
- */
-function panelOwnedRows(
-  sections: PanelSections,
-  textWidth: number,
-  headingWidth: number,
-  style: PanelStyle,
-  now: string,
-  metaColumns: number,
-  inner: number,
-): PanelOwned[] {
-  if (!hasHeadings(sections.order)) {
-    return panelPinRowOwners(sections.flat, textWidth, style, now, metaColumns, 0, inner);
-  }
-  // The offset is *running*, not looked up: `panelSections` builds `flat` by flattening `order`, so the pins
-  // of the sections walked in order are the pins of `flat` read in order, and adding each section's length
-  // as the walk goes answers the same number an `indexOf` into `flat` would — without re-searching the
-  // flattened list once per section. A heading costs a row and no slot, so it never advances the offset.
-  const owned: PanelOwned[] = [];
-  let offset = 0;
-  for (const section of sections.order) {
-    // A level whose every pin carries a group is a *counting* section: it exists so the frame's title can
-    // count that level, and it holds no pins, owns no rows and prints no heading — a heading over nothing
-    // would be a blank row the window scrolls through and the bar could be parked on. The pins of its level
-    // are drawn by the group sections beside it, which is exactly why this one holds none: a section that
-    // held them too would draw them twice and give `d` two copies to dismiss.
-    if (section.pins.length > 0) {
-      owned.push({
-        row: { text: headingCell(headingRow(section), headingWidth, style), tail: "" },
-        pin: null,
-      });
-    }
-    owned.push(
-      ...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset, inner),
-    );
-    offset += section.pins.length;
-  }
-  return owned;
-}
-
-/**
  * Table position of the pin at `index`, or -1 when there is no such pin, from the owner stamped on each row
  * of the table: the window starts at the first row the builder attributed to that pin, so a pin that owns
  * several rows is scrolled as a whole rather than opening mid-entry. A heading owns no index, so the search
@@ -248,6 +136,12 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  * `now` is the instant every age in the table is measured against; the component passes the extension's
  * clock so a minute's passage re-ages the frame.
  *
+ * `expanded` is the **selection** coordinate of the one `compact` pin whose entry the frame grows, or
+ * `undefined` to expand nothing. Resolved once by `expandedPinOf` (`panel-expand.ts`) from the mode, the
+ * key gate, the focus, the drawn pins and the bar, and handed here by the frame that was built from it — so
+ * the row table cannot grow a pin the drawer's bar is not on, and the cache's term and this layout are the
+ * same number rather than two readings of `selection`.
+ *
  * This is the *only* owner of a frame's height: `height` is the row count the frame draws, counted from
  * `owned` and the terminal the caller was given (`tui.terminal.rows`, or `undefined` when none can be
  * asked, which `panelMaxRows` answers with its fallback). `buildPanelLines` draws the `height` it is handed
@@ -265,8 +159,17 @@ export function panelLayoutSections(
   terminalRows: number | undefined,
   selection: number,
   style: PanelStyle,
-  now: string = atOnce(),
+  now: string,
+  /** The selection coordinate of the compact pin to expand, from `expandedPinOf`; `undefined` expands none. */
+  expanded: number | undefined,
 ): PanelLayout {
+  // The expansion is read from the caller's number and never re-derived from `selection`: the predicate that
+  // decided it lives in `expandedPinOf` (`panel-expand.ts`), and a layout that re-ran it here — or resolved the
+  // pin from `selection` and the focus, as this function used to — would be a second answer to a question the
+  // frame has already settled, which is precisely the disagreement the cache could not see. The pin handed to
+  // the table is therefore the one the caller named, and only when its index is the bar's own.
+  const grown =
+    expanded === undefined || expanded !== selection ? undefined : sections.flat[expanded];
   // The reserve is measured once, before the wrap, and handed to the rows: the same figure decides how many
   // text columns the pins get and whether a pin's `#<id> <age>` fits beside its id. Measuring it twice, or
   // letting the rows measure their own, is how a frame came to charge the text for one tail and draw another.
@@ -285,6 +188,7 @@ export function panelLayoutSections(
     // caller named. `frameWidth - GUTTER_COLUMNS` is the same subtraction `buildPanelLines` makes before it
     // draws — the corners sit outside the row, the gutters and their spaces are the four columns inside them.
     frameWidth - GUTTER_COLUMNS,
+    grown,
   );
   // As tall as the rows it draws, never past the terminal's half: `panelFrameRows` puts the two border rows
   // over `owned` and cuts the result to the ceiling, which is the only reason a frame is ever shorter than

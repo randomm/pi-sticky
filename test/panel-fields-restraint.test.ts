@@ -119,3 +119,23 @@ test("a field-only change still repaints the panel, because its cache keys on th
   );
   expect(after.flat[0]?.group).toBe("Now");
 });
+
+test("a wrapping compact pin stays one line in the rail, where no bar can rest on it", () => {
+  // #63's other half, asserted on the second surface with no bar: the expansion belongs to the open frame, so
+  // the rail — which has no selection, no focus and no keys at all — draws a compact pin exactly as it draws
+  // the same pin without the flag. The text is long enough that a rail which *honoured* the expansion would
+  // have to draw several lines, and the promise below is that it draws the same strip byte for byte.
+  const long = (compact?: boolean): ViewPin => ({
+    ...levelPin(1, `${"note ".repeat(40)}keep provider A`, "info"),
+    options: ["Passed on", "Not yet"],
+    ...(compact === undefined ? {} : { compact }),
+  });
+  const expanded = railOf(long(true));
+  expect(expanded).toEqual(railOf(long()));
+  expect(expanded).toHaveLength(2); // the header and one pin line
+  // The rail shows neither the options nor the tail of the text it was handed: a strip the user glances past
+  // is not the surface that reads a long pin.
+  const joined = expanded.join("\n");
+  expect(joined).not.toContain("Passed on");
+  expect(joined).not.toContain("keep provider A");
+});

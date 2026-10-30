@@ -10,15 +10,24 @@
  * There is **one** way to build a frame and **one** way to compare two: `frameOf`
  * (`panel-frame-draw.ts`) spells both the memorised frame and the candidate `update()` compares against, and
  * `sameFrame` below answers both entry points of the cache. That is what the module header of
- * `panel-frame-draw.ts` calls the correctness of the cache — two callers, one field list — and it is a
- * compiler-level guarantee now rather than a prose rule two hand-written field lists can drift away from.
+ * `panel-frame-draw.ts` calls the correctness of the cache — two callers, one field list. It is a
+ * compiler-level guarantee for the *field list*: a member added to the key is one edit in `frameOf` and cannot
+ * be left out of either caller. It is **not** a guarantee about a term's *value* — no type can say that a term
+ * agrees with the drawing rule that produced it. That agreement is a property of the producer, and each term
+ * names where its producer is: the bar and the focus are the component's state, read by the caller that also
+ * draws them, and the expansion is `expandedPinOf` (`panel-expand.ts`), the one predicate the layout, the
+ * drawer and both cache entry points call.
  *
  * The rule the key obeys: every member is something the drawn bytes depend on, and nothing is in it that
  * the drawn bytes do not. That is why `ageNow` is a minute bucket and not an instant (pi-tui asks more
  * often than a minute, and an age changes no faster), why `pins` is the drawn-order array's *identity* and
  * not its contents (`commit`/`reconstruct` publish a fresh array for every change and none without one), and
  * why `replyHint` is in it at all (the operator can rebind the focus key, and the resting border prints
- * what that key is called).
+ * what that key is called). `expanded` is the one member whose value is *computed* rather than read, and it
+ * sits with the terms it is computed from rather than instead of them: `expandedPinOf` (`panel-expand.ts`) is
+ * a pure function of `pins`, `mode`, `keys`, `focused` and `selection`, so the term records the answer the
+ * drawn frame's own row table was built around — it closes no case the members above miss, and its member doc
+ * states what it does guarantee.
  */
 import type { PanelMode } from "./panel-mode.ts";
 import { panelSections } from "./panel-sections.ts";
@@ -48,6 +57,23 @@ export interface PanelFrame {
   selection: number;
   /** Focus decides the bar, the hint and which border colour is asked for. */
   focused: boolean;
+  /**
+   * Which pin's entry this frame's row table expanded: the bar's **selection** coordinate when the pin
+   * `selection` names is `compact` and the frame is an open one that takes keys, and `undefined` when it
+   * expanded nothing — `expandedPinOf` (`panel-expand.ts`) answers it once per frame, and both cache entry
+   * points hand it to `frameOf` rather than re-deriving it.
+   *
+   * What it guarantees, stated plainly: the memorised frame **carries the number its own row table was built
+   * around**, so the frame and the table it drew cannot name two different expansions. It closes **no** case
+   * the other terms miss — `expandedPinOf` is a pure function of `pins`, `mode`, `keys`, `focused` and
+   * `selection`, all of which are in the key, so a state whose expansion differs from a cached frame's has
+   * already differed in one of them. The term is therefore defence-in-depth, and what it defends against is a
+   * *producer* whose term disagrees with its own fields: a `frameOf` caller handed the term of another frame,
+   * or a candidate that re-derived the rule instead of asking the predicate. Storing the index rather than a
+   * boolean also names *which* entry grew, which is what the layout was handed, so a frame cannot memorise one
+   * pin's expansion and claim another's.
+   */
+  expanded: number | undefined;
   /**
    * Which of the three states the frame was drawn for — hidden, the three-row peek, or the open panel.
    *
@@ -97,6 +123,7 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
     frame.pins === candidate.pins &&
     frame.selection === candidate.selection &&
     frame.focused === candidate.focused &&
+    frame.expanded === candidate.expanded &&
     frame.replyHint === candidate.replyHint &&
     frame.mode === candidate.mode &&
     frame.keys === candidate.keys &&

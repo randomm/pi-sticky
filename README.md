@@ -167,9 +167,16 @@ still yours:
   so a label you can read is a label you can answer. Each row is counted in the window, the bar and the keys
   before it is drawn, which is why an option that will not close inside its column is dropped rather than
   wrapped: a row the table did not count is a row `d` and `Enter` would be one out on.
-- **`compact`** asks for the pin to occupy one row instead of several: its text is cut rather than wrapped.
-  Use it for a pin whose text is a formality and whose `#id` is the thing you will act on. There is no key to
-  expand it back: the row the bar sits on has to be a row the panel counted before the bar moved there.
+- **`compact`** asks for the pin's *text* to occupy one row instead of several: it is cut rather than wrapped.
+  Use it for a pin whose text is a formality and whose `#id` is the thing you will act on. It is not a way to
+  hide the text, and it never hides an answer: in the open panel the pin's `options` rows are drawn whether or
+  not the bar is on it, and once the panel has focus `1`–`4` answer them the way they answer any other pin's.
+  What the bar adds is the text's own rows: move the bar onto the pin (the arrows or `j`/`k` in the focused
+  panel) and it draws its whole wrapped text, exactly as a pin without the flag would, and collapses again when
+  the bar moves off. The row the bar sits on is still a row the panel counted for that frame: it is the frame
+  that expands the pin it is drawing — one expansion, decided once per frame and read by the drawer, the scroll
+  window and the frame cache alike — so the bar, `d`, `Enter` and the digits always index the rows on screen.
+  Only the open panel that takes keys expands: an unfocused panel, a peek and the rail never do.
 
 The peek shows neither group nor options and is always one line; the rail shows neither group nor options,
 and `compact` changes nothing about it. `/pins` lists the group after the level and puts the options on their
@@ -483,7 +490,9 @@ whatever pi you have installed. Requires bun `>=1.2.20`.
 Manual acceptance lives in the three sections above — **"The panel"**, **"The rail"** and
 **"Replying to a pin"**: at ≥ 100 columns check the panel, below 100 check the rail, focus it with the
 focus key, reply with `Re #<id>:`, exercise `/pins` and `/unpin`, and check that the pins survive
-`/reload`.
+`/reload`. With the panel focused, move the bar onto a `compact` pin and check that it draws its whole
+wrapped text, and that its option rows are on screen with the bar both on and off it (`1`–`4` fill the editor
+with one of them either way) — moving the bar off it cuts the text back to its single row and keeps those rows.
 
 ## Development and contributing
 
