@@ -27,6 +27,10 @@ function at(
 ) {
   const h = host(pins(...texts));
   h.stub.mode = () => mode;
+  // The key gate reads `interactiveOpen`, not the frame, so this file's lever moves both: the frame the host
+  // reports and whether that open takes keys. A case that wants them to disagree — an open the cell still
+  // reports after its ending — overwrites `interactiveOpen` itself.
+  h.stub.interactiveOpen = () => mode === "open";
   // Replaced on the stub *before* the component is built: the component keeps the host object and reads its
   // members off it, so a case that wants one to throw patches this, not the `state` it records into.
   Object.assign(h.stub, overrides);

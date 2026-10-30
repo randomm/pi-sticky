@@ -1,5 +1,6 @@
 import type { PanelDeps } from "./panel-deps.ts";
 import { railStamp } from "./panel-geometry.ts";
+import type { PanelMode } from "./panel-mode.ts";
 /**
  * The rail's install guard: the one cache between "the answer may have changed" and the expensive
  * `setExtensionWidget` call.
@@ -37,6 +38,20 @@ import { railStamp } from "./panel-geometry.ts";
  * print — and a minute that did not move costs a comparison, exactly as a frame that changed nothing does.
  */
 
+/**
+ * The frame term of the guard's key: the cell's own name for the two frames that own the pins, and `"none"`
+ * for the frame in which the rail owes the user its strip. Named rather than left as `string` so a mode the
+ * guard has no name for is a compile error at the switch below, not a silent `"none"`.
+ */
+export type RailFrame = Extract<PanelMode, "open" | "peek"> | "none";
+
+/**
+ * The deps the rail path reads: the pins it stamps, the frame it would draw, and the clock the handoff
+ * falls back to when no draw has reported a minute. Narrower than `PanelDeps` on purpose — see
+ * `RailGuard.consider` for the first two and `RailWiring` in `panel-rail-handoff.ts` for the third.
+ */
+export type RailDeps = Pick<PanelDeps, "getView" | "panelMode" | "now">;
+
 export class RailGuard {
   /** The last answer the rail was installed for, or `undefined` when nothing is installed. */
   #key: string | undefined;
@@ -67,7 +82,9 @@ export class RailGuard {
    * invite the caller to pick the wrong one, one verb with a flag cannot be picked wrongly.
    */
   consider(
-    deps: PanelDeps,
+    // The members the key is spelled from, and nothing more (`RailDeps`): a wider parameter would let this
+    // class reach for a fourth member without the caller having to know it exists.
+    deps: RailDeps,
     columns: number,
     redraw: () => void,
     open: boolean,
@@ -100,11 +117,14 @@ export class RailGuard {
    * beside this one. The cell answers for what the panel *would* draw and the verdict for whether it draws
    * anything at all; a frame name qualified by the verdict would make the key report one question twice.
    */
-  #frame(deps: PanelDeps): string {
+  /** The frame name the key spells: the cell's own, or the rail's strip for a panel that draws nothing. */
+  #frame(deps: RailDeps): RailFrame {
     const mode = deps.panelMode().mode();
     // Not a ternary on `"open"`: a cell between the two is a *resting* panel, and a name that called both an
     // `open` would let a hide-to-peek and a peek-to-hidden move the key identically — the two are not the same
     // answer, and the one that matters here is `none`, the frame in which the rail owes the user its strip.
+    // The union is the point: a fourth `PanelMode` would be a compile error here rather than a frame the
+    // guard silently stamps as `none` and never redraws for.
     return mode === "open" || mode === "peek" ? mode : "none";
   }
 

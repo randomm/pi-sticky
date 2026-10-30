@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG } from "../src/config.ts";
 /**
  * The shared opening for the two files that drive a pin into a booted panel.
  *
@@ -8,7 +9,7 @@
  * The width is always 120 columns. At a narrow terminal the rail is the only surface, and every assertion
  * these files makes about the auto-show would be about the width instead of about the auto-show.
  */
-import type { PinLevel } from "../src/types.ts";
+import type { PinLevel, StickyConfig } from "../src/types.ts";
 import { boot } from "./panel-lifecycle-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
 import type { StubApi } from "./wiring-stubs.ts";
@@ -25,8 +26,9 @@ export type Execute = (
 export const toolOf = (stub: StubApi): { execute: Execute } =>
   stub.tools[0] as { execute: Execute };
 
-/** A booted extension at a width the panel can be drawn at. */
-export const bootWide = () => boot([], 120);
+/** A booted extension at a width the panel can be drawn at, resting where `config` says. */
+export const bootWide = (config?: Partial<StickyConfig>) =>
+  boot([], 120, {}, config ? { ...DEFAULT_CONFIG, ...config } : DEFAULT_CONFIG);
 
 /** Pin `text` at `level` through the tool, the way pi calls it. */
 async function pin(booted: Booted, id: string, text: string, level: PinLevel): Promise<void> {
@@ -40,16 +42,16 @@ async function pin(booted: Booted, id: string, text: string, level: PinLevel): P
 }
 
 /** A hidden panel with a warning on screen — the state an auto-show has just produced. */
-export async function blocked(text = "Deploy is blocked") {
-  const booted = await bootWide();
+export async function blocked(text = "Deploy is blocked", config?: Partial<StickyConfig>) {
+  const booted = await bootWide(config);
   await booted.stub.commands.get("pins")?.handler("hide", booted.ctx);
   await pin(booted, "c1", text, "warning");
   return { ...booted, tool: toolOf(booted.stub) };
 }
 
 /** A hidden panel with an `action` on screen: open, but for the verb that needs a pin to refuse nothing. */
-export async function blockedAction(text: string) {
-  const booted = await bootWide();
+export async function blockedAction(text: string, config?: Partial<StickyConfig>) {
+  const booted = await bootWide(config);
   await booted.stub.commands.get("pins")?.handler("hide", booted.ctx);
   await pin(booted, "c1", text, "action");
   return booted;

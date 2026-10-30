@@ -71,6 +71,7 @@ export function openPanelOverlay(
         // The cell itself, read at *call* time: the component is the only thing that knows the peek and the
         // open frames are different sizes, and the cell is the extension's, not the component's.
         mode: () => wiring.deps.panelMode().mode(),
+        interactiveOpen: () => wiring.deps.panelMode().interactiveOpen(),
       }),
       panelCallOptions(hooks.visible, hooks.onHandle),
     )

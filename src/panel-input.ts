@@ -51,6 +51,12 @@ export interface PanelKeyHost {
    * so the drawing and the keys cannot disagree about one host.
    */
   mode(): PanelMode;
+  /**
+   * Whether the open takes keys. The gate below asks this and not `mode()`: the frame says what a shown
+   * panel draws, which under `PI_STICKY_PANEL=open` is the full panel even once the open has ended — and a
+   * `d` answered there dismisses a pin from a frame the user has already left.
+   */
+  interactiveOpen(): boolean;
   /** Record a dismissal of `id`; the host redraws, and the bar re-clamps. */
   dismiss(id: number): void;
   /**
@@ -72,7 +78,7 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
   // `hidden` and `peek` both end the interaction rather than act: in the first case the user cannot see the
   // panel at all, and in the second it is three rows with nothing for a key to address. Either way the focus
   // is where the user is not, and the editor is where they are.
-  if (!host.isVisible() || host.mode() === "peek") {
+  if (!host.isVisible() || !host.interactiveOpen()) {
     target.unfocus();
     return;
   }

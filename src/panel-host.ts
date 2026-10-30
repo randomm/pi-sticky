@@ -70,6 +70,13 @@ export interface PanelHost {
    * is the rule.
    */
   mode(): PanelMode;
+  /**
+   * Whether the panel is open *and* takes keys (`PanelModeState.interactiveOpen`). The key gate asks this
+   * rather than `mode()`, because the two are one answer only while a peek exists to separate them: under
+   * `PI_STICKY_PANEL=open` the frame is the full one even after the open that earned it has ended, and a
+   * gate on the frame alone would keep answering `d` and `Enter` to a panel the user has already left.
+   */
+  interactiveOpen(): boolean;
   /** Tell the user one line, on the surface the extension still has. */
   notify(message: string, type?: "info" | "warning" | "error"): void;
   /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. `answer` is the text of the

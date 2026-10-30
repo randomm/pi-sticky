@@ -17,8 +17,22 @@
  * can *ask* for but never draws, which is the same division `PanelWiring.redrawRail` already draws.
  */
 import { ageBucket } from "./panel-age.ts";
-import type { PanelWiring } from "./panel-deps.ts";
+import type { RailDeps } from "./panel-rail.ts";
 import { RailGuard } from "./panel-rail.ts";
+
+/**
+ * What the handoff reads of the extension: the deps (for the view, the frame, and the clock it falls back to
+ * when no draw has reported a minute) and the one callback that installs a rail.
+ *
+ * The half of `PanelWiring` (`panel-deps.ts`) this object's decision depends on, named so a caller is not
+ * asked for a theme or a width holder it will never be read for. `PanelOwner` holds the whole wiring and
+ * hands it straight through.
+ */
+export interface RailWiring {
+  deps: RailDeps;
+  /** Install or clear the rail; the guard calls it when the key moved. */
+  redrawRail(): void;
+}
 
 /**
  * The rail's install state, held for the owner that asks it to reconsider.
@@ -55,7 +69,7 @@ export interface RailHandoff {
    * then read one clock rather than two, which is the difference between a key that moves once a minute and
    * one that moves every frame.
    */
-  consider(wiring: PanelWiring, columns: number, open: boolean, ownsPins: () => boolean): void;
+  consider(wiring: RailWiring, columns: number, open: boolean, ownsPins: () => boolean): void;
 }
 
 /** The rail's handoff of one owner: a guard of its own, and no minute recorded yet. */
@@ -78,7 +92,7 @@ export function createRailHandoff(): RailHandoff {
   }
 
   function consider(
-    wiring: PanelWiring,
+    wiring: RailWiring,
     columns: number,
     open: boolean,
     ownsPins: () => boolean,

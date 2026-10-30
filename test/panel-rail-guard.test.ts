@@ -15,9 +15,10 @@
  */
 import { expect, test } from "bun:test";
 
-import type { PanelDeps } from "../src/panel-deps.ts";
 import type { PanelModeState } from "../src/panel-mode.ts";
+import type { RailWiring } from "../src/panel-rail-handoff.ts";
 import { createRailHandoff } from "../src/panel-rail-handoff.ts";
+import type { RailDeps as GuardDeps } from "../src/panel-rail.ts";
 import { RailGuard } from "../src/panel-rail.ts";
 import type { PinView } from "../src/types.ts";
 import { NOW, pin } from "./fixtures.ts";
@@ -26,18 +27,28 @@ import { PEEK, cell } from "./panel-rail-cells.ts";
 /**
  * The deps the guard reads: the view it stamps, and the frame the panel would draw.
  *
- * `panelMode` is the second of the two — the guard's frame term reads it (`panel-rail.ts`) — and it is a
- * *real* cell rather than a hand-built one, because the frame is a term this file's cases move: a stub that
- * answered one mode for every state would make the term constant and the case that pins it pass on nothing.
+ * Typed as the two members the guard and the handoff actually call, plus the clock, rather than as the whole
+ * of `PanelDeps` behind a cast: the cast was what let this file keep building after the guard grew a term
+ * (`interactiveOpen`) that a `{ getView, panelMode }` literal does not answer, and the only thing that
+ * surface needs is a compiler that complains. `now` is the handoff's, not the guard's — the one case below
+ * that drives `createRailHandoff` reads it, and the guard never does.
+ *
+ * `panelMode` is a *real* cell rather than a hand-built one, because the frame is a term this file's cases
+ * move: a stub that answered one mode for every state would make the term constant and the case that pins it
+ * pass on nothing.
  */
-function railDeps(state: { view: PinView; cell?: PanelModeState }): PanelDeps {
+/** The deps this file hands the guard: the two reads its key is spelled from, and the handoff's clock. */
+type RailDeps = GuardDeps;
+
+function railDeps(state: { view: PinView; cell?: PanelModeState; now?: string }): RailDeps {
   return {
     getView: () => state.view,
     // The frame the guard would stamp for a cell it was not given. The cases that do not move the frame hand
     // no cell, and this is the mode they are all written in — the open, the state in which a panel owns the
     // pins and the rail stands down.
     panelMode: () => state.cell ?? cell("open"),
-  } as unknown as PanelDeps;
+    now: () => state.now ?? NOW,
+  };
 }
 
 /**
@@ -254,15 +265,9 @@ test("the handoff adds one term the guard cannot see — the minute the draw rep
   // only thing that can answer.
   const state = { view: ONE() };
   const drawn: number[] = [];
-  const wiring = {
-    deps: railDeps(state) as unknown as Parameters<RailGuard["consider"]>[0] & {
-      now: () => string;
-    },
-    redrawRail: () => void drawn.push(1),
-  } as unknown as Parameters<ReturnType<typeof createRailHandoff>["consider"]>[0];
+  const wiring: RailWiring = { deps: railDeps(state), redrawRail: () => void drawn.push(1) };
   // One clock for both halves: the deps answer for a minute no draw has reported, and the draw reports the
   // instant *it* stamped at — a minute apart, so the two cases below cannot be confused for each other.
-  (wiring.deps as unknown as { now: () => string }).now = () => NOW;
   const LATER_ISO = "2027-01-01T00:00:00.000Z";
   const handoff = createRailHandoff();
   const consider = (open = true) => handoff.consider(wiring, 80, open, OWNS);

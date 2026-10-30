@@ -96,6 +96,11 @@ export interface PanelModeState {
   /** The mode the panel is in, read *now*. */
   mode(): PanelMode;
   /**
+   * Whether the panel is open *and* takes keys — the earned half of `mode()`, which is the question a
+   * keystroke asks. See the implementation: under `PI_STICKY_PANEL=open` the two come apart.
+   */
+  interactiveOpen(): boolean;
+  /**
    * Settle the *screen* to what the caller says it is: shown, or hidden.
    *
    * Reached by every user verb, every rebuild and every redraw, which is why it keeps an earned open standing
@@ -208,9 +213,16 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
    * that is what "never peek" means — a demote must not put an operator-configured panel into a state the
    * operator refused.
    */
+  /**
+   * Open *and* taking keys — the half of `mode()` that comes from an open the session earned. The other half
+   * is `resting`, and it is not interactive: `PI_STICKY_PANEL=open` says the full frame whether or not
+   * anything earned it, and a resting frame the operator asked for never took the keyboard to give back.
+   */
+  const interactiveOpen = (): boolean => shown && earned !== undefined;
+
   const mode = (): PanelMode => {
     if (!shown) return "hidden";
-    if (earned !== undefined || resting === "open") return "open";
+    if (interactiveOpen() || resting === "open") return "open";
     return "peek";
   };
 
@@ -232,6 +244,11 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
    * Both kinds clear `earned`, which is the whole of the transience: the open was the session's and now it
    * is not. What they differ about is the screen, and only the open the user reached for keeps it — see
    * `keepsOpen`. `resting` deliberately survives either way: it is the operator's, not the session's.
+   *
+   * Under `resting === "open"` the cleared provenance is *invisible* in `mode()`, which keeps answering the
+   * full frame from the resting mode alone. Nothing here compensates, and nothing should: `interactiveOpen`
+   * reads `earned` directly, so the ending is complete as far as the keyboard goes even though the frame the
+   * operator asked for stays.
    */
   function demote(): void {
     const kind = earned;
@@ -246,6 +263,7 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
     shown: () => shown,
     recorded: () => chosen,
     mode,
+    interactiveOpen,
     settle(next, recorded) {
       // The user's verb is the only thing that speaks for the user, so it is also the only thing that moves
       // the record. When a caller is restating the screen rather than speaking for the user — a rebuild
