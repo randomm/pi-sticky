@@ -124,6 +124,81 @@ describe("applyAction clamps a maxPins that is not a limit", () => {
   });
 });
 
+describe("the run board's own cardinality fits the default budget", () => {
+  // `sticky-run-board` and `sticky-noni` ask for exactly one `Now` pin and a capped `Backlog`, plus one
+  // plain `warning` for a blocker. That is the shape a model pins in good faith, so the reducer has to
+  // accept the whole board at `DEFAULT_CONFIG.maxPins` and refuse only the add past it. The card in the
+  // two skills is what keeps this true; `test/skills.test.ts` reads the card, this is the behaviour.
+  //
+  // Each pin carries distinct text: `findDuplicate` answers before the limit when text and level match,
+  // so a fixture of repeated rows would be testing the duplicate guard rather than the budget.
+  const board = (count: number, group: string, level: "info" | "warning", from: number) =>
+    Array.from({ length: count }, (_unused, i) => ({
+      op: "pin" as const,
+      text: `row ${group || "blocker"} ${from + i}`,
+      level,
+      source: "agent" as const,
+      now: NOW,
+      ...(group === "" ? {} : { group }),
+      compact: true,
+    }));
+
+  test("one Now, a capped Backlog and one warning all fit the default budget", () => {
+    let current = EMPTY_STATE;
+    const mint = uidSource();
+    const calls = [
+      ...board(1, "Now", "info", 0),
+      ...board(DEFAULT_CONFIG.maxPins - 2, "Backlog", "info", 1),
+      ...board(1, "", "warning", 100),
+    ];
+    expect(calls, "the board is exactly the budget").toHaveLength(DEFAULT_CONFIG.maxPins);
+    for (const call of calls) {
+      const result = applyAction(current, call, { maxPins: DEFAULT_CONFIG.maxPins, newUid: mint });
+      expect(result.ok, `pin ${call.text}`).toBe(true);
+      if (!result.ok) return;
+      current = result.state;
+    }
+    expect(current.pins).toHaveLength(DEFAULT_CONFIG.maxPins);
+
+    // The add past the board is refused with the budget named, which is what a 5-row Backlog produced
+    // when the skills said "at most 5" beside a Now pin: an overflowing row answered this refusal.
+    const overflow = applyAction(
+      current,
+      { op: "pin", text: "a 5th row", level: "info", source: "agent", now: NOW },
+      { maxPins: DEFAULT_CONFIG.maxPins, newUid: mint },
+    );
+    expect(overflow.ok).toBe(false);
+    if (overflow.ok) return;
+    expect(overflow.error).toBe(
+      `${DEFAULT_CONFIG.maxPins} pins are already shown, which is the limit. Update or unpin one first.`,
+    );
+  });
+
+  test("the board the skills used to state does not fit the default budget", () => {
+    // The regression in the other direction: 1 Now + 5 Backlog is one pin more than the budget holds,
+    // so the last Backlog row is refused. Pinning the card as *fits* without this case would let a
+    // card that overflows pass the test above by counting wrong.
+    let current = EMPTY_STATE;
+    const mint = uidSource();
+    for (const call of [
+      ...board(1, "Now", "info", 0),
+      ...board(DEFAULT_CONFIG.maxPins, "Backlog", "info", 1),
+    ]) {
+      const result = applyAction(current, call, { maxPins: DEFAULT_CONFIG.maxPins, newUid: mint });
+      if (!result.ok) {
+        expect(result.error).toContain(`${DEFAULT_CONFIG.maxPins} pins are already shown`);
+        return;
+      }
+      current = result.state;
+    }
+    // Reaching here means the overflowing board was accepted, so the budget no longer bites.
+    expect(current.pins, "the stale 5-row board overflows the budget").toHaveLength(
+      DEFAULT_CONFIG.maxPins,
+    );
+    expect(false, "the last row of the stale board must be refused").toBe(true);
+  });
+});
+
 describe("applyAction refuses to call a newUid that is not a function", () => {
   test("a newUid that is not a function mints from crypto rather than throwing", () => {
     // `limits.newUid` is typed `() => string`, but the tool passes no source at all and any caller

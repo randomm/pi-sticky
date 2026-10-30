@@ -19,8 +19,10 @@ tell the user which one is current - so before you pin a new one, `list` and upd
 
 ## Backlog
 
-`group: "Backlog"` pins are `compact: true` with short titles, and the group holds **at most 5** at a
-time: the next few items, not the whole plan.
+`group: "Backlog"` pins are `compact: true` with short titles: **three rows at the default budget of
+five; with a smaller `PI_STICKY_MAX_PINS`, drop Backlog rows from the bottom.** The board is one Now
+plus those three, which leaves one slot for a warning or a question; when both need it, the lowest-
+ranked Backlog row goes.
 
 If the project has a backlog file or a tracker, the board copies its top entries in its order - it is a
 window onto that list, not a second list. Rebuild the Backlog pins after every change to that source
