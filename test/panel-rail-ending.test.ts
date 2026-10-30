@@ -23,6 +23,10 @@ import { wiring } from "./panel-owner-wiring.ts";
  * An owner whose panel is *open*, reached through the focus key rather than a write to the cell: the key is
  * the user's way into the frame, and the ending this file drives is the one the frame gives back.
  *
+ * The wiring this runs on is configured `PI_STICKY_PANEL=open` (`panel-owner-wiring.ts`), so the frame is
+ * the full one before and after an ending that keeps it, and `panel-lifecycle-*.test.ts` are where the peek
+ * endings are driven instead.
+ *
  * `pins` is passed as an argument rather than assigned afterwards because it *is* part of the opening: the
  * cell clears an earned open the moment the panel goes out of sight, so a case that dismissed its pins later
  * would be driving a hidden panel, not the ending, and would assert on the wrong thing.
@@ -41,8 +45,8 @@ async function openOver(pins: ReturnType<typeof pin>[] = [pin(1, "Decide X")]) {
 test("leaving an open whose pins were dismissed installs the rail, though the verdict never moved", async () => {
   // The empty view is the opening, not a step of the test — see `openOver` for why. `isVisible()` answers
   // `false` for want of pins on both sides of the ending, so the guard's verdict term cannot see it coming:
-  // this is the shape the review's repro left the user in, the panel drawing nothing and the rail never
-  // asked back, with a full frame in between and no session boundary after it to correct the answer.
+  // the panel draws nothing and the rail is never asked back, with a full frame in between and no session
+  // boundary after it to correct the answer.
   const { h } = await openOver([]);
   expect(h.panelMode().mode()).toBe("open");
   expect(h.panel.isVisible()).toBe(false);
@@ -62,28 +66,26 @@ test("leaving an open whose pins were dismissed installs the rail, though the ve
   expect(h.railOwns.at(-1)).toBe(false);
 });
 
-test("an ending that leaves the panel drawn costs one install, not one per frame", async () => {
-  // The pair to the case above, and the cost side of the new term: a peek draws the pins, so the rail has to
-  // stay down and the guard must not reinstall a strip on every frame for a panel that only changed frame.
+test("an ending that leaves the panel drawn costs no install, and one that takes it out costs exactly one", async () => {
+  // The cost side of the frame term, on a panel the user had shown: an ending that changes neither the frame
+  // nor the ownership answer owes no install at all (that is the guard's cache keeping a per-frame
+  // `visible()` from reinstalling the widget every minute), and the one move that does change the answer —
+  // the panel going out of sight — owes exactly one, not one per frame.
   const { h } = await openOver();
   expect(h.panelMode().mode()).toBe("open");
   const before = h.railDraws.length;
 
-  // The focus key's own ending, on a panel the user had shown (`panel-owner-wiring.ts` runs the fixture's
-  // cell under `PI_STICKY_PANEL=open`, the never-peek configuration): the frame is the same frame before and
-  // after, the answer is the same answer, so no install is owed for it at all — the guard's cache is what
-  // keeps a per-frame `visible()` from reinstalling the widget 60 times a minute.
+  // The focus key's own ending, which under this configuration keeps the full frame: the frame is the frame
+  // before and after, the answer is the same answer, so nothing is owed for it.
   h.panel.component()?.unfocus();
   expect(h.panelMode().mode()).toBe("open");
   expect(h.panel.isVisible()).toBe(true);
   expect(h.railDraws.length).toBe(before);
 
-  // …and the move that *does* change the answer is exactly one install: the user's own hide, which takes the
-  // panel out of sight and the pins back to the rail. The frames after it are comparisons again.
-  // …and the boundary's ending, which is the move that leaves the panel drawn over pins nobody can read: the
-  // provenance-blind write added beside the interactive one. `endEarnedOpen` would have kept this frame
-  // standing — the focus key's own provenance, and the operator's decision — so the case below pins that and
-  // this one pins what happens once the frame is gone for good.
+  // …and the boundary's ending, the provenance-blind write beside the interactive one: the frame is gone for
+  // good, so the rail is owed. `endEarnedOpen` would have kept this frame standing, which is why the case
+  // above pins the interactive ending and this one pins what happens once the frame cannot come back. The
+  // frames after it are comparisons again.
   h.panelMode().forgetEarnedOpen();
   expect(h.panelMode().mode()).toBe("hidden");
   h.panel.refresh();

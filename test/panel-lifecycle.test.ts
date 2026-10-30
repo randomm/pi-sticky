@@ -163,11 +163,19 @@ test("session_shutdown forgets an open the focus key earned, frame and keyboard 
   stub.emit("session_shutdown", { reason: "quit" }, ctx);
   await flush();
 
-  // …and the component still holding the keyboard. The shutdown closure deliberately closes the overlay
-  // rather than ending the interaction pi is no longer routing keys through — pi's own `resetExtensionUI`
-  // drops the overlay, and the next `session_start` hands the user back the editor along with a fresh owner.
+  // …and the keyboard half of the frame. The shutdown closure closes the overlay rather than ending the
+  // interaction pi is no longer routing keys through — pi's own `resetExtensionUI` drops the overlay, and the
+  // next `session_start` hands the user back the editor along with a fresh owner — so the flag above is what
+  // says the interaction was left in the state a keeping ending would have left it: a component still holding
+  // the keyboard while its frame is gone.
   expect(cell.mode()).toBe("hidden");
   expect(cell.shown()).toBe(false);
+  // …and nothing is left standing that a later settle could draw: the boundary's write clears the provenance
+  // as well as the screen, so the `settle(true)` the next session's rebuild performs rests the panel in its
+  // configured frame instead of re-raising the dead session's. That is why this write needs no redraw of its
+  // own — see `forgetEarnedOpen`.
+  cell.settle(true);
+  expect(cell.mode()).toBe("peek");
 });
 
 test("the overlay is opened in tui mode only: rpc, print and json make no custom call at all", () => {

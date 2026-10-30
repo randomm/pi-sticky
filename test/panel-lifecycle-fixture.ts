@@ -228,8 +228,10 @@ export interface Booted {
    * The panel's mode cell: the object the extension runs on, which the overlay's `visible()`, the rail's
    * handoff and the component's choice of frame all read.
    *
-   * `autoOpen()` is the move an action pin's `redraw()` makes, and the honest way for a test to need the
-   * open frame: focusing a resting panel is not it — a peek hands a keystroke back to the editor.
+   * `autoOpen(kind)` is the move an action pin's `redraw()` makes (`"autoshow"`) and the one the focus key
+   * makes (`"focus"`), and either is the honest way for a test to need the open frame: focusing a resting
+   * panel is not it — a peek hands a keystroke back to the editor. The kind is not decoration; the two end
+   * differently (`EarnedKind`, `panel-mode.ts`).
    */
   panel: PanelModeState;
 }

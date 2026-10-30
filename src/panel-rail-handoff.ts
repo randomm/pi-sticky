@@ -12,7 +12,7 @@
  * demote that hands the pins back without moving the ownership verdict is a frame the rail has to answer for.
  *
  * This module is the seam between the two: it holds the guard, records the minute the draw reports, and
- * hands the guard the four terms of its key. It is its own file rather than lines of `PanelOwner` because
+ * hands the guard the five terms of its key. It is its own file rather than lines of `PanelOwner` because
  * the owner's job is the overlay — a record, an open call, a close — and the rail is the surface the owner
  * can *ask* for but never draws, which is the same division `PanelWiring.redrawRail` already draws.
  */

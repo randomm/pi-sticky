@@ -9,6 +9,9 @@
  *
  * The ending that hands the pins back is in `panel-rail-ending.test.ts`, which drives it through a whole
  * owner; what this file pins is the cache term that makes it visible at all.
+ *
+ * The key spells five terms — the width, the owner's ownership verdict, the frame the panel would draw,
+ * what the view draws, and the minute those rows were aged at — and the cases below move one at a time.
  */
 import { expect, test } from "bun:test";
 
@@ -101,8 +104,9 @@ test("a panel that is open asks for a draw once per distinct answer, and no more
   consider();
   expect(draws).toEqual(["draw"]);
 
-  // Each of the four things the key spells, moved one at a time: a width the frame measured, the owner's
-  // verdict, what the view draws, and (below) the minute the rows were aged at.
+  // Each of the five things the key spells, moved one at a time: a width the frame measured, the owner's
+  // verdict, the frame the panel would draw, what the view draws, and (below) the minute the rows were
+  // aged at.
   at(100, OWNS);
   expect(draws).toHaveLength(2);
   at(100, OWNS);
@@ -146,8 +150,8 @@ test("an ending redraws when the verdict could not have told the guard anything 
   expect(draws).toHaveLength(3);
   // …and the second ending is a *boundary* one: `forgetEarnedOpen` is provenance-blind and puts the panel
   // clean out of sight, so the frame goes to `"none"` while the verdict, the emptied view and the stamp all
-  // hold still — the shape the review's repro left the user in, the panel drawing nothing and the rail never
-  // asked back, and the other half of what a verdict-only key could not see.
+  // hold still. The pins are then drawn by neither surface unless the frame term asks the rail back, which
+  // is the other half of what a verdict-only key could not see.
   state.cell = cell("hidden");
   consider();
   expect(draws).toHaveLength(4);
@@ -245,8 +249,9 @@ test("the minute the view was aged at is part of the answer, and one that did no
 test("the handoff adds one term the guard cannot see — the minute the draw reported — and forgets it with the answer", () => {
   // `panel-rail.test.ts` drives the handoff through a whole `PanelOwner`, which is right for the owner's
   // contract and wrong for this one: the only thing this object over and above `RailGuard` is the minute it
-  // records, and the only way to show a term is in the key is to move that term alone. The guard's own three
-  // terms — width, flag, view — are held still here so the age is the only thing that can answer.
+  // records, and the only way to show a term is in the key is to move that term alone. The four terms the
+  // guard already spells for itself — width, verdict, frame, view — are held still here so the age is the
+  // only thing that can answer.
   const state = { view: ONE() };
   const drawn: number[] = [];
   const wiring = {

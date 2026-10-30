@@ -132,6 +132,10 @@ export interface PanelModeState {
    * user left has no claim on the panel the branch they moved to draws, whichever of the two asked for it,
    * and a boundary is not the user looking away from the frame they opened — it is the frame going away.
    * A shown panel is left resting in its configured frame, which the next rebuild settles from the entries.
+   *
+   * The provenance goes with the screen rather than only the screen, which is what makes the write safe to
+   * make without a redraw: `settle(true)` keeps an earned open standing, so a provenance left here would be
+   * the dead session's full frame re-raised by the next session's own rebuild.
    */
   forgetEarnedOpen(): void;
 }
@@ -249,14 +253,11 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
       // too, and it does not: an auto-show that followed a hide must not teach the cell that the user asked
       // for a shown panel.
       if (recorded !== false) chosen = next;
-      // The earned open is *kept*, with its provenance, so a later ending still knows who asked for it —
-      // unless the panel goes out of sight, which is the one move that is never a redraw re-asking the last
-      // one (see below).
-      // and U12 requires an open to persist across all three; `screen(next, false)` here
-      // would fold a panel the user has not read yet back into the peek the moment anything asked the cell a
-      // question — a `/pins show`, a `session_tree`, a submitted message. Hiding is the exception: a hidden
-      // panel that still drew an open frame is not a state, and `settle(false)` is the one move that is never
-      // a redraw re-asking the last one. Ending an open the user *read* is `endEarnedOpen`'s alone.
+      // The earned open is *kept*, with its provenance, so a later ending still knows who asked for it: the
+      // open persists across a `/pins show`, a `session_tree` and a submitted message, none of which is the
+      // user interacting with the pin. Hiding is the one exception — a hidden panel that still drew an open
+      // frame is not a state — and it is also the one move that is never a redraw re-asking the last one.
+      // Ending an open the user *read* is `endEarnedOpen`'s alone.
       screen(next, next ? earned : undefined);
     },
     autoOpen(kind) {
@@ -269,6 +270,9 @@ export function createPanelMode(config: { panel?: PanelResting } | undefined): P
     // provenance-aware ending with the provenance removed, which is a no-op for exactly the state the
     // boundary exists to clear — the open the focus key earned over a panel the user had shown.
     forgetEarnedOpen() {
+      // No redraw here, unlike `settlePanel`: this runs only from `session_shutdown`, where pi has already
+      // torn the UI down and the next `session_start` rebuilds and draws both surfaces. Clearing the
+      // provenance with the screen is what makes waiting for that rebuild safe — see the interface.
       screen(false, undefined);
     },
   };

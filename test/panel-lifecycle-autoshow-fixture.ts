@@ -8,6 +8,7 @@
  * The width is always 120 columns. At a narrow terminal the rail is the only surface, and every assertion
  * these files makes about the auto-show would be about the width instead of about the auto-show.
  */
+import type { PinLevel } from "../src/types.ts";
 import { boot } from "./panel-lifecycle-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
 import type { StubApi } from "./wiring-stubs.ts";
@@ -28,7 +29,7 @@ export const toolOf = (stub: StubApi): { execute: Execute } =>
 export const bootWide = () => boot([], 120);
 
 /** Pin `text` at `level` through the tool, the way pi calls it. */
-async function pin(booted: Booted, id: string, text: string, level: string): Promise<void> {
+async function pin(booted: Booted, id: string, text: string, level: PinLevel): Promise<void> {
   await toolOf(booted.stub).execute(
     id,
     { action: "pin", text, level },

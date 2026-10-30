@@ -159,3 +159,29 @@ test("an open the focus key earned also ends on the user's next message, in thei
   expect(cell.mode()).toBe("hidden");
   expect(ctx.recorder.widgets.has(KEY)).toBe(true);
 });
+
+test("an ended open does not come back on the user's next show, either provenance", async () => {
+  // `settle` keeps an earned open standing — that is how the open survives a redraw, a rebuild, a further
+  // pin and a steer — so the *ending* is the only thing that can clear it, and the verb two rows down must
+  // not undo it. Driven through the two user verbs rather than the cell alone, because the show is the path
+  // that reaches `settle(true)` with the cell's provenance still in it: were an ended open to leave that
+  // provenance behind, `/pins hide` and `/pins show` would re-raise a frame the user had already left.
+  const { stub, ctx, panel: cell } = await blockedAction("Decide the provider");
+  stub.fireShortcut("ctrl+alt+p", ctx);
+  expect(cell.mode()).toBe("open");
+
+  // The focus key's own ending, on a panel the user had hidden: the frame goes and the hide comes back.
+  panelComponent(ctx.recorder.customCalls.at(-1))?.unfocus();
+  expect(cell.mode()).toBe("hidden");
+
+  // The show/hide pair that would expose a retained provenance, through the verb that performs it — the
+  // handoff and the entry included, which a bare `cell.settle(true)` skips.
+  await stub.commands.get("pins")?.handler("show", ctx);
+  expect(cell.mode()).toBe("peek");
+  await stub.commands.get("pins")?.handler("hide", ctx);
+  expect(cell.mode()).toBe("hidden");
+  await stub.commands.get("pins")?.handler("show", ctx);
+  expect(cell.mode()).toBe("peek");
+  // A peek draws the pins, so the rail stayed stood down throughout — the user never lost either surface.
+  expect(ctx.recorder.widgets.has(KEY)).toBe(false);
+});

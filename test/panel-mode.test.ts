@@ -172,6 +172,26 @@ test("a second unfocus does not hide a panel the user had shown", () => {
   expect(cell.shown()).toBe(true);
 });
 
+test("a focus key over the user's own hide ends back on the hide, not on the frame", () => {
+  // The other half of `keepsOpen`: the user pulled the frame over a panel they had *hidden*, so `Esc` was a
+  // look rather than a decision to keep the panel, and what returns is the hide they wrote — the rail takes
+  // the pins back. Without the `chosen` term the ending would strand a full frame over a panel the user had
+  // closed, holding a keyboard nobody asked for.
+  const cell = createPanelMode(resting("peek"));
+  cell.settle(false);
+  cell.autoOpen("focus");
+  expect(cell.mode()).toBe("open");
+  expect(cell.recorded()).toBe(false);
+  cell.endEarnedOpen();
+  expect(cell.mode()).toBe("hidden");
+  expect(cell.shown()).toBe(false);
+  expect(cell.recorded()).toBe(false);
+  // …and the hide still holds afterwards: the next `settle(true)` is the user's own verb, and it rests the
+  // panel rather than restoring the frame they left.
+  cell.settle(true);
+  expect(cell.mode()).toBe("peek");
+});
+
 test("the write a session boundary makes forgets the transience and keeps the operator's resting mode", () => {
   const cell = createPanelMode(resting("open"));
   cell.settle(false);
@@ -200,4 +220,51 @@ test("a boundary forgets a focus-key open over a shown panel, which the interact
   cell.autoOpen("autoshow");
   cell.forgetEarnedOpen();
   expect(cell.mode()).toBe("hidden");
+});
+
+test("a focus-key open the user ended with Esc stays ended across a show/hide pair", () => {
+  // What an ending owes the *later* settles: `settle` keeps an earned open standing (that is how the open
+  // survives a redraw, a rebuild and a further pin), so the ending itself has to be what clears it. Were
+  // `demote` to leave the provenance behind, the hide below would clear it and the show after it would put
+  // the full frame back — a frame the user closed with `Esc`, re-raised by a verb about something else. The
+  // cell-level twin of the surface case in `panel-lifecycle-autoshow-earned.test.ts`.
+  const cell = createPanelMode(resting("peek"));
+  cell.settle(true);
+  cell.autoOpen("focus");
+  cell.endEarnedOpen();
+  expect(cell.mode()).toBe("open");
+  cell.settle(false);
+  expect(cell.mode()).toBe("hidden");
+  cell.settle(true);
+  expect(cell.mode()).toBe("peek");
+  expect(cell.recorded()).toBe(true);
+});
+
+test("an auto-show's open ends once, and no later settle brings the frame back", () => {
+  // The same rule on the other provenance: the auto-show's ending is the resting frame, and the retained
+  // provenance is what makes it so — so the assertion here is that a hide/show pair after the ending rests
+  // the panel in the peek rather than reopening the frame the pin had earned.
+  const cell = createPanelMode(resting("peek"));
+  cell.settle(false);
+  cell.autoOpen("autoshow");
+  cell.endEarnedOpen();
+  expect(cell.mode()).toBe("peek");
+  cell.settle(false);
+  expect(cell.mode()).toBe("hidden");
+  cell.settle(true);
+  expect(cell.mode()).toBe("peek");
+});
+
+test("a boundary's ending is final too: a later settle rests the panel, it does not reopen it", () => {
+  // `forgetEarnedOpen` clears the provenance rather than only the screen, and that is the whole of why a
+  // dead session's frame cannot come back: `settle(true)` keeps whatever provenance the cell holds, so a
+  // provenance left standing here would be a full overlay on the session the boundary handed over.
+  const cell = createPanelMode(resting("peek"));
+  cell.settle(true);
+  cell.autoOpen("focus");
+  cell.forgetEarnedOpen();
+  expect(cell.mode()).toBe("hidden");
+  cell.settle(true);
+  expect(cell.mode()).toBe("peek");
+  expect(cell.shown()).toBe(true);
 });
