@@ -8,6 +8,10 @@ import { panelLayoutSections } from "./panel-frame-layout.ts";
  * `panelLayoutSections` owns the height — section headings included — and is handed the very sections whose
  * `flat` the content prints, so the rows the frame draws and the counts its title prints were grouped from
  * one view and cannot disagree.
+ *
+ * The `focused` the content carries is already the drawn focus — the component's flag and the key gate ANDed
+ * by `keysLive` (`panel-frame-draw.ts`) — so this file never asks whether the panel takes keys: the bar, the
+ * border colour and the bottom border's legend all answer that one already-decided fact.
  */
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";

@@ -41,6 +41,7 @@ interface FrameOverrides {
   selection?: number;
   focused?: boolean;
   mode?: PanelFrame["mode"];
+  keys?: boolean;
   replyHint?: string;
   ageNow?: number;
 }
@@ -59,6 +60,9 @@ function frame(over: FrameOverrides = {}): PanelFrame {
       {
         replyHint: over.replyHint ?? "",
         mode: over.mode ?? "open",
+        // Whether the frame may name the keys. Defaults to the answer the open frame implies; the case
+        // below moves it on its own to prove the legend is a term of the key and not a consequence of `mode`.
+        keys: over.keys ?? over.mode === "open",
         ageNow: NOW,
         // The minute the frame's ages were drawn at; the case below moves it by one to prove the key reads
         // the bucket and not the instant.
@@ -92,6 +96,18 @@ test("moving the bar is a frame change", () => {
 
 test("focus is a frame change, because the bar and the border colour both depend on it", () => {
   expect(sameFrame(frame({ focused: true }), frame())).toBe(false);
+});
+
+test("the keys the border advertises are a term of the key beside the mode", () => {
+  // The two come apart only under `PI_STICKY_PANEL=open`: the cell keeps answering `open` from the resting
+  // mode after the earned open ended, and the legend has to follow the gate rather than the frame. A key that
+  // spelled `mode` alone would hit on the frame drawn before the ending and keep printing `d dismiss` for a
+  // keystroke the dispatcher hands back to the editor — so `keys` moves the frame on its own, in both
+  // directions, whichever way `mode` answers.
+  expect(sameFrame(frame({ mode: "open", keys: false }), frame({ mode: "open" }))).toBe(false);
+  expect(sameFrame(frame({ mode: "open" }), frame({ mode: "open", keys: false }))).toBe(false);
+  // …and a resting frame agrees either way, so the term is not a second spelling of `mode`.
+  expect(sameFrame(frame({ mode: "peek", keys: false }), frame({ mode: "peek" }))).toBe(true);
 });
 
 test("a resting border that has a different label to print is a frame change", () => {
@@ -145,7 +161,17 @@ test("the drawn lines and the width are not part of the key", () => {
 
 test("every field of the key is a field of the frame, so a new one cannot be left out silently", () => {
   expect(Object.keys(frame()).sort()).toEqual(
-    ["ageNow", "focused", "lines", "mode", "pins", "replyHint", "selection", "width"].sort(),
+    [
+      "ageNow",
+      "focused",
+      "keys",
+      "lines",
+      "mode",
+      "pins",
+      "replyHint",
+      "selection",
+      "width",
+    ].sort(),
   );
 });
 

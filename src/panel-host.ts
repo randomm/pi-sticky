@@ -59,17 +59,25 @@ export interface PanelHost {
    */
   isVisible(): boolean;
   /**
-   * The panel's mode cell — hidden, the three-row peek, or the full sectioned panel (`panel-mode.ts`).
-   * Read at draw time and at key time, like the view: the state is the extension's cell, and the component
-   * is the only thing that knows the two frames are different sizes. `panelMode().mode()`, spelled once for
-   * the host.
+   * Which of the three states the panel is in — hidden, the three-row peek, or the full sectioned panel
+   * (`panel-mode.ts`). **The frame to draw**, and nothing else: read at draw time, like the view.
    *
-   * The cell and not its `mode()`, because the frame to draw and the keys to accept are the same answer asked
-   * twice — "what is the panel doing" — and a host that reported one and not the other is a peek drawing
-   * three rows whose `d` still dismisses. `panel-input.ts` refuses every key the peek has no row for, which
-   * is the rule.
+   * The cell and not a bare mode string, because the state is the extension's cell and the component is the
+   * only thing that knows the two frames are different sizes. `panelMode().mode()`, spelled once for the
+   * host. Asking this to decide what a key may do is the mistake `interactiveOpen` below exists to prevent:
+   * under `PI_STICKY_PANEL=open` the frame is the full one even after the open that earned it ended.
    */
   mode(): PanelMode;
+  /**
+   * Whether the panel is open *and* takes keys (`PanelModeState.interactiveOpen`). **The keys**, and nothing
+   * else: the gate `panel-input.ts` asks, and the answer the frame's legend is drawn from
+   * (`panel-frame-draw.ts`), so what the border advertises and what a keystroke reaches cannot disagree.
+   *
+   * Not `mode()`, because the two are one answer only while a peek exists to separate them: under
+   * `PI_STICKY_PANEL=open` the frame is the full one even after the open that earned it has ended, and a
+   * gate on the frame alone would keep answering `d` and `Enter` to a panel the user has already left.
+   */
+  interactiveOpen(): boolean;
   /** Tell the user one line, on the surface the extension still has. */
   notify(message: string, type?: "info" | "warning" | "error"): void;
   /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. `answer` is the text of the

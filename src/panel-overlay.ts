@@ -44,10 +44,14 @@ export function panelFactory(
      * acts on a key: pi-tui routes input to the focused component whether or not `visible()` let it draw.
      */
     panelVisible(): boolean;
-    /**
-     * Which frame to draw and which keys to answer (`PanelHost.mode`).
-     */
+    /** Which frame to draw (`PanelHost.mode`) — the drawing's question, never the keys'. */
     mode(): PanelMode;
+    /**
+     * Whether the open takes keys (`PanelHost.interactiveOpen`) — the gate the dispatcher asks and the answer
+     * the frame's legend is drawn from, kept beside `mode()` rather than folded into it so the frame and the
+     * keyboard stay two questions.
+     */
+    interactiveOpen(): boolean;
   },
 ): PanelCustomFactory {
   const deps = wiring.deps;
@@ -84,6 +88,7 @@ export function panelFactory(
       // having told the component.
       isVisible: () => hooks.panelVisible(),
       mode: hooks.mode,
+      interactiveOpen: hooks.interactiveOpen,
       // The panel's one notify line, through the extension: the component has no context of its own and
       // the live one belongs to the session that drew it.
       notify: (message, type) => deps.notify(message, type),

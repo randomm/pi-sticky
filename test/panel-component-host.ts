@@ -80,6 +80,10 @@ export function host(pins: ViewPin[] = []) {
     // keystroke answers it, which is how the component's peek branch is observable without a session. The
     // cell is the one the extension hands the real host, so a test drives the surface's actual dependency.
     mode: () => state.mode,
+    // The key gate, which the hand-built host answers from the frame it was told to draw — the same answer
+    // the extension's cell gives whenever a peek exists to separate the two, and what a case that wants the
+    // `PI_STICKY_PANEL=open` divergence overwrites.
+    interactiveOpen: () => state.mode === "open",
   };
   return { stub, state, tui };
 }

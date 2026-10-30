@@ -6,12 +6,13 @@
  * out of pi-tui's key path, and hands it a small surface of the component — read the pins, move the bar,
  * ask the host — so the keys stay testable without an overlay, a handle or a theme in the room.
  *
- * The panel owns the keyboard only while it is *on screen*, and only while it is the *open* panel. pi-tui
- * routes input to the focused component alone but asks the overlay whether to draw it, and the two answers
- * can disagree — a pin removed from under an open overlay, a hide, a terminal that narrowed past the
- * panel's boundary. And the peek is drawn without being interactive at all: three rows, no bar, nothing a
- * key could address. Either way a key has no visible answer, so it is handed back: `unfocus()` puts the
- * focus where the user is typing and tells the owner to settle the rail.
+ * The panel owns the keyboard only while it is *on screen* and the open *takes keys* — the host's
+ * `interactiveOpen()`, the one answer the gate reads. pi-tui routes input to the focused component alone but
+ * asks the overlay whether to draw it, and the two answers can disagree: a pin removed from under an open
+ * overlay, a hide, a terminal that narrowed past the panel's boundary, or an open that ended under
+ * `PI_STICKY_PANEL=open`, where the frame stays the full one. And the peek is drawn without being interactive
+ * at all: three rows, no bar, nothing a key could address. Either way a key has no visible answer, so it is
+ * handed back: `unfocus()` puts the focus where the user is typing and tells the owner to settle the rail.
  */
 import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 
@@ -45,12 +46,20 @@ export interface PanelKeyHost {
   /** Whether the panel is on screen — the gate every key passes through. */
   isVisible(): boolean;
   /**
-   * Which of the three states the panel is in. Only `open` has rows a key can address, so `peek` and
-   * `hidden` both hand the focus back: a peek is three rows with no bar, nothing to dismiss and nothing to
-   * answer, and a hidden panel is not on screen at all. The same reading `PanelComponent` gives the frame,
-   * so the drawing and the keys cannot disagree about one host.
+   * Which of the three states the panel is in: **the frame to draw**. This dispatcher never reads it and must
+   * not — the peek and the hidden panel it refuses are exactly the two states with no rows, and under
+   * `PI_STICKY_PANEL=open` the frame is the full one even when nothing in it is addressable. Declared so one
+   * host answers the drawing and the keys, which is the point of the seam; the keys' own question is below.
    */
   mode(): PanelMode;
+  /**
+   * Whether the open takes keys. The gate below asks this and not `mode()`: the frame says what a shown
+   * panel draws, which under `PI_STICKY_PANEL=open` is the full panel even once the open has ended — and a
+   * `d` answered there dismisses a pin from a frame the user has already left. The frame's legend is drawn
+   * from this same answer (`keysLive`, `panel-frame-draw.ts`), so the border never advertises a key refused
+   * here.
+   */
+  interactiveOpen(): boolean;
   /** Record a dismissal of `id`; the host redraws, and the bar re-clamps. */
   dismiss(id: number): void;
   /**
@@ -62,17 +71,18 @@ export interface PanelKeyHost {
 
 /**
  * One key, dispatched. A key the panel does not own, a release, a repeat and an empty buffer each do
- * nothing; a key into a panel that is not on screen — or is drawn as its peek — hands the focus back.
+ * nothing; a key into a panel that is not on screen — or into one the key gate has stopped answering —
+ * hands the focus back.
  *
  * The bar stops at both ends of the list rather than wrapping, because a selection that wrapped off the
  * bottom would leave the user looking for a pin they had just scrolled out of.
  */
 export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: PanelKeyHost): void {
   if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
-  // `hidden` and `peek` both end the interaction rather than act: in the first case the user cannot see the
-  // panel at all, and in the second it is three rows with nothing for a key to address. Either way the focus
-  // is where the user is not, and the editor is where they are.
-  if (!host.isVisible() || host.mode() === "peek") {
+  // The gate is the host's *key* answer and not its frame: a panel pi-tui is still drawing may be one the
+  // cell has stopped treating as open (`PI_STICKY_PANEL=open`, `panel-mode.ts`), and a hidden panel is not on
+  // screen at all. Either way the focus is where the user is not, and the editor is where they are.
+  if (!host.isVisible() || !host.interactiveOpen()) {
     target.unfocus();
     return;
   }

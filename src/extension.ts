@@ -235,7 +235,10 @@ export function createStickyExtension(
         live = undefined;
         state = EMPTY_STATE;
         view = { pins: [], removed: [] };
-        panel.endEarnedOpen();
+        // Provenance-blind, and deliberately not `endEarnedOpen`: the ending that knows *who* opened the
+        // panel is the one the user's own interaction reaches, and for the open they earned with the focus
+        // key it leaves the full frame standing. A boundary has no user looking at that frame.
+        panel.forgetEarnedOpen();
         commits.clear();
         terminal.forget();
         surfaces.panel.current?.close();

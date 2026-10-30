@@ -1,5 +1,6 @@
 import type { PanelDeps } from "./panel-deps.ts";
 import { railStamp } from "./panel-geometry.ts";
+import type { PanelMode } from "./panel-mode.ts";
 /**
  * The rail's install guard: the one cache between "the answer may have changed" and the expensive
  * `setExtensionWidget` call.
@@ -8,14 +9,17 @@ import { railStamp } from "./panel-geometry.ts";
  * reinstalling on every overlay frame re-wraps every pin to draw the strip that is already there. The owner
  * asks this object whether to draw — and tells it to forget the answer when it opens or closes a panel — and
  * it answers from the exact terms the owner uses to decide who owns the pins: the width, the owner's own
- * visibility verdict (`PanelOwner.isVisible`), what the view draws, and the minute the ages in that view are
- * drawn at. So the cache cannot hold an answer the predicate has moved away from, and the two surfaces are
- * never handed two answers to the one question.
+ * visibility verdict (`PanelOwner.isVisible`), which frame the panel would draw for the pins it holds, what
+ * the view draws, and the minute the ages in that view are drawn at. So the cache cannot hold an answer the
+ * predicate has moved away from, and the two surfaces are never handed two answers to the one question.
  *
  * The ownership term is the **owner's** answer rather than a reading of the mode cell: a failed open has
  * forgotten its record and still leaves the cell saying *shown*, and a guard that re-derived ownership from
  * the cell would stand the rail down for a panel that is not on screen — the pins on neither surface. One
  * question, one answerer.
+ *
+ * The **frame** is a term beside that verdict rather than folded into it, because the verdict alone cannot
+ * see every move that hands the pins back — see `#frame` for the one case that proves it.
  *
  * The view is in the key by *what it draws* rather than by reference (`railStamp`, in
  * `panel-geometry.ts`): `RailComponent` snapshots the view it was built with, so a same-count change to
@@ -30,6 +34,20 @@ import { railStamp } from "./panel-geometry.ts";
  * The owner hands the key the bucket it read its own view at, so the age in the key is the age the rows
  * print — and a minute that did not move costs a comparison, exactly as a frame that changed nothing does.
  */
+
+/**
+ * The frame term of the guard's key: the cell's own name for the two frames that own the pins, and `"none"`
+ * for the frame in which the rail owes the user its strip. Not exported: `#frame` below is its only producer
+ * and the key is a string, so nothing outside this class can name one or be checked against one.
+ */
+type RailFrame = Extract<PanelMode, "open" | "peek"> | "none";
+
+/**
+ * The deps the rail path reads, narrowed from `PanelDeps` on purpose so a wider reach has to be a change
+ * here: the pins it stamps and the frame it would draw (`RailGuard.consider`), and the clock the handoff
+ * falls back to when no draw has reported a minute (`RailWiring`, `panel-rail-handoff.ts`).
+ */
+export type RailDeps = Pick<PanelDeps, "getView" | "panelMode" | "now">;
 
 export class RailGuard {
   /** The last answer the rail was installed for, or `undefined` when nothing is installed. */
@@ -61,7 +79,9 @@ export class RailGuard {
    * invite the caller to pick the wrong one, one verb with a flag cannot be picked wrongly.
    */
   consider(
-    deps: PanelDeps,
+    // The members the key is spelled from, and nothing more (`RailDeps`): a wider parameter would let this
+    // class reach for a fourth member without the caller having to know it exists.
+    deps: RailDeps,
     columns: number,
     redraw: () => void,
     open: boolean,
@@ -70,9 +90,39 @@ export class RailGuard {
   ): void {
     if (this.#settled(open)) return;
     const view = deps.getView();
-    const key = `${columns}|${ownsPins()}|${railStamp(view.pins)}|${ageBucket}`;
+    // The verdict is read once, into a local, so the two terms of the key that speak about the same question
+    // are answered by one call rather than by two that could disagree.
+    const owns = ownsPins();
+    // The frame is a term of the key beside the ownership verdict, and not folded into it — the case that
+    // proves it is in `#frame`: a demote can hand the pins back without moving `ownsPins()` at all.
+    const key = `${columns}|${owns}|${this.#frame(deps)}|${railStamp(view.pins)}|${ageBucket}`;
     if (this.#same(key)) return;
     this.#install(key, redraw);
+  }
+
+  /**
+   * The frame name the key spells: the cell's own, or the rail's strip for a panel that draws nothing.
+   *
+   * Read from the cell **alone**, deliberately: it is a term beside the ownership verdict, not a refinement of
+   * it, and folding the verdict in here would collapse two distinct answers into one string. The case the term
+   * exists for is a demote under an emptied view — the last pin dismissed while the frame was open, then
+   * `Esc`: `isVisible()` answers false for want of pins both before and after, so a key that spelled only the
+   * verdict would answer "already installed" to the one frame whose job was to put the rail back.
+   *
+   * Exhaustive `switch`, with no `default`: a fourth `PanelMode` would fail to compile here rather than be
+   * silently stamped `"none"` and never redrawn for. The two frames the cell names are not collapsed into a
+   * ternary either — a cell between them is a *resting* panel, and a name that called both an `open` would
+   * let a hide-to-peek and a peek-to-hidden move the key identically.
+   */
+  #frame(deps: RailDeps): RailFrame {
+    switch (deps.panelMode().mode()) {
+      case "open":
+        return "open";
+      case "peek":
+        return "peek";
+      case "hidden":
+        return "none";
+    }
   }
 
   /**

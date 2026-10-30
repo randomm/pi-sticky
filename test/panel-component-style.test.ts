@@ -57,6 +57,9 @@ function handHostStub(): PanelHost {
     // The open frame is what this file draws, so the cell says open; the component reads it the way the
     // extension's host does.
     mode: () => "open",
+    // The key gate beside the frame: this file draws, it does not dispatch, so the answer is the one the
+    // open frame implies.
+    interactiveOpen: () => true,
     // The instant the panel ages at, pinned so the row this file asserts byte-for-byte says `4d` rather
     // than whatever minute the run happens to fall in. Absent, `#ageNow()` falls back to `new Date()` and
     // the assertion below would be a clock reading rather than a drawing.

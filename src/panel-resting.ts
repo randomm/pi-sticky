@@ -4,7 +4,8 @@
  * Non-obvious constraints:
  * - A value that is not one of `PANEL_RESTING_MODES` (a typo, `hidden`, `""`, unset) resolves to
  *   `PANEL_DEFAULT_MODE`; the safe reading of a typo is the state covering least of the transcript.
- * - `open` is never-peek: a demote has no peek to put the panel into.
+ * - `open` is never-peek: the resting frame is already the full one, so neither a demote nor an auto-show's
+ *   peek ending has a peek to put the panel into.
  * - In `rpc`, `print` and `json` the value is ignored — no overlay, so no resting state.
  */
 

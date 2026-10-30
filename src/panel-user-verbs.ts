@@ -16,8 +16,10 @@
  * - **The focus key's frame is the point of the key.** A move that only *shows* the panel rests it where the
  *   operator's configuration says — under `PI_STICKY_PANEL=peek`, the three-row peek — and a focused peek
  *   answers no key: no bar, no `d`, an `Enter` that would put a reply marker beside a list nothing is
- *   selected in. So the cell is asked for the outright earned open, `autoOpen`, and only then does the
- *   component take the keyboard. The earned open ends the way an auto-show's does (`panel-mode.ts`).
+ *   selected in. So the cell is asked for the outright earned open, `autoOpen("focus")`, and only then does
+ *   the component take the keyboard. Its provenance is what makes it end differently from an auto-show's:
+ *   the user pulled the panel over their transcript, so leaving it puts back what they had *chosen* — hidden
+ *   stays hidden — where the model's auto-show ends in the resting frame (`panel-mode.ts`).
  *
  * `refresh()` is asked for after `autoOpen` and not left to the extension's own setters: a rail still
  * standing over the pins the panel has just taken is the pins drawn twice.
@@ -110,7 +112,7 @@ export function togglePanel(cells: PanelVerbCells, ctx: HostContext | undefined)
  */
 export function focusFromShortcut(cells: PanelVerbCells, ctx: HostContext | undefined): void {
   if (refuse(cells, ctx)) return;
-  cells.wiring.deps.panelMode().autoOpen();
+  cells.wiring.deps.panelMode().autoOpen("focus");
   cells.refresh();
   cells.component()?.focus();
 }

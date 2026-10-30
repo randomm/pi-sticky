@@ -90,7 +90,7 @@ function cells(
 
 test("an unappended commit means the entries are not the last word", () => {
   const panel = createPanelMode(DEFAULT_CONFIG);
-  panel.autoOpen(); // the auto-show has just put the panel on screen
+  panel.autoOpen("autoshow"); // the auto-show has just put the panel on screen
   const before = panel.mode();
 
   rebuildSession(
@@ -120,7 +120,7 @@ test("nothing unseen and nothing drawn: the entries decide outright, screen and 
 test("a panel that is on screen is settled from the entry without moving the record", () => {
   const panel = createPanelMode(DEFAULT_CONFIG);
   panel.settle(false); // the user hid it…
-  panel.autoOpen(); // …and a pin earned a transient open
+  panel.autoOpen("autoshow"); // …and a pin earned a transient open
 
   rebuildSession(
     contextWith([hideEntry]),
@@ -140,7 +140,7 @@ test("an auto-show the branch has not been read for outranks the entries, but ne
   // it, and it is the failure the ledger's per-commit lifecycle used to paper over by never landing at all.
   const panel = createPanelMode(DEFAULT_CONFIG);
   panel.settle(false); // the user's verb, recorded: the entry below is that same choice
-  panel.autoOpen(); // …and a pin earned a transient open
+  panel.autoOpen("autoshow"); // …and a pin earned a transient open
   expect(panel.shown()).toBe(true);
 
   rebuildSession(
@@ -165,7 +165,7 @@ test("a recorded verb outranks an auto-show still standing", () => {
   // screen for the rest of the session — the same shape of bug as a commit which never landed.
   const panel = createPanelMode(DEFAULT_CONFIG);
   panel.settle(false);
-  panel.autoOpen();
+  panel.autoOpen("autoshow");
   panel.settle(true); // the user's own `/pins show`, which records
 
   rebuildSession(
@@ -177,13 +177,42 @@ test("a recorded verb outranks an auto-show still standing", () => {
   expect(panel.shown()).toBe(false);
 });
 
+test("an auto-show's peek ending leaves a drawn panel the entries may still settle", () => {
+  // The post-peek-ending rebuild, which is the state the new ending creates and no case drove before: the
+  // user has read the blocker, the auto-show's open has ended *in the peek*, and the record still says
+  // hidden — so the screen is drawn on a claim the session does not account for. With the claim outstanding
+  // the entries are not the last word and the panel stays drawn; once it is settled they are, and the
+  // user's recorded hide is honoured. The two halves are what stop one peek outliving the pin it was shown
+  // for, or hiding a pin the user is still reading.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.settle(false); // the user's verb, recorded: the entry below is that same choice
+  panel.autoOpen("autoshow");
+  panel.endEarnedOpen(); // …and it ended in the peek, as the operator decided
+  expect(panel.mode()).toBe("peek");
+  expect(panel.shown()).toBe(true);
+  expect(panel.recorded()).toBe(false);
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+  );
+  expect(panel.mode()).toBe("peek");
+  expect(panel.recorded()).toBe(false);
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
+  );
+  expect(panel.mode()).toBe("hidden");
+});
+
 test("a commit whose pin the branch has moved on from is not held, and does not settle the panel", () => {
   // `holdsCommit`'s strict half. The commit published pin 1 at one instant; the branch now carries pin 1 at
   // another (an update, or the same id recycled after a dismiss). Same uid, same id — and not the commit the
   // branch records. Trusting it would land the commit and settle the auto-show's claim against a drawing the
   // user is no longer looking at, which is the panel going out of sight under a pin they have not read.
   const panel = createPanelMode(DEFAULT_CONFIG);
-  panel.autoOpen();
+  panel.autoOpen("autoshow");
   const before = panel.mode();
   const published = { ...branchPin(1), updatedAt: "2026-10-23T11:00:00.000Z" };
 
@@ -198,7 +227,7 @@ test("a commit the branch holds at the same instant is held, and its pins stay p
   // The pair to the case above: identical uid *and* identical `updatedAt` is the commit the branch records,
   // so the rebuild takes the branch's answer and the earned open survives it.
   const panel = createPanelMode(DEFAULT_CONFIG);
-  panel.autoOpen();
+  panel.autoOpen("autoshow");
   const held = branchPin(1);
 
   rebuildSession(

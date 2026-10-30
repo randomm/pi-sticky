@@ -179,8 +179,10 @@ test("show, hide and toggle settle the flag through the deps, and record only th
   expect(h.panelMode().mode()).toBe("open");
   expect(h.screen.shown).toBe(false);
   expect(h.panel.component()?.isFocused()).toBe(true);
-  // …and leaving the interaction ends the earned open the way an auto-show's does: back to the hidden state
-  // the user chose, rather than a panel the shortcut left covering the transcript.
+  // …and leaving the interaction ends the open the *key* earned, which is the provenance that restores what
+  // the user chose — back to hidden, rather than a panel the shortcut left covering the transcript. (An
+  // auto-show's open would instead have ended in the resting frame; that contrast is at the cell in
+  // `test/panel-mode.test.ts` and at the surface in the two `test/panel-lifecycle-autoshow*.test.ts` files.)
   h.panel.component()?.unfocus();
   expect(h.panelMode().mode()).toBe("hidden");
 });

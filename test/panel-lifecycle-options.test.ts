@@ -18,7 +18,9 @@ import { OPTIONED, boot, panelComponent } from "./panel-lifecycle-fixture.ts";
 /** A booted session whose panel is open over one pin with two options — the only state with rows to answer. */
 async function openPanel() {
   const booted = await boot(OPTIONED, 120);
-  booted.panel.autoOpen();
+  // The focus key's open, not the auto-show's: an auto-show ends in the peek, and this file drives the keys
+  // of the frame the user reached for by hand.
+  booted.panel.autoOpen("focus");
   return booted;
 }
 
