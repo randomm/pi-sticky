@@ -85,7 +85,7 @@ function peekPinRow(
   ageNow: string,
   gutterAt: (text: string) => string,
 ): string {
-  const rows: PanelRow[] = panelPinRows(pin, inner, style, ageNow, metaColumns);
+  const rows: PanelRow[] = panelPinRows(pin, inner, style, metaColumns, inner, ageNow);
   const first = rows[0];
   // `panelPinRows` always returns at least one row — an empty text still owns a row, so a selection always
   // has something to address — and the peek asks the same question of the same function. A missing row is

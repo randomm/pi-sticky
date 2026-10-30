@@ -20,7 +20,11 @@ import "./env-clear.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { PanelComponent } from "../src/panel-component.ts";
-import { META_COLUMNS, META_SEPARATOR_COLUMNS } from "../src/panel-frame-geometry.ts";
+import {
+  META_COLUMNS,
+  META_SEPARATOR_COLUMNS,
+  widestMetaColumns,
+} from "../src/panel-frame-geometry.ts";
 import { GUTTER_COLUMNS, panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
@@ -30,6 +34,7 @@ import { createOverlayHandle, createStubTui } from "./harness.ts";
 import { host } from "./panel-component-host.ts";
 import { built } from "./panel-frame.ts";
 import { boot, panelComponent, pinEntry } from "./panel-lifecycle-fixture.ts";
+import { innerAt } from "./panel-rows-frame.ts";
 import { replyTo } from "./reply-support.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
@@ -124,7 +129,15 @@ describe("the replied row of the panel", () => {
   });
 
   test("the mark is the first thing of the text column on a wrapped replied pin", () => {
-    const rows = panelPinRows(repliedPin(1, "one two three four five six seven eight"), 18, style);
+    const pin = repliedPin(1, "one two three four five six seven eight");
+    const rows = panelPinRows(
+      pin,
+      18,
+      style,
+      widestMetaColumns([pin], style.dim, LATER),
+      innerAt(18),
+      LATER,
+    );
     expect(rows.length).toBeGreaterThan(1);
     expect(rows[0]?.text.indexOf("↩")).toBeLessThan((rows[0]?.text.indexOf("one") ?? 0) + 1);
     for (const row of rows) expect(row.text.trim()).not.toBe("");

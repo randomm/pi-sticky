@@ -12,6 +12,7 @@ import { expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { stripSequences } from "../src/escape.ts";
+import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
 import type { HeadingRow } from "../src/panel-section-headings.ts";
 import { headingCell, headingRow } from "../src/panel-section-headings.ts";
@@ -20,6 +21,7 @@ import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { PinLevel } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
+import { innerAt } from "./panel-rows-frame.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
 
 /** Identity colours: the heading's glyph comes back as the character the row table asked for. */
@@ -153,7 +155,15 @@ test("a heading's glyph is its level's MARKER, coloured through the theme's mark
   const prefixOf = (text: string): string => text.slice(0, 3);
   for (const kind of KINDS) {
     const cell = headingCell(headingRow(sectionOfLevel(kind)), 30, style);
-    const pinRow = panelPinRows(levelPin(1, "x", kind), 30, style, LATER)[0]?.text ?? "";
+    const pinRow =
+      panelPinRows(
+        levelPin(1, "x", kind),
+        30,
+        style,
+        widestMetaColumns([levelPin(1, "x", kind)], style.dim, LATER),
+        innerAt(30),
+        LATER,
+      )[0]?.text ?? "";
     expect(prefixOf(cell)).toBe(prefixOf(pinRow));
   }
 });
@@ -200,7 +210,15 @@ test("a theme whose marker adds visible bytes cuts the pin row's marker the same
   const wrapping: RenderPanelStyle = { ...style, marker: (_level, s) => `<m:${s}>` };
   for (const kind of KINDS) {
     const cell = headingCell(headingRow(sectionOfLevel(kind)), 30, wrapping);
-    const rows = panelPinRows(levelPin(1, "text", kind), 30, wrapping, LATER);
+    const subject = levelPin(1, "text", kind);
+    const rows = panelPinRows(
+      subject,
+      30,
+      wrapping,
+      widestMetaColumns([subject], wrapping.dim, LATER),
+      innerAt(30),
+      LATER,
+    );
     expect(rows[0]?.text.slice(0, 3)).toBe(cell.slice(0, 3));
     // ...and neither string carries the wrapper's bytes.
     for (const drawn of [cell, rows[0]?.text ?? ""]) expect(drawn).not.toContain("<m:");

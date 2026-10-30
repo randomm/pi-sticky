@@ -1,4 +1,3 @@
-import { visibleWidth } from "@earendil-works/pi-tui";
 /**
  * The sweep both wrapped-pin test files draw with: one pin, one frame, one width, built the way the component
  * builds it.
@@ -22,7 +21,6 @@ import { isOptionRow } from "../src/panel-rows.ts";
 import type { PanelRow } from "../src/panel-rows.ts";
 import { GUTTER_COLUMNS, tailReserve } from "../src/panel-tail.ts";
 import type { PanelStyle } from "../src/render.ts";
-import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, pin } from "./fixtures.ts";
 import { framed } from "./panel-frame.ts";
@@ -37,8 +35,11 @@ export const sweepStyle: PanelStyle = {
   borderFocused: (s) => s,
 };
 
-/** The character a cut leaves behind. A wrapped pin carries none; a `compact` pin carries exactly one. */
-export const ELLIPSIS = String.fromCodePoint(0x2026);
+/**
+ * The character a cut leaves behind, read from its owner: `panel-frame.ts` spells it once and every drawn
+ * surface that cuts uses that one. A wrapped pin carries none; a `compact` pin carries exactly one.
+ */
+export { ELLIPSIS } from "../src/panel-frame.ts";
 
 /** The replied pin's mark — the row table's own prefix, so not one of the pin's characters. */
 const REPLIED = String.fromCodePoint(0x21a9);
@@ -56,16 +57,48 @@ export const PARAGRAPH =
 export const LONG_TOKEN = "Supercalifragilisticexpialidociousantidisestablishmentarianism";
 
 /**
+ * A paragraph whose words are joined by U+00A0 no-break space rather than by spaces.
+ *
+ * `wrapTextWithAnsi` tokenises on `" "` alone, so a run of no-break spaces is one token and the packer's only
+ * way out is its character-by-character fallback — which is a different break from the one a space-separated
+ * paragraph takes, and the break the round trip has to survive. A sweep of ordinary prose never exercises it.
+ */
+export const NBSP_PARAGRAPH = [
+  "the lens-fix pass on the worktree reported a clean tree",
+  "the driver re-ran the whole offline suite for no reason anyone could name",
+  "the park fix has to land before the next cycle",
+  "every workstream pays for it again and the run stalls on a gate nobody can explain",
+].join(String.fromCodePoint(0xa0));
+
+/**
+ * A sentence of CJK glyphs, every one of them two columns wide and its own break opportunity.
+ *
+ * The corpus's wide-glyph member, and the one that reaches the hard break: pi-tui's packer treats a Han glyph
+ * as a token of its own, so a single ideograph handed a one-column figure is a two-column token the packer
+ * breaks only by its `tokenVisibleLength > width` rule — and `breakLongWord` then cannot fit the grapheme in the
+ * columns it has and hands the whole token back on its own row, wider than the width it was packed at. The row
+ * reaches `pinRow` over its limit and the drawer's `fitPlain` spends an ellipsis on it. `panel-wrap.ts`'s
+ * `whole` is what breaks it in the wrap instead, and this is the corpus member that would notice if that ever
+ * went missing.
+ */
+export const CJK_PARAGRAPH =
+  "工作树重新运行整个离线测试套件所以停放修复必须在下个周期之前落地否则每条工作流都要为此再等一次";
+
+/**
  * The corpus: every shape a pin's rows can take.
  *
  * `replied` puts a mark in front of the text *before* the wrap, so a row that lost a column lost it from
  * there; `options` reserves a row whose text the drawer fills and the pin never wrote; `compact` is the one
  * member the round trip must not cover, because a compact pin's text is cut rather than wrapped (README,
  * research-summary U13) and asserting a rejoin on it would be asserting the opposite of what it promises.
+ * `nbsp` and `cjk` are the two shapes the wrap reaches outside its word rule: a token no space separates, and
+ * glyphs too wide to pack into the columns a narrow frame leaves.
  */
 export const SWEEP_CORPORA: readonly (readonly [string, string, Partial<ViewPin>])[] = [
   ["plain", PARAGRAPH, {}],
   ["token", LONG_TOKEN, {}],
+  ["nbsp", NBSP_PARAGRAPH, {}],
+  ["cjk", CJK_PARAGRAPH, {}],
   ["replied", PARAGRAPH, { repliedAt: LATER }],
   ["options", PARAGRAPH, { options: ["Passed on", "Not yet"] }],
   ["compact", PARAGRAPH, { compact: true }],
@@ -99,21 +132,54 @@ export function sweptFrame(
 }
 
 /**
+ * A frame whose **widest tail belongs to a different pin** than the one whose rows are asserted on.
+ *
+ * The single-pin frame cannot see the bug this fixture exists for. With one pin in the view, the view's widest
+ * stamp *is* that pin's own, so a sweep that charged each row the narrower of `own` and `frame` could not tell
+ * the honest figure from the lenient one — the two were equal by construction. Put a twenty-digit id beside a
+ * `#1` and they part company: the drawer cuts the `#1`'s text by the reserve of the wide pin's stamp, and a
+ * limit built from the row's own `#1` hands back the columns the row never had. That is how the sweep went
+ * green over rows the drawer re-cut.
+ *
+ * The wide pin is a `warning`, so `panelSections` draws it first and the narrow pin under test sits below it —
+ * `selection: 0` still points at the wide pin, which is what the component would do with this view; the sweep
+ * asserts on every row of the table either way.
+ */
+export function sweptFrameAlongsideWideId(
+  id: number,
+  text: string,
+  width: number,
+  extra: Partial<ViewPin> = {},
+): SweptFrame {
+  const tested = pin(id, text, "info", { createdAt: NOW, ...extra });
+  const wide = pin(987_654_321_098, "a wide id that owns the frame's reserve", "warning", {
+    createdAt: NOW,
+  });
+  const pins = [tested, wide];
+  const { lines, layout } = framed(
+    { pins, selection: 0, focused: false, replyHint: "", ageNow: LATER },
+    width,
+    sweepStyle,
+  );
+  const rows = layout.owned.map((entry) => entry.row);
+  return { lines, pins, rows, width, textRows: rows.filter((row) => !isOptionRow(row)) };
+}
+
+/**
  * The columns the frame that drew `frame` charges `row`'s tail.
  *
- * Read from the product's own arithmetic (`panelRowTailColumns`) rather than restated here. The figure is the
- * **frame's**: `pinRow` (`panel-draw.ts`) cuts every tail-bearing row to the inner width less the reserve of the
- * view's widest stamp and pads the tail out to exactly that, so the row table must be paid in the same figure or
- * the row it builds comes back for a second cut. A fixture that measured the narrower half-tail this row prints
- * would be measuring a width no drawer ever charged, which is the same class of disagreement the defect was made
- * of.
+ * Read from the product's own arithmetic (`tailReserve`) rather than restated here, and charged as the **frame's**
+ * figure, not the row's own: `pinRow` (`panel-draw.ts`) cuts *every* tail-bearing row to the inner width less the
+ * reserve of the view's widest stamp, then pads that row's tail out to exactly that reserve. So a pin whose own
+ * tail is the short `#7` still gives up the columns a twenty-digit id elsewhere in the view costs — the reserve
+ * is one figure per frame, and a fixture that measured the narrower half-tail this row prints would be measuring
+ * a width no drawer ever charged. That is the same class of disagreement the defect was made of, and it is why
+ * the sweep's limit used to be wrong: charging `min(own, frame)` passed rows the drawer re-cut, which is how
+ * `…park fix` on the age row stayed invisible behind a green sweep.
  */
 export function reserveOf(frame: SweptFrame, row: PanelRow): number {
   if (isOptionRow(row) || row.tail === "") return 0;
-  return Math.min(
-    tailReserve(visibleWidth(stripSequences(row.tail)), innerOf(frame), META_SEPARATOR_COLUMNS),
-    frameReserve(frame),
-  );
+  return frameReserve(frame);
 }
 
 /** The inner width a row of `frame` is drawn in: the frame less the gutters and their spaces. */
@@ -128,14 +194,17 @@ const frameReserve = (frame: SweptFrame): number =>
   );
 
 /**
- * The columns `pinRow` gives `row`: the inner width, less the reserve of the tail this row prints.
+ * The columns `pinRow` gives `row`: the inner width, less the reserve the frame charges its tail.
  *
- * Compared row by row, because that is what the drawer does. `pinRow` measures `row.tail` and cuts the row's
- * text to `inner` less *its own* reserve, so a frame's short-tail rows are drawn roomier than its widest one and
- * a fixture that charged every row the view's widest stamp would reject rows the drawer never touches — which is
- * how a sweep came to fail on text it had already proved whole. The reserved options row pays no reserve at all
- * and gets the whole inner width; a row that owns no tail — the continuation of a wrapped pin — is drawn by the
- * other branch of `pinRow` and is likewise cut to nothing but the inner width.
+ * Compared row by row, because that is what the drawer does with each row — but the *reserve* is the frame's,
+ * for the reason `reserveOf` states: `pinRow` cuts the text to `inner` less `tailReserve` of the view's widest
+ * stamp and pads the row's own tail to that same figure, so a frame's short-tail rows are drawn no roomier than
+ * its widest one. A fixture that charged a row its own narrower tail would pass rows the drawer re-cuts, and a
+ * re-cut is where a wrapped pin's characters go.
+ *
+ * The reserved options row pays no reserve at all and gets the whole inner width; a row that owns no tail — the
+ * continuation of a wrapped pin — is drawn by the other branch of `pinRow` and is likewise cut to nothing but
+ * the inner width.
  *
  * The prefix, the marker cell or the indent, sits *inside* that figure: it is part of the row the table wrote,
  * not part of the text the drawer cuts. A row over its limit is a row the drawer re-cuts, and the re-cut is where
@@ -143,12 +212,7 @@ const frameReserve = (frame: SweptFrame): number =>
  */
 export function limitOf(frame: SweptFrame, row: PanelRow): number {
   if (isOptionRow(row) || row.tail === "") return innerOf(frame);
-  const own = tailReserve(
-    visibleWidth(stripSequences(row.tail)),
-    innerOf(frame),
-    META_SEPARATOR_COLUMNS,
-  );
-  return Math.min(innerOf(frame), innerOf(frame) - Math.min(own, frameReserve(frame)));
+  return Math.min(innerOf(frame), innerOf(frame) - frameReserve(frame));
 }
 
 /**

@@ -27,6 +27,7 @@ import type { PanelRow } from "./panel-rows.ts";
 import { headingCell, headingRow } from "./panel-section-headings.ts";
 import { hasHeadings } from "./panel-sections.ts";
 import type { PanelSection, PanelSections } from "./panel-sections.ts";
+import { GUTTER_COLUMNS } from "./panel-tail.ts";
 
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
@@ -144,10 +145,11 @@ function panelPinRowOwners(
   now: string,
   metaColumns: number,
   offset: number,
+  inner: number,
 ): PanelOwned[] {
   const owned: PanelOwned[] = [];
   for (const [index, pin] of pins.entries()) {
-    for (const row of panelPinRows(pin, textWidth, style, now, metaColumns))
+    for (const row of panelPinRows(pin, textWidth, style, metaColumns, inner, now))
       owned.push({ row, pin: offset + index });
   }
   return owned;
@@ -170,9 +172,10 @@ function panelOwnedRows(
   style: PanelStyle,
   now: string,
   metaColumns: number,
+  inner: number,
 ): PanelOwned[] {
   if (!hasHeadings(sections.order)) {
-    return panelPinRowOwners(sections.flat, textWidth, style, now, metaColumns, 0);
+    return panelPinRowOwners(sections.flat, textWidth, style, now, metaColumns, 0, inner);
   }
   // The offset is *running*, not looked up: `panelSections` builds `flat` by flattening `order`, so the pins
   // of the sections walked in order are the pins of `flat` read in order, and adding each section's length
@@ -192,7 +195,9 @@ function panelOwnedRows(
         pin: null,
       });
     }
-    owned.push(...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset));
+    owned.push(
+      ...panelPinRowOwners(section.pins, textWidth, style, now, metaColumns, offset, inner),
+    );
     offset += section.pins.length;
   }
   return owned;
@@ -267,6 +272,11 @@ export function panelLayoutSections(
     style,
     now,
     metaColumns,
+    // The width `pinRow` closes a row to, named rather than recovered: the wrap gives columns up to
+    // `tailReserve`, and that figure clamps at the inner width, so a row can only be packed against a frame the
+    // caller named. `frameWidth - GUTTER_COLUMNS` is the same subtraction `buildPanelLines` makes before it
+    // draws — the corners sit outside the row, the gutters and their spaces are the four columns inside them.
+    frameWidth - GUTTER_COLUMNS,
   );
   // As tall as the rows it draws, never past the terminal's half: `panelFrameRows` puts the two border rows
   // over `owned` and cuts the result to the ceiling, which is the only reason a frame is ever shorter than

@@ -42,6 +42,7 @@ import {
   withHostileFields,
 } from "./panel-hostile-fields.ts";
 import { levelPin, mixedView } from "./panel-sections-fixture.ts";
+import { PARAGRAPH } from "./panel-wrapped-sweep.ts";
 
 /** The identity frame: no member wraps anything in visible bytes, so every frame below closes. */
 const identity: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
@@ -159,6 +160,40 @@ test("a pin that fits one row shows its whole stamp — id and age — in the pe
   expect(visibleWidth(row)).toBe(120 - GUTTER_COLUMNS);
   expect(row.endsWith(peekTail(short, fullStamp(short, identity.dim, NOW), 120))).toBe(true);
   expect(row).toContain("#7");
+});
+
+test("the peek's one row closes at the frame's width and shows the start of the pin's text", () => {
+  // The peek hands `panelPinRows` the inner width as its *text column* — it draws one row and asks for it at the
+  // width it draws at — and the row table's `inner` parameter used to have a default that recovered the frame's
+  // inner width by adding the tail's reserve, its separator and the gutters back onto that text column. On this
+  // caller that reconstruction was nineteen columns wrong: the wrap packed a line to a frame the peek is not
+  // drawn in, and the drawer re-cut it. So the row is asked twice over. It must measure exactly the frame the
+  // peek was built at — no more, which is what the frame promises the chat beside it — and it must still open
+  // with the beginning of the pin's own words rather than an ellipsis standing where the re-cut spent the row's
+  // last columns. The widths start where the reserve stops eating the text column — below that the row is a
+  // cut of two or three characters and "the start of the text" asks the peek to lay a paragraph out at a
+  // column, which is the same exclusion the sweep's rejoin states for the same reason.
+  const long = levelPin(35, PARAGRAPH, "warning");
+  for (const width of [40, 60, 80, 120]) {
+    const lines = buildPeekLines(content([long]), width, identity);
+    expect(lines).toHaveLength(3);
+    for (const line of lines) expect(visibleWidth(line), `at ${width}`).toBe(width);
+    const row = (lines[1] ?? "").slice(2, -2);
+    expect(visibleWidth(row), `inner at ${width}`).toBe(width - GUTTER_COLUMNS);
+    // The row opens with the marker cell and the pin's first words: the text gave columns up at its *end*, the
+    // only side a wrapped pin gives them from, and what it gave up was blanks rather than characters.
+    const body = row.replace(/^\s+/, "").replace(/^[•!?]\s+/, "");
+    expect(body.startsWith("The lens-fix"), `${width}: ${JSON.stringify(row)}`).toBe(true);
+    // ...and the row carries no ellipsis at all. This is the whole point of passing `inner` rather than
+    // reconstructing it: a row the wrap packed against the frame it is actually drawn in is not re-cut, and an
+    // ellipsis inside a peek row is the re-cut — the columns the drawer spent, and the characters it took.
+    expect(body, `${width}: an ellipsis in the peek's row`).not.toContain("\u2026");
+    // ...and the tail is drawn whole to the row's last column, which is the half the peek borrowed `pinRow` for.
+    expect(
+      row.endsWith(peekTail(long, idStamp(long, identity.dim), width)),
+      `tail at ${width}`,
+    ).toBe(true);
+  }
 });
 
 test("a peek row whose text is short keeps the tail padded to its reserve", () => {

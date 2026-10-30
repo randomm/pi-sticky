@@ -2,20 +2,27 @@
  * The sweep: widths 30–120 × ids 1–999, over every shape a pin's rows can take.
  *
  * Split into one `test()` per invariant rather than one nested loop, for two reasons the suite has already
- * learned: a single sweep of 90 × 999 × 5 frames does not fit bun's per-test budget, and a failure that says
+ * learned: a single sweep of 90 × 999 × 7 frames does not fit bun's per-test budget, and a failure that says
  * "the sweep failed" does not say whether a row overran its columns, lost a character, or drew the frame
  * short. Each block below names its own failure and sweeps the same corpus, so all three can be read at once.
  *
  * The invariants, and why each is needed:
  *
  * - **no row over its limit** — `pinRow` (`panel-draw.ts`) fits a tail-bearing row's text to the inner width
- *   less that row's reserve. A row built wider than that is the row the drawer re-cuts, and the re-cut is
- *   where the characters went. This is the invariant that made the reported defect invisible: the row table
- *   was never checked against the columns the drawer hands it.
+ *   less the reserve of the **view's widest** tail, not of the tail that row happens to print. A row built
+ *   wider than that is the row the drawer re-cuts, and the re-cut is where the characters went. This is the
+ *   invariant that made the reported defect invisible: the row table was never checked against the columns the
+ *   drawer hands it — and the fixture that checked it used to charge each row the narrower of its own stamp and
+ *   the frame's, which with a one-pin view are the same figure, so the check could not fail.
  * - **the characters survive** — a wrapped pin's rows, tails and prefixes taken back off, carry every
  *   non-space character of its text, in order, with no `…` among them.
  * - **every drawn line measures the frame** — the promise a flush-right panel makes to the chat behind it,
  *   which a row count that grew must keep.
+ *
+ * The column-limit sweep runs the whole width range the builder closes at, the floor included; the rejoin runs
+ * from four columns of text up, where a wrap is still a wrap of words. The block after the four sweeps runs the
+ * same column-limit invariant over a view whose widest tail belongs to a *different* pin, which is the only way
+ * the honest figure differs from the lenient one — see the note on `sweptFrameAlongsideWideId`.
  *
  * Two corpus members are excluded from the rejoin, and neither exclusion is a loophole: `compact` is cut
  * rather than wrapped by design (README, research-summary U13) and is asserted to own exactly one row — the
@@ -34,6 +41,7 @@ import {
   limitOf,
   owedCharacters,
   sweptFrame,
+  sweptFrameAlongsideWideId,
 } from "./panel-wrapped-sweep.ts";
 import type { SweptFrame } from "./panel-wrapped-sweep.ts";
 
@@ -43,16 +51,17 @@ const IDS = Array.from({ length: 143 }, (_unused, i) => 1 + i * 7);
 const WIDTHS = Array.from({ length: 91 }, (_unused, i) => MIN_FRAME_WIDTH + i);
 
 /**
- * The widths the rejoin and the column-limit sweeps run over.
+ * The widths the **rejoin** sweep runs over.
  *
  * Not the whole range, and not as a loophole. At the builder's floor the tail's reserve leaves the text column
  * one column wide, and a wrap of one column is not a wrap of *words*: `wrapTextWithAnsi` breaks a long token
  * character by character, so every word of the pin lands on a row of its own and a rejoin that expected the
  * pin's words back in theirs would be asserting that the panel can lay text out at one column. Nothing is let
- * off at those widths — the uniform-width sweep below runs them all, the floor included, and
- * `test/panel-id-never-cut.test.ts` / `test/panel-id-wide.test.ts` own what the `#id` survives there. Four
- * columns of text is where the reserve stops swallowing the column at any id this sweep mints, so every width
- * at or above it lays out words and none of them is exempt from anything.
+ * off at those widths for the invariants that can be asked there — the uniform-width sweep and the column-limit
+ * sweep below both run the whole range, the floor included, and `test/panel-id-never-cut.test.ts` /
+ * `test/panel-id-wide.test.ts` own what the `#id` survives there. Four columns of text is where the reserve
+ * stops swallowing the column at any id this sweep mints, so every width at or above it lays out words and none
+ * of them is exempt from anything.
  */
 const WRAPPED_WIDTHS = WIDTHS.filter((width) => width >= MIN_FRAME_WIDTH + 4);
 
@@ -88,12 +97,13 @@ function sweepBand(
   band: readonly [number, number],
   widths: readonly number[],
   check: (frame: SweptFrame, name: string, text: string, id: number) => void,
+  build: typeof sweptFrame = sweptFrame,
 ): void {
   const [from, to] = band;
   for (const [name, text, extra] of SWEEP_CORPORA) {
     for (const width of widths) {
       if (width < from || width > to) continue;
-      for (const id of IDS) check(sweptFrame(id, text, width, extra), name, text, id);
+      for (const id of IDS) check(build(id, text, width, extra), name, text, id);
     }
   }
 }
@@ -154,26 +164,51 @@ function assertUniformWidth(frame: SweptFrame, name: string, _text: string, id: 
     expect(visibleWidth(line), `${name} id ${id} at ${frame.width}`).toBe(frame.width);
 }
 
-/** The four sweeps, each then cut into width bands so no block runs past bun's five-second budget. */
+/**
+ * The sweeps, each then cut into width bands so no block runs past bun's five-second budget.
+ *
+ * `widths` names the range each invariant is asked over, and the column-limit sweep is the one that changed: it
+ * now runs the whole `WIDTHS` range, the builder's floor included. Charging each row the *frame's* reserve
+ * rather than the narrower of its own and the frame's makes the limit tightest exactly where the reserve eats
+ * the text column, and that is at the floor — excluding it there would have left the newly-honest figure
+ * untested in the one place it bites. The rejoin still runs `WRAPPED_WIDTHS`: at a one-column text column the
+ * wrap is a spelling, not a wrap of words, and no amount of honesty about columns makes that a rejoin.
+ */
 const SWEEPS: readonly (readonly [
   string,
   (frame: SweptFrame, name: string, text: string, id: number) => void,
+  readonly number[],
 ])[] = [
-  ["no row is wider than the columns its tail leaves it", assertNoRowOverrunsItsColumns],
-  ["its drawn text rows reproduce every character of its text", assertTextSurvivesTheWrap],
-  ["its rows carry no escape bytes", assertRowsCarryNoEscape],
-  ["every drawn line measures the frame", assertUniformWidth],
+  ["no row is wider than the columns its tail leaves it", assertNoRowOverrunsItsColumns, WIDTHS],
+  [
+    "its drawn text rows reproduce every character of its text",
+    assertTextSurvivesTheWrap,
+    WRAPPED_WIDTHS,
+  ],
+  ["its rows carry no escape bytes", assertRowsCarryNoEscape, WRAPPED_WIDTHS],
+  ["every drawn line measures the frame", assertUniformWidth, WIDTHS],
 ];
 
-for (const [promise, check] of SWEEPS) {
+for (const [promise, check, widths] of SWEEPS) {
   for (const band of WIDTH_BANDS) {
     test(`a wrapped pin ${promise} from ${bandLabel(band)}`, () => {
-      // The uniform-width promise is asked at every width the builder closes at, the one-column floor
-      // included: it is what the panel promises the chat behind it, and a row count that grew has no business
-      // breaking it. The other three are asked where a wrap is a wrap of *words* — see `WRAPPED_WIDTHS`.
-      sweepBand(band, check === assertUniformWidth ? WIDTHS : WRAPPED_WIDTHS, check);
+      sweepBand(band, widths, check);
     });
   }
+}
+
+/**
+ * The same column-limit sweep over a view whose widest tail belongs to *another* pin.
+ *
+ * With one pin in the frame, the view's widest stamp is that pin's own and the honest limit equals the lenient
+ * one — the sweep cannot tell them apart, and did not: it stayed green over rows the drawer re-cut because
+ * `min(own, frame)` handed a `#1` the columns a neighbouring `#987654321098` had already spent. Same bands, same
+ * ids, same invariant; only the view differs, and that difference is the whole test.
+ */
+for (const band of WIDTH_BANDS) {
+  test(`a wrapped pin beside a wide id is built within the frame's reserve from ${bandLabel(band)}`, () => {
+    sweepBand(band, WIDTHS, assertNoRowOverrunsItsColumns, sweptFrameAlongsideWideId);
+  });
 }
 
 test("a compact pin is one cut row at every width, which is why the sweep does not rejoin it", () => {
@@ -181,7 +216,7 @@ test("a compact pin is one cut row at every width, which is why the sweep does n
   // row keeps its ellipsis, and a rejoin sweep that included it would be asking for the opposite of the
   // guarantee. If this block ever fails, `compact` has stopped meaning one row and the sweep's exclusion has
   // become a hole rather than a carve-out.
-  for (const [name, text] of [["compact", SWEEP_CORPORA[4]?.[1] ?? ""]] as [string, string][]) {
+  for (const [name, text] of [["compact", SWEEP_CORPORA[6]?.[1] ?? ""]] as [string, string][]) {
     expect(name).toBe("compact");
     for (const width of WIDTHS) {
       for (const id of IDS) {
@@ -197,8 +232,13 @@ test("the options row the table reserves stays one row and is excluded from the 
   // The row-count promise the options half of the fix must not disturb: whatever the labels, the pin owns one
   // extra row and no more, and it is the *tag* — not the pad character — that keeps it out of the rejoin.
   for (const width of WIDTHS) {
+    // The baseline frame does not depend on the id: the row table's height for one pin whose text is
+    // `SWEEP_CORPORA[0]` is the same whatever number stamps it, so it is built once per width and compared
+    // against each id's `withOptions` frame. This keeps the row-count delta, the tag exclusion and the rejoin
+    // under test at every id while halving the frames this sweep draws — the point of the test is that the
+    // reserved row is exactly one, which is a property of the text and the options, not of the id's width.
+    const plain = sweptFrame(IDS[0] ?? 1, SWEEP_CORPORA[0]?.[1] ?? "", width);
     for (const id of IDS) {
-      const plain = sweptFrame(id, SWEEP_CORPORA[0]?.[1] ?? "", width);
       const withOptions = sweptFrame(id, SWEEP_CORPORA[0]?.[1] ?? "", width, {
         options: ["Passed on", "Not yet"],
       });

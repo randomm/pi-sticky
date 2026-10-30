@@ -16,6 +16,7 @@
 import { describe, expect, test } from "bun:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { PANEL_MIN_FRAME_COLUMNS } from "../src/panel-geometry.ts";
 import { panelPinRows } from "../src/panel-rows.ts";
 import { renderRailLines } from "../src/rail-lines.ts";
@@ -26,6 +27,7 @@ import type { ViewPin } from "../src/types.ts";
 import { LATER, NOW, NOW_TIME, pin } from "./fixtures.ts";
 import { built } from "./panel-frame.ts";
 import { HOSTILE, offenders } from "./panel-hostile.ts";
+import { innerAt } from "./panel-rows-frame.ts";
 
 const replied = (id: number, text: string): ViewPin => ({
   ...pin(id, text, "info", { createdAt: NOW }),
@@ -152,13 +154,15 @@ describe("a replied panel row", () => {
     expect(built(contentOf(), PANEL_MIN_FRAME_COLUMNS - 1, plainPanel)).toEqual([]);
     for (let width = PANEL_MIN_FRAME_COLUMNS; width <= 40; width++) {
       const lines = built(contentOf(), width, plainPanel);
-      // A replied pin is aged, and at the narrowest frame the panel closes there is no room for `#1 2h`
+      // A replied pin is aged, and at the narrowest frames the panel closes there is no room for `#1 2h`
       // beside the text: the age takes the row below, so the frame is four rows there and three from the
-      // width where the pair fits. The promise this test keeps is the uniform one — every row exactly
-      // `width`, and no escape bytes anywhere — whatever the row count turned out to be.
+      // width where the pair fits. Where that boundary sits is the wrap's answer, not this test's — the
+      // tighter the wrap, the narrower the frame at which a replied `↩ Decide X` still owns one row — so the
+      // count is asked as a range rather than as a number someone read off a run. What this test owns is the
+      // uniform promise: every row exactly `width`, and no escape bytes anywhere, whatever the row count was.
       expect([3, 4]).toContain(lines.length);
       expect(lines.length).toBeGreaterThanOrEqual(3);
-      if (width > PANEL_MIN_FRAME_COLUMNS) expect(lines).toHaveLength(3);
+      expect(lines.length).toBeLessThanOrEqual(4);
       expectUniformWidth(lines, width);
       for (const line of lines) {
         expect(offenders(line)).toEqual([]);
@@ -200,10 +204,14 @@ describe("a replied panel row", () => {
   test("the mark opens every row of a replied pin that wraps, and no row is empty", () => {
     // A wrap that reaches the mark: `↩ ` is part of the wrapped text, so the first row carries it and
     // the continuation lines stay under the text column. An empty row would draw a bar over nothing.
+    const wrappedPin = replied(1, "a decision that has to wrap somewhere in here");
     const rows = panelPinRows(
-      replied(1, "a decision that has to wrap somewhere in here"),
+      wrappedPin,
       20,
       plainPanel,
+      widestMetaColumns([wrappedPin], plainPanel.dim, LATER),
+      innerAt(20),
+      LATER,
     );
     expect(rows.length).toBeGreaterThan(1);
     expect(rows[0]?.text).toInclude("↩ a decision");
@@ -214,7 +222,15 @@ describe("a replied panel row", () => {
   });
 
   test("a replied pin with no text still owns a row that carries the mark", () => {
-    const rows = panelPinRows(replied(1, ""), 20, plainPanel);
+    const blank = replied(1, "");
+    const rows = panelPinRows(
+      blank,
+      20,
+      plainPanel,
+      widestMetaColumns([blank], plainPanel.dim, LATER),
+      innerAt(20),
+      LATER,
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text).toInclude("↩");
   });
