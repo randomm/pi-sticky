@@ -150,8 +150,27 @@ export const NOW_SENTENCE = `The board is ${NOW_WORD} Now`;
  */
 export const NOW_SENTENCE_LOWER = `the board is ${NOW_WORD} Now`;
 
-/** The words `plus those N` are written with. */
+/**
+ * A count the accepting pattern admits and the numeral table refuses — the bytes a hand-edited doc carries
+ * when it states a number past every bound. `numeral` refuses to emit it, so it is composed here as digits
+ * off `NUMERALS.length` (the top of the table + 1) rather than spelled.
+ */
+export const UNSPELLABLE_DIGITS = String(NUMERALS.length);
+
+/**
+ * The words `The board is N Now` are written with. The run board states its Backlog cap twice outside the
+ * card — here, and nowhere else but the card — so this is the needle every control over that count uses.
+ * Composed from `numeral(BACKLOG_CAP)` like the card, never spelled.
+ */
 export const PLUS_THOSE_HEAD = `plus those ${CAP_WORD}`;
+
+/**
+ * The run board's arithmetic as one sentence: the card's cap stated beside the Now row. Composed from the
+ * same two derived numerals as `NOW_SENTENCE` and `PLUS_THOSE_HEAD`, so a budget that moves moves it too —
+ * and an assertion that requires it in a file requires the *current* arithmetic, not the shipped words of
+ * an older one.
+ */
+export const RUN_BOARD_ARITHMETIC = `${NOW_SENTENCE} ${PLUS_THOSE_HEAD}`;
 
 export { replaceSpaced } from "./doc-fact-controls-support.ts";
 

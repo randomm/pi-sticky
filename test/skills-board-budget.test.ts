@@ -41,6 +41,7 @@ import {
 import {
   BOARD_SKILLS,
   OPERATIVE_PROOFS,
+  RUN_BOARD_ARITHMETIC,
   boardPath,
   operativeHeads,
   replaceSpaced,
@@ -50,6 +51,7 @@ import {
   statedCounts,
   statedNowCount,
 } from "./skills-board-readers.ts";
+import { hasNowSentence } from "./skills-card-readers.ts";
 
 test("each board skill's stated Backlog cap fits the pin budget alongside its Now pin", () => {
   // The tool will not stretch for the board: `pinOp` refuses the add past `maxPins`. So
@@ -66,6 +68,21 @@ test("each board skill's stated Backlog cap fits the pin budget alongside its No
     // the card was built from: a skill that instructs more pins than the tool will accept is a defect
     // the card-only cap check above cannot see.
     const boardText = fold(text);
+    // The sentence first, by name, before its count is trusted: `statedNowCount` answers `null` for a
+    // sentence the scrape can no longer reach (a reword, a line-initial lowercase), and the equality below
+    // reads that `null` as "no Now group" — which the budget line then counts as `Now = 0`, i.e. EASIER to
+    // satisfy. Measured: reflowing the shipped sentence so the readers lose it left the whole suite green.
+    // noni legitimately has no Now group, so the sentence is pinned only where the file claims one.
+    if (dir === "sticky-run-board") {
+      expect(boardText, `${dir}: carries its Now sentence for the reader to scrape`).toContain(
+        RUN_BOARD_ARITHMETIC,
+      );
+      expect(hasNowSentence(boardText), `${dir}: the Now row is where the reader reads it`).toBe(
+        true,
+      );
+    } else {
+      expect(hasNowSentence(boardText), `${dir}: states no Now group`).toBe(false);
+    }
     // Only the run board draws a Now group; noni builds a Backlog from a file and states no Now count, so
     // the count is pinned to `NOW_ROWS` where the file states one and required to be absent where it does
     // not — a Now count that appears in noni would be an instruction nobody asked for.

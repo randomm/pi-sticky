@@ -15,12 +15,15 @@ import {
   NOW_SENTENCE,
   NOW_SENTENCE_LOWER,
   PLUS_THOSE_HEAD,
+  RUN_BOARD_ARITHMETIC,
+  UNSPELLABLE_DIGITS as UNREADABLE_DIGITS,
   boardPath,
   replaceSpaced,
   statedBacklogCap,
   statedBacklogCounts,
   statedNowCount,
 } from "./skills-board-readers.ts";
+import { hasNowSentence } from "./skills-card-readers.ts";
 
 test("the run board's operative mutations are read back through the reader, not through the bytes", () => {
   // A run board that instructs a three-row Now has to fail the checks the board test runs, not just report
@@ -85,6 +88,69 @@ test("the run board's operative mutations are read back through the reader, not 
     "the two-Now control moved the count the assertions below read",
   ).not.toBe(statedNowCount(fold(board)));
   expect(statedBacklogCounts(twoNow), "the Now count is scraped too").toContain(NOW_ROWS + 1);
+});
+
+test("a reworded Now sentence fails by name, not as a smaller budget", () => {
+  // The hole this closes: `statedNowCount` answers `null` for a sentence the scrape can no longer reach,
+  // and `skills-board-budget.test.ts` reads that `null` as "no Now group" — the same answer noni legitimately
+  // gives. Its budget line is `(nowCount ?? 0) + cap + 1 <= maxPins`, so a vanished Now row makes the
+  // inequality *easier*: the shipped board sits exactly on the line (1 + 3 + 1 = 5) and the broken one lands
+  // under it (0 + 3 + 1 = 4). Measured against the shipped text, every one of these mutations kept the whole
+  // suite green before the presence assertion in `skills-board-budget.test.ts` was added.
+  const board = readDoc(boardPath("sticky-run-board"));
+  const rewordings: [string, string][] = [
+    ["a reworded verb", "The board holds one Now"],
+    ["a reworded noun", "The panel is one Now"],
+    ["a line-initial lowercase", "the board is one Now"],
+    ["the sentence deleted", "plus those"],
+  ];
+  // The run board hard-wraps its arithmetic sentence, so the needle is the folded file and the replacement
+  // is written to the same fold. `replaceSpaced` is the repo's own spaced-replacement builder, which keeps
+  // this immune to where the prose happens to be wrapped.
+  const boardText = fold(board);
+  for (const [label, replacement] of rewordings) {
+    const mutated = replaceSpaced(boardText, RUN_BOARD_ARITHMETIC, replacement);
+    expect(mutated, `"${label}": the mutation took`).not.toBe(boardText);
+    // The reader's answer — the number the budget line actually consumes — is what makes the hole real:
+    // `null`, indistinguishable from noni's legitimate absence.
+    expect(statedNowCount(fold(mutated)), `"${label}": the reader reports no Now count`).toBeNull();
+    expect(
+      (statedNowCount(fold(mutated)) ?? 0) + BACKLOG_CAP + 1,
+      `"${label}": the budget line is satisfied by the vanished Now row`,
+    ).toBeLessThanOrEqual(DEFAULT_CONFIG.maxPins);
+    // …which is why the presence assertion is the one that catches it, and it catches it by name.
+    expect(
+      fold(mutated),
+      `"${label}": the board's own arithmetic is gone from the file`,
+    ).not.toContain(RUN_BOARD_ARITHMETIC);
+    expect(
+      hasNowSentence(fold(mutated)),
+      `"${label}": the Now row is no longer where it is read`,
+    ).toBe(false);
+  }
+  // The control that says these failures belong to the reword and not to a dead presence check: the shipped
+  // file satisfies both halves, and a copy that keeps the words but moves the count still carries them.
+  expect(hasNowSentence(fold(board)), "the shipped board carries its Now row").toBe(true);
+  expect(fold(board), "and states its arithmetic").toContain(RUN_BOARD_ARITHMETIC);
+  // …through `statedNowCount`, not by rewriting the needle string: `NOW_SENTENCE` contains the word `one`,
+  // which a plain string replacement of `one` would also hit in `is`/`Now`-adjacent words.
+  const movedCount = replaceSpaced(board, PLUS_THOSE_HEAD, `plus those ${numeral(4)}`);
+  expect(movedCount, "the moved-count control took").not.toBe(board);
+  expect(hasNowSentence(fold(movedCount)), "a moved count keeps the Now row").toBe(true);
+  expect(statedNowCount(fold(movedCount)), "and leaves the Now row the reader's own count").toBe(
+    NOW_ROWS,
+  );
+  // A count the table cannot read still fails as a broken numeral, never as an absence — the distinction
+  // this file exists for, asserted against the same sentence the presence check reads.
+  const unreadableNow = replaceSpaced(board, NOW_SENTENCE, `The board is ${UNREADABLE_DIGITS} Now`);
+  expect(unreadableNow, "the unreadable-count mutation took").not.toBe(boardText);
+  expect(hasNowSentence(fold(unreadableNow)), "a broken count still carries the sentence").toBe(
+    true,
+  );
+  expect(
+    () => statedNowCount(fold(unreadableNow)),
+    "…and fails by name rather than as no Now group",
+  ).toThrow(new RegExp(`matched "${UNREADABLE_DIGITS}"`));
 });
 
 test("both readers agree on the Now sentence whatever casing it is written in", () => {
