@@ -33,10 +33,11 @@ The main agent posts messages for the user. The user is often away for a long ti
 | U15 | Two layers | **Primitives in the tool, policy in the skills.** `pin_for_user` stays the only tool with its four actions, and new capability comes only as optional fields — `group`, `options` and `compact`, the three U13 draws — plus four pi skills shipped in `skills/` and declared under `pi.skills`: `sticky-basics` (what deserves a pin, the levels, one pin per topic, answering a reply, `options` and `compact`), `sticky-decisions` (asking a question), `sticky-run-board` (a Now/Backlog board) and `sticky-noni` (the noni bridge). The tool's own prompt shrinks to its `promptSnippet` plus two guidelines — a one-line purpose and the pointer to `sticky-basics` — so the tool stays usable where no skill was loaded, and the cardinality a skill asks for (one `Now`, at most 3 `Backlog`, which is 4 of the 5 pins `DEFAULT_CONFIG.maxPins` allows so one slot stays free for a warning or a question) is instruction only, enforced by nothing in the tool. **Extends U6**, which fixed the four actions and the three levels. |
 | U14 | Answering an option | A bare digit `1`–`N` on the selected pin that carries `options` puts `Re #<id>: <option text> ` at the **front of the editor draft** — the same merge U4 prescribes for Enter (read `getEditorText()`, reuse `replyMarker`, never `setEditorText` blindly), the same focus release, and **nothing sent**: the user submits. The digit addresses the option by *position*, the numbering the keycap row prints (`1` over `options[0]`), and `src/reply.ts` is untouched — the option text rides in behind the marker the reply flow already recognises, so a digit is one marker rewrite followed by text the submit handler reads as the user's own words. **Consistent with U4 rather than a new mechanism**: the panel never sends anything and never edits the buffer on its own, so a digit cannot lose a draft the way a blind write would, and the user always reads what was put there. `0`, a digit past the pin's option count, and a digit on a pin without options do nothing at all — no draft write, no unfocus, no redraw. The focused bottom border names the digits for the pin under the bar (`1–N answer · …`, `panel-option-hint.ts`) and says nothing about digits a pin cannot answer. |
 
-Settled since this table was written: publishing is an MIT open-source release (LICENSE and
-`package.json` `"private": true` are still outstanding), with npm publishing left as a manual operator
-step; the shortcuts are `ctrl+alt+t` (toggle) and `ctrl+alt+p` (focus); and the ticket cut is the one in
-section 6.
+Settled since this table was written: publishing is an open-source release (the repo is public and
+Apache-2.0, with `LICENSE`, `NOTICE` and `package.json` `"license": "Apache-2.0"` all present and no
+`"private"` key; a relicensing to MIT remains a decision, not a fact), with npm publishing left as a
+manual operator step; the shortcuts are `ctrl+alt+t` (toggle) and `ctrl+alt+p` (focus); and the ticket
+cut is the one in section 6.
 
 ## 3. Findings that change the plan
 
