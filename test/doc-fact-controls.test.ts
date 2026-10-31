@@ -15,15 +15,8 @@
 import { expect, test } from "bun:test";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import {
-  BACKLOG_CAP,
-  BACKLOG_FLOOR_HEAD,
-  BUDGET_CARD,
-  NOW_ROWS,
-  NUMERALS,
-  numeral,
-  readDoc,
-} from "./doc-fact-fixtures.ts";
+import { BACKLOG_CAP, NOW_ROWS, NUMERALS, numeral, readDoc } from "./doc-fact-fixtures.ts";
+import { BACKLOG_FLOOR_HEAD, BUDGET_CARD } from "./doc-fact-sentences.ts";
 import {
   OPERATIVE_PROOFS,
   PLUS_THOSE_HEAD,

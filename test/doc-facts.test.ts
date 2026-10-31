@@ -25,15 +25,13 @@ import { optionHint } from "../src/panel-option-hint.ts";
 import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS, MIN_OPTIONS } from "../src/pin-fields.ts";
 import {
   BACKLOG_CAP,
-  BUDGET_CARD,
-  budgetCard,
   cardCounts,
   fold,
   numeral,
-  optionRange,
   readDoc,
   shippedSkills,
 } from "./doc-fact-fixtures.ts";
+import { BUDGET_CARD, budgetCard, optionRange } from "./doc-fact-sentences.ts";
 
 const README = "README.md";
 

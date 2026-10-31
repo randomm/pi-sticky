@@ -8,7 +8,7 @@
  * missing instruction, the second is a broken one — and a reader that reports only the first lets a doc
  * with an unreadable numeral pass every comparison made against an empty result.
  */
-import { countPattern, undecodableCardSpans } from "./doc-fact-fixtures.ts";
+import { anchoredCountPattern, undecodableCardSpans } from "./doc-fact-fixtures.ts";
 import type { UndecodableSpan } from "./doc-fact-fixtures.ts";
 import { NOW_SENTENCE } from "./skills-board-readers.ts";
 
@@ -74,7 +74,9 @@ function quoteWord(word: string): string {
 }
 
 /**
- * A whole count, spelled or digital. Sourced from `countPattern()` so this half cannot disagree with the
- * decode side about which spans are counts at all — the same single-source rule the readers keep.
+ * A whole count, spelled or digital — read from `anchoredCountPattern()`, the one accepting shape every
+ * reader shares, so this half cannot disagree with the decode side about which spans are counts at all. The
+ * nested spelled leg of a hand-copied pattern made that claim unfalsifiable here: with its outer anchors
+ * removed the Now row still read every count, because the spelled words matched whole through the inner leg.
  */
-const COUNT_ALONE = String.raw`\b(?:${countPattern()})\b`;
+const COUNT_ALONE = anchoredCountPattern();

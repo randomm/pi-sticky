@@ -1,5 +1,16 @@
 /**
- * The one copy of the sentences docs and skills must agree on, and of the readers that scrape them.
+ * The one copy of the count readers the doc-fact layer uses: the numeral table, the one accepting pattern
+ * every reader compiles from, and the card parser. The doc-facing sentence builders the decoys are composed
+ * from are in `doc-fact-sentences.ts` (the 300-line cap), and the board scrapers in
+ * `skills-board-readers.ts` / `skills-board-spans.ts`.
+ *
+ * The one accepting shape is `anchoredCountPattern()`, and every card or operative pattern in this layer is
+ * built from it — the card included, though a card looks safe because a literal pins each of its counts.
+ * A literal pins a *prefix*, not a whole digit run: un-anchored, `3000 rows at the default budget of 5;`
+ * matched `0` as its cap and `cardinal("0")` answered `0`, so nothing threw and `cap ?? -1` compared a real
+ * `0` against every budget line. A broken numeral had become a plausible one, which is worse than the
+ * absence these readers refuse. Where two copies did diverge (one card pattern on `countPattern()`, one on
+ * the anchored form) a doc could be a card to the parser and not to the scraper.
  *
  * The Backlog budget card is stated in two skill files and once in the README, so the assertions need
  * a string no prose edit can silently move. The card is composed from `DEFAULT_CONFIG.maxPins` rather
@@ -18,7 +29,7 @@ import { join } from "node:path";
 
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS, MIN_OPTIONS } from "../src/pin-fields.ts";
+import { MAX_FIELD_GRAPHEMES } from "../src/pin-fields.ts";
 
 /** The repo root, as the doc tests address files from it. */
 const ROOT = join(import.meta.dir, "..");
@@ -112,9 +123,16 @@ export function countPattern(): string {
 
 /**
  * A whole count that cannot match inside a longer word, with the spelled alternatives joined
- * longest-first — the one accepting shape `skills-board-readers.ts` compiles its operative patterns
- * from. Handed out as source so a test that claims to exercise the sort or the anchors drives them
- * through this string rather than through a second copy that could drift from it.
+ * longest-first — the one accepting shape every reader compiles its counts from, operative sentences
+ * *and* the card alike. Handed out as source so a test that claims to exercise the sort or the anchors
+ * drives them through this string rather than through a second copy that could drift from it.
+ *
+ * The anchors are load-bearing for the card too, though the card looks safe because a literal pins each
+ * count: a literal pins a *prefix*, not a whole digit run, so an un-anchored count lets `3000` be matched
+ * as `0`. Measured against the shipped card with the anchors removed: `cardCounts` reported `{cap: 0,
+ * budget: 5}`, `undecodableCardSpans` was empty and nothing threw, so `cap ?? -1` compared a real `0`
+ * against every budget line and agreed. That is a broken numeral turned into a *plausible* one, which is
+ * worse than the absence the readers already refuse.
  */
 export function anchoredCountPattern(): string {
   return String.raw`\b(?:${[...NUMERALS]
@@ -143,8 +161,20 @@ export function numeral(n: number): string {
   return NUMERALS[n] as string;
 }
 
-/** The card sentence, global — so a file with two of them reports both numerals of each. */
-const EVERY_CARD = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT});`, "g");
+/**
+ * The card sentence, global — so a file with two of them reports both numerals of each.
+ *
+ * Single source: `skills-board-spans.ts` compiles `CARD_SHAPE` from this same string, so the parser that
+ * answers `cardCounts` and the scraper that answers `statedBacklogCounts` cannot disagree about which
+ * sentences are cards at all. When they did (one built from `countPattern()`, one from
+ * `anchoredCountPattern()`) a doc could be a card to one and not the other.
+ */
+export const CARD_SENTENCE = `(${anchoredCountPattern()}) rows at the default budget of (${anchoredCountPattern()});`;
+
+/** `CARD_SENTENCE` as a global RegExp — the one card matcher every reader and parser shares. */
+export function cardShape(): RegExp {
+  return new RegExp(CARD_SENTENCE, "g");
+}
 
 /**
  * The two numerals of the card — its cap and the budget it counts against — read out of the sentence.
@@ -161,7 +191,7 @@ const EVERY_CARD = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT
 export function cardCounts(folded: string): CardCounts | null {
   if (undecodableCardSpans(folded).length > 0) return null;
   const cards: CardCounts[] = [];
-  for (const match of folded.matchAll(EVERY_CARD)) {
+  for (const match of folded.matchAll(cardShape())) {
     const cap = cardinal(match[1] ?? "");
     const budget = cardinal(match[2] ?? "");
     if (cap === null || budget === null) return null;
@@ -211,7 +241,7 @@ export function cardinal(text: string): number | null {
  */
 export function undecodableCardSpans(folded: string): UndecodableSpan[] {
   const bad: UndecodableSpan[] = [];
-  for (const match of folded.matchAll(EVERY_CARD)) {
+  for (const match of folded.matchAll(cardShape())) {
     for (const group of [1, 2]) {
       const spelled = match[group] ?? "";
       if (cardinal(spelled) === null && match.index !== undefined) {
@@ -236,62 +266,4 @@ export interface UndecodableSpan {
 export interface CardCounts {
   cap: number;
   budget: number;
-}
-
-/**
- * The card, in the settled wording, for a given Backlog cap and budget. Both skills and the README
- * carry it verbatim; the shipped card is `budgetCard()` at the shipped cap.
- */
-export function budgetCard(cap = BACKLOG_CAP, budget = DEFAULT_CONFIG.maxPins): string {
-  return `${numeral(cap)} rows at the default budget of ${numeral(budget)}; with a smaller \`PI_STICKY_MAX_PINS\`, drop Backlog rows from the bottom`;
-}
-
-/** The shipped card. */
-export const BUDGET_CARD = budgetCard();
-
-/**
- * The operative rules the board skills state for building the Backlog, in the words the files ship.
- * The card is instruction; these are the sentences the model actually follows when it opens the file,
- * so an assertion that reads only the card lets a contradicting count elsewhere survive — which is how
- * the 5-row Backlog outlived the budget.
- */
-export const BACKLOG_RULE_HEAD = "Build the group from the first entries of that file";
-export const BACKLOG_FLOOR_HEAD = "Fewer than three entries";
-
-/** The rule with `n` rows named in it: what a card-contradicting copy of the same sentence looks like. */
-export function backlogRuleWithCap(n: number): string {
-  return `Build the group from the first ${numeral(n)} entries of that file`;
-}
-
-/** The floor sentence with `n` as its count, for the decoy the assertion must reject. */
-export function backlogFloorWithCap(n: number): string {
-  return `Fewer than ${numeral(n)} entries`;
-}
-
-/**
- * How `sticky-noni` frames one option against the bound: a floor to stay well under, never a target to
- * fill. The bound itself is composed from `MAX_FIELD_GRAPHEMES` at each site that checks it, so the
- * number cannot go stale; these strings are the clause around it.
- */
-export const OPTION_FLOOR_HEAD = "Keep every option short —";
-
-export const OPTION_FLOOR_TAIL = "the tool refuses a longer option rather than cutting it";
-
-/**
- * The number of entries an `options` list may carry, as the docs state the range: both ends composed
- * from `MIN_OPTIONS`/`MAX_OPTIONS`, so a bound that moves fails the prose instead of leaving it green
- * and wrong. `spaced` writes the hyphenated form one skill uses; the docs keep their own dash elsewhere.
- */
-export function optionRange(spaced = false): string {
-  return spaced ? `${MIN_OPTIONS}-${MAX_OPTIONS}` : `${MIN_OPTIONS} to ${MAX_OPTIONS}`;
-}
-
-/** The bound as `pin-fields.ts` spells it, in the bold the skills carry it in. */
-export function optionBound(budget: number): string {
-  return `**${budget} graphemes after cleaning**`;
-}
-
-/** The floor sentence with `n` as its bound, for the decoy that the assertion must reject. */
-export function optionFloorWithBound(n: number): string {
-  return `${OPTION_FLOOR_HEAD} well under ${optionBound(n)}`;
 }

@@ -15,12 +15,12 @@ import {
   BACKLOG_CAP,
   MAX_COUNT,
   NUMERALS,
-  budgetCard,
   cardCounts,
   cardinal,
   fold,
   numeral,
 } from "./doc-fact-fixtures.ts";
+import { budgetCard } from "./doc-fact-sentences.ts";
 import {
   statedBacklogCap,
   statedBacklogCounts,
@@ -126,19 +126,40 @@ test("the operative digit counts scrape whole, and a count above the bound is a 
     expect(statedUndecodableOperatives(readable), "and the readable sentence has none").toEqual([]);
   }
   // Three digits is a wider case than `42`, and it fails on the *accepting* side rather than the decoding
-  // one: the pattern caps a digit run at as many digits as the largest count has (two) and anchors both
-  // ends, so `100` is not matched at all — no span, no count, no complaint. That silence is honest here
-  // (a three-digit run is not a count the readers claim to read), so what pins the boundary is that the
-  // two-digit run the pattern *does* admit and the decoder refuses becomes a named failure.
-  expect(cardinal("100"), "a three-digit run past the bound is no count").toBeNull();
-  expect(
-    statedUndecodableOperatives("The board is one Now plus those 100"),
-    "and the accepting side never calls it a span, so nothing is silently dropped",
-  ).toEqual([]);
-  expect(
-    () => statedCounts("The board is one Now plus those 34, which leaves a slot", false),
-    "while the two-digit run both sides agree is a span fails by name",
+  // one — but only because the card is read through `anchoredCountPattern()` like every other count. The
+  // card looks safe and is not: the words either side of its numerals pin a *prefix*, not a whole digit run,
+  // so an un-anchored count matches `3000` as `0`. Measured on the shipped card with its cap rewritten
+  // `3000` and the card shape compiled from `countPattern()`: `cardCounts` answered `{cap: 0, budget: 5}`,
+  // `undecodableCardSpans` was empty so nothing threw, and `statedBacklogCap` returned `0` — a count *in
+  // range*, which the budget loop's `cap ?? -1` compared as a real number and every inequality accepted. A
+  // broken numeral had become a plausible one, worse than the absence the readers already refuse.
+  for (const digits of ["3000", "300", "999", "05"]) {
+    const text = cardWith(digits, "5");
+    expect(cardCounts(fold(text)), `the ${digits} card matches no shape at all`).toBeNull();
+    // `null` and never a number: `0` and `5` are the two values a digit run read in pieces produces, and
+    // both are in range, so neither is distinguishable from a count the docs really state.
+    expect(statedBacklogCap(text), `a ${digits} cap is no cap, not 0`).toBeNull();
+    expect(
+      statedBudget(text),
+      `a ${digits} cap voids the card for the budget reader too`,
+    ).toBeNull();
+    expect(
+      cardUnreadable(fold(text)),
+      "and nothing about it is reported as an unreadable span (the shape never took it)",
+    ).toBeNull();
+    // The control: the same card with its cap inside the bound still reads, so the null above is the width
+    // of the numeral and not a dead card shape.
+    expect(statedBacklogCap(cardWith("3", "5")), `the card still reads 3 beside ${digits}`).toBe(3);
+  }
+  // The boundary is the *accepting* side, and both directions are pinned: the widest count the bound admits
+  // is read whole, and the two-digit run both sides agree is a span fails by name rather than quietly.
+  expect(statedBacklogCap(cardWith(String(MAX_COUNT), "5")), "the widest count still reads").toBe(
+    MAX_COUNT,
+  );
+  expect(() =>
+    statedCounts("The board is one Now plus those 34, which leaves a slot", false),
   ).toThrow(/matched "34"/);
+  expect(statedUndecodableOperatives("The board is one Now plus those 100"), "").toEqual([]);
 });
 
 test("numeral refuses what cardinal cannot read, so the round-trip has no one-way spelling", () => {

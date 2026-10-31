@@ -25,41 +25,30 @@ import { join } from "node:path";
 import type { UndecodableSpan } from "./doc-fact-fixtures.ts";
 import {
   BACKLOG_CAP,
-  BACKLOG_FLOOR_HEAD,
-  BACKLOG_RULE_HEAD,
   NOW_ROWS,
   NUMERALS,
+  anchoredCountPattern,
   cardCounts,
   cardinal,
-  countPattern,
   fold,
   numeral,
 } from "./doc-fact-fixtures.ts";
+import { BACKLOG_FLOOR_HEAD, BACKLOG_RULE_HEAD } from "./doc-fact-sentences.ts";
 import type { StatedSpan } from "./skills-board-spans.ts";
-import { countsOfSpans, spansOf } from "./skills-board-spans.ts";
+import { OPERATIVE_PATTERNS, countsOfSpans, spansOf } from "./skills-board-spans.ts";
 import { cardUnreadable, unreadable } from "./skills-card-readers.ts";
 
 /**
- * A small count, spelled or digital — the one accepting pattern the fixtures generate, so the side that
- * matches a card-shaped sentence and the side that decodes its numerals cannot disagree on which counts
- * exist (a count accepted here and unknown to `cardinal` used to read as -1, a plausible-looking count).
+ * A whole count, spelled or digital, that cannot match inside a longer word.
+ *
+ * Read from `anchoredCountPattern()`, the one accepting shape the whole doc-fact layer compiles its counts
+ * from — this file's operative patterns, the card shape, and `hasNowSentence`. This file used to reassemble
+ * its own `\b…\b` around `countPattern()`, and that second copy made the claims about the two halves
+ * unfalsifiable: with the outer anchors deleted the Now row still read every count, because the spelled words
+ * matched whole through the nested inner leg. `doc-fact-count-pattern.test.ts` drives both halves through the
+ * exported pattern, which is the only shape whose failure would be seen.
  */
-const COUNT = countPattern();
-
-/**
- * A whole count, spelled or digital, that cannot match inside a longer word. Both halves are load-bearing,
- * measured against `plus those <word>` over the whole spelled table: joined in table order an unanchored
- * pattern reads `fourteen` as `four` (and `sixteen`, `seventeen`, `eighteen`, `nineteen` as their prefixes)
- * and splits `twenty-one` into `twenty` and `one`; the longest-first sort alone still splits the `twenty-*`
- * pair, because `twenty` and `one` each sit at a word boundary of their own.
- */
-const ANCHORED_COUNT = String.raw`\b(?:${[...NUMERALS]
-  .sort((a, b) => b.length - a.length)
-  .join("|")}|${COUNT})\b`;
-
-/** An operative sentence with its count captured, anchored on both sides so a prefix of a word is not a count. */
-const operative = (before: string, after: string): RegExp =>
-  new RegExp(`${before}(${ANCHORED_COUNT})${after}`, "g");
+const ANCHORED_COUNT = anchoredCountPattern();
 
 /**
  * The Now row on its own, so the board's arithmetic reads its own count instead of folding it into the
@@ -121,14 +110,7 @@ export function statedBacklogCounts(text: string): number[] {
  * count, so `plus those fourteen` used to report 4 and every check downstream of it agreed with a number
  * nobody wrote.
  */
-const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
-  operative("", " rows at the default"),
-  operative("cap is \\*\\*", " rows"),
-  operative("first ", " entries"),
-  operative("Fewer than ", " entries"),
-  operative("The board is ", " Now"),
-  operative("plus those ", ""),
-];
+const OPERATIVE_COUNT_PATTERNS: RegExp[] = OPERATIVE_PATTERNS;
 
 /**
  * The spelled count of the Backlog cap and of the Now group, once, so nothing below can hand-write a word
@@ -216,64 +198,12 @@ export function statedCounts(text: string, withBudget: boolean): number[] {
 }
 
 /**
- * One liveness proof: the pattern a reader must still fire, the shipped sentence that fires it, and the
- * count the reader must report for that sentence.
+ * The one liveness proof, and the builder the proofs are composed with: both live in `skills-board-spans.ts`
+ * beside the spans the readers match, so the patterns here and the sentences that prove them fire are one
+ * module rather than a pair that can drift.
  */
-export interface OperativeProof {
-  /** What the pattern reads, for the failure message. */
-  label: string;
-  /** The pattern itself, for the assertion that the sentence is more than its matched span. */
-  pattern: RegExp;
-  /** The shipped sentence, folded — the form every reader above sees. */
-  sentence: string;
-  /** The count `statedCounts` has to report for that sentence. */
-  count: number;
-}
-
-/**
- * Build one proof. `head`/`tail` are the words the shipped sentence is written with, and the same words the
- * reader's operative pattern above is compiled from, so a proof and its reader cannot drift apart; `escape`
- * applies to a head whose words carry regex syntax (the card's `**`). The count is always composed with
- * `numeral`, never spelled by hand, and `wordBefore`/`wordAfter` hold it in the sentence as prose does.
- */
-function proof(
-  label: string,
-  head: string,
-  count: number,
-  tail: string,
-  words: { readonly escape?: boolean; readonly before?: string; readonly after?: string } = {},
-): OperativeProof {
-  const spelled = numeral(count);
-  const front = words.escape ? head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : head;
-  return {
-    label,
-    pattern: new RegExp(`${front}(${ANCHORED_COUNT})${tail}`, "g"),
-    sentence: `${words.before ?? front}${spelled}${words.after ?? tail}`,
-    count,
-  };
-}
-
-/**
- * Every operative pattern with the sentence that fires it and the count the reader owes for it. A scraper
- * whose pattern stopped matching returns nothing and is therefore indistinguishable from a file with
- * nothing to disagree with, so each pattern is pinned to a sentence and re-proven in the test file — proven
- * *through the reader*, never through a copy of the pattern, or a dead pattern keeps proving itself live.
- *
- * Every count below comes from `BACKLOG_CAP` / `NOW_ROWS` through `numeral`, matching `OPERATIVE_COUNT_PATTERNS`
- * one-for-one above; a spelled word here would be a second source for a number the fixtures already derive.
- */
-export const OPERATIVE_PROOFS: OperativeProof[] = [
-  proof("the card's cap", "", BACKLOG_CAP, " rows at the default"),
-  proof("noni's bold cap", "cap is **", BACKLOG_CAP, " rows", {
-    escape: true,
-    before: "The cap is **",
-    after: " rows**",
-  }),
-  proof("noni's build rule with a numeral", "first ", BACKLOG_CAP, " entries"),
-  proof("noni's floor", "Fewer than ", BACKLOG_CAP, " entries"),
-  proof("the run board's Now row", "The board is ", NOW_ROWS, " Now"),
-  proof("the run board's rows beside it", "plus those ", BACKLOG_CAP, ""),
-];
+export type { OperativeProof } from "./skills-board-spans.ts";
+export { OPERATIVE_PROOFS } from "./skills-board-spans.ts";
 
 /** The two skills that pin a Now/Backlog board, and so carry the card the budget is read out of. */
 export const BOARD_SKILLS = ["sticky-run-board", "sticky-noni"];

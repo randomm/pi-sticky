@@ -25,19 +25,15 @@ import { expect, test } from "bun:test";
 
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
+import { BACKLOG_CAP, NOW_ROWS, cardCounts, fold, readDoc } from "./doc-fact-fixtures.ts";
 import {
-  BACKLOG_CAP,
   BACKLOG_FLOOR_HEAD,
   BACKLOG_RULE_HEAD,
   BUDGET_CARD,
-  NOW_ROWS,
   backlogFloorWithCap,
   backlogRuleWithCap,
   budgetCard,
-  cardCounts,
-  fold,
-  readDoc,
-} from "./doc-fact-fixtures.ts";
+} from "./doc-fact-sentences.ts";
 import {
   BOARD_SKILLS,
   OPERATIVE_PROOFS,

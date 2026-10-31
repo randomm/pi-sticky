@@ -23,18 +23,20 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { MAX_FIELD_GRAPHEMES } from "../src/pin-fields.ts";
 import {
   BACKLOG_CAP,
-  BUDGET_CARD,
   NOW_ROWS,
   NUMERALS,
-  backlogFloorWithCap,
-  backlogRuleWithCap,
-  budgetCard,
   cardCounts,
   cardinal,
   fold,
   numeral,
   readDoc,
 } from "./doc-fact-fixtures.ts";
+import {
+  BUDGET_CARD,
+  backlogFloorWithCap,
+  backlogRuleWithCap,
+  budgetCard,
+} from "./doc-fact-sentences.ts";
 import {
   BOARD_SKILLS,
   boardPath,

@@ -18,20 +18,22 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS, MIN_OPTIONS } from "../src/pin-fields.ts";
 import {
   BACKLOG_CAP,
-  BUDGET_CARD,
-  OPTION_FLOOR_HEAD,
-  OPTION_FLOOR_TAIL,
-  budgetCard,
   cardCounts,
   cardinal,
   fold,
   numeral,
-  optionBound,
-  optionFloorWithBound,
-  optionRange,
   readDoc,
   shippedSkills,
 } from "./doc-fact-fixtures.ts";
+import {
+  BUDGET_CARD,
+  OPTION_FLOOR_HEAD,
+  OPTION_FLOOR_TAIL,
+  budgetCard,
+  optionBound,
+  optionFloorWithBound,
+  optionRange,
+} from "./doc-fact-sentences.ts";
 
 const RESEARCH = join("docs", "research-summary.md");
 const BASICS_SKILL = join("skills", "sticky-basics", "SKILL.md");
