@@ -17,7 +17,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { type PackageJson, parsePackageJson } from "./release-automation-package.ts";
-import { blockFields, child, document, lines } from "./release-automation-primitives.ts";
+import { blockFieldsAtIndent, child, document, lines } from "./release-automation-primitives.ts";
 import { triggers } from "./release-automation-yaml.ts";
 
 /** The repo root, as the doc and config tests address files from it. */
@@ -169,10 +169,18 @@ export function prTitleRejects(title: string, pattern: string): boolean {
   return new RegExp(pattern).test(title);
 }
 
-/** The `pull_request` event types a workflow fires on, from its `types: [...]` line. */
+/**
+ * The `pull_request` event types a workflow fires on, from its `types:` line.
+ *
+ * Read at fixed indents rather than by trimmed text: `on:`'s events sit at two columns and their filters at
+ * four, so a `pull_request:` line written inside a step's `run: |` body — whose trimmed text is identical and
+ * whose indent is neither — cannot be mistaken for the trigger. A reader that searched by trimmed text would
+ * report whatever types followed the lookalike as the workflow's own.
+ */
 export function eventTypes(text: string, event: string): string[] {
-  const types = blockFields(text, event).find((field) => field.key === "types");
-  return (types?.value ?? "")
+  const types = blockFieldsAtIndent(text, event, 2).find((field) => field.key === "types");
+  if (types?.value.trim().startsWith("[") !== true) return [];
+  return types.value
     .replace(/^\[/, "")
     .replace(/\]$/, "")
     .split(",")

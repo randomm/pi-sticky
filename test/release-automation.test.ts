@@ -33,6 +33,7 @@ import {
 } from "./release-automation-contracts.ts";
 import { stepWith } from "./release-automation-steps.ts";
 import {
+  defaultPermissions,
   hasEnvironmentKey,
   jobBody,
   jobField,
@@ -114,6 +115,14 @@ test("the publish job holds exactly the permissions trusted publishing needs", (
   ).toEqual([
     { key: "contents", value: "write" },
     { key: "pull-requests", value: "write" },
+  ]);
+  // The document's own block, which no job slice reaches: it is the floor under every step that does not
+  // declare permissions of its own, and the reviewer's edit here is a widening (`contents: write`) that reads
+  // as a routine fix for a push permission and leaves each job's block untouched, so none of the assertions
+  // above would notice. Asserted as an exact value rather than as "not write": a deleted block also satisfies
+  // a negative assertion, and a workflow with no default inherits whatever the repository's default is.
+  expect(defaultPermissions(readRepoFile(RELEASE_WORKFLOW)), "the workflow's default").toEqual([
+    { key: "contents", value: "read" },
   ]);
 });
 

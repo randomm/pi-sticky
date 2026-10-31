@@ -11,7 +11,12 @@
  *
  * Nothing here states what the release should be; the expected values are in the tests.
  */
-import { type Field, blockFields, indentOf, lines } from "./release-automation-primitives.ts";
+import {
+  type Field,
+  blockFieldsAtIndent,
+  indentOf,
+  lines,
+} from "./release-automation-primitives.ts";
 
 /** One item of a job's `steps:` list, its indented block included, in file order. */
 export function stepBodies(body: string): string[] {
@@ -40,11 +45,14 @@ export function stepBodies(body: string): string[] {
 /**
  * The `key: value` children of the `with:` block of the step containing `needle`.
  *
+ * Read at the indent a `with:` block takes inside the slice `stepBodies` returns — eight columns, the child of
+ * the step's own keys, which sit at eight because that slice keeps the file's indentation apart from the
+ * `- ` prefix. So a `with:` line written into the step's `run: |` script cannot open the block this reader
+ * reports: those lines sit deeper still, at the script's own indent.
  * `[]` for a step that is not there is the honest answer, and the controls pin it: the same reader handed a
- * real step must return that step's own three inputs, so an empty result cannot be the reader having found
- * nothing.
+ * real step must return that step's own inputs, so an empty result cannot be the reader having found nothing.
  */
 export function stepWith(body: string, needle: string): Field[] {
   const step = stepBodies(body).find((entry) => entry.includes(needle));
-  return step === undefined ? [] : blockFields(step, "with");
+  return step === undefined ? [] : blockFieldsAtIndent(step, "with", 8);
 }

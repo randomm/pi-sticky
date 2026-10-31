@@ -25,6 +25,7 @@ import {
 } from "./release-automation-contracts.ts";
 import { stepWith } from "./release-automation-steps.ts";
 import {
+  defaultPermissions,
   hasEnvironmentKey,
   jobBody,
   jobs,
@@ -35,6 +36,11 @@ import {
 /** The release workflow as shipped — the base every mutation below is cut from. */
 function workflow(): string {
   return readRepoFile(RELEASE_WORKFLOW);
+}
+
+/** The publish job as shipped — the base the permissions control above compares against. */
+function publishBody(): string {
+  return jobBody(workflow(), "publish");
 }
 
 /** The publish job with `from` replaced by `to`; throws when the mutation would not take. */
@@ -75,6 +81,48 @@ test("an environment key on the publish job is refused; a comment about one is n
   // refuse the workflow for that comment, which is the false positive that gets a guard deleted.
   expect(workflow(), "the workflow does mention the key").toContain("environment:");
   expect(hasEnvironmentKey(workflow()), "and the reader is not fooled by the prose").toBe(false);
+});
+
+test("the permission readers read a real block and refuse one faked in a shell body", () => {
+  // The defect this control exists for. The publish job's own `permissions:` block is deleted and the same
+  // lines written into the npm-floor step's `run: |` script, where the bytes still say `id-token: write`. A
+  // text scanner reads that as the job's block and the suite stays green over a job that cannot mint the OIDC
+  // token, so `npm publish` is the first thing to fail — on the one run nobody can re-run. The parse reports
+  // no such key for the job, so the answer here is `[]` and the main file's equality assertion fails.
+  const lookalike = workflow()
+    .replace("    permissions:\n      id-token: write\n      contents: read\n", "")
+    .replace(
+      '          echo "npm $version is at least $minimum"\n',
+      '          echo "npm $version is at least $minimum"\n          permissions:\n            id-token: write\n            contents: read\n',
+    );
+  expect(lookalike, "the lookalike is in the file").toContain("          permissions:");
+  expect(lookalike, "and the job's real block is gone").not.toContain(
+    "    permissions:\n      id-token: write",
+  );
+  expect(
+    permissions(jobBody(lookalike, "publish")),
+    "a block that exists only inside a run body is not the job's",
+  ).toEqual([]);
+  expect(permissions(publishBody()), "while the shipped job answers with its own").toEqual([
+    { key: "id-token", value: "write" },
+    { key: "contents", value: "read" },
+  ]);
+  // The default block, which no job slice reaches: both directions of drift have to be visible here or the
+  // main file's assertion on it is a value the reader cannot contradict.
+  expect(
+    defaultPermissions(
+      workflow().replace("permissions:\n  contents: read", "permissions:\n  contents: write"),
+    ),
+    "a widened default is visible",
+  ).toEqual([{ key: "contents", value: "write" }]);
+  expect(
+    defaultPermissions(workflow().replace("permissions:\n  contents: read\n", "")),
+    "and a deleted one",
+  ).toEqual([]);
+  expect(
+    defaultPermissions(workflow()),
+    "the shipped default, read at the document level and not from a job's block",
+  ).toEqual([{ key: "contents", value: "read" }]);
 });
 
 test("the trigger, permission and field readers see a real block and report an absent one", () => {

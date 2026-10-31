@@ -13,7 +13,6 @@
  */
 import {
   type Field,
-  blockFields,
   child,
   document,
   indentOf,
@@ -149,13 +148,18 @@ export function jobBody(workflow: string, id: string): string {
   return jobs(workflow).find((job) => job.split("\n")[0]?.trim() === `${id}:`) ?? "";
 }
 
-/** A step's own list, located through the job slice it came from. */
-function stepList(body: string): unknown {
+/** The job a slice describes: the value under its own `  id:` header, or `undefined` when there is none. */
+function sliceJob(body: string): Record<string, unknown> | undefined {
   const header = lines(body).find((line) => /^ {2}\S[^:]*:$/.test(line));
   const id = header?.trim().slice(0, -1);
   const doc = document(body);
   if (id === undefined || doc === null) return undefined;
-  return child(child(doc, id), "steps");
+  return mapping(child(doc, id)) ?? undefined;
+}
+
+/** A step's own list, located through the job slice it came from. */
+function stepList(body: string): unknown {
+  return child(sliceJob(body), "steps");
 }
 
 /**
@@ -199,7 +203,43 @@ export function runsStep(body: string, needle: string): boolean {
   );
 }
 
-/** The `key: value` children of the `permissions:` block in a job body. */
+/**
+ * The `key: value` children of the `permissions:` block a *job* declares, read off the parse.
+ *
+ * Read off the parse, not off the text, for the same reason `jobField` is: a shell body is one scalar whose
+ * lines still carry an indent, so a `permissions:` line written into a `run: |` block reads to a text scanner
+ * exactly as the job's own block does. That is the one guard in this file it is least safe to read from the
+ * text, because `id-token: write` is what lets the runner mint the OIDC token: a publish job whose block was
+ * deleted — with a lookalike left behind in a step's script to keep the scanner happy — fails at `npm publish`,
+ * and an npm version once published cannot be replaced. The parse reports no such key for that job and the
+ * reader answers `[]`, which is what makes the equality assertion in the test bite.
+ *
+ * `body` is a job slice as `jobs()` returns it, whose first line is the `  id:` header, so the block read here
+ * is the one under that id and never the workflow's default — read that with `defaultPermissions`.
+ */
 export function permissions(body: string): Field[] {
-  return blockFields(body, "permissions");
+  return fieldsOf(child(sliceJob(body), "permissions"));
+}
+
+/**
+ * The workflow's own default `permissions:` block, read at the document level.
+ *
+ * A separate reader because a job slice cannot reach this block: `jobs()` starts each slice at the job header,
+ * below the top-level one, so every assertion routed through `permissions` is blind to the default the workflow
+ * hands any step that does not declare its own. Read off the parse at the document's own level, a job's block
+ * (nested under `jobs:`) is not mistaken for it, and the file's default — `contents: read`, the floor under
+ * both jobs — is assertable and falsifiable: widening it or deleting it changes this answer.
+ */
+export function defaultPermissions(text: string): Field[] {
+  return fieldsOf(child(document(text), "permissions"));
+}
+
+/** A parsed mapping as `Field`s; `[]` for anything that is not a mapping (absent, null, a scalar). */
+function fieldsOf(node: unknown): Field[] {
+  const block = mapping(node);
+  if (block === null) return [];
+  return Object.entries(block).map(([key, value]) => ({
+    key,
+    value: typeof value === "string" ? value : (JSON.stringify(value) ?? ""),
+  }));
 }

@@ -6,6 +6,12 @@
  * it in both directions without a cycle. Every module here has one responsibility and one home for each
  * helper, so a helper cannot drift between two copies of itself.
  *
+ * The text view has one rule and it is the reason `blockFieldsAtIndent` takes its indent instead of finding
+ * one: this view cannot tell a real mapping header from a key-shaped line inside a block scalar, because both
+ * have the same trimmed text and only the leading spaces tell them apart. So the caller states the level it
+ * means and the reader refuses a header anywhere else. Where structure decides, the parse view is the right
+ * half of this file to use.
+ *
  * Nothing here states what the release should be; the expected values are in the tests.
  */
 import { isMap, isSeq, parse } from "yaml";
@@ -80,29 +86,31 @@ export function document(text: string): Record<string, unknown> | null {
 }
 
 /**
- * The `key: value` children of a mapping, at whatever indent its first child uses.
+ * The `key: value` children of a mapping whose header sits at exactly `indent` columns.
  *
- * The header is found by *trimmed* text and the block below it is then bounded by indentation, so a caller
- * that slices a job body out of a file — where every line is indented deeper than the file's own layout —
- * still finds the block it asked for. The indent is derived rather than assumed so a reader cannot quietly
- * hard-wire itself to one file's formatting, and a comment-only line is skipped rather than ending the block.
+ * The header is matched at a *given* indent rather than by trimmed text, which is the whole point: a line
+ * inside a `run: |` body carries leading spaces and its trimmed text is indistinguishable from a real key, so
+ * a header found by trimmed text lets a shell body open a block the reader then reports as the workflow's
+ * own. The caller knows the level it means (a step's inputs sit at the indent its `- ` item implies), so this
+ * takes that indent and refuses a header anywhere else. The block below it is bounded by indentation, so a
+ * caller that sliced a block out of a deeper file still finds it; the indent is checked rather than derived
+ * so the caller's level, and not the first line it happened to see, decides.
  */
-export function blockFields(text: string, name: string): Field[] {
+export function blockFieldsAtIndent(text: string, name: string, indent: number): Field[] {
   const all = lines(text);
-  const header = all.findIndex((line) => indentOf(line) >= 0 && line.trim() === `${name}:`);
+  const header = all.findIndex((line) => indentOf(line) === indent && line.trim() === `${name}:`);
   if (header < 0) return [];
-  const parentIndent = indentOf(all[header] ?? "");
   // A quoted value may hold a colon (a registry URL does), so the key is the run up to the first colon and
   // the value is everything after it, quotes and trailing comment stripped by `scalar`.
   const pair = /^(\S[^:]*):\s*(.*)$/;
   const out: Field[] = [];
   let childIndent: number | null = null;
   for (const line of all.slice(header + 1)) {
-    const indent = indentOf(line);
-    if (indent < 0) continue;
-    if (indent <= parentIndent) break;
-    if (childIndent === null) childIndent = indent;
-    else if (indent !== childIndent) break;
+    const lineIndent = indentOf(line);
+    if (lineIndent < 0) continue;
+    if (lineIndent <= indent) break;
+    if (childIndent === null) childIndent = lineIndent;
+    else if (lineIndent !== childIndent) break;
     const found = pair.exec(line.trim());
     if (found?.[1] !== undefined) out.push({ key: found[1].trim(), value: scalar(found[2] ?? "") });
   }
