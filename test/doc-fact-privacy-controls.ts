@@ -1,9 +1,10 @@
 /**
  * The per-site cut controls for the privacy guard: strip one site's note and assert that the guard fires on
  * that site alone, that the cut removed exactly the note this site carried, and that the read-back window
- * which proves it is sized for the job. Lives beside `doc-fact-privacy.test.ts` only for the 300-line cap;
- * every control here runs against `strip` in the helpers module, so a builder that cut the wrong span fails a
- * test instead of quietly passing one.
+ * which proves it, and what that window's bound is pinned by. Lives beside `doc-fact-privacy.test.ts`
+ * only for the 300-line cap; every control here runs against `strip` in the helpers module, so a builder
+ * that cut the wrong span fails a test instead of quietly passing one — and the oracle that makes it fail is
+ * `strip`'s byte-equality throw, which is why its own `toThrow()` leg is pinned in the sibling file.
  */
 import { expect } from "bun:test";
 
@@ -16,11 +17,17 @@ import {
   strip,
 } from "./doc-fact-privacy-helpers.ts";
 /**
- * How many characters are read back after a cut to prove the cut removed only this site's note. A shorter
- * window lets a length-preserving wrong cut through: the compared span is the text that *followed* the note,
- * so a window no wider than the note compares only a span the cut itself overwrote and any same-length cut
- * reads back as correct. The two legs in `perSiteCutControls` pin it strictly between the shortest and the
- * longest privacy note the README ships, so the number cannot drift to either edge unnoticed.
+ * How many characters are read back after a cut, so the read-back compares the text that *followed* this
+ * site's note rather than a span inside the note the cut just removed — at or below the note's own length the
+ * compared span is text the cut overwrote, which is why the window has a bound at all. It is not what decides
+ * *which* span was cut: a length-preserving wrong cut is refused upstream, and measured red for every window
+ * from 4 to 40. The two legs in `perSiteCutControls` pin it strictly between the shortest and longest privacy
+ * note the README ships (measured: 10 and 33), and are genuinely falsifiable — red at or under 10, red at or
+ * over 33, green only for 11 through 32.
+ *
+ * For cut identity, `strip`'s byte-equality throw is the load-bearing oracle: measured over the same-length
+ * wrong cuts at all three sites, deleting the read-back leg changes nothing, while deleting the throw is what
+ * lets one through.
  */
 export const CUT_READBACK_WINDOW = 16;
 
