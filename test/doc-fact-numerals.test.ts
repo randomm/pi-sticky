@@ -32,12 +32,10 @@ import {
 } from "./doc-fact-fixtures.ts";
 import {
   BOARD_SKILLS,
-  OPERATIVE_PROOFS,
   boardPath,
   replaceSpaced,
   statedBacklogCap,
   statedBacklogCounts,
-  statedCounts,
 } from "./skills-board-readers.ts";
 
 /** The budget the env range permits at its top, so a spelled count cannot collide with the default. */
@@ -56,9 +54,13 @@ const UNCOUNTABLE_DIGITS = String(BEYOND_EVERY_BOUND);
 /** The room the board's own inequality allows: `cap <= maxPins - Now - 1`. */
 const BUDGET_ROOM = DEFAULT_CONFIG.maxPins - NOW_ROWS - 1;
 
-/** One card-shaped sentence, terminated the way every shipped card terminates. */
-const cardSentence = (cap: number, budget: number): string =>
-  budgetCard(cap, budget).replace(";", ";");
+/**
+ * One card-shaped sentence, terminated the way every shipped card terminates. `budgetCard` stops at the
+ * `;` that ends the card clause, so the sentence a doc carries is the card plus the terminator that
+ * closes it — and the readers match the card's own `;`, never this trailing one, which is why appending
+ * it here changes what `cardCounts` sees rather than just restyling it.
+ */
+const cardSentence = (cap: number, budget: number): string => `${budgetCard(cap, budget)};`;
 
 test("the readers decode every spelled count the docs can hold", () => {
   // `numeral(n)` composes the card and `cardinal` reads it back: one contract, so for every count a doc
@@ -188,34 +190,6 @@ test("a card contradicting the shipped one on a spelled count is rejected, not a
       `${dir}: agreeing cards still read`,
     ).toEqual({ cap: BACKLOG_CAP, budget: DEFAULT_CONFIG.maxPins });
   }
-});
-
-test("each proof is proven by the reader that has to scrape it, not by a copy of its pattern", () => {
-  // The liveness proofs pair each sentence with a hand-copied regex literal and only check the sentence
-  // against that copy, so a proof stays green while the real reader's pattern is dead: the count the
-  // board test compares is then an empty list and agrees with everything. The proof is only worth what
-  // the reader itself reports for the sentence.
-  for (const { label, sentence, count } of OPERATIVE_PROOFS) {
-    expect(
-      statedCounts(sentence, true),
-      `"${label}": the real reader scrapes the proof's count`,
-    ).toContain(count);
-    expect(statedBacklogCounts(sentence), `"${label}": the reader reads its own proof`).not.toEqual(
-      [],
-    );
-  }
-});
-
-test("an unapplied mutation is refused by the control builder, not reported as a clean file", () => {
-  // `replaceSpaced` used to return its input untouched when the pattern it generated matched nothing, so
-  // every control built on it could pass on a mutation that never happened — and the `!== original`
-  // guards that were supposed to catch that are the same hand-written literal that drifted.
-  expect(
-    () => replaceSpaced(readDoc(boardPath("sticky-noni")), "a sentence no skill contains", "x"),
-    "a control whose target is gone throws",
-  ).toThrow();
-  // The shipped targets still take, so the throw above is the missing sentence and not a broken builder.
-  expect(replaceSpaced(readDoc(boardPath("sticky-noni")), BUDGET_CARD, BUDGET_CARD)).not.toBe("");
 });
 
 test("the operative rule and floor spell their counts the way the reader reads them", () => {

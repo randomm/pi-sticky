@@ -23,6 +23,7 @@
 import { join } from "node:path";
 
 import {
+  BACKLOG_CAP,
   BACKLOG_FLOOR_HEAD,
   BACKLOG_RULE_HEAD,
   NOW_ROWS,
@@ -116,19 +117,28 @@ const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
   operative("plus those ", ""),
 ];
 
+/**
+ * The spelled count of the Backlog cap and of the Now group, once, so nothing below can hand-write a word
+ * for a number the fixtures already derive. A proof that spelled `three` spelled the *current* budget, not
+ * the cap: a `DEFAULT_CONFIG.maxPins` bump moved the card and left every proof certifying words no file
+ * states any more — the same literal-pinning the card itself was fixed for.
+ */
+const CAP_WORD = numeral(BACKLOG_CAP);
+const NOW_WORD = numeral(NOW_ROWS);
+
 /** The words `The board is N Now` are written with, in the casing the file ships them in: the sentence
  * opens the line after the card's bold, so it begins with a capital. A control written against another
  * casing matches nothing case-sensitively, and `replaceSpaced` would rewrite a different occurrence.
  */
-export const NOW_SENTENCE = "The board is one Now";
+export const NOW_SENTENCE = `The board is ${NOW_WORD} Now`;
 
 /** `NOW_SENTENCE` written mid-sentence, where the same words would begin with a lowercase letter. The
  * readers are case-sensitive, so this casing is what a control must prove they do NOT read.
  */
-export const NOW_SENTENCE_LOWER = "the board is one Now";
+export const NOW_SENTENCE_LOWER = `the board is ${NOW_WORD} Now`;
 
 /** The words `plus those N` are written with. */
-export const PLUS_THOSE_HEAD = "plus those three";
+export const PLUS_THOSE_HEAD = `plus those ${CAP_WORD}`;
 
 /**
  * Every number the file states for the Backlog. `withBudget` adds the budget half of every card, for the
@@ -184,14 +194,26 @@ function escapeRegExp(text: string): string {
  *
  * Throws when the pattern matches nothing: returning the input unchanged made every control built here pass
  * on a mutation that never happened, because the decoy then *was* the original text and reported the
- * shipped counts.
+ * shipped counts. It also throws for a needle with no word characters — `" ".split(" ")` joins to a pattern
+ * that matches the empty string, so a blank needle passed that guard while inserting its replacement at
+ * offset 0 and changing no sentence: every `!== original` check downstream then reported a control that had
+ * taken. A needle cannot address text without a word in it, so a blank one is a defect in the control.
+ *
+ * The replacement is inserted literally, through a function: as a *string* it is a template to
+ * `String.prototype.replace`, so a control asking for `a$&b` got the matched span spliced into itself
+ * (`aplus those threeb`) while its guards still reported the bytes it had asked for.
  */
 export function replaceSpaced(text: string, spaced: string, replacement: string): string {
+  if (!/\w/.test(spaced)) {
+    throw new Error(
+      `replaceSpaced: needle ${JSON.stringify(spaced)} has no word characters — it addresses no text`,
+    );
+  }
   const pattern = new RegExp(spaced.split(" ").map(escapeRegExp).join("\\s+"), "i");
   if (!pattern.test(text)) {
     throw new Error(`replaceSpaced: "${spaced}" is not in the text — the control's target is gone`);
   }
-  return text.replace(pattern, replacement);
+  return text.replace(pattern, () => replacement);
 }
 
 /**
@@ -210,48 +232,48 @@ export interface OperativeProof {
 }
 
 /**
+ * Build one proof. `head`/`tail` are the words the shipped sentence is written with, and the same words the
+ * reader's operative pattern above is compiled from, so a proof and its reader cannot drift apart; `escape`
+ * applies to a head whose words carry regex syntax (the card's `**`). The count is always composed with
+ * `numeral`, never spelled by hand, and `wordBefore`/`wordAfter` hold it in the sentence as prose does.
+ */
+function proof(
+  label: string,
+  head: string,
+  count: number,
+  tail: string,
+  words: { readonly escape?: boolean; readonly before?: string; readonly after?: string } = {},
+): OperativeProof {
+  const spelled = numeral(count);
+  const front = words.escape ? head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : head;
+  return {
+    label,
+    pattern: new RegExp(`${front}(${ANCHORED_COUNT})${tail}`, "g"),
+    sentence: `${words.before ?? front}${spelled}${words.after ?? tail}`,
+    count,
+  };
+}
+
+/**
  * Every operative pattern with the sentence that fires it and the count the reader owes for it. A scraper
  * whose pattern stopped matching returns nothing and is therefore indistinguishable from a file with
  * nothing to disagree with, so each pattern is pinned to a sentence and re-proven in the test file — proven
  * *through the reader*, never through a copy of the pattern, or a dead pattern keeps proving itself live.
+ *
+ * Every count below comes from `BACKLOG_CAP` / `NOW_ROWS` through `numeral`, matching `OPERATIVE_COUNT_PATTERNS`
+ * one-for-one above; a spelled word here would be a second source for a number the fixtures already derive.
  */
 export const OPERATIVE_PROOFS: OperativeProof[] = [
-  {
-    label: "the card's cap",
-    pattern: /three rows at the default/,
-    sentence: "three rows at the default",
-    count: 3,
-  },
-  {
-    label: "noni's bold cap",
-    pattern: /cap is \*\*three rows/,
-    sentence: "The cap is **three rows**",
-    count: 3,
-  },
-  {
-    label: "noni's build rule with a numeral",
-    pattern: /first three entries/,
-    sentence: "the first three entries",
-    count: 3,
-  },
-  {
-    label: "noni's floor",
-    pattern: /Fewer than three entries/,
-    sentence: "Fewer than three entries",
-    count: 3,
-  },
-  {
-    label: "the run board's Now row",
-    pattern: /The board is one Now/,
-    sentence: "The board is one Now",
-    count: 1,
-  },
-  {
-    label: "the run board's rows beside it",
-    pattern: /plus those three/,
-    sentence: "plus those three",
-    count: 3,
-  },
+  proof("the card's cap", "", BACKLOG_CAP, " rows at the default"),
+  proof("noni's bold cap", "cap is **", BACKLOG_CAP, " rows", {
+    escape: true,
+    before: "The cap is **",
+    after: " rows**",
+  }),
+  proof("noni's build rule with a numeral", "first ", BACKLOG_CAP, " entries"),
+  proof("noni's floor", "Fewer than ", BACKLOG_CAP, " entries"),
+  proof("the run board's Now row", "The board is ", NOW_ROWS, " Now"),
+  proof("the run board's rows beside it", "plus those ", BACKLOG_CAP, ""),
 ];
 
 /** The two skills that pin a Now/Backlog board, and so carry the card the budget is read out of. */

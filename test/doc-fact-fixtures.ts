@@ -119,18 +119,36 @@ export function countPattern(): string {
 }
 
 /**
- * A count as the docs spell it: a word from the table, or digits up to `MAX_COUNT`.
+ * A whole count that cannot match inside a longer word, with the spelled alternatives joined
+ * longest-first — the one accepting shape `skills-board-readers.ts` compiles its operative patterns
+ * from. Handed out as source so a test that claims to exercise the sort or the anchors drives them
+ * through this string rather than through a second copy that could drift from it.
+ */
+export function anchoredCountPattern(): string {
+  return String.raw`\b(?:${[...NUMERALS]
+    .sort((a, b) => b.length - a.length)
+    .join("|")}|${COUNT})\b`;
+}
+
+/**
+ * A count as the docs spell it: a word from the table, never digits.
  *
  * Throws rather than falling back to digits. `cardinal` refuses a digit string above `MAX_COUNT`, so the
  * fallback made the round-trip one-way: a builder handed 25 emitted "25", every reader then reported *no
  * count* for the sentence, and a decoy built that way passed as a clean file. An out-of-range count is a
  * defect in the caller, and throwing is the only way it reaches one.
+ *
+ * The gate is the table's own length, not `MAX_COUNT`: the module keeps them equal by the check beside the
+ * table, but a bound the docs state and a table that lacks the word are separate facts, and a builder must
+ * refuse what *this array* cannot spell even if the bound moved first.
  */
 export function numeral(n: number): string {
-  if (!Number.isInteger(n) || n < 0 || n > MAX_COUNT) {
-    throw new RangeError(`numeral: ${n} is not a count in 0..${MAX_COUNT}`);
+  if (!Number.isInteger(n) || n < 0 || n >= NUMERALS.length) {
+    throw new RangeError(
+      `numeral: ${n} is not a count the table spells (0..${NUMERALS.length - 1})`,
+    );
   }
-  return NUMERALS[n] ?? String(n);
+  return NUMERALS[n] as string;
 }
 
 /** The card sentence, global — so a file with two of them reports both numerals of each. */

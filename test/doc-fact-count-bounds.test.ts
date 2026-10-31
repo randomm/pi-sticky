@@ -98,6 +98,12 @@ test("numeral refuses what cardinal cannot read, so the round-trip has no one-wa
   }
   // The top of the bound is spelled from the table, not emitted as digits — that is the whole point of the
   // guard: a count inside the bound always gets a word `cardinal` decodes by table index.
+  // The gate is the TABLE, not the numeric bound `MAX_COUNT` it is supposed to mirror: the two are equal
+  // today only because of the load-bearing check at the top of the module, so a `?? String(n)` fallback
+  // behind the bound check is invisible until a bound moves. `MAX_COUNT + 1` is the first value past the
+  // last word, and it used to come back as a digit card no reader of this module could parse.
+  expect(() => numeral(MAX_COUNT + 1), "one past the bound throws, not digits").toThrow();
+  expect(() => numeral(NUMERALS.length), "one past the last word throws too").toThrow();
   const top = NUMERALS[MAX_COUNT];
   const cap = NUMERALS[BACKLOG_CAP];
   if (top === undefined || cap === undefined)
