@@ -10,6 +10,10 @@
  * The reason the guard exists at all: this repo is public, Apache-2.0 and ships its manifest, while
  * noni's repo is not public, and a README that links it without saying so invites an install or a
  * lookup that cannot be satisfied.
+ *
+ * The anchor of `NOTE` is load-bearing and is therefore asserted, not assumed (see the first test): an
+ * un-anchored pattern credits a `private` that merely *falls inside* the window to the link it is nearest,
+ * which is the exact confusion the jsdoc on `NOTE` promises against.
  */
 import { expect, test } from "bun:test";
 
@@ -31,6 +35,44 @@ const WINDOW = 220;
  * window is not credited to this site.
  */
 const NOTE = /^\s*\((?:[^()]*)\bprivate\b[^()]*\)/;
+
+/**
+ * `NOTE` with its `^\s*` deleted, so the assertion below shows *what the anchor changes*: the one
+ * difference between the two patterns is whether a note has to open where the link ends.
+ */
+const UNANCHORED = /\((?:[^()]*)\bprivate\b[^()]*\)/;
+
+/** A tail that mentions `private` in prose *before* a parenthetical that is not this link's note. */
+const PROSE_BEFORE_NOTE = " says the repo is private elsewhere (private at the time of writing)";
+
+/**
+ * The anchor is what makes a note belong to *this* link, so it is exercised rather than assumed. Deleting
+ * `^\s*` leaves every other assertion in this file green — measured — so without the pair below the
+ * guarantee the header of `NOTE` states would be unobserved: the shipped tail matches, and a tail whose
+ * `private` sits in prose ahead of a later parenthetical does not. `\s*` is in the pattern only because the
+ * README hard-wraps.
+ */
+test("a privacy note is credited only when it opens where the link ends", () => {
+  const shipped = readDoc(README);
+  const site = [...shipped.matchAll(NONI_LINK)][0];
+  const tail = shipped.slice((site?.index ?? 0) + (site?.[0].length ?? 0));
+  // The leading space is part of the match: un-anchored, the same `exec` returns the parenthetical without
+  // it, so this pins the note's whole span from the link's own end rather than a substring of it.
+  expect(NOTE.exec(tail)?.[0], "the shipped note opens right after the link").toBe(
+    " (private at the time of writing)",
+  );
+  // The word `private` present, and a parenthetical present, but neither belongs to this link: the word
+  // sits in intervening prose, so the note an un-anchored pattern would credit here is somebody else's.
+  // One tail, both patterns: `NOTE` refuses it, the un-anchored copy takes the *later* parenthetical.
+  expect(
+    NOTE.exec(PROSE_BEFORE_NOTE),
+    "prose before the parenthetical is not a note for this link",
+  ).toBeNull();
+  expect(
+    UNANCHORED.exec(PROSE_BEFORE_NOTE)?.[0],
+    "…which is exactly what an un-anchored NOTE would credit to this site",
+  ).toBe("(private at the time of writing)");
+});
 
 test("every noni link in the README says the repo is private", () => {
   const readme = readDoc(README);
