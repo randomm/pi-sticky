@@ -5,8 +5,9 @@ Where this file and the plan disagree, **this file wins**.
 
 Sources: eight research runs. All pi facts are from the installed pi 1.3.0 sources at
 `@earendil-works/pi-coding-agent` (same version as the plan's floor; pi 1.4.0 exists since 2026-10-21
-and adds nothing pin-related). The MIT release is a decided target, not a shipped state: the repo is
-still `"private": true` in `package.json` and carries no LICENSE file.
+and adds nothing pin-related). The open-source release is a decided target that has since shipped its
+licensing posture: the repo is public and Apache-2.0, with `LICENSE`, `NOTICE` and `package.json`
+`"license": "Apache-2.0"` all present. A relicensing to MIT remains a decision, not a fact.
 
 ## 1. Purpose (owner restatement)
 
