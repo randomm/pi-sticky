@@ -21,6 +21,8 @@ import {
   BUDGET_CARD,
   OPTION_FLOOR_HEAD,
   OPTION_FLOOR_TAIL,
+  budgetCard,
+  cardCounts,
   cardinal,
   fold,
   numeral,
@@ -116,19 +118,54 @@ test("the research summary records whether subagents are advertised the skills",
   }
 });
 
-test("the run-board skill states the budget card in the same words as the noni skill", () => {
+test("both board skills state the budget card in the same words", () => {
   // One card, two skills: a model that loads only the run board still has to be told how many Backlog
-  // rows fit, so the sentence is shared rather than paraphrased per file. The noni copy is the longer
-  // one, so a paraphrase there could survive while the board's copy drifted.
-  const board = fold(readDoc(RUN_BOARD));
-  expect(board, "the run board carries the card").toContain(BUDGET_CARD);
-  expect(board, "the run board names the budget it counts against").toContain("PI_STICKY_MAX_PINS");
-  // Positive control: a card that lost its drop-from-the-bottom clause (the half the model acts on when
-  // the budget is smaller than the default) is not the card.
-  expect(
-    board.replace("drop Backlog rows from the bottom", ""),
-    "a truncated card is not the card",
-  ).not.toContain(BUDGET_CARD);
+  // rows fit, so the sentence is shared rather than paraphrased per file. The earlier version of this
+  // test read the run board alone, so the noni copy — the longer one — could drift, be reworded or go
+  // missing entirely while the test stayed green. Both files are read now, and each is checked against
+  // the same fixture string.
+  const runBoard = fold(readDoc(RUN_BOARD));
+  const noni = fold(readDoc(NONI_SKILL));
+  for (const [label, board] of [
+    ["run board", runBoard],
+    ["noni skill", noni],
+  ] as const) {
+    expect(board, `${label}: carries the card`).toContain(BUDGET_CARD);
+    expect(board, `${label}: names the budget it counts against`).toContain("PI_STICKY_MAX_PINS");
+    // The numerals of the card, read out of the matched span by the shared reader rather than typed
+    // here: a copy that kept the shape of the sentence and went stale on either count would still
+    // "contain the card" to nothing, and `cardCounts` is what refuses a file whose cards disagree.
+    expect(cardCounts(board), `${label}: the card parses to the shipped cap and budget`).toEqual({
+      cap: BACKLOG_CAP,
+      budget: DEFAULT_CONFIG.maxPins,
+    });
+    // Positive controls, one per file. A card that lost its drop-from-the-bottom clause (the half the
+    // model acts on when the budget is smaller than the default) is not the card…
+    expect(
+      board.replace("drop Backlog rows from the bottom", ""),
+      `${label}: a truncated card is not the card`,
+    ).not.toContain(BUDGET_CARD);
+    // …and neither is a copy that kept every word around a wrong count. The decoy is built from the
+    // fixture, so the control fails for the same reason the real check would.
+    const stale = board.replace(BUDGET_CARD, budgetCard(BACKLOG_CAP + 1));
+    expect(stale, `${label}: the stale-count mutation took`).not.toBe(board);
+    expect(stale, `${label}: a card with the wrong count is not the card`).not.toContain(
+      BUDGET_CARD,
+    );
+    expect(cardCounts(stale), `${label}: the stale card reads as the wrong cap`).toEqual({
+      cap: BACKLOG_CAP + 1,
+      budget: DEFAULT_CONFIG.maxPins,
+    });
+  }
+  // Positive control for this test's own premise — that both files are read: with the card stripped from
+  // the noni copy only, the test has to fail. Stripping the run board's copy instead is covered by the
+  // per-file loop, which would report it as `noni skill: carries the card` never firing.
+  const noniWithoutCard = noni.replace(BUDGET_CARD, "");
+  expect(noniWithoutCard, "the noni control took").not.toBe(noni);
+  expect(noniWithoutCard.includes(BUDGET_CARD), "the noni control strips the card").toBe(false);
+  expect(runBoard.includes(BUDGET_CARD), "the run board keeps its copy, so only noni fails").toBe(
+    true,
+  );
 });
 
 test("the noni skill keeps each option inside the bound the tool refuses past", () => {

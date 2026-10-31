@@ -8,6 +8,10 @@
  *
  * Shared module (not a `.test.ts`) so `skills.test.ts`, `doc-facts.test.ts` and
  * `doc-facts-research.test.ts` read the same card and the same scrapers.
+ *
+ * A test that reads this file must also assert that each scraper fires on the shipped text. A reader
+ * whose pattern no longer matches returns no matches rather than failing, which is indistinguishable
+ * from a clean pass: that is the vacuous pass the positive controls in those tests exist to catch.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";

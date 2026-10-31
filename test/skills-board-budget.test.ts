@@ -1,7 +1,8 @@
 /**
  * The pin budget the two board skills state in prose, read out of the files and checked against the
  * tool. `skills.test.ts` guards the folder's shape (pi's loader rules, frontmatter, length); this file
- * guards the arithmetic those skills ask the model to perform.
+ * guards the arithmetic those skills ask the model to perform. The readers it asserts with — the scrapers
+ * and the proofs that each is still live — are in `skills-board-readers.ts`.
  *
  * Nothing in `src/` reads skill prose, so a Backlog cap above what `DEFAULT_CONFIG.maxPins` leaves is a
  * board whose own instructions overflow the tool: the model pins, `pinOp` refuses, and the user sees a
@@ -18,7 +19,6 @@
  * reader happened to match first.
  */
 import { expect, test } from "bun:test";
-import { join } from "node:path";
 
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
@@ -32,81 +32,20 @@ import {
   backlogRuleWithCap,
   budgetCard,
   cardCounts,
-  cardinal,
   fold,
   readDoc,
 } from "./doc-fact-fixtures.ts";
-
-/** A small count, spelled or digital — the same spellings `cardinal` reads. */
-const COUNT = String.raw`(?:\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)`;
-
-/** The card sentence, global — so a file with two of them reports both numerals of each. */
-const CARD_SHAPE = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT});`, "g");
-
-/** The two skills that pin a Now/Backlog board, and so carry the card the budget is read out of. */
-const BOARD_SKILLS = ["sticky-run-board", "sticky-noni"];
-
-/**
- * The card's cap and the operative instruction next to it. The model follows the sentence that tells it
- * what to pin, not the parenthetical beside it, so a mismatch between the two is the bug rather than a
- * wording choice. The card's other numeral — the budget it counts against — is not a Backlog count, so
- * the card contributes its cap only here; the budget is read on its own by `statedBudget`, which is what
- * refuses a second card that moved just that half.
- */
-function statedBacklogCounts(text: string): number[] {
-  return statedCounts(text, false);
-}
-
-/**
- * Every number the file states for the Backlog. `withBudget` adds the budget half of every card, for the
- * decoys that must report a count equal to the shipped budget rather than have it filtered as the card's.
- */
-function statedCounts(text: string, withBudget: boolean): number[] {
-  const folded = fold(text);
-  const counts: number[] = [];
-  const push = (spelled: string | undefined): void => {
-    const count = cardinal(spelled ?? "");
-    if (count !== null) counts.push(count);
-  };
-  // Every card in the file, not just the first: a second card-shaped sentence is a stated count too.
-  // Reporting its budget half is what lets the budget-only decoy below show up as a number.
-  for (const card of folded.matchAll(CARD_SHAPE)) {
-    push(card[1]);
-    if (withBudget) push(card[2]);
-  }
-  // The operative instructions: what to pin, and what to do when there are fewer rows than the cap.
-  for (const prefix of [
-    new RegExp(`(${COUNT}) Backlog rows`, "g"),
-    new RegExp(`first (${COUNT}) entries`, "g"),
-    new RegExp(`Fewer than (${COUNT}) entries`, "g"),
-  ]) {
-    for (const match of folded.matchAll(prefix)) push(match[1]);
-  }
-  return counts;
-}
-
-/** The cap a board skill states, or `null` with no card — which is a defect, not a pass. */
-function statedBacklogCap(text: string): number | null {
-  return cardCounts(fold(text))?.cap ?? null;
-}
-
-/** The budget a board card counts against, or `null` with no card. Read so a stale budget is caught. */
-function statedBudget(text: string): number | null {
-  return cardCounts(fold(text))?.budget ?? null;
-}
-
-/**
- * The operative rules a board skill must carry. `sticky-noni` builds its group from a file, so it states
- * the count in its own sentences; the run board's instruction defers to the card, so its operative rule
- * is the clause that names the group.
- */
-function operativeHeads(dir: string): string[] {
-  return dir === "sticky-noni"
-    ? [BACKLOG_RULE_HEAD, BACKLOG_FLOOR_HEAD]
-    : ['`group: "Backlog"` pins are'];
-}
-
-const boardPath = (dir: string) => join("skills", dir, "SKILL.md");
+import {
+  BOARD_SKILLS,
+  OPERATIVE_PROOFS,
+  boardPath,
+  operativeHeads,
+  replaceSpaced,
+  statedBacklogCap,
+  statedBacklogCounts,
+  statedBudget,
+  statedCounts,
+} from "./skills-board-readers.ts";
 
 test("each board skill's stated Backlog cap fits the pin budget alongside its Now pin", () => {
   // The tool will not stretch for the board: `pinOp` refuses the add past `maxPins`. So
@@ -137,9 +76,11 @@ test("each board skill's stated Backlog cap fits the pin budget alongside its No
   }
   // `sticky-noni` is the file that states the count in its own instruction as well as the card, so the
   // agreement assertion above is only load-bearing there — a file with one stated count cannot disagree
-  // with itself. The noni instruction states its own count, so the file reports the card's cap twice —
-  // once from the card, once from the sentence — and a file with one stated count could not disagree.
+  // with itself. The scrape is one count per matched span, so noni reports its cap three times: once from
+  // the card, once from the bold restatement inside the build bullet, once from the fewer-than floor. A
+  // file with a single stated count could not disagree with itself.
   expect(statedBacklogCounts(readDoc(boardPath("sticky-noni")))).toEqual([
+    BACKLOG_CAP,
     BACKLOG_CAP,
     BACKLOG_CAP,
   ]);
@@ -154,10 +95,15 @@ test("the budget check catches a card that overruns the budget", () => {
   const overrunning = budgetCard(DEFAULT_CONFIG.maxPins);
   const overrunningCap = statedBacklogCap(`the cap is **${overrunning}**`);
   expect(overrunningCap, "the decoy card parses").toBe(DEFAULT_CONFIG.maxPins);
-  expect(
-    NOW_ROWS + (overrunningCap ?? 0),
-    "the decoy card's board needs more pins than the budget holds",
-  ).toBeGreaterThan(DEFAULT_CONFIG.maxPins);
+  // A scraper that matches nothing is the vacuous pass the equality loop above cannot see, so each
+  // pattern is proven against the sentence it is meant to read before the loop is trusted.
+  for (const [label, pattern, sentence] of OPERATIVE_PROOFS) {
+    expect(sentence, `"${label}": the proof sentence fires its own pattern`).toMatch(pattern);
+    expect(
+      sentence.replace(pattern, ""),
+      `"${label}": the proof sentence is more than its matched span`,
+    ).not.toBe(sentence);
+  }
   // No card at all is a defect, not a pass: the model would have no budget to obey.
   expect(statedBacklogCap("the group holds as many rows as the tracker has"), "no card").toBeNull();
   // A cap spelled with digits reads the same as one spelled out.
@@ -191,7 +137,7 @@ test("the budget check catches a card that overruns the budget", () => {
   // included: a decoy whose count happens to equal the shipped budget must still be reported, and
   // `DEFAULT_CONFIG.maxPins === 5` makes that collision real at this one value.
   for (const rows of [DEFAULT_CONFIG.maxPins, DEFAULT_CONFIG.maxPins - 1]) {
-    const mutated = noni.replace(BACKLOG_RULE_HEAD, backlogRuleWithCap(rows));
+    const mutated = replaceSpaced(noni, BACKLOG_RULE_HEAD, backlogRuleWithCap(rows));
     expect(mutated, `${rows}-row instruction: the mutation took`).not.toBe(noni);
     const counts = statedCounts(mutated, true);
     expect(counts.includes(BACKLOG_CAP), `${rows}-row instruction: card still reads the cap`).toBe(
@@ -204,16 +150,70 @@ test("the budget check catches a card that overruns the budget", () => {
   }
   // An instruction that names no count at all is caught too: the operative sentence disappears, and the
   // board test above requires it.
-  const uncapped = noni.replace(BACKLOG_RULE_HEAD, "Build the group from every entry of that file");
+  const uncapped = replaceSpaced(
+    noni,
+    BACKLOG_RULE_HEAD,
+    "Build the group from every entry of that file",
+  );
   expect(uncapped, "the uncapped mutation took").not.toBe(noni);
   expect(
     fold(uncapped),
     "an uncapped rule loses the operative sentence the board test requires",
   ).not.toContain(BACKLOG_RULE_HEAD);
   // The fewer-than floor, mutated the same way, is reported too.
-  const staleFloor = noni.replace(BACKLOG_FLOOR_HEAD, backlogFloorWithCap(DEFAULT_CONFIG.maxPins));
+  const staleFloor = replaceSpaced(
+    noni,
+    BACKLOG_FLOOR_HEAD,
+    backlogFloorWithCap(DEFAULT_CONFIG.maxPins),
+  );
   expect(staleFloor, "the floor mutation took").not.toBe(noni);
   expect(statedCounts(staleFloor, true), "a stale floor contradicts the card").toContain(
     DEFAULT_CONFIG.maxPins,
   );
+
+  // The run board states its counts only in the card and in "the board is one Now plus those three", so
+  // mutating the latter is the copy a card-only reader never sees. It is also the proof that the
+  // `plus those (N)` pattern is live: had it been dead, the mutation would have read as the shipped cap.
+  const board = readDoc(boardPath("sticky-run-board"));
+  const boardCopy = replaceSpaced(board, "plus those three", "plus those four");
+  expect(boardCopy, "the run board mutation took").not.toBe(board);
+  const boardCounts = statedBacklogCounts(boardCopy);
+  expect(boardCounts, "the mutated operative count is reported").toContain(BACKLOG_CAP + 1);
+  expect(
+    boardCounts.every((count) => count === statedBacklogCap(boardCopy)),
+    "the mutated run board fails the all-counts-agree check",
+  ).toBe(false);
+  // …and the shipped copy still passes it, so the failure above is the mutation and not the reader.
+  expect(
+    statedBacklogCounts(board).every((count) => count === statedBacklogCap(board)),
+    "the shipped run board agrees with itself",
+  ).toBe(true);
+  // The `the board is (N) Now` pattern has its own control: that count is the size of the Now group, so
+  // it is not compared to the cap, but it still has to be scraped — a dead pattern there would let a
+  // two-row Now instruction survive.
+  const twoNow = replaceSpaced(board, "the board is one Now", "the board is two Now");
+  expect(twoNow, "the Now-row mutation took").not.toBe(board);
+  expect(statedBacklogCounts(twoNow), "the Now count is scraped too").toContain(NOW_ROWS + 1);
+});
+
+test("both board skills' cards parse to the shipped cap and budget", () => {
+  // The card is one string the fixtures own, but the file's own reader has to agree with it: a copy that
+  // kept every word of the card around a *different* numeral would pass a substring test on the fixture
+  // while telling the model to overflow the budget. `cardCounts` reads the numerals out of the matched
+  // span, which is the half a substring check cannot see.
+  for (const dir of BOARD_SKILLS) {
+    const folded = fold(readDoc(boardPath(dir)));
+    expect(cardCounts(folded), `${dir}: the card parses`).toEqual({
+      cap: BACKLOG_CAP,
+      budget: DEFAULT_CONFIG.maxPins,
+    });
+    // Positive control: the same file with its card swapped for one whose count is wrong is read as the
+    // wrong cap, so the assertion above reports the numeral rather than the shape of the sentence.
+    const stale = folded.replace(BUDGET_CARD, budgetCard(BACKLOG_CAP + 1));
+    expect(stale, `${dir}: the stale-count mutation took`).not.toBe(folded);
+    expect(cardCounts(stale), `${dir}: a stale count is reported, not ignored`).toEqual({
+      cap: BACKLOG_CAP + 1,
+      budget: DEFAULT_CONFIG.maxPins,
+    });
+  }
 });
