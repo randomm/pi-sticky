@@ -1,3 +1,5 @@
+import { fieldsOf, sliceJob, stepList } from "./release-automation-job.ts";
+
 /**
  * The parsed-YAML readers: what a workflow says once it has been parsed rather than scanned.
  *
@@ -8,74 +10,100 @@
  * equivalent rewrite unnoticed while a broadened one still satisfies it. Going through the parser makes the
  * shape decide, and makes absence mean absence.
  *
- * `release-automation-controls.test.ts` hands each reader the input it must refuse. Nothing here states what
- * the release *should* be; the expected values are in the tests.
+ * `release-automation-controls.test.ts` and `release-automation-yaml-controls.test.ts` hand each reader the
+ * input it must refuse. Nothing here states what the release *should* be; the expected values are in the
+ * tests. The slice-of-a-job helpers a reader needs in order to ask a job about itself are in
+ * `release-automation-job.ts`, which is the one place that mapping is reached.
  */
 import {
   type Field,
+  type Read,
   child,
+  declares,
   document,
   indentOf,
   items,
   keys,
   lines,
   mapping,
+  read,
 } from "./release-automation-primitives.ts";
 
 /**
- * Whether a job body declares `environment:` at job or step level.
+ * Whether a job declares `environment:` at job level or on any of its steps.
  *
- * Anchored on indentation, not on the word: the release workflow carries a comment that *explains* why the
- * key must not appear, and a reader that looked for the substring would refuse the file for that comment —
- * the false positive that gets a guard deleted.
+ * Read off the parse, at both levels, because the keyword alone is not the fact and neither is one level:
+ * an `environment:` key changes which half of npm's trusted-publisher tuple GitHub puts in the OIDC token, and
+ * the publisher is configured with the environment name EMPTY, so the job whose filename is matched must
+ * declare no such key at either level — a step-level `environment:` mints the token under that name too. A
+ * line-anchored text reader only recognises the key at the indents the shipped file happens to use, so the
+ * same key written at a column the guard has never seen (an inline `- environment: prod`, a re-indent) reads
+ * as no environment and every check stays green over a release that cannot publish. The parse has no indents,
+ * which is why a dedent cannot hide the key here.
+ *
+ * The read stops at each mapping's own keys, so the comment that *explains* why the key must not appear — and
+ * any lookalike written into a step's `run: |` body, which is one scalar to the parser — can never answer for
+ * the key. That false positive is the one that gets a guard deleted.
  */
 export function hasEnvironmentKey(body: string): boolean {
-  return lines(body).some((line) => /^( {4}| {8})environment:/.test(line));
+  const job = sliceJob(body);
+  if (job === undefined) return false;
+  if (declares(job, "environment")) return true;
+  return (items(job.steps) ?? []).some((step) => declares(step, "environment"));
 }
 
+/** One event of an `on:` block: named with no filters, or named with the filter keys it declares. */
+export type Trigger = { state: "unfiltered" } | { state: "filtered"; keys: string[] };
+
 /**
- * A workflow's `on:` block as `event → its filter keys`, in document order.
+ * A workflow's `on:` block as `event → its filters`, in document order.
  *
- * `null` is an event named with no filters at all — the broadest form the event has — which is kept apart
- * from an empty list so a caller cannot read "no filters" as "no branches". The tests name the filters they
- * care about, so this reader need not decide what each one means.
+ * `unfiltered` is the event named with no filters at all (`on: push`, `on: [push]`, or `workflow_dispatch:`
+ * with nothing under it) — the broadest form the event has, and the one an event-not-there answer could never
+ * express: an event is reported whether or not it carries filters, so the two absences stay two different
+ * answers. `filtered` names the filter keys the event does declare. `triggers("")` answers `{}` — no events —
+ * which is also what an empty `on:` block gives, because a workflow that fires on nothing has no trigger to
+ * compare.
  */
-export function triggers(text: string): Record<string, string[] | null> {
+export function triggers(text: string): Record<string, Trigger> {
+  const out: Record<string, Trigger> = {};
   const on = child(document(text), "on");
-  const out: Record<string, string[] | null> = {};
+  if (typeof on === "string") {
+    // The bare-scalar layout (`on: push`): one event, named and unfiltered — the broadest trigger there is,
+    // and one a reader that only walks mapping keys reports as a workflow with no triggers at all.
+    out[on] = { state: "unfiltered" };
+    return out;
+  }
   const events = items(on);
   if (events !== null) {
+    // The bare-sequence layout (`on: [push]`): every event it names carries no filters.
     for (const event of events) {
-      if (typeof event === "string") out[event] = null;
+      if (typeof event === "string") out[event] = { state: "unfiltered" };
     }
     return out;
   }
   for (const event of keys(on)) {
-    const filters = child(on, event);
-    out[event] = filters === null || filters === undefined ? null : keys(filters);
+    const filters = mapping(child(on, event));
+    out[event] =
+      filters === null ? { state: "unfiltered" } : { state: "filtered", keys: keys(filters) };
   }
   return out;
 }
 
 /**
- * One field of a job's own mapping, as one of three states.
+ * One field of a job's own mapping: `absent`, or `present` with the value the document holds.
  *
- * `absent` and `empty` are kept apart because a caller that read both as "no value" would pass a job whose
- * key had been deleted and a job whose key had been emptied, and `string | null` conflates them in both
- * directions. Because the read stops at the job's own mapping, a lookalike line inside a step's `run: |`
- * body is bytes in a scalar and can never answer for the job-level key of the same name — the failure a
- * whole-body line scan has, where a shell `if [ … ]; then` reads as the job's own `if:`.
+ * Because the read stops at the job's own mapping, a lookalike line inside a step's `run: |` body is bytes in
+ * a scalar and can never answer for the job-level key of the same name — the failure a whole-body line scan
+ * has, where a shell `if [ … ]; then` reads as the job's own `if:`. A key the file declared but left empty
+ * answers `present` with a `null` value rather than a third state: the caller that must refuse it compares the
+ * value, so the one answer that has to be unambiguous — "this key is not in the document" — stays the only one.
  */
-export type JobField = { state: "absent" } | { state: "empty" } | { state: "value"; value: string };
+export type JobField = Read;
 
 /** A job-level field of a workflow; `absent` when the job or the key is not there at job level. */
 export function jobField(text: string, jobId: string, key: string): JobField {
-  const job = child(child(document(text), "jobs"), jobId);
-  if (mapping(job) === null) return { state: "absent" };
-  const entry = child(job, key);
-  if (entry === undefined) return { state: "absent" };
-  const value = typeof entry === "string" ? entry : (JSON.stringify(entry) ?? "");
-  return value.trim() === "" ? { state: "empty" } : { state: "value", value };
+  return read(child(child(document(text), "jobs"), jobId), key);
 }
 
 /**
@@ -148,22 +176,9 @@ export function jobBody(workflow: string, id: string): string {
   return jobs(workflow).find((job) => job.split("\n")[0]?.trim() === `${id}:`) ?? "";
 }
 
-/** The job a slice describes: the value under its own `  id:` header, or `undefined` when there is none. */
-function sliceJob(body: string): Record<string, unknown> | undefined {
-  const header = lines(body).find((line) => /^ {2}\S[^:]*:$/.test(line));
-  const id = header?.trim().slice(0, -1);
-  const doc = document(body);
-  if (id === undefined || doc === null) return undefined;
-  return mapping(child(doc, id)) ?? undefined;
-}
-
-/** A step's own list, located through the job slice it came from. */
-function stepList(body: string): unknown {
-  return child(sliceJob(body), "steps");
-}
-
 /**
- * What one step of a job declares: the command it runs, and the names and values of its `env:`/`with:` inputs.
+ * What one step of a job declares: the command it runs, the action it uses, and the names and values of its
+ * `env:`/`with:` inputs.
  *
  * A step that does not exist answers `null` rather than an empty list, so a caller can tell "this job runs no
  * such command" from "this reader found no steps at all" — the second is a dead reader, not a defect. A
@@ -171,16 +186,29 @@ function stepList(body: string): unknown {
  * step titled `Publish` cannot answer for `npm publish` and neither can the comment above it.
  */
 export interface StepCommand {
-  run?: string;
+  run: string | undefined;
+  /** The step's own `uses:` reference, as `owner/name@ref`. */
+  uses: string | undefined;
   values: string[];
+  /** The step's own `with:` inputs, in document order. */
+  withEntries: Field[];
 }
 
-/** The steps of a sliced job body, in file order; `null` when the body declares no step list. */
+/**
+ * The steps of a sliced job body, in file order; `null` when the body declares no step list at all.
+ *
+ * The one definition of "what a step is": the items of the job's own `steps:` sequence. That is the only
+ * reading that survives a re-indent — a step list recognised by the indentation the shipped file happens to
+ * use stops seeing the steps once the file is reformatted (a dedented sequence, a flow sequence on one line)
+ * and then answers "this step declares nothing" for a job that still runs them, which is a guard that quietly
+ * stops guarding.
+ */
 export function steps(body: string): StepCommand[] | null {
   const list = items(stepList(body));
   if (list === null) return null;
   return list.map((step) => {
     const run = child(step, "run");
+    const uses = child(step, "uses");
     const values: string[] = [];
     for (const block of ["env", "with"]) {
       for (const [name, value] of Object.entries(mapping(child(step, block)) ?? {})) {
@@ -190,17 +218,46 @@ export function steps(body: string): StepCommand[] | null {
         values.push(typeof value === "string" ? value : (JSON.stringify(value) ?? ""));
       }
     }
-    return { run: typeof run === "string" ? run : undefined, values };
+    return {
+      run: typeof run === "string" ? run : undefined,
+      uses: typeof uses === "string" ? uses : undefined,
+      values,
+      withEntries: fieldsOf(child(step, "with")),
+    };
   });
+}
+
+/**
+ * The `with:` inputs of the step containing `needle`, as `key: value` fields.
+ *
+ * One step as `steps` defines it, so the needle is matched against that step's own declared content rather
+ * than against a slice of text, and a `with:` line written into the step's `run: |` script — bytes inside one
+ * scalar to the parser — opens no block here. `[]` for a step that is not there is the honest answer, and the
+ * controls pin it: the same reader handed a real step must return that step's own inputs, so an empty result
+ * cannot be the reader having found nothing.
+ */
+export function stepWith(body: string, needle: string): Field[] {
+  const step = steps(body)?.find((entry) => matchesStep(entry, needle));
+  return step?.withEntries ?? [];
+}
+
+/**
+ * Whether one step is the step a needle points at: a declared input or action reference matched in full, or
+ * the needle sitting in the command the runner executes. Shared by `runsStep` and `stepWith` so the two
+ * readers cannot drift into disagreeing about which step a needle names.
+ */
+function matchesStep(step: StepCommand, needle: string): boolean {
+  return (
+    step.values.includes(needle) ||
+    step.uses === needle ||
+    step.run?.includes(needle) === true ||
+    step.uses?.includes(needle) === true
+  );
 }
 
 /** Whether a step of the job matches `needle` as a whole declared value, or inside the command it runs. */
 export function runsStep(body: string, needle: string): boolean {
-  return (
-    steps(body)?.some(
-      (step) => step.values.includes(needle) || step.run?.includes(needle) === true,
-    ) === true
-  );
+  return steps(body)?.some((step) => matchesStep(step, needle)) === true;
 }
 
 /**
@@ -232,14 +289,4 @@ export function permissions(body: string): Field[] {
  */
 export function defaultPermissions(text: string): Field[] {
   return fieldsOf(child(document(text), "permissions"));
-}
-
-/** A parsed mapping as `Field`s; `[]` for anything that is not a mapping (absent, null, a scalar). */
-function fieldsOf(node: unknown): Field[] {
-  const block = mapping(node);
-  if (block === null) return [];
-  return Object.entries(block).map(([key, value]) => ({
-    key,
-    value: typeof value === "string" ? value : (JSON.stringify(value) ?? ""),
-  }));
 }

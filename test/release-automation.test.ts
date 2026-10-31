@@ -21,25 +21,24 @@ import {
   actionRefs,
   allPinned,
   changelogSectionTypes,
-  declaredTops,
   eventTypes,
-  fileSet,
   parsePackageJson,
   prTitleRegex,
+  publishField,
   pushBranches,
   readRepoFile,
   topCancelInProgress,
   workflowTriggers,
 } from "./release-automation-contracts.ts";
-import { stepWith } from "./release-automation-steps.ts";
+import { declaredTops, fileSet } from "./release-automation-pack.ts";
 import {
   defaultPermissions,
   hasEnvironmentKey,
   jobBody,
-  jobField,
   jobs,
   permissions,
   runsStep,
+  stepWith,
   steps,
 } from "./release-automation-yaml.ts";
 
@@ -59,10 +58,16 @@ function publish(): string {
   return jobBody(readRepoFile(RELEASE_WORKFLOW), "publish");
 }
 
-/** One field of the publish job's own mapping, as the reader's three-state answer. */
+/** One field of the publish job's own mapping, as the reader's `absent` / `present` answer. */
 function jobFieldOf(key: string): string {
-  const field = jobField(readRepoFile(RELEASE_WORKFLOW), "publish", key);
-  return field.state === "value" ? field.value : `(${field.state} ${key})`;
+  const field = publishField(readRepoFile(RELEASE_WORKFLOW), key);
+  return field.state === "present" ? String(field.value) : `(${field.state} ${key})`;
+}
+
+/** The branch list a `push` trigger carries; `[]` when it carries none, which the trigger controls pin. */
+function branchList(text: string): string[] {
+  const branches = pushBranches(text);
+  return branches.state === "present" ? (branches.value as string[]) : [];
 }
 
 test("the release workflow is the file npm's trusted publisher matches", () => {
@@ -83,8 +88,16 @@ test("the release workflow triggers on main, gates publish, and never cancels", 
   const text = readRepoFile(RELEASE_WORKFLOW);
   // The trigger as GitHub's matcher evaluates it: the event, and the values of the filters it carries. An
   // equivalent rewrite of `on:` reads the same here, and an extra event or branch does not.
-  expect(workflowTriggers(text), "one event").toEqual({ push: ["branches"] });
-  expect(pushBranches(text), "push to main, and to nothing else").toEqual(["main"]);
+  // The trigger as GitHub's matcher evaluates it: the event, and the filters it carries. An equivalent
+  // rewrite of `on:` reads the same here, and an extra event or branch does not.
+  expect(workflowTriggers(text), "one event, filtered").toEqual({
+    push: { state: "filtered", keys: ["branches"] },
+  });
+  expect(pushBranches(text), "push to main, and to nothing else").toEqual({
+    state: "present",
+    value: ["main"],
+  });
+  expect(branchList(text), "the branch list on its own").toEqual(["main"]);
   expect(jobFieldOf("needs"), "publish waits for release-please").toBe("release-please");
   expect(jobFieldOf("if"), "publish runs only for a created release").toBe(
     "${{ needs.release-please.outputs.release_created }}",

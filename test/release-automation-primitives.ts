@@ -72,11 +72,50 @@ export function keys(node: unknown): string[] {
   return record === null ? [] : Object.keys(record);
 }
 
+/**
+ * Whether a parsed value's own mapping declares `key`.
+ *
+ * `in` rather than `child(...) !== undefined`, so a key whose value is genuinely `null` (`environment:` with
+ * nothing after it) counts as declared: that key changes which half of a matching tuple GitHub puts in the
+ * token, so reading it as absent is the miss that matters. The check stops at this level's own mapping, which
+ * is what keeps the key's text inside a nested scalar from answering for it.
+ */
+export function declares(node: unknown, key: string): boolean {
+  const record = mapping(node);
+  return record !== null && Object.prototype.hasOwnProperty.call(record, key);
+}
+
 /** The items of a parsed sequence, or `null` when the value is not one. */
 export function items(node: unknown): unknown[] | null {
   if (isSeq(node)) return node.toJSON() as unknown[];
   return Array.isArray(node) ? node : null;
 }
+
+/**
+ * A key of a parsed value as the reader's one representation of presence.
+ *
+ * The direct form of `child` plus the "is this key in the document at all" question, which is what a caller
+ * needs when `null`, `[]` and `""` each mean something the missing key does not. `absent` when this level is
+ * not a mapping or does not hold the key; `present` carries the parsed value untouched.
+ */
+export function read(node: unknown, key: string): Read {
+  const record = mapping(node);
+  if (record === null || !(key in record)) return { state: "absent" };
+  return { state: "present", value: record[key] as unknown };
+}
+
+/**
+ * Where a read stopped, and what it stopped at.
+ *
+ * One representation for "this key or level was not there", because `undefined`, `null` and `[]` each answer a
+ * different question and a caller cannot tell them apart once the reader has picked whichever was handiest: a
+ * `null` that means both "the event was named with no filters" and "there was no event at all" lets a broad
+ * `on: push` be read as the safe case, and `[]` for a list the file never declared reads as an empty list its
+ * author wrote. `absent` is the only state for a key that is not in the document at this level, and `present`
+ * is the value the document did hold — so a key whose value is `null`, `[]` or `""` stays distinguishable from
+ * one that is missing, and the tests decide which of the two a given value means.
+ */
+export type Read = { state: "absent" } | { state: "present"; value: unknown };
 
 /** The document as a mapping, or `null` when the file is not a YAML mapping. */
 export function document(text: string): Record<string, unknown> | null {

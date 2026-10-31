@@ -10,15 +10,24 @@
  * failing — an empty permissions block satisfies "no `NPM_TOKEN`" as happily as a real one — which is the
  * vacuous pass the controls exist to close.
  *
- * Nothing here states what the release *should* be; the expected values are in the tests. `fileSet()` is the
- * only reader that shells out: `npm pack --dry-run --json`, offline, reading the working tree.
+ * Nothing here states what the release *should* be; the expected values are in the tests. The readers that
+ * shell out live beside this file in `release-automation-pack.ts`, and the ones that read a job slice in
+ * `release-automation-job.ts`.
  */
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { type PackageJson, parsePackageJson } from "./release-automation-package.ts";
-import { blockFieldsAtIndent, child, document, lines } from "./release-automation-primitives.ts";
-import { triggers } from "./release-automation-yaml.ts";
+import {
+  type Read,
+  blockFieldsAtIndent,
+  child,
+  document,
+  items,
+  lines,
+  read,
+} from "./release-automation-primitives.ts";
+import { type JobField, type Trigger, jobField, triggers } from "./release-automation-yaml.ts";
 
 /** The repo root, as the doc and config tests address files from it. */
 const ROOT = join(import.meta.dir, "..");
@@ -42,32 +51,57 @@ export function readRepoFile(path: string): string {
 export { parsePackageJson, type PackageJson };
 
 /**
- * A workflow's `on:` block as `event → its filter keys`, read off a YAML parse.
+ * A workflow's `on:` block as `event → its filters`, read off a YAML parse.
  *
  * The trigger is the contract GitHub's matcher actually evaluates, and it accepts the same contract written
  * several ways — a block mapping, a flow mapping (`on: { push: { branches: [main] } }`), a bare sequence of
  * event names. A reader bound to one layout's punctuation passes an equivalent rewrite unnoticed and fails a
  * semantically equivalent rewrite in another, so both directions of drift hide. Delegating to the parser
- * means the shape decides, not the punctuation.
+ * means the shape decides, not the punctuation. Each event answers through the one `Read` representation:
+ * `unfiltered` for an event named with no filters, `filtered` for one that names its filter keys.
  */
-export function workflowTriggers(text: string): Record<string, string[] | null> {
+export function workflowTriggers(text: string): Record<string, Trigger> {
   return triggers(text);
 }
 
 /**
- * The values a `push` trigger's `branches:` filter holds, or `null` when there is no such filter.
+ * One field of the publish job's own mapping, read at job level.
  *
- * Read off the parse, so a flow sequence (`branches: [main]`), a block sequence and a bare scalar all reach
- * the same list. `on: push` with no filter answers `null` and not `[]`: an unfiltered push trigger fires on
- * every branch — the broadest trigger there is — and reading that as the empty case would let a test pass on
- * a workflow that publishes from any branch.
+ * A thin re-export so a test that asserts the publish contract reaches the whole contract through this module:
+ * the value is the parse's own, and `absent` is the only answer for a key the document does not declare, which
+ * is what makes an assertion like "publish waits for release-please" falsifiable by deleting the key.
  */
-export function pushBranches(text: string): string[] | null {
-  const branches = child(child(document(text), "on"), "push");
-  const filtered = child(branches, "branches");
-  if (filtered === undefined) return null;
-  if (Array.isArray(filtered)) return filtered.map((item) => String(item));
-  return filtered === null ? [] : [String(filtered)];
+export function publishField(text: string, key: string): JobField {
+  return jobField(text, "publish", key);
+}
+
+/**
+ * The values a `push` trigger's `branches:` filter holds, as `absent` or `present`.
+ *
+ * Read off the parse, so a flow sequence (`branches: [main]`), a block sequence and a bare scalar all reach the
+ * same list. The two absences are the two different situations, and the caller has to be able to tell them
+ * apart: `absent` for the `branches:` filter itself means a `push` trigger that fires on every branch — the
+ * broadest trigger there is, which the release guard must refuse — while `absent` for `push` itself means the
+ * workflow does not publish on a push at all. `present` with `[]` is that refusal, reached from every layout
+ * that names `push` without a filter block (`on: push`, `on: [push]`, `push: {}`) and from a `branches:` key
+ * written but left empty, none of which is the same as having no trigger.
+ */
+export function pushBranches(text: string): Read {
+  const on = child(document(text), "on");
+  // The bare-scalar (`on: push`) and bare-sequence (`on: [push]`) layouts name the event without a mapping to
+  // hold filters in, so they reach the same answer as `push: {}` — a trigger that is present and unfiltered —
+  // and never the "no push trigger" answer a caller treats as safe.
+  const named = typeof on === "string" ? [on] : (items(on) ?? []);
+  if (named.some((event) => event === "push")) return { state: "present", value: [] };
+  const push = read(on, "push");
+  if (push.state === "absent") return push;
+  const branches = read(push.value, "branches");
+  if (branches.state === "absent") return branches;
+  const list = items(branches.value);
+  if (list !== null) return { state: "present", value: list.map((item) => String(item)) };
+  return branches.value === null
+    ? { state: "present", value: [] }
+    : { state: "present", value: [String(branches.value)] };
 }
 
 /** Whether the workflow's *top-level* `cancel-in-progress:` says true. */
@@ -104,59 +138,6 @@ export function changelogSectionTypes(
   return (config["changelog-sections"] ?? [])
     .filter((entry) => (entry.hidden === true) === (kind === "hidden"))
     .map((entry) => entry.type ?? "");
-}
-
-/**
- * The distinct top-level entries of one `npm pack --json` payload, directories slash-suffixed, sorted.
- *
- * Exported beside `fileSet` so the controls can hand it a list `npm` never produced — an empty one
- * included, which is what a payload whose `files` key drifted would look like.
- */
-export function topsOf(packed: { files?: { path?: string }[] }[]): string[] {
-  const tops = new Set<string>();
-  for (const file of packed[0]?.files ?? []) {
-    const [head, ...rest] = (file.path ?? "").split("/");
-    if (head !== undefined && head !== "") tops.add(rest.length > 0 ? `${head}/` : head);
-  }
-  return [...tops].sort();
-}
-
-/**
- * The top level of the tarball `npm pack` would build from the working tree.
- *
- * `--dry-run` keeps this offline and writes nothing. Only stdout is parsed: npm sends `--json` output to
- * stdout and its `npm notice` block to stderr, so a reader that merged the streams would hand `JSON.parse`
- * a document with prose in front of it. A missing npm makes `spawnSync` exit non-zero, and this throws on
- * that rather than skipping: the packed set is the only claim about the bytes the registry receives, and a
- * guard that skips on demand rots exactly like an absent one.
- */
-export function fileSet(): string[] {
-  const child = Bun.spawnSync(["npm", "pack", "--dry-run", "--json"], { cwd: ROOT });
-  const code = child.exitCode ?? -1;
-  if (code !== 0) {
-    throw new Error(
-      `npm pack --dry-run --json exited ${String(code)}: ${child.stderr.toString().trim()}`,
-    );
-  }
-  return topsOf(JSON.parse(child.stdout.toString()) as { files?: { path?: string }[] }[]);
-}
-
-/**
- * What `package.json`'s `files` list names, in the form the packed list uses: a directory entry gains the
- * trailing slash npm gives it and a named file keeps its own name.
- *
- * A bare entry is not assumed to be a directory — `"CHANGELOG"` ships a file and `"src/"` is already a
- * directory — so the form is read off the filesystem: an entry is a file when a file of that name exists.
- */
-export function declaredTops(files: string[]): string[] {
-  return [...files]
-    .map((entry) =>
-      statSync(join(ROOT, entry), { throwIfNoEntry: false })?.isFile() === true
-        ? entry
-        : `${entry.replace(/\/$/, "")}/`,
-    )
-    .concat("package.json")
-    .sort();
 }
 
 /** The PR-title reject regex, read out of the workflow rather than re-typed in a test. */

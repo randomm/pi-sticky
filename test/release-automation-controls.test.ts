@@ -21,9 +21,7 @@ import {
   prTitleRejects,
   readRepoFile,
   topCancelInProgress,
-  topsOf,
 } from "./release-automation-contracts.ts";
-import { stepWith } from "./release-automation-steps.ts";
 import {
   defaultPermissions,
   hasEnvironmentKey,
@@ -31,6 +29,7 @@ import {
   jobs,
   permissions,
   runsStep,
+  stepWith,
 } from "./release-automation-yaml.ts";
 
 /** The release workflow as shipped — the base every mutation below is cut from. */
@@ -43,10 +42,14 @@ function publishBody(): string {
   return jobBody(workflow(), "publish");
 }
 
-/** The publish job with `from` replaced by `to`; throws when the mutation would not take. */
-function mutate(from: string, to: string): string {
+/**
+ * The publish job with `from` replaced by `to`; throws when the mutation would not take. `from` is a pattern
+ * when the mutation has to cover a whole block rather than a literal line.
+ */
+function mutate(from: string | RegExp, to: string): string {
   const body = jobBody(workflow(), "publish");
-  if (!body.includes(from)) throw new Error(`control: ${from} is not in the publish job`);
+  const found = typeof from === "string" ? body.includes(from) : from.test(body);
+  if (!found) throw new Error(`control: ${String(from)} is not in the publish job`);
   return body.replace(from, to);
 }
 
@@ -67,20 +70,58 @@ test("an environment key on the publish job is refused; a comment about one is n
   );
   expect(
     hasEnvironmentKey(
-      mutate("runs-on: ubuntu-latest", "environment: production\n    runs-on: ubuntu-latest"),
+      mutate("    needs: release-please", "    environment: production\n    needs: release-please"),
     ),
     "a job-level environment is refused",
   ).toBe(true);
+  // The step-level shapes, each at the column a rewrite of this file could put the key at. The text reader
+  // this replaces recognised only two indents, and a key written anywhere else read as no environment.
   expect(
     hasEnvironmentKey(
-      mutate("runs-on: ubuntu-latest", "runs-on: ubuntu-latest\n        environment: prod"),
+      mutate(
+        "      - name: Install\n        run: bun install --frozen-lockfile",
+        "      - name: Install\n        environment: prod\n        run: bun install --frozen-lockfile",
+      ),
     ),
-    "a step-level environment is refused too",
+    "a step-level environment at eight columns is refused",
+  ).toBe(true);
+  // The off-indent shapes. A guard anchored to column counts recognises the key only at the indents the
+  // shipped file happens to use, so the same key at another column reads as no environment at all. Every
+  // mutation here stays valid YAML — an unparseable one throws in the parser, not in the guard — so what is
+  // under test is the indentation, not the syntax.
+  expect(
+    hasEnvironmentKey(
+      mutate(
+        '        env:\n          PI_OFFLINE: "1"',
+        '        environment: prod\n        env:\n          PI_OFFLINE: "1"',
+      ),
+    ),
+    "a step-level environment written at the job's own indent is refused",
+  ).toBe(true);
+  // The whole step list rewritten at the flow-sequence layout — every step of the job on one line, no key at
+  // any indent. A guard anchored to `- ` bullets and column counts finds no step here, let alone a key.
+  expect(
+    hasEnvironmentKey(
+      mutate(
+        /^ {4}steps:[\s\S]*$/m,
+        "    steps: [ { uses: actions/checkout@v7, environment: production } ]",
+      ),
+    ),
+    "an environment on a flow-style step is refused",
   ).toBe(true);
   // The shipped file carries a comment that names the key it must not carry; a substring reader would
   // refuse the workflow for that comment, which is the false positive that gets a guard deleted.
   expect(workflow(), "the workflow does mention the key").toContain("environment:");
   expect(hasEnvironmentKey(workflow()), "and the reader is not fooled by the prose").toBe(false);
+  expect(
+    hasEnvironmentKey(
+      mutate(
+        '          echo "npm $version is at least $minimum"\n',
+        '          echo "npm $version is at least $minimum"\n          environment: production\n',
+      ),
+    ),
+    "nor by the same text written into a run body, which is one scalar to the parser",
+  ).toBe(false);
 });
 
 test("the permission readers read a real block and refuse one faked in a shell body", () => {
@@ -191,25 +232,6 @@ test("the changelog reader splits the table on `hidden` and refuses a drifted on
     10,
   );
   expect(changelogSectionTypes({}, "visible"), "a config with no table").toEqual([]);
-});
-
-test("the packed-set reader groups a directory and separates a stray file", () => {
-  // `topsOf` is all the tarball assertion sees, so it is exercised on lists `npm` never produced rather
-  // than only on the shipped one, which would prove only that the reader repeats itself.
-  expect(
-    topsOf([{ files: [{ path: "LICENSE" }, { path: "src/a.ts" }, { path: "skills/x/SKILL.md" }] }]),
-    "one entry per top level",
-  ).toEqual(["LICENSE", "skills/", "src/"]);
-  expect(
-    topsOf([{ files: [{ path: "src/a.ts" }, { path: "src/b.ts" }] }]),
-    "a directory is named once",
-  ).toEqual(["src/"]);
-  expect(
-    topsOf([{ files: [{ path: "src/a.ts" }, { path: "secrets.env" }] }]),
-    "a file nobody listed appears beside it",
-  ).toEqual(["secrets.env", "src/"]);
-  expect(topsOf([]), "an empty payload is empty, not a pass").toEqual([]);
-  expect(topsOf([{}]), "and so is a payload whose files key drifted").toEqual([]);
 });
 
 test("the job slicer reads the jobs under `jobs:` and refuses a nested lookalike", () => {
