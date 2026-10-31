@@ -7,9 +7,9 @@
  * found rather than listed, and the guard is only worth its name if removing that note at one site makes
  * the guard reject that site and only that site.
  *
- * The reason the guard exists at all: pi-sticky is unlicensed and `private` in `package.json` while noni
- * is not public, and an README that links the repo without saying so invites an install that cannot be
- * satisfied.
+ * The reason the guard exists at all: this repo is public, Apache-2.0 and ships its manifest, while
+ * noni's repo is not public, and a README that links it without saying so invites an install or a
+ * lookup that cannot be satisfied.
  */
 import { expect, test } from "bun:test";
 
