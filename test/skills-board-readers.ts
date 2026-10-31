@@ -22,6 +22,7 @@
  */
 import { join } from "node:path";
 
+import type { UndecodableSpan } from "./doc-fact-fixtures.ts";
 import {
   BACKLOG_CAP,
   BACKLOG_FLOOR_HEAD,
@@ -34,6 +35,9 @@ import {
   fold,
   numeral,
 } from "./doc-fact-fixtures.ts";
+import type { StatedSpan } from "./skills-board-spans.ts";
+import { countsOfSpans, spansOf } from "./skills-board-spans.ts";
+import { cardUnreadable, unreadable } from "./skills-card-readers.ts";
 
 /**
  * A small count, spelled or digital — the one accepting pattern the fixtures generate, so the side that
@@ -72,22 +76,31 @@ const operative = (before: string, after: string): RegExp =>
  */
 export function statedNowCount(folded: string): number | null {
   const match = new RegExp(`The board is (${ANCHORED_COUNT}) Now`).exec(folded);
-  return match === null ? null : cardinal(match[1] ?? "");
+  if (match === null) return null;
+  const raw = match[1] ?? "";
+  const count = cardinal(raw);
+  if (count === null) throw unreadable(raw, match.index ?? 0, "the Now row");
+  return count;
 }
 
-/** The card sentence, global — so a file with two of them reports both numerals of each. Its counts need no
- * `\b`: each is pinned by the words either side of it, so no longer word can smuggle a prefix past them.
+/** The card's cap, or `null` with no card — which is a defect, not a pass. An unreadable numeral in a card
+ * throws (see `cardUnreadable`) rather than reading as the same `null` a cardless file gives.
  */
-const CARD_SHAPE = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT});`, "g");
-
-/** The card's cap, or `null` with no card — which is a defect, not a pass. */
 export function statedBacklogCap(text: string): number | null {
-  return cardCounts(fold(text))?.cap ?? null;
+  const folded = fold(text);
+  const cards = cardCounts(folded);
+  const bad = cards === null ? cardUnreadable(folded) : null;
+  if (bad !== null) throw bad;
+  return cards?.cap ?? null;
 }
 
 /** The budget a board card counts against, or `null` with no card. Read so a stale budget is caught. */
 export function statedBudget(text: string): number | null {
-  return cardCounts(fold(text))?.budget ?? null;
+  const folded = fold(text);
+  const cards = cardCounts(folded);
+  const bad = cards === null ? cardUnreadable(folded) : null;
+  if (bad !== null) throw bad;
+  return cards?.budget ?? null;
 }
 
 /** The card's cap and the operative instruction next to it, without the budget half. */
@@ -140,80 +153,47 @@ export const NOW_SENTENCE_LOWER = `the board is ${NOW_WORD} Now`;
 /** The words `plus those N` are written with. */
 export const PLUS_THOSE_HEAD = `plus those ${CAP_WORD}`;
 
+export { replaceSpaced } from "./doc-fact-controls-support.ts";
+
+/**
+ * The operative spans whose numeral the accepting pattern took and `cardinal` refused, in document order,
+ * each named by its raw bytes and offset. The counterpart to `statedCounts` for the one case it refuses to
+ * report: a count that is a count by the pattern and not one by the table.
+ */
+export function statedUndecodableOperatives(text: string): UndecodableSpan[] {
+  const folded = fold(text);
+  const bad: UndecodableSpan[] = [];
+  for (const pattern of OPERATIVE_COUNT_PATTERNS) {
+    for (const match of folded.matchAll(pattern)) {
+      const raw = match[1] ?? "";
+      if (cardinal(raw) === null && match.index !== undefined) {
+        bad.push({ raw, at: match.index, of: "operative" });
+      }
+    }
+  }
+  return bad;
+}
+
+/**
+ * Every card and operative span in one pass — the readable ones with their count, the rest without. The
+ * shape `statedCounts` is built from, exposed so a test can ask "matched but undecodable" without reading an
+ * empty array as "nothing to check".
+ */
+export function statedSpans(text: string, withBudget: boolean): StatedSpan[] {
+  return spansOf(text, withBudget, OPERATIVE_COUNT_PATTERNS);
+}
+
 /**
  * Every number the file states for the Backlog. `withBudget` adds the budget half of every card, for the
  * decoys that must report a count equal to the shipped budget rather than have it filtered as the card's.
  *
- * One count per matched span, not per pattern: noni's card is bolded inside its own sentence, so three of
- * the patterns above read the same numeral there, and duplicates would inflate the list the board test
- * compares against the cap.
+ * A span the accepting pattern took and `cardinal` refuses is a **failure**, not an absence: `countsOfSpans`
+ * throws with the raw bytes and the offset. Dropping it was the bug — the push used to be
+ * `if (count !== null) spans.push(...)`, so a doc whose operative sentence stated a count nobody can decode
+ * reported *no count at all* and every comparison downstream agreed with the shorter list.
  */
 export function statedCounts(text: string, withBudget: boolean): number[] {
-  const folded = fold(text);
-  const spans: { from: number; count: number }[] = [];
-  const push = (at: number, spelled: string | undefined): void => {
-    const count = cardinal(spelled ?? "");
-    if (count !== null) spans.push({ from: at, count });
-  };
-  // Every card in the file, not just the first: a second card-shaped sentence is a stated count too.
-  // Reporting its budget half is what lets the budget-only decoy show up as a number.
-  for (const card of folded.matchAll(CARD_SHAPE)) {
-    if (card.index !== undefined) {
-      push(card.index, card[1]);
-      if (withBudget) push(card.index, card[2]);
-    }
-  }
-  // The operative instructions: what to pin, and what to do when there are fewer rows than the cap.
-  // The operative instructions: what to pin, and what to do when there are fewer rows than the cap.
-  for (const pattern of OPERATIVE_COUNT_PATTERNS) {
-    for (const match of folded.matchAll(pattern)) {
-      if (match.index !== undefined) push(match.index, match[1]);
-    }
-  }
-  const seen = new Set<string>();
-  const counts: number[] = [];
-  for (const span of spans) {
-    const key = `${span.from}:${span.count}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    counts.push(span.count);
-  }
-  return counts;
-}
-
-/** Escape a literal for embedding in a RegExp. */
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Replace the first occurrence of `spaced` in `text`, where `spaced` is written with single spaces and any
- * casing but the file may have hard-wrapped it across lines and capitalised its first word. The skills are
- * re-wrapped whenever their prose is edited, so a control that matched raw bytes would fail for a reason
- * unrelated to the count it mutates.
- *
- * Throws when the pattern matches nothing: returning the input unchanged made every control built here pass
- * on a mutation that never happened, because the decoy then *was* the original text and reported the
- * shipped counts. It also throws for a needle with no word characters — `" ".split(" ")` joins to a pattern
- * that matches the empty string, so a blank needle passed that guard while inserting its replacement at
- * offset 0 and changing no sentence: every `!== original` check downstream then reported a control that had
- * taken. A needle cannot address text without a word in it, so a blank one is a defect in the control.
- *
- * The replacement is inserted literally, through a function: as a *string* it is a template to
- * `String.prototype.replace`, so a control asking for `a$&b` got the matched span spliced into itself
- * (`aplus those threeb`) while its guards still reported the bytes it had asked for.
- */
-export function replaceSpaced(text: string, spaced: string, replacement: string): string {
-  if (!/\w/.test(spaced)) {
-    throw new Error(
-      `replaceSpaced: needle ${JSON.stringify(spaced)} has no word characters — it addresses no text`,
-    );
-  }
-  const pattern = new RegExp(spaced.split(" ").map(escapeRegExp).join("\\s+"), "i");
-  if (!pattern.test(text)) {
-    throw new Error(`replaceSpaced: "${spaced}" is not in the text — the control's target is gone`);
-  }
-  return text.replace(pattern, () => replacement);
+  return countsOfSpans(statedSpans(text, withBudget));
 }
 
 /**

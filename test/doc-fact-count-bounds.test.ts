@@ -10,6 +10,7 @@
 import { expect, test } from "bun:test";
 
 import { MAX_PINS } from "../src/bounds.ts";
+import { DEFAULT_CONFIG } from "../src/config.ts";
 import {
   BACKLOG_CAP,
   MAX_COUNT,
@@ -17,32 +18,58 @@ import {
   budgetCard,
   cardCounts,
   cardinal,
+  fold,
   numeral,
 } from "./doc-fact-fixtures.ts";
 import {
   statedBacklogCap,
   statedBacklogCounts,
+  statedBudget,
   statedCounts,
   statedNowCount,
+  statedUndecodableOperatives,
 } from "./skills-board-readers.ts";
+import { cardUnreadable } from "./skills-card-readers.ts";
 
 /** One card-shaped sentence with `cap` and `budget` written exactly as the doc would write them. */
 const cardWith = (cap: string, budget: string): string =>
   `${cap} rows at the default budget of ${budget}; with a smaller \`PI_STICKY_MAX_PINS\`, drop Backlog rows from the bottom`;
 
-test("a card whose digits no decoder accepts is no card, never a pair of in-range counts", () => {
+test("a card whose digits no decoder accepts is a named failure, never a pair of in-range counts", () => {
   // The shape the reviewer flagged: `42` is longer than any count the docs state, and an accepting pattern
   // that lets a digit run be read in pieces would report `4` and `2` — two counts, each in range, each
-  // plausible, and each satisfied by the cap comparison downstream. Measured against the shipped reader it
-  // is `null` instead: `cardinal` refuses `42`, `cardCounts` refuses any card with an unreadable numeral,
-  // and the scrapers report no count for it. This pins that so a future DIGITS widening cannot regress it.
+  // plausible, and each satisfied by the cap comparison downstream. The readers refuse it outright: no
+  // readable count ever comes back for it. Measured against the reader before the fix, the two `null`s
+  // below were the *only* answer and every comparison against an empty result stayed green — the vacuous
+  // pass this replaces is pinned by the controls at the bottom of this file.
   const text = cardWith("42", "5");
   expect(cardCounts(text), "the 42/5 card is a parse failure").toBeNull();
-  expect(statedBacklogCap(text), "and yields no Backlog cap").toBeNull();
-  expect(statedCounts(text, true), "and the scrapers report no 4 and no 2").not.toContain(4);
-  expect(statedBacklogCounts(text), "and nothing to compare against the cap").toEqual([]);
+  expect(
+    () => statedBacklogCap(text),
+    "a card whose cap nothing decodes says which span is unreadable",
+  ).toThrow(/42/);
+  expect(() => statedBudget(text), "…and the budget reader refuses the same card").toThrow(/42/);
+  expect(
+    () => statedCounts(text, true),
+    "and the scrapers refuse rather than report no 4 and no 2",
+  ).toThrow(/42/);
+  expect(() => statedBacklogCounts(text), "the cap-only scrape refuses it too").toThrow(/42/);
   // The same refusal for the budget half, which the cap-only reader never looks at.
   expect(cardCounts(cardWith("3", "42")), "an unreadable budget voids the card too").toBeNull();
+  expect(
+    () => statedBudget(cardWith("3", "42")),
+    "…and the budget reader names the unreadable budget",
+  ).toThrow(/42/);
+  // The control that says these refusals are the bad numeral and not a dead reader: the same card shape
+  // with both numerals inside the bound parses, and `cardUnreadable` — the reader's own "is this null
+  // because a numeral is broken?" question — answers `null` for it.
+  const good = cardWith("3", "5");
+  expect(cardCounts(good), "the same card shape with readable numerals parses").toEqual({
+    cap: 3,
+    budget: 5,
+  });
+  expect(cardUnreadable(fold(good)), "and no span of it is unreadable").toBeNull();
+  expect(cardUnreadable(fold(text)), "while the 42 card names its unreadable span").not.toBeNull();
 });
 
 test("every digit 0..MAX_COUNT still scrapes through the card path, and MAX_COUNT+1 does not", () => {
@@ -62,7 +89,7 @@ test("every digit 0..MAX_COUNT still scrapes through the card path, and MAX_COUN
   ).toBeNull();
 });
 
-test("the operative digit counts scrape whole, and a count above the bound scrapes as nothing", () => {
+test("the operative digit counts scrape whole, and a count above the bound is a named failure", () => {
   // The run board's sentences carry digits too, and their tails vary — including the empty tail after
   // `plus those N`, the one site with no following word to stop a digit run. The Now row is written in the
   // casing the file ships it in: the readers are case-sensitive, so a lowercase `the` would prove the digit
@@ -74,13 +101,44 @@ test("the operative digit counts scrape whole, and a count above the bound scrap
     ).toEqual([1, n]);
     expect(statedNowCount(`The board is ${n} Now`), `${n} Now scrapes ${n}`).toBe(n);
   }
-  for (const digits of ["42", "34", "100"]) {
+  // Past the bound the span is still matched by the accepting pattern and refused by the decoder, which is
+  // the case the readers used to answer with silence: `plus those 42` reported the Now count and nothing
+  // else, and every comparison against that one-element list agreed. It now names the span.
+  for (const digits of ["42", "34"]) {
     expect(
-      statedCounts(`The board is one Now plus those ${digits}, which leaves a slot`, false),
-      `plus those ${digits} reports no count`,
-    ).toEqual([1]);
-    expect(statedNowCount(`The board is ${digits} Now`), `${digits} Now is no count`).toBeNull();
+      () => statedCounts(`The board is one Now plus those ${digits}, which leaves a slot`, false),
+      `plus those ${digits} names the unreadable span instead of reporting no count`,
+    ).toThrow(new RegExp(`matched "${digits}"`));
+    expect(
+      () => statedNowCount(`The board is ${digits} Now`),
+      `${digits} Now names its unreadable span`,
+    ).toThrow(new RegExp(`matched "${digits}"`));
+    // The control: the refusal tracks the *span*, so the same sentence with a count inside the bound
+    // reads, and the unreadable-span reader sees exactly one bad span for the broken copy.
+    const readable = "The board is one Now plus those 3, which leaves a slot";
+    expect(statedCounts(readable, false), "the same sentence with a readable count reads").toEqual([
+      1, 3,
+    ]);
+    expect(
+      statedUndecodableOperatives(`The board is one Now plus those ${digits}, which leaves a slot`),
+      `plus those ${digits} is recorded as the one unreadable span`,
+    ).toEqual([{ raw: digits, at: expect.any(Number), of: "operative" }]);
+    expect(statedUndecodableOperatives(readable), "and the readable sentence has none").toEqual([]);
   }
+  // Three digits is a wider case than `42`, and it fails on the *accepting* side rather than the decoding
+  // one: the pattern caps a digit run at as many digits as the largest count has (two) and anchors both
+  // ends, so `100` is not matched at all — no span, no count, no complaint. That silence is honest here
+  // (a three-digit run is not a count the readers claim to read), so what pins the boundary is that the
+  // two-digit run the pattern *does* admit and the decoder refuses becomes a named failure.
+  expect(cardinal("100"), "a three-digit run past the bound is no count").toBeNull();
+  expect(
+    statedUndecodableOperatives("The board is one Now plus those 100"),
+    "and the accepting side never calls it a span, so nothing is silently dropped",
+  ).toEqual([]);
+  expect(
+    () => statedCounts("The board is one Now plus those 34, which leaves a slot", false),
+    "while the two-digit run both sides agree is a span fails by name",
+  ).toThrow(/matched "34"/);
 });
 
 test("numeral refuses what cardinal cannot read, so the round-trip has no one-way spelling", () => {

@@ -154,10 +154,12 @@ const EVERY_CARD = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT
  * Every card in the text is read, not the first: a file that grew a second card-shaped sentence
  * contradicting the shipped one (documenting a non-default `PI_STICKY_MAX_PINS`, say) would otherwise
  * leave the reader anchored to whichever copy came first. `null` when the text carries no parsable
- * card, and also when its cards disagree — a file that states two different budgets is a defect, not
- * a pass.
+ * card, when one of its cards holds a numeral this module's own accepting pattern matched and
+ * `cardinal` cannot decode (a defect the doc wrote, not an absence — see `undecodableCardSpans`), and
+ * also when its cards disagree — a file that states two different budgets is a defect, not a pass.
  */
 export function cardCounts(folded: string): CardCounts | null {
+  if (undecodableCardSpans(folded).length > 0) return null;
   const cards: CardCounts[] = [];
   for (const match of folded.matchAll(EVERY_CARD)) {
     const cap = cardinal(match[1] ?? "");
@@ -194,6 +196,40 @@ export function cardinal(text: string): number | null {
   if (spelledIndex >= 0) return spelledIndex;
   const digits = Number(spelled);
   return digits >= 0 && digits <= MAX_COUNT ? digits : null;
+}
+
+/**
+ * The card's numerals that the accepting pattern matched and `cardinal` refuses — the shape this whole
+ * layer exists to refuse, and the one `cardCounts`' `null` cannot tell apart from "this file has no card".
+ * A digit run past `MAX_COUNT` is admitted by `DIGITS` and refused by `cardinal`, so a file whose only card
+ * reads `42 rows at the default budget of 5;` used to report *no counts at all* and satisfy every
+ * comparison against an empty list. The spans are reported, not swallowed: a broken numeral has to name
+ * itself.
+ *
+ * Empty is the only honest answer for a text with no card-shaped sentence, which is why it is exported
+ * separately instead of folded into `cardCounts`' `null`.
+ */
+export function undecodableCardSpans(folded: string): UndecodableSpan[] {
+  const bad: UndecodableSpan[] = [];
+  for (const match of folded.matchAll(EVERY_CARD)) {
+    for (const group of [1, 2]) {
+      const spelled = match[group] ?? "";
+      if (cardinal(spelled) === null && match.index !== undefined) {
+        bad.push({ raw: spelled, at: match.index, of: group === 1 ? "cap" : "budget" });
+      }
+    }
+  }
+  return bad;
+}
+
+/** One numeral the accepting pattern took and the decoder refused, in a card or an operative sentence. */
+export interface UndecodableSpan {
+  /** The bytes the pattern captured, verbatim. */
+  raw: string;
+  /** Offset of the matched span, which identifies which sentence is broken. */
+  at: number;
+  /** Which sentence the unreadable numeral sits in. */
+  of: "cap" | "budget" | "operative";
 }
 
 /** The shape of one parsed card. */

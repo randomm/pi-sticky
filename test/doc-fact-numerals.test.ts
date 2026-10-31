@@ -41,7 +41,9 @@ import {
   replaceSpaced,
   statedBacklogCap,
   statedBacklogCounts,
+  statedBudget,
 } from "./skills-board-readers.ts";
+import { statedUndecodableCards } from "./skills-card-readers.ts";
 
 /** The budget the env range permits at its top, so a spelled count cannot collide with the default. */
 const TOP_BUDGET = MAX_PINS;
@@ -175,15 +177,37 @@ test("an unreadable count fails the budget inequality instead of passing it", ()
     expect(cap, `${dir}: the mutation's cap is a number, not a sentinel`).not.toBe(-1);
     expect(cap ?? -1, `${dir}: eight rows do not fit the budget`).toBeGreaterThan(BUDGET_ROOM);
   }
-  // A card whose spelling nothing decodes is no card at all — which is what makes the inequality
-  // unreachable for it rather than vacuously satisfied.
+  // A card whose spelling nothing decodes is not a card — and it is not the same answer as a file with no
+  // card either. Before the fix the reader returned `null` for both, so a doc with a broken numeral read as
+  // "nothing to check" and every comparison against the empty result stayed green. It now names the span.
   for (const dir of BOARD_SKILLS) {
     const outside = replaceSpaced(
       readDoc(boardPath(dir)),
       BUDGET_CARD,
       `${UNCOUNTABLE_DIGITS} rows at the default budget of ${UNCOUNTABLE_DIGITS};`,
     );
-    expect(statedBacklogCap(outside), `${dir}: a count nothing decodes is not a card`).toBeNull();
+    expect(outside, `${dir}: the uncountable card took`).not.toBe(readDoc(boardPath(dir)));
+    expect(
+      () => statedBacklogCap(outside),
+      `${dir}: a count nothing decodes names itself instead of reading as no card`,
+    ).toThrow(new RegExp(`matched "${UNCOUNTABLE_DIGITS}"`));
+    expect(() => statedBudget(outside), `${dir}: the budget reader names it too`).toThrow(
+      new RegExp(`matched "${UNCOUNTABLE_DIGITS}"`),
+    );
+    // The control: the refusal belongs to the bad numeral, not to the reader. The same file with its
+    // shipped card still reads, and reports no unreadable span at all.
+    const shipped = readDoc(boardPath(dir));
+    expect(statedBacklogCap(shipped), `${dir}: the shipped card still reads`).toBe(BACKLOG_CAP);
+    expect(statedUndecodableCards(fold(shipped)), `${dir}: and states no unreadable span`).toEqual(
+      [],
+    );
+    expect(
+      statedUndecodableCards(fold(outside)),
+      `${dir}: the mutated file states exactly the one broken numeral`,
+    ).toEqual([
+      { raw: UNCOUNTABLE_DIGITS, at: expect.any(Number), of: "cap" },
+      { raw: UNCOUNTABLE_DIGITS, at: expect.any(Number), of: "budget" },
+    ]);
   }
 });
 
