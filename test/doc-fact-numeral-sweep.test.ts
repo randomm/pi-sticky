@@ -1,8 +1,10 @@
 /**
- * The numeral sweep over the run board's own operative sentences. `doc-fact-numerals.test.ts` pins the
- * card's decoding; this file drives every count the shared spelled table holds through the two sentences
- * the run board states its arithmetic in, and reads each back through the readers in
- * `skills-board-readers.ts`.
+ * The sweep over the run board's own operative sentences. `doc-fact-numerals.test.ts` pins the card's
+ * decoding; this file drives every count the shared spelled table holds through the two sentences the run
+ * board states its arithmetic in, and reads each back through the readers in `skills-board-readers.ts`. The
+ * two halves of the operative count pattern those sentences are read with are driven beside it, in
+ * `doc-fact-count-pattern.test.ts`, since a claim about a pattern is worth only what a mutated copy of that
+ * pattern can actually fail on.
  *
  * The shape these tests exist for: an operative count pattern that was unanchored, with the spelled
  * alternatives joined in table order, so a count whose prefix is itself a spelled count captured the
@@ -16,6 +18,7 @@ import {
   BACKLOG_CAP,
   NOW_ROWS,
   NUMERALS,
+  anchoredCountPattern,
   cardinal,
   fold,
   numeral,
@@ -33,6 +36,28 @@ import {
 
 /** Every count the shared table spells, so the sweep covers each spelling the reader has to tell apart. */
 const EVERY_COUNT = NUMERALS.map((_, n) => n);
+
+/**
+ * The one accepting pattern the readers compile their operative counts from, and the matcher this sweep
+ * asks a mutated sentence's count against. `skills-board-readers.ts` builds every operative pattern from
+ * `anchoredCountPattern()`; the sweep used to claim it exercised that pattern while its inputs were
+ * substituted straight into the shipped sentence, so the longest-first sort the claim rests on lived in
+ * the readers and was never driven. Asking each form through the exported source is what makes "the
+ * accepting pattern reads this form" a premise the sweep checks rather than assumes.
+ */
+const ACCEPTING = new RegExp(`(${anchoredCountPattern()})`, "g");
+
+/**
+ * Does the exported accepting pattern read `form` as exactly one count, and that count `n`? A form the
+ * pattern will not take is not a count the reader can be blamed for misreading, so the sweep skips it —
+ * but skips it *after* recording that it did, which is what keeps the sweep from quietly narrowing itself
+ * to the forms that happen to match.
+ */
+function acceptsExactly(form: string, n: number): boolean {
+  ACCEPTING.lastIndex = 0;
+  const read = [...`x ${form} y`.matchAll(ACCEPTING)].map((m) => cardinal(m[1] ?? ""));
+  return read.length === 1 && read[0] === n;
+}
 
 /** One operative sentence: the shipped words around its count, and what follows the count. */
 interface Sentence {
@@ -54,6 +79,7 @@ const RUN_BOARD_SENTENCES: Sentence[] = [
 test("the reader scrapes every count the numeral table holds, in the run board's own sentences", () => {
   // Digits and words are swept together: the digit forms are the control that says the sweep itself, and
   // not the fix, is what changed the answer.
+  let skipped = 0;
   for (const dir of BOARD_SKILLS) {
     const board = readDoc(boardPath(dir));
     const sentences = dir === "sticky-run-board" ? RUN_BOARD_SENTENCES : [];
@@ -64,6 +90,14 @@ test("the reader scrapes every count the numeral table holds, in the run board's
           // The shipped form of a head is its own n: rewriting it is a no-op, so the take-guard below —
           // which exists to catch a control whose target vanished — would report the shipped file.
           if (head.endsWith(` ${form}${tail}`)) continue;
+          // The premise, checked through the exported accepting pattern rather than assumed: if the one
+          // pattern the readers share will not read this form as `n`, the scrape below cannot be expected
+          // to report `n`, and the sweep would be asserting a defect the source does not have.
+          const accepted = acceptsExactly(form, n);
+          if (!accepted) {
+            skipped += 1;
+            continue;
+          }
           const mutated = replaceSpaced(board, head, `${before}${form}${tail}`);
           expect(mutated, `${dir}: ${n} (${form}) mutation took`).not.toBe(board);
           const scraped = statedCounts(mutated, false);
@@ -96,35 +130,8 @@ test("the reader scrapes every count the numeral table holds, in the run board's
       }
     }
   }
-});
-
-test("the spelled alternatives are sorted longest-first as well as anchored, and each half catches a case the other misses", () => {
-  // The two halves of the count pattern are not redundant. Measured against `plus those <word>` over the
-  // whole spelled table, in the words of the shipped sentence:
-  //   unanchored + table order   → `fourteen` reads `four` (and sixteen/seventeen/eighteen/nineteen their
-  //                                prefixes); `twenty-one` splits into `twenty` and `one`
-  //   anchored   + table order   → `twenty-one` still splits into `twenty` and `one`: each part sits at a
-  //                                word boundary of its own, so only the longest-first sort stops it
-  // A fix that did only one half would leave a wrong count on the screen and this sweep green.
-  for (const [word, prefixValue] of [
-    ["fourteen", 4],
-    ["sixteen", 6],
-    ["twenty-one", 20],
-  ] as [string, number][]) {
-    const sentence = `The board is one Now plus those ${word}, which leaves a slot`;
-    const count = cardinal(word);
-    // The prefix a half-fix would still report: `fourteen` as `four`, `twenty-one` as `twenty`.
-    if (count === null) throw new Error(`"${word}" is not a count the reader's table decodes`);
-    expect(
-      statedCounts(sentence, false),
-      `"plus those ${word}": one count, and the right one`,
-    ).toEqual([1, count]);
-    expect(
-      count,
-      `"plus those ${word}": the count is not the ${prefixValue} its prefix spells`,
-    ).not.toBe(prefixValue);
-  }
-  // `twenty-one` is the case only the sort settles, since both of its parts are table words at boundaries.
-  expect(cardinal("twenty-one"), "twenty-one is one count").toBe(21);
-  expect(cardinal("twenty"), "and twenty is a different count").toBe(20);
+  // The sweep is only as wide as the accepting pattern lets it be. Every form the exported pattern
+  // refuses is reported rather than silently dropped, so a narrowing of the accepting side (a count that
+  // stopped being a count) shows up here as a widening list instead of as a shorter, greener sweep.
+  expect(skipped, "every form in the table is accepted by the exported pattern").toBe(0);
 });

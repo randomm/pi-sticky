@@ -11,6 +11,10 @@
  * passed on it (−1 ≤ 3). The alarm these fixtures exist to sound was disarmed for exactly the numerals a
  * `PI_STICKY_MAX_PINS` bump (the config allows 1–20) needs. These tests pin the one table and the failure
  * shape: an unreadable count is `null`, never a number.
+ *
+ * The table's own bound is asserted here too, as a test. It was a `throw` at the module's top level, so a
+ * bound that moved killed every file that imports these fixtures at load time — five suites reported as
+ * failed for want of an import, with the one real defect buried in their load errors.
  */
 import { expect, test } from "bun:test";
 
@@ -21,6 +25,7 @@ import {
   BACKLOG_CAP,
   BUDGET_CARD,
   NOW_ROWS,
+  NUMERALS,
   backlogFloorWithCap,
   backlogRuleWithCap,
   budgetCard,
@@ -61,6 +66,26 @@ const BUDGET_ROOM = DEFAULT_CONFIG.maxPins - NOW_ROWS - 1;
  * it here changes what `cardCounts` sees rather than just restyling it.
  */
 const cardSentence = (cap: number, budget: number): string => `${budgetCard(cap, budget)};`;
+
+test("the numeral table tops out at the widest bound the docs state, and covers the pin range", () => {
+  // The table's top is the widest bound any doc states, so the two cannot drift: a doc that spelled a count
+  // above it would be unreadable on the decoding side, and a table taller than every bound is dead weight.
+  // Asserted as a test rather than thrown at import — see the header.
+  expect(NUMERALS.length - 1, "the table's top is the field bound the docs state").toBe(
+    MAX_FIELD_GRAPHEMES,
+  );
+  expect(
+    MAX_PINS,
+    "every `PI_STICKY_MAX_PINS` the config accepts is a count the table can spell",
+  ).toBeLessThanOrEqual(MAX_FIELD_GRAPHEMES);
+  // The same fact through the table itself, so a bound that moved without the table shows up as a missing
+  // spelling rather than only as a length mismatch: `numeral` refuses what the array cannot spell.
+  expect(NUMERALS[MAX_FIELD_GRAPHEMES], "the bound itself is spelled").toBeTypeOf("string");
+  expect(NUMERALS[MAX_PINS], "the top of the pin range is spelled").toBeTypeOf("string");
+  // …and the bound is not vacuously equal: one past it is not in the table, so the assertion above is a
+  // count the docs would have to write in digits rather than a word that was there all along.
+  expect(NUMERALS[MAX_FIELD_GRAPHEMES + 1], "one past the bound is not spelled").toBeUndefined();
+});
 
 test("the readers decode every spelled count the docs can hold", () => {
   // `numeral(n)` composes the card and `cardinal` reads it back: one contract, so for every count a doc

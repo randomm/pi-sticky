@@ -13,7 +13,8 @@
  * — the habit of `doc-citations.test.ts` and `file-size.test.ts`.
  *
  * The two refusal strings the README quotes byte-for-byte live in `doc-citations.test.ts`, which keeps
- * its own job (plan citations resolving) in one file.
+ * its own job (plan citations resolving) in one file. The README's noni-privacy guard lives in
+ * `doc-fact-privacy.test.ts`: it is a claim about a third party's repo, not about this tool.
  */
 import { expect, test } from "bun:test";
 
@@ -36,9 +37,18 @@ import {
 
 const README = "README.md";
 
-/** A quoted border label from the README: the backticked copy, not the prose around it. */
+/**
+ * A quoted border label from the README: the backticked copy, not the prose around it.
+ *
+ * The shape of this extractor is the defect it exists to close. Its group used to be `([^`]+)`, which
+ * cannot return `""`, so the `toBeDefined()` assertion that guarded this test passed on *any* capture
+ * and the shape checks below read the result through `?? ""` — a README that stopped quoting the label
+ * entirely would have gone green on an `undefined` that every later assertion quietly replaced with an
+ * empty string. The group is `([^`]*)` so an empty quote is reachable, and the non-empty assertion is
+ * what turns "the pattern matched something" into "the pattern matched a label".
+ */
 function quotedBorderLabel(readme: string): string | undefined {
-  return /its row's border says `([^`]+)`/.exec(readme)?.[1];
+  return /its row's border says `([^`]*)`/.exec(readme)?.[1];
 }
 
 test("README quotes the focused border's option hint the way optionHint spells it", () => {
@@ -48,16 +58,52 @@ test("README quotes the focused border's option hint the way optionHint spells i
   const readme = readDoc(README);
   const quoted = quotedBorderLabel(readme);
   expect(quoted, "README quotes the border hint").toBeDefined();
+  // The vacuous pass this test shipped with: `toBeDefined()` accepts `""`, and every assertion below
+  // reads the capture through `?? ""`, so a capture that had gone empty satisfied all of them. The
+  // non-empty check has to come first, and the empty-quote control at the bottom proves it fires.
+  expect((quoted ?? "").length, "the quoted border label is not an empty capture").toBeGreaterThan(
+    0,
+  );
   // The README names the count as a placeholder, so substituting a real count must give the label the
   // drawer really emits for that many options. The old copy could not pass this: it named one pin's
-  // range as the label, so it matched for a 4-option pin and silently lied for every other.
-  expect(optionHint(MAX_OPTIONS), "optionHint at MAX_OPTIONS").toContain(
+  // range as the label, so it matched for a 4-option pin and silently lied for every other. The
+  // assertion is the full label rather than a `toContain` of it: the shipped hint is `1\u2013N answer`
+  // followed by the keys `HINT` spells, none of which the README quotes, so a substring test on the
+  // whole emitted border would pass on the leading `1\u2013N answer` alone and say nothing about the copy.
+  expect(
     (quoted ?? "").replace("N", String(MAX_OPTIONS)),
-  );
+    "the quoted hint, at a real count, is the option keys optionHint spells for it",
+  ).toBe(optionHint(MAX_OPTIONS).split(" \u00b7 ")[0] ?? "");
   expect(quoted, "the quoted hint is the generic form, not one pin's count").toContain("N");
-  // Positive controls: the label really does name the count it was handed, and a README that went back
-  // to quoting one pin's range as the label fails the shape check.
+  // Positive controls. (a) The label really does name the count it was handed, so the substitution
+  // above is a real check and not a match between two stale strings.
   expect(optionHint(2), "optionHint at two options").toContain("1\u20132 answer");
+  // (b) The extractor is what makes the test fire. Two mutated copies of the README, one for each way
+  // the capture can go vacuous: dropped backticks (the pattern matches nothing, so the result is
+  // `undefined` and the `toBeDefined()` above is what fails) and an emptied quote (the pattern matches,
+  // the capture is `""`, and only the non-empty assertion above stands between that and a green test).
+  // Without these two a pattern that stopped matching and a README that stopped quoting are the same
+  // pass, which is exactly how this test read before.
+  const noBackticks = readme.replace(
+    "border says `1\u2013N answer`",
+    "border says 1\u2013N answer",
+  );
+  expect(noBackticks, "the no-backticks control took").not.toBe(readme);
+  expect(
+    quotedBorderLabel(noBackticks),
+    "a README whose quote the extractor cannot find has no capture",
+  ).toBeUndefined();
+  const emptyQuote = readme.replace("border says `1\u2013N answer`", "border says ``");
+  expect(emptyQuote, "the empty-quote control took").not.toBe(readme);
+  // The extractor fires — it returns the empty capture rather than nothing — and that empty capture is
+  // what the non-empty assertion above rejects. Proving both halves is the point: an extractor that
+  // returned `undefined` here would look identical to a clean README while asserting nothing.
+  expect(quotedBorderLabel(emptyQuote), "the extractor still fires on an empty quote").toBe("");
+  expect(
+    (quotedBorderLabel(emptyQuote) ?? "").length > 0,
+    "an empty capture fails the non-empty assertion the test makes",
+  ).toBe(false);
+  // (c) A README that went back to quoting one pin's range as the label fails the shape check.
   expect(
     /border says `1\u20134 answer`/.test(readme),
     "README does not hard-code one pin's count into the border copy",
@@ -154,35 +200,6 @@ test("README says it ships as many skills as the folder holds", () => {
     readme.includes(`ships ${numeral(shipped.length + 1)} skills`),
     "README does not over-count its skills",
   ).toBe(false);
-});
-
-test("every noni link in the README says the repo is private", () => {
-  const readme = readDoc(README);
-  const sites = [...readme.matchAll(/\[noni\]\((https:\/\/github\.com\/randomm\/noni)\)/g)];
-  expect(sites.length, "the README links noni").toBeGreaterThanOrEqual(3);
-  for (const site of sites) {
-    const after = readme.slice(site.index ?? 0, (site.index ?? 0) + 220);
-    expect(after, `noni link ${site[1]}`).toMatch(/private/);
-  }
-  // Positive control: a bare link with no privacy note is what the assertion rejects — and it rejects
-  // it, not just the pattern. Substituting the shipped note with a bare link (replace-all, so a fourth
-  // site could not hide behind the first three) must leave an assertion firing rather than no-op.
-  const bare = readme
-    .replaceAll(
-      "[noni](https://github.com/randomm/noni) (private)",
-      "[noni](https://github.com/randomm/noni)",
-    )
-    .replace(
-      "[noni](https://github.com/randomm/noni) (private at the time of writing)",
-      "[noni](https://github.com/randomm/noni)",
-    );
-  expect(bare, "a privacy note was found to strip").not.toBe(readme);
-  const bareSites = [...bare.matchAll(/\[noni\]\((https:\/\/github\.com\/randomm\/noni)\)/g)];
-  expect(bareSites.length, "the stripped README still links noni").toBe(sites.length);
-  const unmarked = bareSites.filter(
-    (site) => !/private/.test(bare.slice(site.index ?? 0, (site.index ?? 0) + 220)),
-  );
-  expect(unmarked.length, "a bare noni link is caught").toBeGreaterThan(0);
 });
 
 test("README states each field bound as the source's own number", () => {

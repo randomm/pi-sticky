@@ -82,14 +82,6 @@ export const NUMERALS = [
   "twenty-four",
 ] as const;
 
-// The table's top is the widest bound the docs state, so the two cannot drift: a doc that spelled a count
-// above it would be unreadable on the decoding side, and a table taller than every bound is dead weight.
-if (NUMERALS.length - 1 !== MAX_FIELD_GRAPHEMES || MAX_PINS > MAX_FIELD_GRAPHEMES) {
-  throw new Error(
-    `doc-fact-fixtures: the numeral table must top out at MAX_FIELD_GRAPHEMES (${MAX_FIELD_GRAPHEMES}) and cover MAX_PINS (${MAX_PINS})`,
-  );
-}
-
 /** The largest count the table spells as a word; the docs write a larger one in digits. */
 const MAX_SPOKEN_COUNT = NUMERALS.length - 1;
 
@@ -138,8 +130,8 @@ export function anchoredCountPattern(): string {
  * count* for the sentence, and a decoy built that way passed as a clean file. An out-of-range count is a
  * defect in the caller, and throwing is the only way it reaches one.
  *
- * The gate is the table's own length, not `MAX_COUNT`: the module keeps them equal by the check beside the
- * table, but a bound the docs state and a table that lacks the word are separate facts, and a builder must
+ * The gate is the table's own length, not `MAX_COUNT`: `doc-fact-numerals.test.ts` asserts the two are
+ * equal, but a bound the docs state and a table that lacks the word are separate facts, and a builder must
  * refuse what *this array* cannot spell even if the bound moved first.
  */
 export function numeral(n: number): string {

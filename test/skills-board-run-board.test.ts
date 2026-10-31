@@ -107,25 +107,38 @@ test("both readers agree on the Now sentence whatever casing it is written in", 
   ).toBeNull();
   expect(statedBacklogCounts("the board is three Now"), "nor the Backlog reader").toEqual([]);
   for (const casing of [NOW_SENTENCE, NOW_SENTENCE_LOWER]) {
+    // The mutation moves the Now row to the Backlog cap's own numeral, which is the whole point: `three`
+    // is what the shipped card states, so a three-row Now is indistinguishable from a legitimate board to
+    // any check that compares counts without naming which is which. Named as a count, not written as a
+    // literal, so the expectations below stay the reader's answers rather than numbers of the same family
+    // as `maxPins`.
+    const mutatedNow = casing.replace("one", numeral(BACKLOG_CAP));
     // The take-guard, made semantic. A control built on the casing the file does NOT use rewrites the
     // shipped capital and still reports the file back as mutated, so the byte guard passes on a file whose
     // Now row the readers can no longer read at all.
-    const mutated = replaceSpaced(board, NOW_SENTENCE, casing.replace("one", numeral(3)));
+    const mutated = replaceSpaced(board, NOW_SENTENCE, mutatedNow);
     expect(mutated, `"${casing}": the rewrite itself took`).not.toBe(board);
     expect(statedNowCount(fold(mutated)), `"${casing}": the Now reader's answer`).toBe(
-      casing === NOW_SENTENCE ? 3 : null,
+      casing === NOW_SENTENCE ? BACKLOG_CAP : null,
     );
     // Measured against the shipped file: a real mutation carries its count into the Backlog scrape too, and
-    // a control on the unreadable casing leaves the scrape with only the two copies of the card's cap.
+    // a control on the unreadable casing leaves the scrape with only the two copies of the card's cap. Both
+    // sides composed from `BACKLOG_CAP` — the scrape is the card's cap, the bold restatement and the moved
+    // Now row (or the two card copies alone), and each of those is `BACKLOG_CAP` by construction. A literal
+    // here was a sibling of the number `maxPins` sets, so raising the budget silently inverted the claim.
     expect(
       statedBacklogCounts(mutated),
       `"${casing}": the Backlog scrape of the mutated file`,
-    ).toEqual(casing === NOW_SENTENCE ? [3, 3, 3] : [3, 3]);
+    ).toEqual(
+      casing === NOW_SENTENCE
+        ? [BACKLOG_CAP, BACKLOG_CAP, BACKLOG_CAP]
+        : [BACKLOG_CAP, BACKLOG_CAP],
+    );
     // A real control's answer is the answer the same sentence gives on its own: one function, one reply,
     // whether it is handed the file or the sentence pulled out of it.
     if (casing === NOW_SENTENCE) {
       expect(statedNowCount(fold(mutated)), `"${casing}": file and sentence agree`).toBe(
-        statedNowCount(fold(casing.replace("one", numeral(3)))),
+        statedNowCount(fold(mutatedNow)),
       );
     }
   }
