@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { MAX_FIELD_GRAPHEMES } from "../src/pin-fields.ts";
+import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS, MIN_OPTIONS } from "../src/pin-fields.ts";
 
 /** The repo root, as the doc tests address files from it. */
 const ROOT = join(import.meta.dir, "..");
@@ -230,6 +230,15 @@ export function backlogFloorWithCap(n: number): string {
 export const OPTION_FLOOR_HEAD = "Keep every option short —";
 
 export const OPTION_FLOOR_TAIL = "the tool refuses a longer option rather than cutting it";
+
+/**
+ * The number of entries an `options` list may carry, as the docs state the range: both ends composed
+ * from `MIN_OPTIONS`/`MAX_OPTIONS`, so a bound that moves fails the prose instead of leaving it green
+ * and wrong. `spaced` writes the hyphenated form one skill uses; the docs keep their own dash elsewhere.
+ */
+export function optionRange(spaced = false): string {
+  return spaced ? `${MIN_OPTIONS}-${MAX_OPTIONS}` : `${MIN_OPTIONS} to ${MAX_OPTIONS}`;
+}
 
 /** The bound as `pin-fields.ts` spells it, in the bold the skills carry it in. */
 export function optionBound(budget: number): string {

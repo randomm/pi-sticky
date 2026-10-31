@@ -15,7 +15,7 @@ import { expect, test } from "bun:test";
 import { join } from "node:path";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
-import { MAX_FIELD_GRAPHEMES } from "../src/pin-fields.ts";
+import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS, MIN_OPTIONS } from "../src/pin-fields.ts";
 import {
   BACKLOG_CAP,
   BUDGET_CARD,
@@ -28,11 +28,15 @@ import {
   numeral,
   optionBound,
   optionFloorWithBound,
+  optionRange,
   readDoc,
   shippedSkills,
 } from "./doc-fact-fixtures.ts";
 
 const RESEARCH = join("docs", "research-summary.md");
+const BASICS_SKILL = join("skills", "sticky-basics", "SKILL.md");
+const DECISIONS_SKILL = join("skills", "sticky-decisions", "SKILL.md");
+const README = "README.md";
 const RUN_BOARD = join("skills", "sticky-run-board", "SKILL.md");
 const NONI_SKILL = join("skills", "sticky-noni", "SKILL.md");
 
@@ -195,4 +199,46 @@ test("the noni skill keeps each option inside the bound the tool refuses past", 
     noni.replace(`${OPTION_FLOOR_HEAD} well under ${bound}`, `each one inside the ${bound}`),
     "a bound stated as a target to fill is not a floor",
   ).not.toContain(`${OPTION_FLOOR_HEAD} well under ${bound}`);
+});
+
+test("the skills and the README state the options range the tool enforces", () => {
+  // The `options` count is the other bound `pin-fields.ts` owns, and every copy of it in the docs was a
+  // spelled literal: a `MIN_OPTIONS` bump left the README sentence, the skill descriptions and the model's
+  // own build instruction in noni green and wrong — the drift class this file exists to close. Each site
+  // keeps its shipped punctuation (the README's table writes an en dash, noni a hyphen) and takes both
+  // numerals from the source.
+  const sites: [string, string, string][] = [
+    ["noni's build rule", fold(readDoc(NONI_SKILL)), `question's own ${optionRange(true)} options`],
+    ["sticky-basics", fold(readDoc(BASICS_SKILL)), `\`options\` - ${optionRange()} short choices`],
+    [
+      "sticky-decisions' description",
+      fold(readDoc(DECISIONS_SKILL)),
+      `${optionRange()} answerable options`,
+    ],
+    [
+      "sticky-decisions' options section",
+      fold(readDoc(DECISIONS_SKILL)),
+      `send them in \`options\`: ${optionRange()} entries`,
+    ],
+    [
+      "the README's skill table",
+      fold(readDoc(README)),
+      `${MIN_OPTIONS}\u2013${MAX_OPTIONS} answerable \`options\``,
+    ],
+  ];
+  for (const [label, text, shipped] of sites) {
+    expect(text, `${label}: names the range the source enforces`).toContain(shipped);
+    // Positive control, one per site: the same sentence with its lower bound moved. The drift has to
+    // differ from the composed string (so the assertion above is a real comparison) and be absent from
+    // the file, and the mutation has to take — otherwise a dead pattern would prove itself live.
+    const drifted = shipped
+      .replace(String(MIN_OPTIONS), String(MIN_OPTIONS + 1))
+      .replace(String(MAX_OPTIONS), String(MAX_OPTIONS + 1));
+    expect(drifted, `${label}: the drift differs from the composed range`).not.toBe(shipped);
+    expect(text, `${label}: states no drifted range`).not.toContain(drifted);
+    expect(
+      text.replace(shipped, drifted).includes(shipped),
+      `${label}: carries the sentence the control mutates`,
+    ).toBe(false);
+  }
 });

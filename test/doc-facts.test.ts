@@ -21,7 +21,7 @@ import { updateNeedsChange } from "../src/action.ts";
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { optionHint } from "../src/panel-option-hint.ts";
-import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS } from "../src/pin-fields.ts";
+import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS, MIN_OPTIONS } from "../src/pin-fields.ts";
 import {
   BACKLOG_CAP,
   BUDGET_CARD,
@@ -29,6 +29,7 @@ import {
   cardCounts,
   fold,
   numeral,
+  optionRange,
   readDoc,
   shippedSkills,
 } from "./doc-fact-fixtures.ts";
@@ -192,7 +193,7 @@ test("README states each field bound as the source's own number", () => {
   const readme = fold(readDoc(README));
   const bound = `${MAX_FIELD_GRAPHEMES} graphemes after sanitizing`;
   const groupBound = `\`group\` is one line of at most ${bound}`;
-  const optionBound = `\`options\` is 2 to 4 entries, each at most ${bound}`;
+  const optionBound = `\`options\` is ${optionRange()} entries, each at most ${bound}`;
   expect(readme, "README states the group bound from the source").toContain(groupBound);
   expect(readme, "README states the options bound from the source").toContain(optionBound);
   // Positive control: a bound that drifted from the source is caught by the same assertions, so a pass
@@ -202,6 +203,16 @@ test("README states each field bound as the source's own number", () => {
     `\`group\` is one line of at most ${drifted} graphemes after sanitizing`,
   );
   expect(readme, "README does not state an options bound other than the source's").not.toContain(
-    `\`options\` is 2 to 4 entries, each at most ${drifted} graphemes after sanitizing`,
+    `\`options\` is ${optionRange()} entries, each at most ${drifted} graphemes after sanitizing`,
   );
+  // Positive control for the range itself, which the grapheme control above cannot reach: a README that
+  // drifted its lower bound while keeping the rest of the sentence word for word has to fail the
+  // assertion above, so a pass there is the count matching and not a sentence the reader stopped finding.
+  const driftedRange = `\`options\` is ${MIN_OPTIONS + 1} to ${MAX_OPTIONS} entries, each at most ${bound}`;
+  expect(driftedRange, "the drifted range differs from the composed one").not.toBe(optionBound);
+  expect(readme, "README does not state a drifted options range").not.toContain(driftedRange);
+  expect(
+    readme.replace(optionBound, driftedRange).includes(optionBound),
+    "the README carries the options sentence the control mutates",
+  ).toBe(false);
 });
