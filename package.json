@@ -19,6 +19,10 @@
     "skills": ["./skills"]
   },
   "files": ["src", "skills", "README.md", "LICENSE", "NOTICE"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "test": "bun test",
     "check": "biome check src test && tsc --noEmit",

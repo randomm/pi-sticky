@@ -1,0 +1,126 @@
+name: Release Please
+
+# Conventional commits on main become a release PR, and merging that PR tags the
+# release, writes CHANGELOG.md, bumps package.json and publishes to npm.
+#
+# The filename is part of the contract: npm's GitHub-Actions trusted publisher is
+# matched on the tuple (owner `randomm`, repo `pi-sticky`, workflow
+# `release-please.yml`, environment name EMPTY), and it is the *filename* a
+# publisher matches, not the `name:` above. Renaming this file, or moving the
+# publish job to another workflow, makes every automatic release fail at
+# `npm publish` with an OIDC rejection while every check above stays green.
+#
+# The matching tuple has two halves and they have to agree. Because the
+# environment name configured on the npm side is EMPTY, the publish job below
+# must declare no `environment:` key: adding one changes which half of the tuple
+# GitHub puts in the token, and an environment-bearing job can only ever match a
+# publisher configured with that same name. `test/release-automation.test.ts`
+# refuses the key for exactly that reason.
+
+on:
+  push:
+    branches: [main]
+
+# release-please pushes a branch, opens a PR and creates a tag; publish only reads
+# the checkout and asks the registry for a provenance token, which its own
+# `permissions` block grants.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  # Two runs racing over one release PR leave a branch whose version bump nobody
+  # reviewed, and a publish that started must be allowed to finish: an npm
+  # version, once published, cannot be replaced.
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          # A release PR opened with the default GITHUB_TOKEN is created with
+          # zero CI jobs and concludes `action_required`: GitHub's anti-recursion
+          # rule refuses to fire `on: pull_request` workflows for a workflow
+          # token, so the release would merge with nothing having run on it.
+          # Nothing is denied — the runs simply have no jobs — which is why the
+          # symptom reads as "no checks reported" rather than as a failure. A PAT
+          # gives the PR a real identity and `pull_request` fires normally.
+          #
+          # RELEASE_PLEASE_TOKEN needs Contents: write (push the branch, tag the
+          # release) and Pull requests: write (open and update the PR). It does
+          # not need the `workflows` scope: that governs pushing changes under
+          # `.github/workflows/`, which a release PR never does.
+          #
+          # If a release PR ever reports "no checks reported" again, this PAT has
+          # expired. Regenerate it and update the secret; no code change is needed.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    # Only the run that actually created a release publishes. Every other push to
+    # main leaves this output false, so the job exits without a step.
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    # No `environment:` key — see the header. `id-token: write` is what lets the
+    # runner mint the OIDC token npm exchanges for a publishing credential;
+    # `contents: read` is the checkout, which is all this job touches. No secret:
+    # trusted publishing has no token to hold.
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v5
+        with:
+          # Exact pins, as in ci.yml: a toolchain change is a reviewed commit, and
+          # a publish is the one run where a silently newer npm or bun can change
+          # what lands in the registry. `package-manager-cache: false` because this
+          # job installs nothing from npm — npm here only publishes.
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Require an npm that can publish with provenance
+        run: |
+          set -euo pipefail
+          version=$(npm --version)
+          # 11.5.1 is the floor npm's own trusted-publishing documentation gives
+          # for `--provenance`. Below it npm either refuses the flag or publishes
+          # without an attestation, and a release published that way can never be
+          # repaired: the version is taken.
+          minimum=11.5.1
+          if [ "$(printf '%s\n%s\n' "$minimum" "$version" | sort -V | head -n 1)" != "$minimum" ]; then
+            echo "::error::npm $version is older than $minimum, the minimum for trusted publishing"
+            exit 1
+          fi
+          echo "npm $version is at least $minimum"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint and types
+        run: bun run check
+
+      - name: Tests with coverage gate
+        run: bun test
+        env:
+          PI_OFFLINE: "1"
+
+      - name: Publish
+        # The gates above run again here rather than being trusted from CI: this
+        # job checks out the tag, and the artifact it publishes must be the one
+        # those checks just passed on.
+        run: npm publish --provenance --access public

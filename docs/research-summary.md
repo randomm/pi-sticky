@@ -35,9 +35,17 @@ The main agent posts messages for the user. The user is often away for a long ti
 
 Settled since this table was written: publishing is an open-source release (the repo is public and
 Apache-2.0, with `LICENSE`, `NOTICE` and `package.json` `"license": "Apache-2.0"` all present and no
-`"private"` key; a relicensing to MIT remains a decision, not a fact), with npm publishing left as a
-manual operator step; the shortcuts are `ctrl+alt+t` (toggle) and `ctrl+alt+p` (focus); and the ticket
-cut is the one in section 6.
+`"private"` key; a relicensing to MIT remains a decision, not a fact); the shortcuts are `ctrl+alt+t`
+(toggle) and `ctrl+alt+p` (focus); and the ticket cut is the one in section 6.
+
+**Superseded (issue #69):** the earlier disposition that npm publishing stayed *a manual operator step* no
+longer holds. `release-please` opens the release PR from conventional commits on main, and merging it
+bumps `package.json`, writes `CHANGELOG.md`, tags the release and publishes to npm with provenance via
+trusted publishing — no `NPM_TOKEN`. The one manual act left is the bootstrap: the operator publishes
+0.1.0 by hand once and pushes the tag `v0.1.0`, which is also the single documented exception to "never
+create tags by hand". `test/release-automation.test.ts` pins that automation, including the pair npm's
+trusted publisher matches — owner `randomm`, repo `pi-sticky`, workflow `release-please.yml`, environment
+name EMPTY, which is why the publish job declares no `environment:` key.
 
 ## 3. Findings that change the plan
 
