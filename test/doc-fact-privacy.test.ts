@@ -15,30 +15,25 @@
  * un-anchored pattern credits a `private` that merely *falls inside* the window to the link it is nearest,
  * which is the exact confusion the jsdoc on `NOTE` promises against. Asserting that difference is what the
  * `derive`d un-anchored pattern is for, and `derive` is pinned to its own contract — see the third test.
+ *
+ * `marksSite` is asked about a tail where `private` sits in prose ahead of an unattached parenthetical, so it
+ * cannot be `UNANCHORED` and stay green; and every cut `strip` makes is read back against the note its own
+ * site carried, so a cut of the link rather than the note, or a note credited to another link, fails.
  */
 import { expect, test } from "bun:test";
 
 import { readDoc } from "./doc-fact-fixtures.ts";
+import {
+  NONI_LINK,
+  NONI_LINK_TEXT,
+  NOTE,
+  WINDOW,
+  noniNotes,
+  noniSites,
+  strip,
+} from "./doc-fact-privacy-helpers.ts";
 
 const README = "README.md";
-
-/** A link to noni's repo, in the one form the README writes it. */
-const NONI_LINK = /\[noni\]\((?:https:\/\/github\.com\/randomm\/noni)\)/g;
-
-/** One such link as text, for the sites whose match object is not at hand. */
-const NONI_LINK_TEXT = "[noni](https://github.com/randomm/noni)";
-
-/** How far past a link the guard looks for its note. */
-const WINDOW = 220;
-
-/**
- * The parenthetical that opens right after a link and says the repo is private. Found by *prefix* rather
- * than from a hand-written list of strings: a list grows stale silently, because a fourth wording shipped
- * beside the ones the README knows today would never be stripped and its site would pass the guard
- * without ever being tested. Anchored at the link's own end, so a `(private)` that merely falls inside the
- * window is not credited to this site.
- */
-const NOTE = /^\s*\((?:[^()]*)\bprivate\b[^()]*\)/;
 
 /**
  * Cut `pattern`'s `^\s*` anchor off the front, so the result differs from it in the anchor *only*.
@@ -102,14 +97,24 @@ test("a privacy note is credited only when it opens where the link ends", () => 
   // The word `private` present, and a parenthetical present, but neither belongs to this link: the word
   // sits in intervening prose, so the note an un-anchored pattern would credit here is somebody else's.
   // One tail, both patterns: `NOTE` refuses it, the un-anchored copy takes the *later* parenthetical.
-  expect(
-    NOTE.exec(PROSE_BEFORE_NOTE),
-    "prose before the parenthetical is not a note for this link",
-  ).toBeNull();
+  // One tail, both patterns: `NOTE` refuses it, the un-anchored copy takes the *later* parenthetical.
+  expect(NOTE.exec(PROSE_BEFORE_NOTE), "prose before the parenthetical is not a note").toBeNull();
   expect(
     UNANCHORED.exec(PROSE_BEFORE_NOTE)?.[0],
     "…which is exactly what an un-anchored NOTE would credit to this site",
   ).toBe("(private at the time of writing)");
+  // The discriminator above reaches `NOTE` directly; this leg routes it through the guard's own predicate, so
+  // `marksSite` cannot be quietly swapped for `UNANCHORED`: on this tail the guard must refuse and the pattern
+  // its anchor was cut from must take.
+  const bare = NONI_LINK_TEXT;
+  expect(
+    marksSite(bare + PROSE_BEFORE_NOTE, 0, bare),
+    "the guard does not credit a prose `private` before an unattached parenthetical",
+  ).toBe(false);
+  expect(
+    UNANCHORED.test((bare + PROSE_BEFORE_NOTE).slice(bare.length, bare.length + WINDOW)),
+    "…where the un-anchored pattern credits that same window to the link",
+  ).toBe(true);
 });
 
 /**
@@ -133,15 +138,12 @@ test("derive cuts the anchor from the front of a pattern and refuses one that ha
 
 test("every noni link in the README says the repo is private", () => {
   const readme = readDoc(README);
-  const sites = [...readme.matchAll(NONI_LINK)].map((m) => ({ at: m.index ?? 0, link: m[0] }));
+  const sites = noniSites(readme);
   expect(sites.length, "the README links noni").toBeGreaterThanOrEqual(3);
-  const notes = sites.map((site) => {
-    const note = NOTE.exec(
-      readme.slice(site.at + site.link.length, site.at + site.link.length + WINDOW),
-    )?.[0];
-    expect(note, `the noni link at ${site.at} carries a parenthetical privacy note`).toBeDefined();
-    return note ?? "";
-  });
+  const notes = noniNotes(readme, sites);
+  for (const [i, note] of notes.entries()) {
+    expect(note.text, `the noni link at ${sites[i]?.at} carries a privacy note`).not.toBe("");
+  }
   // The guard, per site: the window that opens on this link holds a note where the link ends.
   for (const site of sites) {
     expect(
@@ -149,27 +151,12 @@ test("every noni link in the README says the repo is private", () => {
       `the noni link at ${site.at} is marked private`,
     ).toBe(true);
   }
-  // Stripping is done by *cutting the note out at the site's own offset*, never by a text substitution.
-  // An earlier version substituted the note strings, with `replaceAll` for one and a plain `replace`
-  // — first match only — for the other, so the note the second call missed left every site marked and
-  // the "a bare link is caught" assertion ran against a README that had not been stripped at all.
-  const strip = (text: string, ...at: number[]): string => {
-    const by = [...at].sort((a, b) => b - a);
-    let out = text;
-    for (const i of by) {
-      const site = sites[i];
-      const note = notes[i];
-      if (site === undefined || note === undefined) {
-        throw new Error(`strip: no noni site at index ${i} — the control's target is gone`);
-      }
-      const start = site.at + site.link.length;
-      out = out.slice(0, start) + out.slice(start + note.length);
-    }
-    return out;
-  };
+  // Stripping is `strip` in the helpers module: it cuts the note at the site's own *offset* and throws rather
+  // than cut a span its site does not carry. An earlier version substituted the note strings, first match
+  // only, so a missed note left every site marked and the "bare link" assertion ran on an unstripped README.
   // Positive control 1: every note gone at once. The guard's own loop must then reject every site —
   // `toBe(sites.length)`, not `toBeGreaterThan(0)`, so one bare site cannot stand in for three.
-  const bareAll = strip(readme, ...sites.map((_, i) => i));
+  const bareAll = strip(readme, sites, notes, ...sites.map((_, i) => i));
   expect(bareAll, "the shipped privacy notes were found to strip").not.toBe(readme);
   const bareSites = [...bareAll.matchAll(NONI_LINK)];
   expect(bareSites.length, "the stripped README still links noni").toBe(sites.length);
@@ -192,7 +179,7 @@ test("every noni link in the README says the repo is private", () => {
   for (const i of sites.map((_, j) => j)) {
     const site = sites[i];
     if (site === undefined) throw new Error(`no noni site at index ${i}`);
-    const one = strip(readme, i);
+    const one = strip(readme, sites, notes, i);
     expect(one, `stripping only the note at ${site.at} took`).not.toBe(readme);
     const occ = [...one.matchAll(NONI_LINK)];
     expect(occ.length, `the stripped README still links noni ${sites.length} times`).toBe(
@@ -200,6 +187,18 @@ test("every noni link in the README says the repo is private", () => {
     );
     const at = occ[i]?.index ?? 0;
     const link = occ[i]?.[0] ?? site.link;
+    // Read the cut back at its own offset: this site's note is gone from there, and what follows is the text
+    // that followed it in the shipped file — so nothing else was cut, and no other site's note can stand in for
+    // it. A mis-indexed `notes` measured green before this leg: two shipped sites share the same note.
+    const own = notes[i];
+    if (own === undefined) throw new Error(`no note recorded for the site at ${site.at}`);
+    const after = readme.slice(own.at + own.text.length, own.at + own.text.length + 16);
+    expect(
+      own.text !== "" &&
+        readme.slice(own.at, own.at + own.text.length) === own.text &&
+        one.slice(own.at, own.at + 16) === after,
+      `the cut at ${own.at} removed this site's own note`,
+    ).toBe(true);
     expect(
       marksSite(one, at, link),
       `the guard fires when only the note at ${site.at} is removed`,
@@ -237,7 +236,7 @@ test("every noni link in the README says the repo is private", () => {
   if (first === undefined) throw new Error("the README has no noni link to build a control on");
   const siteTail = first.at + first.link.length;
   const withNote = (note: string): string =>
-    `${readme.slice(0, siteTail)}${note}${readme.slice(siteTail + (notes[0] ?? "").length)}`;
+    `${readme.slice(0, siteTail)}${note}${readme.slice(siteTail + (notes[0]?.text ?? "").length)}`;
   expect(
     marksSite(withNote(LONG_NOTE_SHORT), first.at, first.link),
     "a note that fits the window is credited",
