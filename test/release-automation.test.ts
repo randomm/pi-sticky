@@ -122,13 +122,21 @@ test("the publish job installs from the lockfile and gates before it publishes",
   ]) {
     expect(runsStep(publish(), step), `publish runs ${step}`).toBe(true);
   }
+  // `Require an npm that can publish with provenance` is in the ordered sequence rather than only asserted
+  // to exist below: the floor check is worth nothing after the publish it is meant to prevent, and an npm
+  // version once published cannot be replaced.
   const order = [
+    "Require an npm that can publish with provenance",
     "bun install --frozen-lockfile",
     "bun run check",
     "PI_OFFLINE",
     "npm publish --provenance --access public",
   ].map((step) => publish().indexOf(step));
-  expect(order, "install, gates, then publish — in that order").toEqual(
+  expect(
+    order.every((index) => index >= 0),
+    "every gate step is in the job",
+  ).toBe(true);
+  expect(order, "the npm floor, install, gates, then publish — in that order").toEqual(
     [...order].sort((a, b) => a - b),
   );
 });

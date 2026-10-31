@@ -112,8 +112,6 @@ test("the step reader matches a real step and refuses one it cannot parse", () =
   const body = jobBody(workflow(), "publish");
   expect(runsStep(body, "npm publish"), "the shipped job publishes with provenance").toBe(true);
   // The mutation is the whole control: a reader that matched every step, or none, would answer true for the
-  // shipped step and true here as well.
-  // The mutation is the whole control: a reader that matched every step, or none, would answer true for the
   // shipped step above *and* true here. The needle stays what the job actually runs; only the file changed.
   expect(
     runsStep(body.replace("npm publish", "npm  publish"), "npm publish"),
