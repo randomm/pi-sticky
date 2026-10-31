@@ -28,6 +28,22 @@ export const NONI_LINK_TEXT = "[noni](https://github.com/randomm/noni)";
  */
 export const NOTE = /^\s*\((?:[^()]*)\bprivate\b[^()]*\)/;
 
+/**
+ * `NOTE` with its `^\s*` anchor cut off, so it differs from the shipped pattern in the anchor *only*. Derived
+ * here from `NOTE` rather than hand-typed: a literal copy is source-identical to a correct cut, so behaviour is
+ * the only observable that tells them apart, and `doc-fact-privacy.test.ts` pins the derivation itself.
+ */
+export const UNANCHORED = new RegExp(NOTE.source.replace(/^\^\\s\*/, ""), NOTE.flags);
+
+/**
+ * The guard's own predicate: whether a link at `at` in `text` is marked by a privacy note. Asked about a tail
+ * where `private` sits in prose ahead of an unattached parenthetical, so it cannot be the un-anchored pattern
+ * and stay green. The window bounds the claim: a note that begins past `WINDOW` is not credited to this link.
+ */
+export function marksSite(text: string, at: number, link: string): boolean {
+  return NOTE.test(text.slice(at + link.length, at + link.length + WINDOW));
+}
+
 /** One noni link: where it starts and the text it matched. */
 export interface Site {
   at: number;
@@ -40,6 +56,9 @@ export interface Note {
   text: string;
 }
 
+/** A site that carries no note has no `Note` at all — absence is `null`, never an empty string that is also a legal `Note`. */
+export type SiteNote = Note | null;
+
 /** Every noni link in `text`, in document order. */
 export function noniSites(text: string): Site[] {
   return [...text.matchAll(NONI_LINK)].map((m) => ({ at: m.index ?? 0, link: m[0] }));
@@ -49,12 +68,13 @@ export function noniSites(text: string): Site[] {
  * The note each site carries, `NOTE`-anchored at the link's own end, so a `private` that merely falls inside
  * the window is not credited to it. The offset is recorded beside the text: it is what lets `strip` prove it
  * removed the note this site carried rather than some span of the same length. A site without a note yields
- * an empty `text`, which the caller's own assertion refuses and `strip` then throws on.
+ * `null` — the caller's own assertion refuses it and `strip` throws on it.
  */
-export function noniNotes(text: string, sites: Site[]): Note[] {
+export function noniNotes(text: string, sites: Site[]): SiteNote[] {
   return sites.map((site) => {
     const at = site.at + site.link.length;
-    return { at, text: NOTE.exec(text.slice(at, at + WINDOW))?.[0] ?? "" };
+    const found = NOTE.exec(text.slice(at, at + WINDOW))?.[0];
+    return found === undefined ? null : { at, text: found };
   });
 }
 
@@ -63,13 +83,16 @@ export function noniNotes(text: string, sites: Site[]): Note[] {
  * offsets. Throws when a site's offset does not hold the note it is credited with: that is the difference
  * between a cut that is merely effective and one that removed what this control claims it removed.
  */
-export function strip(text: string, sites: Site[], notes: Note[], ...at: number[]): string {
+export function strip(text: string, sites: Site[], notes: SiteNote[], ...at: number[]): string {
   let out = text;
   for (const i of [...at].sort((a, b) => b - a)) {
     const site = sites[i];
     const note = notes[i];
     if (site === undefined || note === undefined) {
       throw new Error(`strip: no noni site at index ${i} — the control's target is gone`);
+    }
+    if (note === null) {
+      throw new Error(`strip: site ${i} carries no note — there is nothing to strip`);
     }
     if (out.slice(note.at, note.at + note.text.length) !== note.text) {
       throw new Error(`strip: site ${i} does not carry ${JSON.stringify(note.text)} at ${note.at}`);
