@@ -17,8 +17,8 @@
  * `derive`d un-anchored pattern is for, and `derive` is pinned to its own contract — see the third test.
  *
  * `marksSite` is asked about a tail where `private` sits in prose ahead of an unattached parenthetical, so it
- * cannot be `UNANCHORED` and stay green; and every cut `strip` makes is read back against the note its own
- * site carried, so a cut of the link rather than the note, or a note credited to another link, fails.
+ * cannot be `UNANCHORED` and stay green; every cut `strip` makes is read back against the note its own site
+ * carried, so a cut of the link rather than the note, or a note credited to another link, fails.
  */
 import { expect, test } from "bun:test";
 
@@ -56,10 +56,6 @@ function derive(pattern: RegExp): RegExp {
 }
 
 const UNANCHORED = derive(NOTE);
-expect(
-  UNANCHORED.source,
-  "the helper's un-anchored pattern is this derivation of NOTE, not a second copy of it",
-).toBe(UNANCHORED_FROM_HELPER.source);
 /** A tail that mentions `private` in prose *before* a parenthetical that is not this link's note. */
 const PROSE_BEFORE_NOTE = " says the repo is private elsewhere (private at the time of writing)";
 
@@ -126,9 +122,9 @@ test("a privacy note is credited only when it opens where the link ends", () => 
 });
 
 /**
- * `derive` is the only thing standing between `UNANCHORED` and a hand-typed copy, so it is pinned on
- * inputs of its own — including a pattern whose source does not open with the anchor, which is what a
- * hand-typed `UNANCHORED` looks like from inside the derivation.
+ * `derive` is the only thing standing between `UNANCHORED` and a hand-typed copy, so it is pinned on inputs of
+ * its own (a pattern with no anchor to cut is what a hand-typed `UNANCHORED` looks like from inside) and the
+ * helper's copy is pinned to the result.
  */
 test("derive cuts the anchor from the front of a pattern and refuses one that has none", () => {
   const anchored = /^\s*\(x\)/;
@@ -138,6 +134,12 @@ test("derive cuts the anchor from the front of a pattern and refuses one that ha
   expect(derive(/^\s*\(x\)/g).flags, "including a global flag").toBe("g");
   expect(cut.test("x (x)"), "un-anchored, it matches away from the start").toBe(true);
   expect(anchored.test("x (x)"), "where the anchored pattern does not").toBe(false);
+  // A hand-typed literal in the helpers module is source-identical to a correct cut, so this comparison is the
+  // one observable that tells the two apart.
+  expect(
+    UNANCHORED.source,
+    "the helper's un-anchored pattern is this derivation of NOTE, not a second copy of it",
+  ).toBe(UNANCHORED_FROM_HELPER.source);
 
   for (const source of ["\\(x\\)", "^\\s+\\(x\\)", "^\\(x\\)"] as const) {
     expect(() => derive(new RegExp(source)), `${source} has no anchor for derive to cut`).toThrow();

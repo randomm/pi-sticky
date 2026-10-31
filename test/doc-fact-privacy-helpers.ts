@@ -29,6 +29,13 @@ export const NONI_LINK_TEXT = "[noni](https://github.com/randomm/noni)";
 export const NOTE = /^\s*\((?:[^()]*)\bprivate\b[^()]*\)/;
 
 /**
+ * How far past a cut offset the controls read for a parenthetical that *could* have explained the guard's
+ * refusal. Several times `CUT_READBACK_WINDOW` and past the first `(` after any of the shipped cuts, so a
+ * window this narrow cannot be what makes a stripped site read as unmarked; one constant, named once.
+ */
+export const PROSE_READBACK_PROBE = 80;
+
+/**
  * `NOTE` with its `^\s*` anchor cut off, so it differs from the shipped pattern in the anchor *only*. Derived
  * here from `NOTE` rather than hand-typed: a literal copy is source-identical to a correct cut, so behaviour is
  * the only observable that tells them apart, and `doc-fact-privacy.test.ts` pins the derivation itself.

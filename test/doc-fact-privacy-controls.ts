@@ -1,16 +1,16 @@
 /**
- * The per-site cut controls for the privacy guard: strip one site's note and assert that the guard fires on
- * that site alone, that the cut removed exactly the note this site carried, and that the read-back window
- * which proves it, and what that window's bound is pinned by. Lives beside `doc-fact-privacy.test.ts`
- * only for the 300-line cap; every control here runs against `strip` in the helpers module, so a builder
- * that cut the wrong span fails a test instead of quietly passing one — and the oracle that makes it fail is
- * `strip`'s byte-equality throw, which is why its own `toThrow()` leg is pinned in the sibling file.
+ * The per-site cut controls for the privacy guard: strip one site's note and assert that the guard rejects
+ * that site alone, that every other site keeps its note, and that the cut removed exactly the note this site
+ * carried.
  */
 import { expect } from "bun:test";
 
 import {
   NONI_LINK,
+  NOTE,
   type Note,
+  PROSE_READBACK_PROBE,
+  type Site,
   type SiteNote,
   UNANCHORED,
   marksSite,
@@ -21,9 +21,14 @@ import {
  * site's note rather than a span inside the note the cut just removed — at or below the note's own length the
  * compared span is text the cut overwrote, which is why the window has a bound at all. It is not what decides
  * *which* span was cut: a length-preserving wrong cut is refused upstream, and measured red for every window
- * from 4 to 40. The two legs in `perSiteCutControls` pin it strictly between the shortest and longest privacy
- * note the README ships (measured: 10 and 33), and are genuinely falsifiable — red at or under 10, red at or
- * over 33, green only for 11 through 32.
+ * from 4 to 40.
+ *
+ * It is the single input to the read-back: `cutIdentityHolds` reads this constant rather than taking a window
+ * of its own, and the two legs in `perSiteCutControls` bound this same constant strictly between the shortest
+ * and longest privacy note the README ships (measured: 10 and 33). Measured as one observable — setting the
+ * constant to 40 turns the upper leg red and 4 turns the lower one red, while a wrong *cut* stays green at
+ * every window from 4 to 40 — so the constant below is the only number the read-back and its bound are stated
+ * in, and no leg can pin a window nothing reads back.
  *
  * For cut identity, `strip`'s byte-equality throw is the load-bearing oracle: measured over the same-length
  * wrong cuts at all three sites, deleting the read-back leg changes nothing, while deleting the throw is what
@@ -31,12 +36,18 @@ import {
  */
 export const CUT_READBACK_WINDOW = 16;
 
-/** Whether `one` reads back, at `own.at`, as exactly the file with this site's note cut out of `readme`. */
-function cutIdentityHolds(readme: string, own: Note, one: string, window: number): boolean {
-  const after = readme.slice(own.at + own.text.length, own.at + own.text.length + window);
+/**
+ * Whether `one` reads back, at `own.at`, as exactly the file with this site's note cut out of `readme`, over
+ * `CUT_READBACK_WINDOW` characters.
+ */
+function cutIdentityHolds(readme: string, own: Note, one: string): boolean {
+  const after = readme.slice(
+    own.at + own.text.length,
+    own.at + own.text.length + CUT_READBACK_WINDOW,
+  );
   return (
     readme.slice(own.at, own.at + own.text.length) === own.text &&
-    one.slice(own.at, own.at + window) === after
+    one.slice(own.at, own.at + CUT_READBACK_WINDOW) === after
   );
 }
 
@@ -46,11 +57,7 @@ function cutIdentityHolds(readme: string, own: Note, one: string, window: number
  * removed all three notes would satisfy "the guard fires", which is how the earlier control proved nothing
  * about the individual sites it claimed to test.
  */
-export function perSiteCutControls(
-  readme: string,
-  sites: { at: number; link: string }[],
-  notes: SiteNote[],
-): void {
+export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNote[]): void {
   for (const i of sites.map((_, j) => j)) {
     const site = sites[i];
     if (site === undefined) throw new Error(`no noni site at index ${i}`);
@@ -60,23 +67,37 @@ export function perSiteCutControls(
     expect(occ.length, `the stripped README still links noni ${sites.length} times`).toBe(
       sites.length,
     );
-    const at = occ[i]?.index ?? 0;
-    const link = occ[i]?.[0] ?? site.link;
-    // Read the cut back at its own offset: this site's note is gone from there, and what follows is the text
-    // that followed it in the shipped file — so nothing else was cut, and no other site's note can stand in
-    // for it. A mis-indexed `notes` measured green before this leg: two shipped sites share the same note.
+    // The note this site is credited with, read from the same index the cut used — and never defaulted: an
+    // absent note is an error, because a leg that runs on a default cannot fail. `null` is the absence
+    // `SiteNote` can hold, and `strip` refuses it first, so the `undefined` half of this guard is unreachable
+    // in the shipped run: kept, because indexing an array can yield it and a guard nobody can reach is the
+    // defect class this file exists to remove. Measured: forcing the branch true reaches the throw, and
+    // deleting the `null` test leaves the guard unreachable with the run green.
     const own = notes[i];
     if (own === null || own === undefined) {
       throw new Error(`no note recorded for the site at ${site.at}`);
     }
+    const at = occ[i]?.index;
+    const link = occ[i]?.[0];
+    if (at === undefined || link === undefined) {
+      throw new Error(`the stripped README lost the link at index ${i}`);
+    }
+    // The count above says a link is there; these two say it is *this* site's, at the offset the guard is
+    // about to be asked about. A note-only cut moves nothing, so both hold in the shipped run, and an `occ`
+    // that disagreed with `sites` — re-indexed, or matched against another link — is what fails them: the
+    // read-back below and the guard leg after it would both be asked about a span this site does not own.
+    expect(at, `the link read back at index ${i} sits where this site's link was`).toBe(site.at);
+    expect(link, "…and is the text that link matched").toBe(site.link);
+    // Read the cut back at its own offset: this site's note is gone from there, and what follows is the text
+    // that followed it in the shipped file — so nothing else was cut, and no other site's note can stand in
+    // for it. A mis-indexed `notes` measured green before this leg: two shipped sites share the same note.
     expect(
-      cutIdentityHolds(readme, own, one, CUT_READBACK_WINDOW),
+      cutIdentityHolds(readme, own, one),
       `the cut at ${own.at} removed this site's own note`,
     ).toBe(true);
-    // The window's own bound, made observable rather than assumed. `CUT_READBACK_WINDOW` sits strictly between
-    // the shortest and the longest note the README ships (measured: 10 and 33 characters) — at or under the
-    // shortest it compares only text the cut overwrote, at or over the longest it reads into the removed span,
-    // so shrinking it to 10 or growing it past 33 turns one of these two legs red.
+    // The window's own bound, made observable rather than assumed, on the constant the read-back reads. At or
+    // under the shortest note (measured: 10) it compares only text the cut overwrote; at or over the longest
+    // (33) it reads into the removed span. Changing the constant to 4 or 40 turns one of these two legs red.
     const noteLens = notes.map((n) => (n === null ? 0 : n.text.length));
     expect(
       CUT_READBACK_WINDOW,
@@ -86,11 +107,21 @@ export function perSiteCutControls(
       CUT_READBACK_WINDOW,
       "…and narrower than the longest, so it never reads into the span the cut removed",
     ).toBeLessThan(Math.max(...noteLens));
-    // A short read-back is not what makes the guard fire on a stripped site: no `(...)` pair survives within
-    // 80 characters after this site's own cut offset, so widening the window would not have marked it.
+    // Why the guard's refusal below is not an artefact of a short read-back. The old single leg asked
+    // `UNANCHORED` about the stripped span and asserted `false` — a question that cannot answer `true` here, so
+    // deleting the whole leg changed nothing (measured). Now the assertion and its witness are separate: the
+    // shipped file answers `true` for the same span because this site's own note sits there, which is what lets
+    // the stripped file's `false` mean an absence and not a span too narrow to see anything. `NOTE` is the
+    // pattern asked because it is the one `marksSite` uses; the sibling file's positive control 1 already owns
+    // the whole-file absence under both patterns, so this leg owns the narrower claim at this offset.
+    const cutSpan = (text: string): string => text.slice(own.at, own.at + PROSE_READBACK_PROBE);
     expect(
-      UNANCHORED.test(one.slice(own.at, own.at + 80)),
-      "no note's absence is explained by the read-back being short: an 80-character read finds no parenthetical",
+      UNANCHORED.test(cutSpan(readme)),
+      "the probe span is the right size to witness anything: the shipped file answers it",
+    ).toBe(true);
+    expect(
+      NOTE.test(cutSpan(one)),
+      "no note's absence is explained by the read-back being short: a probe-wide read finds no parenthetical",
     ).toBe(false);
     expect(
       marksSite(one, at, link),
