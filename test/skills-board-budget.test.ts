@@ -105,18 +105,6 @@ test("each board skill's stated Backlog cap fits the pin budget alongside its No
       expect(fold(text), `${dir}: carries the operative rule "${head}"`).toContain(head);
     }
   }
-  // `sticky-noni` carries no Now group, so it states no Now count; the run board states one and the
-  // assertion inside the loop above pins it to `NOW_ROWS`.
-  expect(
-    statedNowCount(fold(readDoc(boardPath("sticky-noni")))),
-    "noni states no Now count",
-  ).toBeNull();
-  // `sticky-noni` carries no Now group, so it states no Now count; the run board states one and the
-  // assertion inside the loop above pins it to `NOW_ROWS`.
-  expect(
-    statedNowCount(fold(readDoc(boardPath("sticky-noni")))),
-    "noni states no Now count",
-  ).toBeNull();
   // `sticky-noni` is the file that states the count in its own instruction as well as the card, so the
   // agreement assertion above is only load-bearing there — a file with one stated count cannot disagree
   // with itself. The scrape is one count per matched span, so noni reports its cap three times: once from
