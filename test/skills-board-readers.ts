@@ -27,11 +27,16 @@ import {
   BACKLOG_RULE_HEAD,
   cardCounts,
   cardinal,
+  countPattern,
   fold,
 } from "./doc-fact-fixtures.ts";
 
-/** A small count, spelled or digital — the same spellings `cardinal` reads. */
-const COUNT = String.raw`(?:\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)`;
+/**
+ * A small count, spelled or digital — the one accepting pattern the fixtures generate, so the side that
+ * matches a card-shaped sentence and the side that decodes its numerals cannot disagree on which counts
+ * exist (a count accepted here and unknown to `cardinal` used to read as -1, a plausible-looking count).
+ */
+const COUNT = countPattern();
 
 /** The card sentence, global — so a file with two of them reports both numerals of each. */
 const CARD_SHAPE = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT});`, "g");
@@ -59,7 +64,7 @@ export function statedBacklogCounts(text: string): number[] {
  * it counts against — is not a Backlog count, so the card contributes its cap only here; the budget is
  * read on its own by `statedBudget`, which is what refuses a second card that moved just that half.
  */
-const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
+export const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
   new RegExp(`(${COUNT}) rows at the default`, "g"),
   new RegExp(`cap is \\*\\*(${COUNT}) rows`, "g"),
   new RegExp(`first (${COUNT}) entries`, "g"),
@@ -118,25 +123,77 @@ function escapeRegExp(text: string): string {
  * casing but the file may have hard-wrapped it across lines and capitalised its first word. The skills are
  * re-wrapped whenever their prose is edited, so a control that matched raw bytes would fail for a reason
  * unrelated to the count it mutates.
+ *
+ * Throws when the pattern matches nothing: returning the input unchanged made every control built here pass
+ * on a mutation that never happened, because the decoy then *was* the original text and reported the
+ * shipped counts.
  */
 export function replaceSpaced(text: string, spaced: string, replacement: string): string {
   const pattern = new RegExp(spaced.split(" ").map(escapeRegExp).join("\\s+"), "i");
+  if (!pattern.test(text)) {
+    throw new Error(`replaceSpaced: "${spaced}" is not in the text — the control's target is gone`);
+  }
   return text.replace(pattern, replacement);
 }
 
 /**
- * Every operative pattern, and the shipped sentence that fires it. A scraper whose pattern stopped
- * matching returns nothing and is therefore indistinguishable from a file with nothing to disagree with,
- * so each pattern is pinned to a sentence here and re-proven by the control in the test file. The proof
- * sentences are written folded, because that is the form every reader above sees.
+ * One liveness proof: the pattern a reader must still fire, the shipped sentence that fires it, and the
+ * count the reader must report for that sentence.
  */
-export const OPERATIVE_PROOFS: [string, RegExp, string][] = [
-  ["the card's cap", /three rows at the default/, "three rows at the default"],
-  ["noni's bold cap", /cap is \*\*three rows/, "The cap is **three rows**"],
-  ["noni's build rule with a numeral", /first three entries/, "the first three entries"],
-  ["noni's floor", /Fewer than three entries/, "Fewer than three entries"],
-  ["the run board's Now row", /the board is one Now/, "the board is one Now"],
-  ["the run board's rows beside it", /plus those three/, "plus those three"],
+export interface OperativeProof {
+  /** What the pattern reads, for the failure message. */
+  label: string;
+  /** The pattern itself, for the assertion that the sentence is more than its matched span. */
+  pattern: RegExp;
+  /** The shipped sentence, folded — the form every reader above sees. */
+  sentence: string;
+  /** The count `statedCounts` has to report for that sentence. */
+  count: number;
+}
+
+/**
+ * Every operative pattern with the sentence that fires it and the count the reader owes for it. A scraper
+ * whose pattern stopped matching returns nothing and is therefore indistinguishable from a file with
+ * nothing to disagree with, so each pattern is pinned to a sentence and re-proven in the test file — proven
+ * *through the reader*, never through a copy of the pattern, or a dead pattern keeps proving itself live.
+ */
+export const OPERATIVE_PROOFS: OperativeProof[] = [
+  {
+    label: "the card's cap",
+    pattern: /three rows at the default/,
+    sentence: "three rows at the default",
+    count: 3,
+  },
+  {
+    label: "noni's bold cap",
+    pattern: /cap is \*\*three rows/,
+    sentence: "The cap is **three rows**",
+    count: 3,
+  },
+  {
+    label: "noni's build rule with a numeral",
+    pattern: /first three entries/,
+    sentence: "the first three entries",
+    count: 3,
+  },
+  {
+    label: "noni's floor",
+    pattern: /Fewer than three entries/,
+    sentence: "Fewer than three entries",
+    count: 3,
+  },
+  {
+    label: "the run board's Now row",
+    pattern: /the board is one Now/,
+    sentence: "the board is one Now",
+    count: 1,
+  },
+  {
+    label: "the run board's rows beside it",
+    pattern: /plus those three/,
+    sentence: "plus those three",
+    count: 3,
+  },
 ];
 
 /** The two skills that pin a Now/Backlog board, and so carry the card the budget is read out of. */

@@ -16,7 +16,9 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
+import { MAX_FIELD_GRAPHEMES } from "../src/pin-fields.ts";
 
 /** The repo root, as the doc tests address files from it. */
 const ROOT = join(import.meta.dir, "..");
@@ -42,14 +44,84 @@ export function fold(text: string): string {
   return text.replace(/\s+/g, " ");
 }
 
-/** The shape of one parsed card. */
-export interface CardCounts {
-  cap: number;
-  budget: number;
+/**
+ * Every count a doc may spell as a word, in order. `numeral` spells a count from this array, `cardinal`
+ * decodes one with it, and the accepting pattern of every reader is generated from it — so the side that
+ * matches a card-shaped sentence and the side that reads its numerals are one source of truth (they were
+ * two, and a count the table lacked decoded to `indexOf`'s -1, which downstream read as a real count).
+ *
+ * The upper end is a named bound, not a silent fallback: the docs state a count as a word only up to the
+ * largest bound they carry (`MAX_FIELD_GRAPHEMES`, the option and group bound), and `MAX_COUNT` below is
+ * that same bound, so nothing can be spelled on one side and unreadable on the other.
+ */
+export const NUMERALS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+  "twenty",
+  "twenty-one",
+  "twenty-two",
+  "twenty-three",
+  "twenty-four",
+] as const;
+
+// The table's top is the widest bound the docs state, so the two cannot drift: a doc that spelled a count
+// above it would be unreadable on the decoding side, and a table taller than every bound is dead weight.
+if (NUMERALS.length - 1 !== MAX_FIELD_GRAPHEMES || MAX_PINS > MAX_FIELD_GRAPHEMES) {
+  throw new Error(
+    `doc-fact-fixtures: the numeral table must top out at MAX_FIELD_GRAPHEMES (${MAX_FIELD_GRAPHEMES}) and cover MAX_PINS (${MAX_PINS})`,
+  );
 }
 
-/** A small count, spelled or digital — the same spellings `cardinal` reads. */
-const COUNT = String.raw`(?:\d+|zero|one|two|three|four|five|six|seven|eight|nine|ten)`;
+/** The largest count the table spells as a word; the docs write a larger one in digits. */
+const MAX_SPOKEN_COUNT = NUMERALS.length - 1;
+
+/**
+ * The largest number a reader accepts as a count: the widest bound any doc states, which is also the top
+ * of the spelled table. Past it a numeral in a doc is a defect, not a count, and `cardinal` says so.
+ */
+const MAX_COUNT = Math.max(MAX_PINS, MAX_SPOKEN_COUNT);
+
+/**
+ * The digits an accepting pattern allows for a count: no leading zero, and at most as many digits as the
+ * largest count has — so a doc cannot state a number no decoder would read, and the accepting side and the
+ * decoding side stay one boundary. Backslash-d doubled for `String.raw` below.
+ */
+const DIGITS = `0|[1-9]\\d{0,${String(MAX_COUNT).length - 1}}`;
+
+/**
+ * A count, spelled from the table or written in digits — the one accepting shape every reader shares.
+ * `String.raw` is required: the digits alternative is `\\d`, which raw turns into the one backslash a
+ * pattern needs.
+ */
+const COUNT = String.raw`(?:${NUMERALS.join("|")}|${DIGITS})`;
+
+/** The accepting pattern for a count, handed to the readers so no file spells the numerals itself. */
+export function countPattern(): string {
+  return COUNT;
+}
+
+/** A count as the docs spell it: a word from the table, digits above it (and never above `MAX_COUNT`). */
+export function numeral(n: number): string {
+  return NUMERALS[n] ?? String(n);
+}
 
 /** The card sentence, global — so a file with two of them reports both numerals of each. */
 const EVERY_CARD = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT});`, "g");
@@ -86,25 +158,28 @@ export const NOW_ROWS = 1;
 /** The highest Backlog cap the budget still leaves room for: one slot stays free for a warning or a question. */
 export const BACKLOG_CAP = DEFAULT_CONFIG.maxPins - NOW_ROWS - 1;
 
-const NUMERALS = ["zero", "one", "two", "three", "four", "five", "six", "seven"];
-
-/** A count as the docs spell it. */
-export function numeral(n: number): string {
-  return NUMERALS[n] ?? String(n);
-}
-
 /**
  * A count as a doc spells it, digits or word, or `null`. Shared by the scrapers in
  * `doc-facts.test.ts` and `skills.test.ts` so neither has its own table of spellings to fall out of
  * step with — a scraper whose pattern stopped matching is the vacuous pass this repo's positive
  * controls exist to catch.
+ *
+ * A count outside the table is `null` rather than a number: `indexOf`'s -1 read downstream as a real
+ * count, so a card nobody could read satisfied `cap <= budget` and disarmed the drift alarm.
  */
 export function cardinal(text: string): number | null {
   const spelled = new RegExp(`^(${COUNT})$`).exec(text.trim())?.[1];
   if (spelled === undefined) return null;
+  const spelledIndex = NUMERALS.indexOf(spelled as (typeof NUMERALS)[number]);
+  if (spelledIndex >= 0) return spelledIndex;
   const digits = Number(spelled);
-  if (Number.isFinite(digits)) return digits;
-  return NUMERALS.indexOf(spelled);
+  return digits >= 0 && digits <= MAX_COUNT ? digits : null;
+}
+
+/** The shape of one parsed card. */
+export interface CardCounts {
+  cap: number;
+  budget: number;
 }
 
 /**

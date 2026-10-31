@@ -97,12 +97,17 @@ test("the budget check catches a card that overruns the budget", () => {
   expect(overrunningCap, "the decoy card parses").toBe(DEFAULT_CONFIG.maxPins);
   // A scraper that matches nothing is the vacuous pass the equality loop above cannot see, so each
   // pattern is proven against the sentence it is meant to read before the loop is trusted.
-  for (const [label, pattern, sentence] of OPERATIVE_PROOFS) {
+  for (const { label, pattern, sentence, count } of OPERATIVE_PROOFS) {
     expect(sentence, `"${label}": the proof sentence fires its own pattern`).toMatch(pattern);
     expect(
       sentence.replace(pattern, ""),
       `"${label}": the proof sentence is more than its matched span`,
     ).not.toBe(sentence);
+    // …and the real reader — the one whose dead pattern this proof exists to catch — reports the count.
+    expect(
+      statedCounts(sentence, true),
+      `"${label}": the reader scrapes the proof's count`,
+    ).toContain(count);
   }
   // No card at all is a defect, not a pass: the model would have no budget to obey.
   expect(statedBacklogCap("the group holds as many rows as the tracker has"), "no card").toBeNull();
@@ -183,9 +188,15 @@ test("the budget check catches a card that overruns the budget", () => {
     boardCounts.every((count) => count === statedBacklogCap(boardCopy)),
     "the mutated run board fails the all-counts-agree check",
   ).toBe(false);
-  // …and the shipped copy still passes it, so the failure above is the mutation and not the reader.
+  // …and the shipped copy still passes it, so the failure above is the mutation and not the reader. An
+  // empty scrape is vacuously true for `every`, so the scrape is proven non-empty before it is trusted.
+  const shippedBoardCounts = statedBacklogCounts(board);
   expect(
-    statedBacklogCounts(board).every((count) => count === statedBacklogCap(board)),
+    shippedBoardCounts,
+    "the shipped run board states counts the reader can scrape",
+  ).not.toEqual([]);
+  expect(
+    shippedBoardCounts.every((count) => count === statedBacklogCap(board)),
     "the shipped run board agrees with itself",
   ).toBe(true);
   // The `the board is (N) Now` pattern has its own control: that count is the size of the Now group, so
