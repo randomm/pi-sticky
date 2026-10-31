@@ -19,19 +19,17 @@ import {
   eventTypes,
   prTitleRegex,
   prTitleRejects,
-  pushesMain,
   readRepoFile,
   topCancelInProgress,
   topsOf,
 } from "./release-automation-contracts.ts";
+import { stepWith } from "./release-automation-steps.ts";
 import {
-  fieldOf,
   hasEnvironmentKey,
   jobBody,
   jobs,
   permissions,
   runsStep,
-  stepWith,
 } from "./release-automation-yaml.ts";
 
 /** The release workflow as shipped — the base every mutation below is cut from. */
@@ -84,13 +82,6 @@ test("the trigger, permission and field readers see a real block and report an a
   // a workflow whose blocks the reader never located at all.
   expect(permissions(jobBody(workflow(), "publish")).length, "the block is found").toBe(2);
   expect(permissions(""), "and an empty body has none").toEqual([]);
-  expect(fieldOf(jobBody(workflow(), "publish"), "needs"), "needs is read").toBe("release-please");
-  expect(fieldOf("", "needs"), "and a missing body answers null").toBeNull();
-  expect(pushesMain(workflow()), "the trigger is read").toBe(true);
-  expect(
-    pushesMain(workflow().replace("branches: [main]", "branches: [release]")),
-    "on main only",
-  ).toBe(false);
   expect(topCancelInProgress(workflow()), "the shipped group does not cancel").toBe(false);
   expect(
     topCancelInProgress(
@@ -98,6 +89,17 @@ test("the trigger, permission and field readers see a real block and report an a
     ),
     "and a cancelling group is reported",
   ).toBe(true);
+  // The top-level group only: a `cancel-in-progress: true` nested in a step's block must not be reported as
+  // the workflow's own setting, which is what the parse gives for free and an indentation scan has to earn.
+  expect(
+    topCancelInProgress(
+      workflow().replace(
+        "      - uses: actions/checkout@v7",
+        "      - name: nested\n        with:\n          cancel-in-progress: true\n      - uses: actions/checkout@v7",
+      ),
+    ),
+    "a nested lookalike is not the top-level group",
+  ).toBe(false);
 });
 
 test("the pin reader refuses a sha pin, an unpinned action and an empty list", () => {

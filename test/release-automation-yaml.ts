@@ -1,13 +1,27 @@
 /**
- * The predicates the release-automation tests assert through, cut out of `release-automation-contracts.ts`
- * for the 300-line cap: the job slicer, the mapping readers and the step readers. The callers name what the
- * release workflow must *say*; these answer what a piece of YAML says, and `release-automation-controls.test.ts`
- * hands each one a mutated input it must refuse — a reader whose pattern stopped matching reports nothing
- * rather than failing, and an empty answer satisfies a negative assertion as happily as a correct one.
+ * The parsed-YAML readers: what a workflow says once it has been parsed rather than scanned.
  *
- * Nothing here states what the release should be; the expected values are in the tests.
+ * These are the structural half of the release guards. A line scanner cannot tell the levels apart — a
+ * `run: |` body is one scalar whose every line still carries a leading indent, so a key-shaped line inside a
+ * shell body looks exactly like a job-level key, and GitHub accepts one trigger contract written several ways
+ * (block mapping, flow mapping, bare sequence), so a reader bound to one layout's punctuation passes an
+ * equivalent rewrite unnoticed while a broadened one still satisfies it. Going through the parser makes the
+ * shape decide, and makes absence mean absence.
+ *
+ * `release-automation-controls.test.ts` hands each reader the input it must refuse. Nothing here states what
+ * the release *should* be; the expected values are in the tests.
  */
-import { lines } from "./release-automation-contracts.ts";
+import {
+  type Field,
+  blockFields,
+  child,
+  document,
+  indentOf,
+  items,
+  keys,
+  lines,
+  mapping,
+} from "./release-automation-primitives.ts";
 
 /**
  * Whether a job body declares `environment:` at job or step level.
@@ -20,55 +34,49 @@ export function hasEnvironmentKey(body: string): boolean {
   return lines(body).some((line) => /^( {4}| {8})environment:/.test(line));
 }
 
-/** The indent of a line, or `-1` for a blank or comment-only one. */
-function indentOf(line: string): number {
-  const trimmed = line.trim();
-  if (trimmed === "" || trimmed.startsWith("#")) return -1;
-  return line.length - line.trimStart().length;
-}
-
-/** A `key: value` pair read off one mapping line, quotes and trailing comment gone. */
-export interface Field {
-  key: string;
-  value: string;
-}
-
-/** Strip a trailing ` #` comment and the quotes around a scalar. */
-export function scalar(value: string): string {
-  return value
-    .replace(/\s+#.*$/, "")
-    .trim()
-    .replace(/^"(.*)"$/, "$1");
+/**
+ * A workflow's `on:` block as `event → its filter keys`, in document order.
+ *
+ * `null` is an event named with no filters at all — the broadest form the event has — which is kept apart
+ * from an empty list so a caller cannot read "no filters" as "no branches". The tests name the filters they
+ * care about, so this reader need not decide what each one means.
+ */
+export function triggers(text: string): Record<string, string[] | null> {
+  const on = child(document(text), "on");
+  const out: Record<string, string[] | null> = {};
+  const events = items(on);
+  if (events !== null) {
+    for (const event of events) {
+      if (typeof event === "string") out[event] = null;
+    }
+    return out;
+  }
+  for (const event of keys(on)) {
+    const filters = child(on, event);
+    out[event] = filters === null || filters === undefined ? null : keys(filters);
+  }
+  return out;
 }
 
 /**
- * The `key: value` children of a mapping, at whatever indent its first child uses.
+ * One field of a job's own mapping, as one of three states.
  *
- * The header is found by *trimmed* text and the block below it is then bounded by indentation, so a caller
- * that slices a job body out of a file — where every line is indented deeper than the file's own layout —
- * still finds the block it asked for. The indent is derived rather than assumed so a reader cannot quietly
- * hard-wire itself to one file's formatting, and a comment-only line is skipped rather than ending the block.
+ * `absent` and `empty` are kept apart because a caller that read both as "no value" would pass a job whose
+ * key had been deleted and a job whose key had been emptied, and `string | null` conflates them in both
+ * directions. Because the read stops at the job's own mapping, a lookalike line inside a step's `run: |`
+ * body is bytes in a scalar and can never answer for the job-level key of the same name — the failure a
+ * whole-body line scan has, where a shell `if [ … ]; then` reads as the job's own `if:`.
  */
-export function blockFields(text: string, name: string): Field[] {
-  const all = lines(text);
-  const header = all.findIndex((line) => indentOf(line) >= 0 && line.trim() === `${name}:`);
-  if (header < 0) return [];
-  const parentIndent = indentOf(all[header] ?? "");
-  // A quoted value may hold a colon (a registry URL does), so the key is the run up to the first colon and
-  // the value is everything after it, quotes and trailing comment stripped by `scalar`.
-  const pair = /^(\S[^:]*):\s*(.*)$/;
-  const out: Field[] = [];
-  let childIndent: number | null = null;
-  for (const line of all.slice(header + 1)) {
-    const indent = indentOf(line);
-    if (indent < 0) continue;
-    if (indent <= parentIndent) break;
-    if (childIndent === null) childIndent = indent;
-    else if (indent !== childIndent) break;
-    const found = pair.exec(line.trim());
-    if (found?.[1] !== undefined) out.push({ key: found[1].trim(), value: scalar(found[2] ?? "") });
-  }
-  return out;
+export type JobField = { state: "absent" } | { state: "empty" } | { state: "value"; value: string };
+
+/** A job-level field of a workflow; `absent` when the job or the key is not there at job level. */
+export function jobField(text: string, jobId: string, key: string): JobField {
+  const job = child(child(document(text), "jobs"), jobId);
+  if (mapping(job) === null) return { state: "absent" };
+  const entry = child(job, key);
+  if (entry === undefined) return { state: "absent" };
+  const value = typeof entry === "string" ? entry : (JSON.stringify(entry) ?? "");
+  return value.trim() === "" ? { state: "empty" } : { state: "value", value };
 }
 
 /**
@@ -141,52 +149,57 @@ export function jobBody(workflow: string, id: string): string {
   return jobs(workflow).find((job) => job.split("\n")[0]?.trim() === `${id}:`) ?? "";
 }
 
-/** One item of a job's `steps:` list, its indented block included. */
-export function stepBodies(body: string): string[] {
-  const out: string[] = [];
-  let current: string[] | null = null;
-  for (const line of lines(body)) {
-    if (line.startsWith("      - ")) {
-      if (current !== null) out.push(current.join("\n"));
-      current = [line.slice(8)];
-      continue;
-    }
-    if (current === null) continue;
-    const indent = indentOf(line);
-    if (indent < 0) continue;
-    if (indent < 8) {
-      out.push(current.join("\n"));
-      current = null;
-    } else {
-      current.push(line);
-    }
-  }
-  if (current !== null) out.push(current.join("\n"));
-  return out;
+/** A step's own list, located through the job slice it came from. */
+function stepList(body: string): unknown {
+  const header = lines(body).find((line) => /^ {2}\S[^:]*:$/.test(line));
+  const id = header?.trim().slice(0, -1);
+  const doc = document(body);
+  if (id === undefined || doc === null) return undefined;
+  return child(child(doc, id), "steps");
 }
 
-/** The value of `key:` wherever it sits in a job body, or `null` when the body has none. */
-export function fieldOf(body: string, key: string): string | null {
-  const pair = /^(\S[^:]*):\s*(.*)$/;
-  for (const line of lines(body)) {
-    const found = pair.exec(line.trim());
-    if (found?.[1] === key) return scalar(found[2] ?? "");
-  }
-  return null;
+/**
+ * What one step of a job declares: the command it runs, and the names and values of its `env:`/`with:` inputs.
+ *
+ * A step that does not exist answers `null` rather than an empty list, so a caller can tell "this job runs no
+ * such command" from "this reader found no steps at all" — the second is a dead reader, not a defect. A
+ * needle has to match a declared input name or value in full, or sit in the command the runner executes, so a
+ * step titled `Publish` cannot answer for `npm publish` and neither can the comment above it.
+ */
+export interface StepCommand {
+  run?: string;
+  values: string[];
 }
 
-/** Whether any step of a job body runs a command containing `needle`. */
+/** The steps of a sliced job body, in file order; `null` when the body declares no step list. */
+export function steps(body: string): StepCommand[] | null {
+  const list = items(stepList(body));
+  if (list === null) return null;
+  return list.map((step) => {
+    const run = child(step, "run");
+    const values: string[] = [];
+    for (const block of ["env", "with"]) {
+      for (const [name, value] of Object.entries(mapping(child(step, block)) ?? {})) {
+        // The name is offered beside its value so a gate declared as an input is matchable by name: the
+        // offline assertion is the key `PI_OFFLINE`, not the `"1"` it is set to.
+        values.push(name);
+        values.push(typeof value === "string" ? value : (JSON.stringify(value) ?? ""));
+      }
+    }
+    return { run: typeof run === "string" ? run : undefined, values };
+  });
+}
+
+/** Whether a step of the job matches `needle` as a whole declared value, or inside the command it runs. */
 export function runsStep(body: string, needle: string): boolean {
-  return stepBodies(body).some((step) => step.includes(needle));
+  return (
+    steps(body)?.some(
+      (step) => step.values.includes(needle) || step.run?.includes(needle) === true,
+    ) === true
+  );
 }
 
 /** The `key: value` children of the `permissions:` block in a job body. */
 export function permissions(body: string): Field[] {
   return blockFields(body, "permissions");
-}
-
-/** The `key: value` children of the `with:` block of the step containing `needle`. */
-export function stepWith(body: string, needle: string): Field[] {
-  const step = stepBodies(body).find((entry) => entry.includes(needle));
-  return step === undefined ? [] : blockFields(step, "with");
 }

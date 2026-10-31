@@ -24,35 +24,44 @@ import {
   declaredTops,
   eventTypes,
   fileSet,
+  parsePackageJson,
   prTitleRegex,
-  pushesMain,
+  pushBranches,
   readRepoFile,
   topCancelInProgress,
+  workflowTriggers,
 } from "./release-automation-contracts.ts";
+import { stepWith } from "./release-automation-steps.ts";
 import {
-  fieldOf,
   hasEnvironmentKey,
   jobBody,
+  jobField,
   jobs,
   permissions,
   runsStep,
-  stepWith,
+  steps,
 } from "./release-automation-yaml.ts";
 
 /** What the published tarball's top level must hold, and nothing besides. */
 const EXPECTED_PACKED = ["LICENSE", "NOTICE", "README.md", "package.json", "skills/", "src/"];
 
-/** `package.json` as parsed once, for both the packed-set cross-check and the publish fields. */
-const pkg = JSON.parse(readRepoFile("package.json")) as {
-  files: string[];
-  publishConfig?: Record<string, unknown>;
-  dependencies?: unknown;
-  repository: { url: string };
-};
+/**
+ * `package.json` verified before a single field of it is read.
+ *
+ * `parsePackageJson` refuses the file unless the publish contract is present, so the fields asserted below
+ * are values that had to exist rather than properties an `as` promised would be there.
+ */
+const pkg = parsePackageJson(readRepoFile("package.json"));
 
 /** The release workflow's publish job, or `""` when it has been renamed away. */
 function publish(): string {
   return jobBody(readRepoFile(RELEASE_WORKFLOW), "publish");
+}
+
+/** One field of the publish job's own mapping, as the reader's three-state answer. */
+function jobFieldOf(key: string): string {
+  const field = jobField(readRepoFile(RELEASE_WORKFLOW), "publish", key);
+  return field.state === "value" ? field.value : `(${field.state} ${key})`;
 }
 
 test("the release workflow is the file npm's trusted publisher matches", () => {
@@ -71,9 +80,12 @@ test("the release workflow is the file npm's trusted publisher matches", () => {
 
 test("the release workflow triggers on main, gates publish, and never cancels", () => {
   const text = readRepoFile(RELEASE_WORKFLOW);
-  expect(pushesMain(text), "push to main is the trigger").toBe(true);
-  expect(fieldOf(publish(), "needs"), "publish waits for release-please").toBe("release-please");
-  expect(fieldOf(publish(), "if"), "publish runs only for a created release").toBe(
+  // The trigger as GitHub's matcher evaluates it: the event, and the values of the filters it carries. An
+  // equivalent rewrite of `on:` reads the same here, and an extra event or branch does not.
+  expect(workflowTriggers(text), "one event").toEqual({ push: ["branches"] });
+  expect(pushBranches(text), "push to main, and to nothing else").toEqual(["main"]);
+  expect(jobFieldOf("needs"), "publish waits for release-please").toBe("release-please");
+  expect(jobFieldOf("if"), "publish runs only for a created release").toBe(
     "${{ needs.release-please.outputs.release_created }}",
   );
   expect(topCancelInProgress(text), "a release in flight is never cancelled").toBe(false);
@@ -192,7 +204,7 @@ test("the manifest seeds the version the operator published by hand", () => {
 
 test("package.json publishes publicly with provenance and keeps its files list", () => {
   expect(pkg.publishConfig, "publishConfig").toEqual({ access: "public", provenance: true });
-  expect(pkg.dependencies, "runtime dependencies stay empty").toBeUndefined();
+  expect(pkg.dependencies, "runtime dependencies stay empty").toEqual({});
 });
 
 test("the packed set is the files list plus what npm always adds", () => {

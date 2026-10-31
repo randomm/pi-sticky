@@ -16,7 +16,9 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { type Field, blockFields, hasEnvironmentKey } from "./release-automation-yaml.ts";
+import { type PackageJson, parsePackageJson } from "./release-automation-package.ts";
+import { blockFields, child, document, lines } from "./release-automation-primitives.ts";
+import { triggers } from "./release-automation-yaml.ts";
 
 /** The repo root, as the doc and config tests address files from it. */
 const ROOT = join(import.meta.dir, "..");
@@ -35,29 +37,43 @@ export function readRepoFile(path: string): string {
   return readFileSync(join(ROOT, path), "utf8");
 }
 
-/** Lines of a file, for the checks that count or scan them. */
-export function lines(text: string): string[] {
-  return text.split("\n");
+// Re-exported so the release tests reach the whole contract through one module while the validator keeps its
+// own file, which is what lets each of them stay small enough to read as a unit.
+export { parsePackageJson, type PackageJson };
+
+/**
+ * A workflow's `on:` block as `event → its filter keys`, read off a YAML parse.
+ *
+ * The trigger is the contract GitHub's matcher actually evaluates, and it accepts the same contract written
+ * several ways — a block mapping, a flow mapping (`on: { push: { branches: [main] } }`), a bare sequence of
+ * event names. A reader bound to one layout's punctuation passes an equivalent rewrite unnoticed and fails a
+ * semantically equivalent rewrite in another, so both directions of drift hide. Delegating to the parser
+ * means the shape decides, not the punctuation.
+ */
+export function workflowTriggers(text: string): Record<string, string[] | null> {
+  return triggers(text);
 }
 
 /**
- * Whether the workflow triggers on a push to `main`, as two nested block lines rather than a flow mapping.
+ * The values a `push` trigger's `branches:` filter holds, or `null` when there is no such filter.
  *
- * A flow mapping (`on: { push: … }`) satisfies no line-based reader at all, so the shape is pinned here
- * rather than assumed by the reader below it.
+ * Read off the parse, so a flow sequence (`branches: [main]`), a block sequence and a bare scalar all reach
+ * the same list. `on: push` with no filter answers `null` and not `[]`: an unfiltered push trigger fires on
+ * every branch — the broadest trigger there is — and reading that as the empty case would let a test pass on
+ * a workflow that publishes from any branch.
  */
-export function pushesMain(text: string): boolean {
-  const push = blockFields(text, "on").find((field) => field.key === "push");
-  if (push === undefined) return false;
-  const branches = blockFields(text, "push").find((field) => field.key === "branches");
-  return branches?.value === "[main]";
+export function pushBranches(text: string): string[] | null {
+  const branches = child(child(document(text), "on"), "push");
+  const filtered = child(branches, "branches");
+  if (filtered === undefined) return null;
+  if (Array.isArray(filtered)) return filtered.map((item) => String(item));
+  return filtered === null ? [] : [String(filtered)];
 }
 
 /** Whether the workflow's *top-level* `cancel-in-progress:` says true. */
 export function topCancelInProgress(text: string): boolean {
-  return blockFields(text, "concurrency").some(
-    (field) => field.key === "cancel-in-progress" && field.value === "true",
-  );
+  const value = child(child(document(text), "concurrency"), "cancel-in-progress");
+  return value === true || value === "true";
 }
 
 /** Every `uses:` reference in a workflow, in file order, as `owner/name@ref`. */
