@@ -7,7 +7,7 @@
  * The guard worth the most here is the schema default. `level` declares `default: "info"`, and pi's
  * validator fills defaults into the arguments it hands `execute`, so an `update` the model never
  * levelled still arrives with `level: "info"`. Forwarding it would silently demote a warning pin,
- * and would make `update` with neither text nor level look like a change when it is not.
+ * and would make `update` that offered none of the five changeable fields look like a change when it is not.
  */
 import { expect, test } from "bun:test";
 

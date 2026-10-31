@@ -7,6 +7,9 @@
  * renamed or deleted, and a deletion pass on the plan is exactly the change that breaks them, so this
  * check reads the citations off disk and asserts each named heading still exists. Same shape as
  * `file-size.test.ts`: read files from disk, assert on the set, no fixtures.
+ *
+ * The two README assertions here pin copy to a source *constant*. The rest of what the README and
+ * `docs/research-summary.md` claim about the tool is pinned in `doc-facts.test.ts`.
  */
 import { expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
@@ -16,6 +19,7 @@ import { NOTHING_PINNED, TOO_NARROW } from "../src/panel-refusals.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const PLAN = "docs/plan.md";
+const README = "README.md";
 
 /** Every `docs/plan.md` citation site, including this file's own prose. */
 const CITING_DIRS = ["src", "test", "docs"];
@@ -27,6 +31,10 @@ const PROTECTED_SUBSECTIONS = ["6.2", "6.9"];
 
 /** A named section, spelled out in prose rather than as a number. */
 const PROTECTED_HEADINGS = ["File structure (historical)"];
+
+function readDoc(path: string): string {
+  return readFileSync(join(ROOT, path), "utf8");
+}
 
 function filesIn(dir: string): string[] {
   return readdirSync(join(ROOT, dir), { recursive: true, encoding: "utf8" })
@@ -94,7 +102,7 @@ test("citations of the plan name only sections that still exist", () => {
   for (const file of citingFiles()) {
     // This file's own protected-numbers table must not vouch for itself.
     if (file === self) continue;
-    for (const number of citedSections(readFileSync(join(ROOT, file), "utf8"))) {
+    for (const number of citedSections(readDoc(file))) {
       if (!existing.has(number)) dangling.push(`${file}: plan ${number}`);
     }
   }
@@ -109,14 +117,14 @@ test("the scan finds the citations it claims to guard", () => {
     [join("src", "types.ts"), "6.9"],
   ];
   for (const [file, number] of cited) {
-    expect(citedSections(readFileSync(join(ROOT, file), "utf8")), file).toContain(number);
+    expect(citedSections(readDoc(file)), file).toContain(number);
   }
 });
 
 test("README quotes the panel's refusals byte-for-byte", () => {
   // The README is the operator-facing copy of what the panel says when it refuses, so the two strings
   // have to be identical — a reworded constant and a stale README would otherwise drift silently.
-  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  const readme = readDoc(README);
   expect(readme, "README quotes TOO_NARROW").toContain(TOO_NARROW);
   expect(readme, "README quotes NOTHING_PINNED").toContain(NOTHING_PINNED);
 });
@@ -126,7 +134,7 @@ test("README spells the model's options the way the row does", () => {
   // claim about `optionsPart` (`pin-rows-text.ts`): the numbered form, two spaces apart, inside one
   // parenthesis. A rejoin of the labels with a separator — the bug this replaced, which made one offer read
   // as two to a model that counts them — would break this line and that row together.
-  const readme = readFileSync(join(ROOT, "README.md"), "utf8");
+  const readme = readDoc(README);
   expect(readme, "README quotes the model row's options").toContain(
     "(options: 1) Passed on  2) Not yet)",
   );

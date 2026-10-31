@@ -6,6 +6,10 @@
  * own rules (through pi's loader, zero diagnostics) and the ones pi does not check: the frontmatter
  * `name` equals its directory, and the file stays short.
  *
+ * What the board skills *say* about the pin budget is a separate claim and lives in
+ * `skills-board-budget.test.ts`, which reads the card and the operative instructions out of the same
+ * files and checks them against `DEFAULT_CONFIG.maxPins`.
+ *
  * Same shape as `file-size.test.ts` and `doc-citations.test.ts`: read files from disk, assert on the
  * set, and a positive control so a drifted pattern cannot pass vacuously.
  */

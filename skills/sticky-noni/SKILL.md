@@ -31,14 +31,13 @@ ledger, an order or a census result: if you cannot resolve `<noni>` for a script
 
 When noni's `steering-ledger` skill has asked the user a multiple-choice question:
 
-1. Pin **one pin per question** first: `level: "action"`, `text` is the question itself (see
-   `sticky-decisions`) named by a short slug of your own choosing, `group` set to that slug, and
-   `options` set to that question's own 2-4 options. `group` is presentation only — it is not how you
-   close the pin, and a `group` longer than the tool accepts is refused rather than cut: shorten it to
-   the slug's first words.
-2. Say in the text whether you continue working or wait. Once noni's writer has minted the record id,
-   `update` the pin so its text names that id — before then there is no id to quote.
-3. **Write nothing yet.** A question that has not been answered has no record. When the answer
+1. Pin **one pin per question** first: `level: "action"`, **no `group`** (the `sticky-run-board`
+   rule — a question belongs to no section, and you close it by its `#id`). `text` is the question
+   itself (see `sticky-decisions`) and says whether you continue working or wait. `options` are that
+   question's own 2-4 options. Keep every option short — well under **24 graphemes after cleaning**:
+   the tool refuses a longer option rather than cutting it, so a long one is an error, not a trimmed
+   offer.
+2. **Write nothing yet.** A question that has not been answered has no record. When the answer
    arrives, noni's steering-ledger writer records it — it is the only writer, so nothing here is
    hand-written.
 
@@ -64,14 +63,13 @@ The `sticky-run-board` skill says a Backlog is copied from the project's tracker
 is the ordered backlog artifact under `noni/` that noni's `direction` skill writes — read the path from
 that skill:
 
-- Build the group from the **first 5 entries** of that file, `group: "Backlog"`, `compact: true`, one
-  pin per entry: `text` is `#<issue>` plus the entry's `decision` id, or just `#<issue>` when the entry
-  carries none.
-- Fewer than five entries: pin what is there. **No ordered backlog artifact: no Backlog group** —
+- Build the group from the first entries of that file, `group: "Backlog"`, `compact: true`, one pin per
+  entry: `text` is `#<issue>` plus the entry's `decision` id, or just `#<issue>` when the entry carries
+  none. The cap is **three rows at the default budget of five; with a smaller `PI_STICKY_MAX_PINS`,
+  drop Backlog rows from the bottom** — one slot stays free for a census warning or a question, and
+  when both need it, the lowest-ranked Backlog row goes.
+- Fewer than three entries: pin what is there. **No ordered backlog artifact: no Backlog group** —
   nothing ordered yet is a state, not a failure.
-- The pin budget is small by default (`PI_STICKY_MAX_PINS`), so a full Backlog can be the whole budget.
-  Drop rows from the bottom of the order up: a census warning outranks an unanswered question, which
-  outranks a Backlog row.
 - Rebuild the group when the rows on screen stop matching the top of the artifact — not after every edit
   to it: `list` first, pin the current top as above, then unpin the stale rows **by the ids it returns**
   (a group name does not address pins). If a pin is refused for the budget, unpin an old Backlog row and

@@ -127,7 +127,8 @@ function outcomeLine(op: unknown, result: Ok, level: PinLevel): string {
  * The `ActionInput` for one call. `level` is sent only when the model wrote it: the schema
  * declares a default of `"info"`, and pi's validator fills defaults into the arguments it hands
  * `execute`, so passing `body.level` straight through would put `"info"` into an `update` the model
- * never levelled — and `applyAction` refuses an update that changed neither text nor level.
+ * never levelled — and `applyAction` refuses an update that offered none of the five changeable fields
+ * (text, level, group, options, compact), which is `updateNeedsChange`'s own wording.
  */
 function actionInput(body: ToolBody, op: unknown, text: string | undefined, now: string) {
   const level = typeof body.level === "string" ? body.level : undefined;

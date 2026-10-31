@@ -53,7 +53,8 @@ isolation).
 
 The extension also ships the skills the agent loads when they fit the task — see
 [Skills](#skills). To start a long run with a Now/Backlog board, run `/skill:sticky-run-board`. With
-[noni](https://github.com/randomm/noni) attached, see [Using with noni](#using-with-noni).
+[noni](https://github.com/randomm/noni) (private at the time of writing) attached, see
+[Using with noni](#using-with-noni).
 
 ## Why
 
@@ -99,7 +100,8 @@ Once focused:
 - `1`–`4` answer one of the selected pin's `options`: the label of that position goes into the editor
   after the marker (`Re #3: Keep provider A `) and focus comes back to you. `0`, a digit past the
   pin's list, and any digit on a pin with no options do nothing at all. Nothing is sent: you read the
-  draft and press Enter. While the pin under the bar has options its row's border says `1–4 answer`.
+  draft and press Enter. While the pin under the bar has options its row's border says `1–N answer`,
+  with the pin's own count.
 - `d` dismisses the selected pin. The dismissal is recorded on the session, so it sticks across
   `/tree` and a reload.
 - `Esc` returns to the editor. If the agent's pin opened the panel, it comes down to the three-row peek;
@@ -248,8 +250,8 @@ What the tool refuses rather than quietly fixes — each answer names the field 
 - `options` is 2 to 4 entries, each at most 24 graphemes after sanitizing, unique once cleaned. `[]`
   on an `update` clears them.
 - `compact` is a boolean.
-- An `update` that names none of the six fields is refused: `update needs text, level, group, options
-  or compact`.
+- An `update` that names none of the five fields is refused:
+  `update needs text, level, group, options or compact`.
 
 ## Skills
 
@@ -262,7 +264,7 @@ agent decides the task fits, so a skill costs almost nothing until it is used.
 | `sticky-basics` | What deserves a pin, which level to pick, one pin per topic, answering a reply, and when to use `options` or `compact`. The tool's own prompt points here. |
 | `sticky-decisions` | Asking a question: one question per `action` pin, 2–4 answerable `options`, never inventing an answer, closing the pin when the reply arrives. |
 | `sticky-run-board` | A Now/Backlog board for a long run: one compact `Now` pin updated in place, a small `Backlog` copied from the tracker, and unpinning it all at the end. |
-| `sticky-noni` | The [noni](https://github.com/randomm/noni) bridge: steering questions as `action` pins with their `options`, the `Backlog` group from noni's ordered backlog artifact, one `warning` for a failing census. Needs noni — see [Using with noni](#using-with-noni). |
+| `sticky-noni` | The [noni](https://github.com/randomm/noni) (private) bridge: steering questions as `action` pins with their `options`, the `Backlog` group from noni's ordered backlog artifact, one `warning` for a failing census. Needs noni — see [Using with noni](#using-with-noni). |
 
 The agent loads them itself when they fit. To force one, run it as a command — the text after the
 name goes along as your request:
@@ -282,7 +284,9 @@ To load none of them, narrow the package in your pi settings — `[]` means none
 ```
 
 Skills are the policy layer; the tool and the panel are the primitives. The cardinality a skill asks
-for — exactly one `Now`, at most five `Backlog` — is instruction, enforced by nothing in the tool.
+for — exactly one `Now`, at most three `Backlog` — the card both board skills state, verbatim: **three
+rows at the default budget of five; with a smaller `PI_STICKY_MAX_PINS`, drop Backlog rows from the
+bottom** — is instruction, enforced by nothing in the tool.
 
 To write your own, add a directory containing `SKILL.md` anywhere pi discovers skills (a user or
 project skills directory, `.agents/skills/`, or a package like this one):
@@ -309,7 +313,7 @@ that list from, or absolute, and a bare skill name re-includes nothing.
 
 ## Using with noni
 
-[noni](https://github.com/randomm/noni) is an attachable direction layer: a steering ledger of committed
+[noni](https://github.com/randomm/noni) (private) is an attachable direction layer: a steering ledger of committed
 decision records under `noni/decisions/`, one ordered backlog artifact that noni's `direction` skill
 owns the path of, and one read-only census that reports where the work has drifted from either.
 pi-sticky does not read or write any of it. The `sticky-noni` skill tells the agent how to *surface*
@@ -329,8 +333,10 @@ one is a Python problem, so point at `PYTHONPATH` below rather than at the skill
 **Verified:** `pi install` of a noni clone does expose its skills with no manifest. noni's repo has no
 `package.json` at all, and pi discovers a conventional top-level `skills/` directory for a package with
 no `pi` manifest, so the skills load from that one command. Verified on pi 1.3.0 (the version this repo
-pins) against a clone of noni's `main` (private at the time of writing), which ships four
-(`steering-ledger`, `direction`, `census`, `sessions-claims`). Unlike pi-sticky, noni has no `pi`
+pins) against a clone of noni's `main`, which ships four
+(`steering-ledger`, `direction`, `census`, `sessions-claims`) — the repo is private at the time of
+writing, so that count was read from the clone rather than from a public listing. Unlike pi-sticky,
+noni has no `pi`
 manifest, which is why the convention directory is what loads its skills — should noni later ship one
 that names only `extensions`, discovery stops and the settings route below is the fix.
 
@@ -371,19 +377,24 @@ directory under it). A whole-clone entry is re-walked on every startup and `/rel
 directory where you can, and set `PYTHONDONTWRITEBYTECODE=1` so running the scripts does not grow a
 `__pycache__` tree inside it.
 
-To confirm both halves are loaded, from the target project:
+To confirm the skills are loaded, from the target project:
 
 1. Force noni's census skill and check the census actually runs —
    `python3 <clone>/skills/census/scripts/census.py --repo .` from the target project, or `noni census`
    where the package is installed.
-2. Force the bridge and check it pins what the census reported.
+2. Force noni's steering skill — `/skill:steering-ledger` — and check that it is loaded, which is the
+   half the bridge needs to record an answer. The startup listing names each loaded skill unless
+   `quietStartup` hides it, so `--verbose` or forcing the skill by name is how you tell "not loaded"
+   from "loaded and silent".
+3. Force the bridge and check it pins what the census reported.
 
 ```text
 /skill:census run the census and tell me what fails
+/skill:steering-ledger show what is waiting on the user
 /skill:sticky-noni pin what the census reported
 ```
 
-If either answer says the project has no noni, or the census script cannot be reached, the skills are
+If any answer says the project has no noni, or the census script cannot be reached, the skills are
 not loaded — re-check the install, or the path in the `skills` setting, before trusting the verdict.
 
 Without noni the bridge declines rather than inventing a record.
