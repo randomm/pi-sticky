@@ -250,14 +250,14 @@ test("every noni link in the README says the repo is private", () => {
  * `strip`'s guards are what make a cut *attributable* rather than merely effective, so each is triggered on
  * purpose: an `if … throw` that no input in the suite can reach is not a safety margin but a line nobody
  * observes, which is the defect class this ticket exists to remove. One assertion per guard, each reaching it
- * directly rather than only through the controls in the test below.
+ * directly rather than only through the controls in the other tests.
  *
- * Of the two cut-identity oracles, the byte-equality guard in `strip` is the load-bearing one: measured, every
- * wrong-offset note (±1 to ±4 bytes) is caught by it and the read-back leg stays green on all of them, because
- * the read-back compares the post-cut file against what the *note's own text* predicts and so cannot see a cut
- * anchored a byte early. The read-back stays because it is the only oracle that catches a cut which removed a
- * *longer* span than the note — byte-equality is satisfied by construction there. Each catches a mutant the
- * other misses, so both are kept.
+ * Of the two cut-identity oracles, the byte-equality guard in `strip` is the load-bearing one: measured over
+ * every wrong-offset note from -4 to +4 bytes at all three sites, byte-equality refuses each and the read-back
+ * leg stays green on each, because the read-back compares the post-cut file against what the *note's own text*
+ * predicts and so cannot see a cut anchored a byte early. The read-back stays because it is the only oracle
+ * that catches a cut which removed a *longer* span than the note - byte-equality is satisfied by construction
+ * there. Each catches a mutant the other misses, so both are kept.
  */
 function stripGuardTests(): void {
   const readme = readDoc(README);
