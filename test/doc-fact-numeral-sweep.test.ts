@@ -12,7 +12,15 @@
  */
 import { expect, test } from "bun:test";
 
-import { BACKLOG_CAP, NUMERALS, cardinal, fold, numeral, readDoc } from "./doc-fact-fixtures.ts";
+import {
+  BACKLOG_CAP,
+  NOW_ROWS,
+  NUMERALS,
+  cardinal,
+  fold,
+  numeral,
+  readDoc,
+} from "./doc-fact-fixtures.ts";
 import {
   BOARD_SKILLS,
   PLUS_THOSE_HEAD,
@@ -37,8 +45,10 @@ interface Sentence {
 /** The run board's two arithmetic sentences; noni states its counts in the card and its build rule. */
 const RUN_BOARD_SENTENCES: Sentence[] = [
   { head: PLUS_THOSE_HEAD, tail: "" },
-  // The `Now` of the sentence is the group's name, not a count, so only the numeral varies.
-  { head: "the board is one", tail: " Now" },
+  // The `Now` of the sentence is the group's name, not a count, so only the numeral varies. The head keeps
+  // the capital the file ships the sentence with: the readers are case-sensitive and the sweep asserts
+  // through them, so a lowercase `the` here would sweep a sentence no file contains.
+  { head: "The board is one", tail: " Now" },
 ];
 
 test("the reader scrapes every count the numeral table holds, in the run board's own sentences", () => {
@@ -58,9 +68,11 @@ test("the reader scrapes every count the numeral table holds, in the run board's
           expect(mutated, `${dir}: ${n} (${form}) mutation took`).not.toBe(board);
           const scraped = statedCounts(mutated, false);
           if (tail === "") {
-            // `plus those N` is the only operative count outside the card, so the scrape is the cap and n.
+            // `plus those N` is the only operative count outside the card, and the shipped Now row is the
+            // third count the file states, so the scrape is the two copies of the cap, the Now row, and n.
             expect(scraped, `${dir}: "${before}${form}" scrapes ${n} and nothing else`).toEqual([
               BACKLOG_CAP,
+              NOW_ROWS,
               n,
             ]);
           } else {
@@ -72,7 +84,7 @@ test("the reader scrapes every count the numeral table holds, in the run board's
             ).toEqual([BACKLOG_CAP, n, BACKLOG_CAP]);
             expect(statedNowCount(fold(mutated)), `${dir}: ${form} Now scrapes ${n}`).toBe(n);
             // Once a row carries a spelled numeral, the Backlog scrape has to carry it too — otherwise a
-            // dead `the board is (N) Now` pattern reports only the card's two counts and agrees with all.
+            // dead `The board is (N) Now` pattern reports only the card's two counts and agrees with all.
             if (!/^\d+$/.test(form)) {
               expect(
                 statedBacklogCounts(mutated),
@@ -99,7 +111,7 @@ test("the spelled alternatives are sorted longest-first as well as anchored, and
     ["sixteen", 6],
     ["twenty-one", 20],
   ] as [string, number][]) {
-    const sentence = `the board is one Now plus those ${word}, which leaves a slot`;
+    const sentence = `The board is one Now plus those ${word}, which leaves a slot`;
     const count = cardinal(word);
     // The prefix a half-fix would still report: `fourteen` as `four`, `twenty-one` as `twenty`.
     if (count === null) throw new Error(`"${word}" is not a count the reader's table decodes`);

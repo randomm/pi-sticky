@@ -21,7 +21,6 @@ import {
   BACKLOG_CAP,
   BUDGET_CARD,
   NOW_ROWS,
-  NUMERALS,
   backlogFloorWithCap,
   backlogRuleWithCap,
   budgetCard,
@@ -33,15 +32,12 @@ import {
 } from "./doc-fact-fixtures.ts";
 import {
   BOARD_SKILLS,
-  NOW_SENTENCE,
   OPERATIVE_PROOFS,
-  PLUS_THOSE_HEAD,
   boardPath,
   replaceSpaced,
   statedBacklogCap,
   statedBacklogCounts,
   statedCounts,
-  statedNowCount,
 } from "./skills-board-readers.ts";
 
 /** The budget the env range permits at its top, so a spelled count cannot collide with the default. */
@@ -59,8 +55,6 @@ const UNCOUNTABLE = String(BEYOND_EVERY_BOUND);
 const UNCOUNTABLE_DIGITS = String(BEYOND_EVERY_BOUND);
 /** The room the board's own inequality allows: `cap <= maxPins - Now - 1`. */
 const BUDGET_ROOM = DEFAULT_CONFIG.maxPins - NOW_ROWS - 1;
-/** Every count the shared table spells, so the sweep covers each spelling the reader has to tell apart. */
-const EVERY_COUNT = NUMERALS.map((_, n) => n);
 
 /** One card-shaped sentence, terminated the way every shipped card terminates. */
 const cardSentence = (cap: number, budget: number): string =>

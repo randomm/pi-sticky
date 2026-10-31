@@ -64,20 +64,22 @@ test("every digit 0..MAX_COUNT still scrapes through the card path, and MAX_COUN
 
 test("the operative digit counts scrape whole, and a count above the bound scrapes as nothing", () => {
   // The run board's sentences carry digits too, and their tails vary — including the empty tail after
-  // `plus those N`, the one site with no following word to stop a digit run.
+  // `plus those N`, the one site with no following word to stop a digit run. The Now row is written in the
+  // casing the file ships it in: the readers are case-sensitive, so a lowercase `the` would prove the digit
+  // path against a sentence no file contains.
   for (let n = 0; n <= MAX_COUNT; n++) {
     expect(
-      statedCounts(`the board is one Now plus those ${n}, which leaves a slot`, false),
+      statedCounts(`The board is one Now plus those ${n}, which leaves a slot`, false),
       `plus those ${n} scrapes ${n}`,
     ).toEqual([1, n]);
-    expect(statedNowCount(`the board is ${n} Now`), `${n} Now scrapes ${n}`).toBe(n);
+    expect(statedNowCount(`The board is ${n} Now`), `${n} Now scrapes ${n}`).toBe(n);
   }
   for (const digits of ["42", "34", "100"]) {
     expect(
-      statedCounts(`the board is one Now plus those ${digits}, which leaves a slot`, false),
+      statedCounts(`The board is one Now plus those ${digits}, which leaves a slot`, false),
       `plus those ${digits} reports no count`,
     ).toEqual([1]);
-    expect(statedNowCount(`the board is ${digits} Now`), `${digits} Now is no count`).toBeNull();
+    expect(statedNowCount(`The board is ${digits} Now`), `${digits} Now is no count`).toBeNull();
   }
 });
 

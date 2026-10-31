@@ -12,7 +12,7 @@
  * - `first N entries` — noni's build rule, once a numeral is inserted into it (it ships as "the first
  *   entries", with no count until a decoy adds one).
  * - `Fewer than N entries` — noni's floor for a short artifact.
- * - `the board is N Now` / `plus those N` — the run board's own arithmetic sentence. The Now count is the
+ * - `The board is N Now` / `plus those N` — the run board's own arithmetic sentence. The Now count is the
  *   size of the Now group rather than a Backlog count, so it is scraped and proven live but not compared
  *   to the cap.
  *
@@ -60,9 +60,17 @@ const operative = (before: string, after: string): RegExp =>
  * The Now row on its own, so the board's arithmetic reads its own count instead of folding it into the
  * Backlog cap: a cap-based check cannot tell a Now count from a Backlog count, so a `three Now` beside a
  * three-row Backlog agreed with itself and sailed through the budget line.
+ *
+ * One casing policy with `operative("The board is ", " Now")` below, and no `i`: the file writes this
+ * sentence at the head of a line, so the shipped words begin with a capital. While the two disagreed, the
+ * case-insensitive reader matched the shipped capital and the case-sensitive one did not, so the same file
+ * reported a Now count to one reader and none to the other — and `replaceSpaced`, which also matches
+ * case-insensitively, happily rewrote the casing the readers were not reading. No `g` either: `exec` on a
+ * global RegExp keeps `lastIndex` on the instance this function builds, so a second call over the same text
+ * started past the match and read the shipped Now row as none.
  */
 export function statedNowCount(folded: string): number | null {
-  const match = new RegExp(`the board is (${ANCHORED_COUNT}) Now`, "i").exec(folded);
+  const match = new RegExp(`The board is (${ANCHORED_COUNT}) Now`).exec(folded);
   return match === null ? null : cardinal(match[1] ?? "");
 }
 
@@ -104,14 +112,20 @@ const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
   operative("cap is \\*\\*", " rows"),
   operative("first ", " entries"),
   operative("Fewer than ", " entries"),
-  operative("the board is ", " Now"),
+  operative("The board is ", " Now"),
   operative("plus those ", ""),
 ];
 
-/** The words `the board is N Now` are written with — lowercase, as the file has them mid-sentence. A
- * mutation written against another casing matches nothing and reports the shipped file back as mutated.
+/** The words `The board is N Now` are written with, in the casing the file ships them in: the sentence
+ * opens the line after the card's bold, so it begins with a capital. A control written against another
+ * casing matches nothing case-sensitively, and `replaceSpaced` would rewrite a different occurrence.
  */
-export const NOW_SENTENCE = "the board is one Now";
+export const NOW_SENTENCE = "The board is one Now";
+
+/** `NOW_SENTENCE` written mid-sentence, where the same words would begin with a lowercase letter. The
+ * readers are case-sensitive, so this casing is what a control must prove they do NOT read.
+ */
+export const NOW_SENTENCE_LOWER = "the board is one Now";
 
 /** The words `plus those N` are written with. */
 export const PLUS_THOSE_HEAD = "plus those three";
@@ -228,8 +242,8 @@ export const OPERATIVE_PROOFS: OperativeProof[] = [
   },
   {
     label: "the run board's Now row",
-    pattern: /the board is one Now/,
-    sentence: "the board is one Now",
+    pattern: /The board is one Now/,
+    sentence: "The board is one Now",
     count: 1,
   },
   {
