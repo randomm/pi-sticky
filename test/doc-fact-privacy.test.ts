@@ -36,6 +36,12 @@ const WINDOW = 220;
  */
 const NOTE = /^\s*\((?:[^()]*)\bprivate\b[^()]*\)/;
 
+/** `NOTE` written out: what `UNANCHORED` must reduce to once the anchor is cut. */
+const NOTE_PATTERN = "^\\s*\\((?:[^()]*)\\bprivate\\b[^()]*\\)";
+
+/** What the cut must produce. */
+const UNANCHORED_PATTERN = "\\((?:[^()]*)\\bprivate\\b[^()]*\\)";
+
 /**
  * `NOTE`'s own source with the `^\s*` prefix stripped, so the two patterns differ *only* in the anchor:
  * derived from the pattern under test rather than transcribed beside it, an edit to `NOTE` — a dropped
@@ -52,20 +58,18 @@ const PROSE_BEFORE_NOTE = " says the repo is private elsewhere (private at the t
  * guarantee the header of `NOTE` states would be unobserved: the shipped tail matches, and a tail whose
  * `private` sits in prose ahead of a later parenthetical does not. `\s*` is in the pattern only because the
  * README hard-wraps, so `UNANCHORED` is derived from `NOTE` instead of written out again: that way the
- * patterns cannot drift apart, and the two source assertions below pin the derivation itself — that `NOTE`
- * is still the pattern this file's guard uses and that `UNANCHORED` is that pattern minus its anchor.
+ * patterns cannot drift apart, and the two source assertions below pin the derivation — `NOTE` is the
+ * pattern whose source is cut, and `UNANCHORED` is that pattern minus its anchor, nothing else.
  */
 test("a privacy note is credited only when it opens where the link ends", () => {
   const shipped = readDoc(README);
   const site = [...shipped.matchAll(NONI_LINK)][0];
   const tail = shipped.slice((site?.index ?? 0) + (site?.[0].length ?? 0));
-  // Derivation guards: `NOTE.source` is the literal a hand-typed copy of `NOTE` would have to equal, and
-  // the replace must actually match `NOTE`'s prefix — otherwise `UNANCHORED` is the anchored pattern again.
-  expect(NOTE.source, "this file's NOTE is the one whose source UNANCHORED is cut from").toBe(
-    "^\\s*\\((?:[^()]*)\\bprivate\\b[^()]*\\)",
-  );
+  // Derivation guards: both patterns have to equal the literals above, so a hand-typed `UNANCHORED` and
+  // any edit to `NOTE`'s body are both caught rather than quietly narrowing the pair to one pattern.
+  expect(NOTE.source, "this file's NOTE is the pattern UNANCHORED is cut from").toBe(NOTE_PATTERN);
   expect(UNANCHORED.source, "the un-anchored pattern is NOTE without its anchor").toBe(
-    "\\((?:[^()]*)\\bprivate\\b[^()]*\\)",
+    UNANCHORED_PATTERN,
   );
   expect(UNANCHORED.test(tail), "…which still matches the shipped note").toBe(true);
   // The leading space is part of the match: un-anchored, the same `exec` returns the parenthetical without
