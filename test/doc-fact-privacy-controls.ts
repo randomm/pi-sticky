@@ -13,8 +13,6 @@ import {
   type SiteNote,
   WINDOW,
   marksSite,
-  noniNotes,
-  noniSites,
   strip,
 } from "./doc-fact-privacy-helpers.ts";
 
@@ -24,11 +22,14 @@ import {
  * and the two legs under `perSiteCutControls` are what bound it. Its jsdoc used to claim it was "past the
  * first `(` after any of the shipped cuts"; measured, that is what makes it too *small*, not what bounds it:
  * the pair stays green for every width from 33 to the end of the file while no leg reads the constant, which is
- * how a free parameter rots. The lower bound is the widest note any shipped site carries (measured: 33) — below
- * it the witness span cannot hold a note and the pair proves nothing; the upper bound is `WINDOW`, what the
- * guard itself reads — past it the pair reads further than the guard ever looks and witnesses a claim the guard
- * does not make. Measured: 16 turns the lower leg red and 221 the upper one, while every width between stays
- * green, so the constant is pinned to the interval rather than to a sentence about it.
+ * how a free parameter rots. It carries one bound, the one its legs make observable: the widest note any shipped
+ * site carries (measured: 33) — below it the witness span cannot hold a note and the pair proves nothing. It used
+ * to carry an upper bound at `WINDOW` too, and that one was removed as false: measured at 221, 300, 1000 and the
+ * whole file, both legs answer the same as they do at 80, so the bound forbade widths its own legs accept and
+ * owned nothing. What does bound the width is the pair's `false` half — a width past the point where the stripped
+ * span happens to match `NOTE` turns it red — but no span in the shipped file reaches that point, so the only
+ * honest ceiling on this constant is one nothing here can falsify, and an unfalsifiable bound is what the last
+ * sentence about a constant is for rather than a leg.
  */
 export const PROSE_READBACK_PROBE = 80;
 
@@ -93,15 +94,14 @@ export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNot
     if (own === null || own === undefined) {
       throw new Error(`no note recorded for the site at ${site.at}`);
     }
-    // Read once from the match this index holds, each half defaulted to what this site *says* it is: the
-    // correspondence leg below is then the only thing that can tell a real match from a missing one, and a
-    // missing entry fails it rather than reaching `marksSite` as `undefined`. A separate `occ[i]` check would
-    // be a line no input reaches — measured over ~2 500 bodies and hand-built `sites`/`notes` lists, every shape
-    // that removes a match also drops `occ.length`, so the total leg above refuses the run first. The two such
-    // throws this file carried are deleted as unreachable; this leg is the observable that actually catches an
-    // `occ` disagreeing with `sites`, which is the defect they claimed to guard.
-    const at = occ[i]?.index ?? site.at;
-    const link = occ[i]?.[0] ?? site.link;
+    // Read once from the match this index holds, as `number | undefined` / `string | undefined`: a missing
+    // entry stays missing rather than silently becoming what this site *says* it is, which is what lets the
+    // correspondence leg tell "this match is not mine" apart from "I have no match to compare". `strip` cuts
+    // only bytes that follow a link, so for it to drop this index's match it must be fed a `notes` credited to
+    // another link — the mis-crediting this control exists to catch — and the total leg above refuses that run
+    // first. The leg's own job is the disagreement this leaves: `occ` re-indexed against another link.
+    const at = occ[i]?.index;
+    const link = occ[i]?.[0];
     // One assertion, not two: as separate `at`/`link` legs, deleting either half alone stayed green (each
     // checked in isolation is satisfied by the shipped file), so the conjunction this control is credited with
     // was unenforced. Stated honestly, both halves are redundancy *behind* the count leg above for the absence
@@ -121,7 +121,9 @@ export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNot
     // The window's own bound, made observable rather than assumed, on the constant the read-back reads. At or
     // under the shortest note (measured: 10) it compares only text the cut overwrote; at or over the longest
     // (33) it reads into the removed span. Changing the constant to 4 or 40 turns one of these two legs red.
-    const noteLens = notes.map((n) => (n === null ? 0 : n.text.length));
+    // The bounds are computed from the notes actually present: a `null` is the absence of a note, and mapping
+    // one to 0 would let a non-note set the lower bound and cap the upper one. Shipped notes are all non-null.
+    const noteLens = notes.filter((n) => n !== null).map((n) => n.text.length);
     const shortest = Math.min(...noteLens);
     const longest = Math.max(...noteLens);
     expect(
@@ -152,27 +154,26 @@ export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNot
     ).toBe(false);
     // The probe's own bounds, on the constant it reads, so no width can satisfy the pair above by accident.
     // Below the widest shipped note the witness span cannot hold one, so the `true` above would be unaskable;
-    // past `WINDOW` the pair reads further than `marksSite` ever does. Measured red at 16 and at 221.
+    // measured red at 16 and green from 34 to the end of the file, so only the lower half is kept.
     expect(
       PROSE_READBACK_PROBE,
       "the probe is wider than the widest note a shipped site carries, so its span can hold one",
     ).toBeGreaterThan(longest);
     expect(
-      PROSE_READBACK_PROBE,
-      "…and no wider than the window the guard itself reads, so it witnesses only what the guard claims",
-    ).toBeLessThanOrEqual(WINDOW);
-    expect(
-      marksSite(one, at, link),
+      // `marksSite` asks about `at + link.length` and the correspondence leg above is what proves this pair
+      // is this site's own, so the cast carries no new assumption: it restates what that leg just asserted.
+      marksSite(one, at as number, link as string),
       `the guard fires when only the note at ${site.at} is removed`,
     ).toBe(false);
     for (const j of sites.map((_, k) => k)) {
       if (j === i) continue;
-      const otherSite = sites[j];
-      if (otherSite === undefined) throw new Error(`no noni site at index ${j}`);
-      const other = occ[j]?.index ?? otherSite.at;
-      const otherLink = occ[j]?.[0] ?? otherSite.link;
+      const otherSite = sites[j] as Site;
+      const other = occ[j]?.index;
+      const otherLink = occ[j]?.[0];
       expect(
-        marksSite(one, other, otherLink),
+        // Same as above: `marksSite` is asked through the correspondence the loop asserts, and a missing
+        // `occ[j]` reaches it as `undefined` and answers `false`, which is what turns this leg red.
+        marksSite(one, other as number, otherLink as string),
         `the link at ${otherSite.at} keeps its note when only site ${i} is stripped`,
       ).toBe(true);
     }
