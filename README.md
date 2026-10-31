@@ -377,7 +377,7 @@ directory under it). A whole-clone entry is re-walked on every startup and `/rel
 directory where you can, and set `PYTHONDONTWRITEBYTECODE=1` so running the scripts does not grow a
 `__pycache__` tree inside it.
 
-To confirm both halves are loaded, from the target project:
+To confirm the skills are loaded, from the target project:
 
 1. Force noni's census skill and check the census actually runs —
    `python3 <clone>/skills/census/scripts/census.py --repo .` from the target project, or `noni census`
@@ -394,7 +394,7 @@ To confirm both halves are loaded, from the target project:
 /skill:sticky-noni pin what the census reported
 ```
 
-If either answer says the project has no noni, or the census script cannot be reached, the skills are
+If any answer says the project has no noni, or the census script cannot be reached, the skills are
 not loaded — re-check the install, or the path in the `skills` setting, before trusting the verdict.
 
 Without noni the bridge declines rather than inventing a record.

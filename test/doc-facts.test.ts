@@ -21,7 +21,7 @@ import { updateNeedsChange } from "../src/action.ts";
 import { MAX_PINS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { optionHint } from "../src/panel-option-hint.ts";
-import { MAX_OPTIONS } from "../src/pin-fields.ts";
+import { MAX_FIELD_GRAPHEMES, MAX_OPTIONS } from "../src/pin-fields.ts";
 import {
   BACKLOG_CAP,
   BUDGET_CARD,
@@ -182,4 +182,26 @@ test("every noni link in the README says the repo is private", () => {
     (site) => !/private/.test(bare.slice(site.index ?? 0, (site.index ?? 0) + 220)),
   );
   expect(unmarked.length, "a bare noni link is caught").toBeGreaterThan(0);
+});
+
+test("README states each field bound as the source's own number", () => {
+  // The README's field-bound sentences are the only place a model reads the `group` and `options` limits
+  // before a refusal, and both stated them as literals while `pin-fields.ts` refuses past
+  // `MAX_FIELD_GRAPHEMES` — so a bump to the bound would have left the prose quietly wrong. Composed from
+  // the source here, with the control below to prove the sentences are found rather than absent.
+  const readme = fold(readDoc(README));
+  const bound = `${MAX_FIELD_GRAPHEMES} graphemes after sanitizing`;
+  const groupBound = `\`group\` is one line of at most ${bound}`;
+  const optionBound = `\`options\` is 2 to 4 entries, each at most ${bound}`;
+  expect(readme, "README states the group bound from the source").toContain(groupBound);
+  expect(readme, "README states the options bound from the source").toContain(optionBound);
+  // Positive control: a bound that drifted from the source is caught by the same assertions, so a pass
+  // here is the number matching and not a pattern that stopped matching.
+  const drifted = MAX_FIELD_GRAPHEMES + 1;
+  expect(readme, "README does not state a group bound other than the source's").not.toContain(
+    `\`group\` is one line of at most ${drifted} graphemes after sanitizing`,
+  );
+  expect(readme, "README does not state an options bound other than the source's").not.toContain(
+    `\`options\` is 2 to 4 entries, each at most ${drifted} graphemes after sanitizing`,
+  );
 });
