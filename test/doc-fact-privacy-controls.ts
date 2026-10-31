@@ -9,13 +9,29 @@ import {
   NONI_LINK,
   NOTE,
   type Note,
-  PROSE_READBACK_PROBE,
   type Site,
   type SiteNote,
-  UNANCHORED,
+  WINDOW,
   marksSite,
+  noniNotes,
+  noniSites,
   strip,
 } from "./doc-fact-privacy-helpers.ts";
+
+/**
+ * How far past a cut offset the witness pair below reads for a parenthetical that *could* have explained the
+ * guard's refusal. It sits here, beside the window the read-back uses, because this file is its only consumer
+ * and the two legs under `perSiteCutControls` are what bound it. Its jsdoc used to claim it was "past the
+ * first `(` after any of the shipped cuts"; measured, that is what makes it too *small*, not what bounds it:
+ * the pair stays green for every width from 33 to the end of the file while no leg reads the constant, which is
+ * how a free parameter rots. The lower bound is the widest note any shipped site carries (measured: 33) — below
+ * it the witness span cannot hold a note and the pair proves nothing; the upper bound is `WINDOW`, what the
+ * guard itself reads — past it the pair reads further than the guard ever looks and witnesses a claim the guard
+ * does not make. Measured: 16 turns the lower leg red and 221 the upper one, while every width between stays
+ * green, so the constant is pinned to the interval rather than to a sentence about it.
+ */
+export const PROSE_READBACK_PROBE = 80;
+
 /**
  * How many characters are read back after a cut, so the read-back compares the text that *followed* this
  * site's note rather than a span inside the note the cut just removed — at or below the note's own length the
@@ -77,17 +93,24 @@ export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNot
     if (own === null || own === undefined) {
       throw new Error(`no note recorded for the site at ${site.at}`);
     }
-    const at = occ[i]?.index;
-    const link = occ[i]?.[0];
-    if (at === undefined || link === undefined) {
-      throw new Error(`the stripped README lost the link at index ${i}`);
-    }
-    // The count above says a link is there; these two say it is *this* site's, at the offset the guard is
-    // about to be asked about. A note-only cut moves nothing, so both hold in the shipped run, and an `occ`
-    // that disagreed with `sites` — re-indexed, or matched against another link — is what fails them: the
-    // read-back below and the guard leg after it would both be asked about a span this site does not own.
-    expect(at, `the link read back at index ${i} sits where this site's link was`).toBe(site.at);
-    expect(link, "…and is the text that link matched").toBe(site.link);
+    // Read once from the match this index holds, each half defaulted to what this site *says* it is: the
+    // correspondence leg below is then the only thing that can tell a real match from a missing one, and a
+    // missing entry fails it rather than reaching `marksSite` as `undefined`. A separate `occ[i]` check would
+    // be a line no input reaches — measured over ~2 500 bodies and hand-built `sites`/`notes` lists, every shape
+    // that removes a match also drops `occ.length`, so the total leg above refuses the run first. The two such
+    // throws this file carried are deleted as unreachable; this leg is the observable that actually catches an
+    // `occ` disagreeing with `sites`, which is the defect they claimed to guard.
+    const at = occ[i]?.index ?? site.at;
+    const link = occ[i]?.[0] ?? site.link;
+    // One assertion, not two: as separate `at`/`link` legs, deleting either half alone stayed green (each
+    // checked in isolation is satisfied by the shipped file), so the conjunction this control is credited with
+    // was unenforced. Stated honestly, both halves are redundancy *behind* the count leg above for the absence
+    // case — deleting them together is green — and their own job is the disagreement case: an `occ` re-indexed
+    // against another link, which the read-back and the guard legs below would otherwise be asked about.
+    expect(
+      at === site.at && link === site.link,
+      `the link read back at index ${i} is this site's own, at its own offset`,
+    ).toBe(true);
     // Read the cut back at its own offset: this site's note is gone from there, and what follows is the text
     // that followed it in the shipped file — so nothing else was cut, and no other site's note can stand in
     // for it. A mis-indexed `notes` measured green before this leg: two shipped sites share the same note.
@@ -99,30 +122,45 @@ export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNot
     // under the shortest note (measured: 10) it compares only text the cut overwrote; at or over the longest
     // (33) it reads into the removed span. Changing the constant to 4 or 40 turns one of these two legs red.
     const noteLens = notes.map((n) => (n === null ? 0 : n.text.length));
+    const shortest = Math.min(...noteLens);
+    const longest = Math.max(...noteLens);
     expect(
       CUT_READBACK_WINDOW,
       "the read-back window is wider than the shortest note, so it compares text the cut did not touch",
-    ).toBeGreaterThan(Math.min(...noteLens));
+    ).toBeGreaterThan(shortest);
     expect(
       CUT_READBACK_WINDOW,
       "…and narrower than the longest, so it never reads into the span the cut removed",
-    ).toBeLessThan(Math.max(...noteLens));
+    ).toBeLessThan(longest);
     // Why the guard's refusal below is not an artefact of a short read-back. The old single leg asked
     // `UNANCHORED` about the stripped span and asserted `false` — a question that cannot answer `true` here, so
-    // deleting the whole leg changed nothing (measured). Now the assertion and its witness are separate: the
-    // shipped file answers `true` for the same span because this site's own note sits there, which is what lets
-    // the stripped file's `false` mean an absence and not a span too narrow to see anything. `NOTE` is the
-    // pattern asked because it is the one `marksSite` uses; the sibling file's positive control 1 already owns
-    // the whole-file absence under both patterns, so this leg owns the narrower claim at this offset.
+    // deleting the whole leg changed nothing (measured). Now the assertion and its witness are separate, and
+    // they ask the *same* predicate: the shipped file answers `NOTE` `true` for this span because this site's own
+    // note sits there, which is what lets the stripped file's `false` mean an absence. Asking the witness with
+    // `UNANCHORED` instead (the old shape) stayed green — it bounds only its own pattern, leaving the `NOTE`
+    // half of the pair unbounded — so the witness asks what the assertion asks. The sibling file's positive
+    // control 1 owns the whole-file absence under both patterns; this pair owns the claim at this offset, and
+    // the constant's width is pinned by the two legs above rather than by this one.
     const cutSpan = (text: string): string => text.slice(own.at, own.at + PROSE_READBACK_PROBE);
     expect(
-      UNANCHORED.test(cutSpan(readme)),
-      "the probe span is the right size to witness anything: the shipped file answers it",
+      NOTE.test(cutSpan(readme)),
+      "the shipped file answers the probe's own pattern at this offset, so the read-back is wide enough to see a note here",
     ).toBe(true);
     expect(
       NOTE.test(cutSpan(one)),
       "no note's absence is explained by the read-back being short: a probe-wide read finds no parenthetical",
     ).toBe(false);
+    // The probe's own bounds, on the constant it reads, so no width can satisfy the pair above by accident.
+    // Below the widest shipped note the witness span cannot hold one, so the `true` above would be unaskable;
+    // past `WINDOW` the pair reads further than `marksSite` ever does. Measured red at 16 and at 221.
+    expect(
+      PROSE_READBACK_PROBE,
+      "the probe is wider than the widest note a shipped site carries, so its span can hold one",
+    ).toBeGreaterThan(longest);
+    expect(
+      PROSE_READBACK_PROBE,
+      "…and no wider than the window the guard itself reads, so it witnesses only what the guard claims",
+    ).toBeLessThanOrEqual(WINDOW);
     expect(
       marksSite(one, at, link),
       `the guard fires when only the note at ${site.at} is removed`,
@@ -130,11 +168,9 @@ export function perSiteCutControls(readme: string, sites: Site[], notes: SiteNot
     for (const j of sites.map((_, k) => k)) {
       if (j === i) continue;
       const otherSite = sites[j];
-      const other = occ[j]?.index;
-      const otherLink = occ[j]?.[0];
-      if (otherSite === undefined || other === undefined || otherLink === undefined) {
-        throw new Error(`the stripped README lost the link at index ${j}`);
-      }
+      if (otherSite === undefined) throw new Error(`no noni site at index ${j}`);
+      const other = occ[j]?.index ?? otherSite.at;
+      const otherLink = occ[j]?.[0] ?? otherSite.link;
       expect(
         marksSite(one, other, otherLink),
         `the link at ${otherSite.at} keeps its note when only site ${i} is stripped`,
