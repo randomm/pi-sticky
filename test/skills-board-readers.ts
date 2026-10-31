@@ -25,10 +25,13 @@ import { join } from "node:path";
 import {
   BACKLOG_FLOOR_HEAD,
   BACKLOG_RULE_HEAD,
+  NOW_ROWS,
+  NUMERALS,
   cardCounts,
   cardinal,
   countPattern,
   fold,
+  numeral,
 } from "./doc-fact-fixtures.ts";
 
 /**
@@ -38,7 +41,34 @@ import {
  */
 const COUNT = countPattern();
 
-/** The card sentence, global — so a file with two of them reports both numerals of each. */
+/**
+ * A whole count, spelled or digital, that cannot match inside a longer word. Both halves are load-bearing,
+ * measured against `plus those <word>` over the whole spelled table: joined in table order an unanchored
+ * pattern reads `fourteen` as `four` (and `sixteen`, `seventeen`, `eighteen`, `nineteen` as their prefixes)
+ * and splits `twenty-one` into `twenty` and `one`; the longest-first sort alone still splits the `twenty-*`
+ * pair, because `twenty` and `one` each sit at a word boundary of their own.
+ */
+const ANCHORED_COUNT = String.raw`\b(?:${[...NUMERALS]
+  .sort((a, b) => b.length - a.length)
+  .join("|")}|${COUNT})\b`;
+
+/** An operative sentence with its count captured, anchored on both sides so a prefix of a word is not a count. */
+const operative = (before: string, after: string): RegExp =>
+  new RegExp(`${before}(${ANCHORED_COUNT})${after}`, "g");
+
+/**
+ * The Now row on its own, so the board's arithmetic reads its own count instead of folding it into the
+ * Backlog cap: a cap-based check cannot tell a Now count from a Backlog count, so a `three Now` beside a
+ * three-row Backlog agreed with itself and sailed through the budget line.
+ */
+export function statedNowCount(folded: string): number | null {
+  const match = new RegExp(`the board is (${ANCHORED_COUNT}) Now`, "i").exec(folded);
+  return match === null ? null : cardinal(match[1] ?? "");
+}
+
+/** The card sentence, global — so a file with two of them reports both numerals of each. Its counts need no
+ * `\b`: each is pinned by the words either side of it, so no longer word can smuggle a prefix past them.
+ */
 const CARD_SHAPE = new RegExp(`(${COUNT}) rows at the default budget of (${COUNT});`, "g");
 
 /** The card's cap, or `null` with no card — which is a defect, not a pass. */
@@ -63,15 +93,28 @@ export function statedBacklogCounts(text: string): number[] {
  * mismatch between the two is the bug rather than a wording choice. The card's other numeral — the budget
  * it counts against — is not a Backlog count, so the card contributes its cap only here; the budget is
  * read on its own by `statedBudget`, which is what refuses a second card that moved just that half.
+ *
+ * Each pattern anchors its count with `\b` on both sides and joins the spelled alternatives longest-first.
+ * An unanchored pattern reads the prefix of a longer word, and `cardinal` accepts that prefix as a real
+ * count, so `plus those fourteen` used to report 4 and every check downstream of it agreed with a number
+ * nobody wrote.
  */
-export const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
-  new RegExp(`(${COUNT}) rows at the default`, "g"),
-  new RegExp(`cap is \\*\\*(${COUNT}) rows`, "g"),
-  new RegExp(`first (${COUNT}) entries`, "g"),
-  new RegExp(`Fewer than (${COUNT}) entries`, "g"),
-  new RegExp(`the board is (${COUNT}) Now`, "g"),
-  new RegExp(`plus those (${COUNT})`, "g"),
+const OPERATIVE_COUNT_PATTERNS: RegExp[] = [
+  operative("", " rows at the default"),
+  operative("cap is \\*\\*", " rows"),
+  operative("first ", " entries"),
+  operative("Fewer than ", " entries"),
+  operative("the board is ", " Now"),
+  operative("plus those ", ""),
 ];
+
+/** The words `the board is N Now` are written with — lowercase, as the file has them mid-sentence. A
+ * mutation written against another casing matches nothing and reports the shipped file back as mutated.
+ */
+export const NOW_SENTENCE = "the board is one Now";
+
+/** The words `plus those N` are written with. */
+export const PLUS_THOSE_HEAD = "plus those three";
 
 /**
  * Every number the file states for the Backlog. `withBudget` adds the budget half of every card, for the
@@ -96,6 +139,7 @@ export function statedCounts(text: string, withBudget: boolean): number[] {
       if (withBudget) push(card.index, card[2]);
     }
   }
+  // The operative instructions: what to pin, and what to do when there are fewer rows than the cap.
   // The operative instructions: what to pin, and what to do when there are fewer rows than the cap.
   for (const pattern of OPERATIVE_COUNT_PATTERNS) {
     for (const match of folded.matchAll(pattern)) {

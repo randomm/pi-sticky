@@ -33,11 +33,14 @@ import {
   budgetCard,
   cardCounts,
   fold,
+  numeral,
   readDoc,
 } from "./doc-fact-fixtures.ts";
 import {
   BOARD_SKILLS,
+  NOW_SENTENCE,
   OPERATIVE_PROOFS,
+  PLUS_THOSE_HEAD,
   boardPath,
   operativeHeads,
   replaceSpaced,
@@ -45,6 +48,7 @@ import {
   statedBacklogCounts,
   statedBudget,
   statedCounts,
+  statedNowCount,
 } from "./skills-board-readers.ts";
 
 test("each board skill's stated Backlog cap fits the pin budget alongside its Now pin", () => {
@@ -58,6 +62,24 @@ test("each board skill's stated Backlog cap fits the pin budget alongside its No
     expect(cap ?? -1, `${dir}: cap + Now leaves a slot for a warning`).toBeLessThanOrEqual(
       DEFAULT_CONFIG.maxPins - NOW_ROWS - 1,
     );
+    // The board's own arithmetic, asserted from the numbers it states rather than from the constants
+    // the card was built from: a skill that instructs more pins than the tool will accept is a defect
+    // the card-only cap check above cannot see.
+    const boardText = fold(text);
+    // Only the run board draws a Now group; noni builds a Backlog from a file and states no Now count, so
+    // the count is pinned to `NOW_ROWS` where the file states one and required to be absent where it does
+    // not — a Now count that appears in noni would be an instruction nobody asked for.
+    const nowCount = statedNowCount(boardText);
+    expect(nowCount, `${dir}: states its Now count, or none where it has no Now group`).toBe(
+      dir === "sticky-run-board" ? NOW_ROWS : null,
+    );
+    // The board's own arithmetic, read back out of the numbers it states rather than the constants the
+    // card was built from: an instruction to pin more than the tool accepts is a defect the cap check
+    // above cannot see, because it never looks at the Now count.
+    expect(
+      (nowCount ?? 0) + (cap ?? 0) + 1,
+      `${dir}: Now + Backlog + the reserved slot fit the budget`,
+    ).toBeLessThanOrEqual(DEFAULT_CONFIG.maxPins);
     // The card is the shared settled wording, not a paraphrase — and the budget it names is the shipped
     // default, not a numeral the sentence kept while the count went stale.
     expect(fold(text), `${dir}: carries the shared card`).toContain(BUDGET_CARD);
@@ -74,6 +96,18 @@ test("each board skill's stated Backlog cap fits the pin budget alongside its No
       expect(fold(text), `${dir}: carries the operative rule "${head}"`).toContain(head);
     }
   }
+  // `sticky-noni` carries no Now group, so it states no Now count; the run board states one and the
+  // assertion inside the loop above pins it to `NOW_ROWS`.
+  expect(
+    statedNowCount(fold(readDoc(boardPath("sticky-noni")))),
+    "noni states no Now count",
+  ).toBeNull();
+  // `sticky-noni` carries no Now group, so it states no Now count; the run board states one and the
+  // assertion inside the loop above pins it to `NOW_ROWS`.
+  expect(
+    statedNowCount(fold(readDoc(boardPath("sticky-noni")))),
+    "noni states no Now count",
+  ).toBeNull();
   // `sticky-noni` is the file that states the count in its own instruction as well as the card, so the
   // agreement assertion above is only load-bearing there — a file with one stated count cannot disagree
   // with itself. The scrape is one count per matched span, so noni reports its cap three times: once from
@@ -180,7 +214,32 @@ test("the budget check catches a card that overruns the budget", () => {
   // mutating the latter is the copy a card-only reader never sees. It is also the proof that the
   // `plus those (N)` pattern is live: had it been dead, the mutation would have read as the shipped cap.
   const board = readDoc(boardPath("sticky-run-board"));
-  const boardCopy = replaceSpaced(board, "plus those three", "plus those four");
+  // A run board that instructs a three-row Now has to fail the checks the board test above runs, not
+  // just report a bigger scrape: `three` is the shipped Backlog cap, so folding the Now count into the
+  // cap comparison blessed it — scrape [3,3,3], allAgree true, budget line green, 6+ pins on a 5-pin
+  // budget. The Now row is asserted against its own count, and the board's own arithmetic against the
+  // budget.
+  const threeNow = replaceSpaced(board, NOW_SENTENCE, `the board is ${numeral(3)} Now`);
+  expect(threeNow, "the three-Now mutation took").not.toBe(board);
+  const threeNowCounts = statedBacklogCounts(threeNow);
+  const threeNowCount = statedNowCount(fold(threeNow));
+  expect(
+    threeNowCount,
+    "a run board instructing a three-row Now is not the shipped one Now",
+  ).not.toBe(NOW_ROWS);
+  expect(threeNowCounts, "the three-Now scrape is non-empty").not.toEqual([]);
+  // The vacuous pass this replaces: `three` is the shipped cap, so the all-counts-agree loop the board
+  // test runs over every stated count — cap comparison included — was satisfied by a 3-row Now.
+  expect(
+    threeNowCounts.every((count) => count === statedBacklogCap(threeNow)),
+    "the all-counts-agree check alone would still bless a three-row Now",
+  ).toBe(true);
+  // …which is why the Now row is compared to its own count, and the board's own arithmetic to the budget.
+  expect(
+    (threeNowCount ?? 0) + BACKLOG_CAP + 1,
+    "a run board whose own arithmetic overflows the budget fails the budget line",
+  ).toBeGreaterThan(DEFAULT_CONFIG.maxPins);
+  const boardCopy = replaceSpaced(board, PLUS_THOSE_HEAD, `plus those ${numeral(4)}`);
   expect(boardCopy, "the run board mutation took").not.toBe(board);
   const boardCounts = statedBacklogCounts(boardCopy);
   expect(boardCounts, "the mutated operative count is reported").toContain(BACKLOG_CAP + 1);
@@ -200,9 +259,8 @@ test("the budget check catches a card that overruns the budget", () => {
     "the shipped run board agrees with itself",
   ).toBe(true);
   // The `the board is (N) Now` pattern has its own control: that count is the size of the Now group, so
-  // it is not compared to the cap, but it still has to be scraped — a dead pattern there would let a
-  // two-row Now instruction survive.
-  const twoNow = replaceSpaced(board, "the board is one Now", "the board is two Now");
+  // it is not compared to the cap, but it still has to be scraped.
+  const twoNow = replaceSpaced(board, NOW_SENTENCE, `the board is ${numeral(2)} Now`);
   expect(twoNow, "the Now-row mutation took").not.toBe(board);
   expect(statedBacklogCounts(twoNow), "the Now count is scraped too").toContain(NOW_ROWS + 1);
 });

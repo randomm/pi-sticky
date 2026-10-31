@@ -21,6 +21,7 @@ import {
   BACKLOG_CAP,
   BUDGET_CARD,
   NOW_ROWS,
+  NUMERALS,
   backlogFloorWithCap,
   backlogRuleWithCap,
   budgetCard,
@@ -32,12 +33,15 @@ import {
 } from "./doc-fact-fixtures.ts";
 import {
   BOARD_SKILLS,
+  NOW_SENTENCE,
   OPERATIVE_PROOFS,
+  PLUS_THOSE_HEAD,
   boardPath,
   replaceSpaced,
   statedBacklogCap,
   statedBacklogCounts,
   statedCounts,
+  statedNowCount,
 } from "./skills-board-readers.ts";
 
 /** The budget the env range permits at its top, so a spelled count cannot collide with the default. */
@@ -46,12 +50,17 @@ const TOP_BUDGET = MAX_PINS;
 const ABOVE_THE_OLD_TABLE = [8, 9, 10];
 /** A count no reader may accept: one past the widest bound any doc states. */
 const BEYOND_EVERY_BOUND = MAX_FIELD_GRAPHEMES + 1;
-/** Its spelled form (`numeral` has no word for it, so it comes out as digits) — the uncountable count. */
-const UNCOUNTABLE = numeral(BEYOND_EVERY_BOUND);
-/** A digit string past every bound, for the accepting side of the same rule. */
+/** Its written form. `numeral` refuses a count past the bound rather than emitting it, so the uncountable
+ * string the tests feed to `cardinal` is built here — that refusal is what keeps a doc from spelling a
+ * count its own readers cannot decode.
+ */
+const UNCOUNTABLE = String(BEYOND_EVERY_BOUND);
+/** The same uncountable count as digits, for the accepting side of the same rule. */
 const UNCOUNTABLE_DIGITS = String(BEYOND_EVERY_BOUND);
 /** The room the board's own inequality allows: `cap <= maxPins - Now - 1`. */
 const BUDGET_ROOM = DEFAULT_CONFIG.maxPins - NOW_ROWS - 1;
+/** Every count the shared table spells, so the sweep covers each spelling the reader has to tell apart. */
+const EVERY_COUNT = NUMERALS.map((_, n) => n);
 
 /** One card-shaped sentence, terminated the way every shipped card terminates. */
 const cardSentence = (cap: number, budget: number): string =>
@@ -99,7 +108,7 @@ test("a count the table does not hold is a parse failure, never a number", () =>
   // The table's boundary is explicit on both sides: `numeral` spells up to `MAX_PINS` and nothing past it
   // decodes, so a count outside the table cannot be a silent digit on one side and a sentinel on the other.
   expect(cardinal(numeral(MAX_PINS)), "the top of the pin range is a count").toBe(MAX_PINS);
-  expect(cardinal(numeral(BEYOND_EVERY_BOUND)), "past every bound there is no count").toBeNull();
+  expect(cardinal(UNCOUNTABLE), "past every bound there is no count").toBeNull();
 });
 
 test("a card spelled with a count above the old table reads as that count", () => {
@@ -166,7 +175,9 @@ test("a card contradicting the shipped one on a spelled count is rejected, not a
     const text = readDoc(boardPath(dir));
     // (a) A second card whose count nothing decodes. The shipped card is still in the file, so a reader
     // that stopped at the first match (or decoded the unknown word to a sentinel) reported it as clean.
-    const contradicted = `${text} ${budgetCard(8, BEYOND_EVERY_BOUND)}.`;
+    // The uncountable half is written out rather than built: `budgetCard` refuses a numeral past the bound,
+    // which is what makes an unreadable card impossible to build by accident.
+    const contradicted = `${text} 8 rows at the default budget of ${UNCOUNTABLE};`;
     expect(contradicted, `${dir}: the contradicting card took`).not.toBe(text);
     expect(
       cardCounts(fold(contradicted)),

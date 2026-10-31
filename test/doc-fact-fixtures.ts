@@ -97,7 +97,7 @@ const MAX_SPOKEN_COUNT = NUMERALS.length - 1;
  * The largest number a reader accepts as a count: the widest bound any doc states, which is also the top
  * of the spelled table. Past it a numeral in a doc is a defect, not a count, and `cardinal` says so.
  */
-const MAX_COUNT = Math.max(MAX_PINS, MAX_SPOKEN_COUNT);
+export const MAX_COUNT = Math.max(MAX_PINS, MAX_SPOKEN_COUNT);
 
 /**
  * The digits an accepting pattern allows for a count: no leading zero, and at most as many digits as the
@@ -118,8 +118,18 @@ export function countPattern(): string {
   return COUNT;
 }
 
-/** A count as the docs spell it: a word from the table, digits above it (and never above `MAX_COUNT`). */
+/**
+ * A count as the docs spell it: a word from the table, or digits up to `MAX_COUNT`.
+ *
+ * Throws rather than falling back to digits. `cardinal` refuses a digit string above `MAX_COUNT`, so the
+ * fallback made the round-trip one-way: a builder handed 25 emitted "25", every reader then reported *no
+ * count* for the sentence, and a decoy built that way passed as a clean file. An out-of-range count is a
+ * defect in the caller, and throwing is the only way it reaches one.
+ */
 export function numeral(n: number): string {
+  if (!Number.isInteger(n) || n < 0 || n > MAX_COUNT) {
+    throw new RangeError(`numeral: ${n} is not a count in 0..${MAX_COUNT}`);
+  }
   return NUMERALS[n] ?? String(n);
 }
 
