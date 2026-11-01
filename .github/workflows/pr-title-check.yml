@@ -1,0 +1,48 @@
+name: PR title check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  pr-title:
+    name: PR title check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Reject issue-number scopes in PR titles
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          # Rejects a title whose scope contains an issue number, e.g. fix(#12):
+          # The shape is `type(<scope with #NNN>):` — a bare `type:` has no scope
+          # and is not the reject case. The `!` of a breaking change sits after
+          # the colon and so needs no room in the pattern.
+          reject_re='^[a-z]+\([^)]*#[0-9]+[^)]*\):'
+
+          if printf '%s\n' "$TITLE" | grep -Eq -- "$reject_re"; then
+            {
+              echo "## PR title rejected"
+              echo
+              echo "The title \`$TITLE\` uses an issue number as the scope (e.g. \`fix(#12):\`)."
+              echo
+              echo "Why this is forbidden: this repo squash-merges, so the PR title becomes the"
+              echo " commit subject, and release-please builds CHANGELOG.md from those subjects."
+              echo " A scope that renders as a markdown link is not a valid conventional-commit"
+              echo " header, and a commit the changelog tool cannot parse is either dropped from"
+              echo " the changelog or loses its type — while still counting toward the version"
+              echo " bump, so the loss is invisible in the version and visible in the changelog."
+              echo
+              echo "Correct forms (both accepted by this check):"
+              echo
+              echo "    - fix: correct the rail's rank order for equal-age pins"
+              echo "    - fix(render): correct the rail's rank order   # alphabetic scopes are fine"
+              echo
+              echo "Move the issue linkage into the PR body using \`Closes #N\`."
+            } | tee /dev/stderr
+            exit 1
+          fi
+
+          echo "PR title is valid: $TITLE"

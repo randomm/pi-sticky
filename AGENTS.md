@@ -141,13 +141,24 @@ If you cannot justify necessity, DO NOT CREATE IT.
 <type>(<scope>): <description>
 ```
 
-Types: `feat` | `fix` | `refactor` | `docs` | `test` | `chore`
+Types: `feat` | `fix` | `perf` | `refactor` | `docs` | `test` | `chore` (also `ci`, `build` and `style`,
+which release-please keeps out of the changelog)
 
 ## Branch naming
 
 ```
 feature/issue-{N}-brief-description
 ```
+
+## The release PR
+
+Merging to `main` does not publish. `release-please` reads the conventional commits on main and opens (or
+updates) one release PR that bumps `package.json`, writes `CHANGELOG.md` and prepares the tag; **merging
+that PR is the release** — it tags and publishes to npm, and an npm version cannot be taken back. Release
+PRs are titled `chore(main): release 0.1.0` — the first release, since the manifest seeds `0.0.0`, nothing
+released yet; `pr-title-check.yml` rejects any PR title whose scope holds an
+issue number, because squash-merge turns the title into the commit subject release-please parses. See
+CONTRIBUTING.md for the rules that bite.
 
 ## Branch protection
 
