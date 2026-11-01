@@ -58,8 +58,11 @@ PR is reviewed like a deploy, not like a merge.
 
 - **Never hand-edit `CHANGELOG.md` and never create a tag by hand.** Both are generated; a hand-written
   entry is overwritten by the next release PR and a hand-made tag desynchronises the release-please
-  manifest. The single exception is the one-time bootstrap: the operator published 0.1.0 by hand and
-  pushed `v0.1.0`, which is what the manifest seeds from. Every release after it is automatic.
+  manifest. Nothing is published or tagged outside a merged release PR, and the manifest seeds `0.0.0` —
+  release-please's "nothing released yet" — so the first release PR it opens is `0.1.0`. Two one-time
+  operator steps make the automation work: add the `RELEASE_PLEASE_TOKEN` secret, and configure the npm
+  trusted publisher for repo `randomm/pi-sticky`, workflow filename `release-please.yml`, environment name
+  **empty**.
 - **Close a stale release PR** rather than letting it sit across later merges. A PR that has drifted from
   main carries a version bump nobody reviewed, and the next run recomputes it anyway.
 - **Breaking changes:** mark the type with `!` and add a `BREAKING CHANGE:` footer

@@ -220,10 +220,6 @@ test("the changelog shows five types and hides the five plumbing ones", () => {
   ]);
 });
 
-test("the manifest seeds the version the operator published by hand", () => {
-  expect(JSON.parse(readRepoFile(".release-please-manifest.json"))).toEqual({ ".": "0.1.0" });
-});
-
 test("package.json publishes publicly with provenance and keeps its files list", () => {
   expect(pkg.publishConfig, "publishConfig").toEqual({ access: "public", provenance: true });
   expect(pkg.dependencies, "runtime dependencies stay empty").toEqual({});

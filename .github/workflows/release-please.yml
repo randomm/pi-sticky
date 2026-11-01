@@ -10,6 +10,12 @@ name: Release Please
 # publish job to another workflow, makes every automatic release fail at
 # `npm publish` with an OIDC rejection while every check above stays green.
 #
+# Nothing is published or tagged outside a merged run of this workflow: the
+# release-please manifest seeds `0.0.0`, the "nothing released yet" version, so
+# the first release PR this action opens is `0.1.0`. The operator's two one-time
+# steps are the `RELEASE_PLEASE_TOKEN` secret and the npm trusted publisher for
+# this repo, this filename and no environment name — see CONTRIBUTING.md.
+#
 # The matching tuple has two halves and they have to agree. Because the
 # environment name configured on the npm side is EMPTY, the publish job below
 # must declare no `environment:` key: adding one changes which half of the tuple

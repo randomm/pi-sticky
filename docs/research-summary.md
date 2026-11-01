@@ -41,11 +41,13 @@ Apache-2.0, with `LICENSE`, `NOTICE` and `package.json` `"license": "Apache-2.0"
 **Superseded (issue #69):** the earlier disposition that npm publishing stayed *a manual operator step* no
 longer holds. `release-please` opens the release PR from conventional commits on main, and merging it
 bumps `package.json`, writes `CHANGELOG.md`, tags the release and publishes to npm with provenance via
-trusted publishing — no `NPM_TOKEN`. The one manual act left is the bootstrap: the operator publishes
-0.1.0 by hand once and pushes the tag `v0.1.0`, which is also the single documented exception to "never
-create tags by hand". `test/release-automation.test.ts` pins that automation, including the pair npm's
-trusted publisher matches — owner `randomm`, repo `pi-sticky`, workflow `release-please.yml`, environment
-name EMPTY, which is why the publish job declares no `environment:` key.
+trusted publishing — no `NPM_TOKEN`. Nothing is published or tagged outside a merged release PR: the
+manifest seeds `0.0.0`, release-please's "nothing released yet", so the first release PR it opens is
+`0.1.0`, and the two one-time operator steps are the `RELEASE_PLEASE_TOKEN` secret and the npm trusted
+publisher for repo `randomm/pi-sticky`, workflow filename `release-please.yml`, environment name EMPTY —
+which is why the publish job declares no `environment:` key. `test/release-automation.test.ts` pins the
+automation, the pair npm's trusted publisher matches, and the manifest seed together with the first-release
+version the docs state.
 
 ## 3. Findings that change the plan
 

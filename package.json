@@ -1,6 +1,6 @@
 {
   "name": "pi-sticky",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "pi extension: the agent pins messages for the user; they stay on screen until resolved, and the user can reply to them.",
   "type": "module",
   "license": "Apache-2.0",

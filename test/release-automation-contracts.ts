@@ -46,6 +46,9 @@ export function readRepoFile(path: string): string {
   return readFileSync(join(ROOT, path), "utf8");
 }
 
+/** The repo root, exported for the readers that resolve a doc of their own. */
+export { ROOT as REPO_ROOT };
+
 // Re-exported so the release tests reach the whole contract through one module while the validator keeps its
 // own file, which is what lets each of them stay small enough to read as a unit.
 export { parsePackageJson, type PackageJson };
