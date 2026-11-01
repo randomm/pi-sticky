@@ -19,6 +19,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { isLevel } from "./action.ts";
 import { isPositiveSafeInteger } from "./bounds.ts";
 import { type StickyDeps, copyState } from "./deps.ts";
 import { applyAction } from "./reducer.ts";
@@ -237,7 +238,7 @@ export function createPinTool(deps: StickyDeps): ToolDefinition {
       // pin of one assistant message would lose the first.
       deps.commit(result.state, result.affected);
       deps.redraw(ctx);
-      const level = (body.level ?? "info") as PinLevel;
+      const level = isLevel(body.level) ? body.level : "info";
       return success(
         outcomeLine(op, result, level),
         result.state,
