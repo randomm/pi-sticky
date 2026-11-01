@@ -101,6 +101,51 @@ export function packedTops(result: PackResult, cause = "npm pack --dry-run --jso
   return topsOf(payload);
 }
 
+/** What `Bun.spawnSync` reports for a run it bound, above what the result shape carries. */
+interface SpawnOutcome {
+  /** Set by bun when the run outlived its `timeout`, alongside the SIGTERM it sends. */
+  exitedDueToTimeout?: boolean;
+  /** Set by bun for a run killed by a signal, which leaves `exitCode` null. */
+  signalCode?: string;
+}
+
+/**
+ * How long `fileSet` waits for `npm` before calling the run dead, in milliseconds.
+ *
+ * `--dry-run` builds a tarball in memory and writes nothing, so a healthy run on this tree costs under half a
+ * second — the working-tree control asserts exactly that, so a bound above what it measures is the bound this
+ * suite actually pays. The bound is not a budget the healthy path needs: it is what turns a registry that has
+ * stopped answering into a refusal rather than a `bun test` that never finishes. The controls read this
+ * constant rather than re-typing it, so the bound asserted is the bound passed.
+ */
+export const PACK_TIMEOUT_MS = 2_000;
+
+/**
+ * The environment a pack run is given: `PATH` and nothing else.
+ *
+ * `npm` reads its registry, its cache and its publisher identity out of the user's environment and their
+ * `~/.npmrc`, and the answer this guard compares is the set of files npm says it would ship. Inheriting the
+ * whole environment therefore lets a mirror or a rewritten prefix decide what the suite believes is published,
+ * while still reporting exit 0. `PATH` is the one entry the run cannot start without.
+ */
+function packEnv(): Record<string, string> {
+  const path = process.env.PATH;
+  if (typeof path !== "string" || path === "") {
+    throw new Error("npm pack --dry-run --json: PATH is empty, so npm could not be resolved");
+  }
+  return { PATH: path };
+}
+
+/**
+ * The seam `fileSet` spawns through, swappable by the control that asserts what the run was given.
+ *
+ * The environment a pack run carries is the fact worth pinning — `npm` reads its registry and its publisher
+ * identity out of it and still exits 0 — and it is invisible in the result a spawn returns. So the run goes
+ * through this one object: the shipped value is the real `Bun.spawnSync`, and a control replaces it for a
+ * single call to record the arguments rather than to answer them.
+ */
+export const packSpawn: { run: typeof Bun.spawnSync } = { run: Bun.spawnSync };
+
 /**
  * The top level of the tarball `npm pack` would build from the working tree.
  *
@@ -114,15 +159,28 @@ export function fileSet(): string[] {
   const cause = "npm pack --dry-run --json";
   let spawn: ReturnType<typeof Bun.spawnSync<"pipe", "pipe">>;
   try {
-    spawn = Bun.spawnSync(["npm", "pack", "--dry-run", "--json"], { cwd: ROOT });
+    spawn = packSpawn.run(["npm", "pack", "--dry-run", "--json"], {
+      cwd: ROOT,
+      env: packEnv(),
+      timeout: PACK_TIMEOUT_MS,
+    });
   } catch (error) {
     throw new Error(
       `${cause} could not be started: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+  // A run that outlived the bound is a state of its own, distinct from a kill and from a non-zero exit: bun
+  // sends SIGTERM, so the signal alone cannot tell the two apart, and only `exitedDueToTimeout` says the suite
+  // stopped a registry that had stopped answering. Reading it as a kill would blame a signal nobody chose.
+  const outcome = spawn as unknown as SpawnOutcome;
+  if (outcome.exitedDueToTimeout === true) {
+    throw new Error(
+      `${cause} timed out after ${String(PACK_TIMEOUT_MS)}ms without producing a payload`,
+    );
+  }
   // The cast is the runtime against the bun-types declaration, which types `exitCode` as a plain number and
   // names the kill signal on the async subprocess only; bun reports `signalCode` on a killed sync one.
-  const killed = (spawn as unknown as { signalCode?: string }).signalCode;
+  const killed = outcome.signalCode;
   return packedTops(
     {
       exitCode: spawn.exitCode,
