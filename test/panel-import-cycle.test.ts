@@ -18,7 +18,7 @@
  */
 import { expect, test } from "bun:test";
 
-/** The modules whose import order used to matter, each reachable on its own as the first thing loaded. */
+/** The modules this guard loads cold — one wrong edge among them is the cycle the file exists to refuse. */
 const COLD_MODULES = [
   "src/panel-rows.ts",
   "src/panel-frame-layout.ts",
@@ -38,7 +38,7 @@ const COLD_MODULES = [
   "src/render.ts",
   "src/rail-lines.ts",
   // The frame path evaluates it: `panel-frame-layout.ts` builds each heading through it, and it reaches
-  // `panel-rows.ts` for the level glyph — so it is on the graph whose import order used to matter.
+  // `panel-rows.ts` for the level glyph — so it is on the graph this guard loads cold.
   "src/panel-section-headings.ts",
   // The wrap. It reaches `panel-frame.ts` for the marker cell's width and `panel-tail.ts` for the tail's
   // reserve, both of which are read at module scope by the row table's callers; a cold load is the only way to
