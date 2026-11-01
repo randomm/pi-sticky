@@ -19,11 +19,12 @@ import { expect, test } from "bun:test";
 import type { ExpandedAt } from "../src/panel-expand.ts";
 import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
-import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
+import { panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER } from "./fixtures.ts";
+import { panelAllRows } from "./panel-all-rows.ts";
 import { innerAt } from "./panel-rows-frame.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 

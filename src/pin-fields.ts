@@ -51,27 +51,30 @@ const BAD_OPTION_LENGTH = `each option must be 1 to ${MAX_FIELD_GRAPHEMES} chara
 const DUPLICATE_OPTIONS = "options must be unique after cleaning";
 const BAD_COMPACT = "compact must be true or false";
 
-export function badGroup(): FieldRefusal {
+/* The six refusals this module answers with, kept module-private: their wording is a contract with the
+ * model and with the tests, but the tests read it off `checkPinFields`' answer rather than by calling the
+ * constructor — a test that built its own refusal would be comparing one spelling to itself. */
+function badGroup(): FieldRefusal {
   return { ok: false, error: BAD_GROUP };
 }
 
-export function badGroupLength(): FieldRefusal {
+function badGroupLength(): FieldRefusal {
   return { ok: false, error: BAD_GROUP_LENGTH };
 }
 
-export function badOptions(): FieldRefusal {
+function badOptions(): FieldRefusal {
   return { ok: false, error: BAD_OPTIONS };
 }
 
-export function badOptionLength(): FieldRefusal {
+function badOptionLength(): FieldRefusal {
   return { ok: false, error: BAD_OPTION_LENGTH };
 }
 
-export function duplicateOptions(): FieldRefusal {
+function duplicateOptions(): FieldRefusal {
   return { ok: false, error: DUPLICATE_OPTIONS };
 }
 
-export function badCompact(): FieldRefusal {
+function badCompact(): FieldRefusal {
   return { ok: false, error: BAD_COMPACT };
 }
 
@@ -137,7 +140,7 @@ type OptionsReading = { list: string[] } | { refused: OptionsRule };
  * `Array.from` copy of the list the shape check measured, and each refusal names the rule it tripped. Only
  * the exact `[]` an update sends is the clear. `undefined` is only ever "no field was sent".
  */
-function readOptions(options: unknown, clearing: boolean): OptionsReading | undefined {
+export function readOptions(options: unknown, clearing: boolean): OptionsReading | undefined {
   if (options === undefined) return undefined;
   if (!Array.isArray(options)) return { refused: "list" };
   if (options.length === 0) return clearing ? { list: [] } : { refused: "list" };
@@ -166,20 +169,6 @@ function readOptions(options: unknown, clearing: boolean): OptionsReading | unde
 export function cleanGroupOrUndefined(group: unknown, clearing = false): string | null | undefined {
   if (group === undefined) return undefined;
   return cleanField(group, clearing);
-}
-
-/**
- * The `options` as they may be stored, with the same three-way answer as `cleanGroupOrUndefined`: the list,
- * `null` for a present value that will not store, `undefined` for a field the model did not send. The walk
- * itself lives in `readOptions`, which is what `checkPinFields` calls when it also needs the rule.
- */
-export function cleanOptionsOrUndefined(
-  options: unknown,
-  clearing = false,
-): string[] | null | undefined {
-  const reading = readOptions(options, clearing);
-  if (reading === undefined) return undefined;
-  return "list" in reading ? reading.list : null;
 }
 
 /**

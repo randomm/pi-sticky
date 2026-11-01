@@ -21,13 +21,13 @@ import {
   acceptedFields,
   checkPinFields,
   cleanGroupOrUndefined,
-  cleanOptionsOrUndefined,
   compactOrUndefined,
   offersChange,
 } from "../src/pin-fields.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { isPinState } from "../src/state-guards.ts";
 import { pin, state } from "./fixtures.ts";
+import { cleanOptionsOrUndefined } from "./pin-fields-options-gate.ts";
 
 const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
 const ESC = cp(0x1b);

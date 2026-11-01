@@ -21,12 +21,12 @@ import {
   MAX_OPTIONS,
   MIN_OPTIONS,
   checkPinFields,
-  cleanOptionsOrUndefined,
 } from "../src/pin-fields.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { isPinState } from "../src/state-guards.ts";
 import { DIGIT_GROUP, DIGIT_ONLY_OPTIONS, DIGIT_OPTIONS } from "./digit-fixtures.ts";
 import { pin, state } from "./fixtures.ts";
+import { cleanOptionsOrUndefined } from "./pin-fields-options-gate.ts";
 import { ESC, HOSTILE_OPTION, cp } from "./state-untrusted-hostile.ts";
 
 describe("checkPinFields options (list and entries)", () => {

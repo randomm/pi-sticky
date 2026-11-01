@@ -25,7 +25,6 @@
  */
 import { stripSequences } from "./escape.ts";
 import type { ExpandedAt } from "./panel-expand.ts";
-import { META_COLUMNS, META_SEPARATOR_COLUMNS, widestMetaColumns } from "./panel-frame-geometry.ts";
 import { markerCell } from "./panel-frame.ts";
 import { BORDER_ROWS } from "./panel-height.ts";
 import { optionRowCount } from "./panel-options-wrap.ts";
@@ -53,13 +52,6 @@ import type { PinLevel, ViewPin } from "./types.ts";
  * colours a pin row's marker, so one kind has one glyph wherever it appears.
  */
 export const MARKER: Record<PinLevel, string> = { warning: "!", action: "?", info: "•" };
-
-/**
- * The instant an age is measured against when the caller has none: `new Date()` at the moment the rows are
- * built. The panel's own caller passes the extension's clock (`PanelComponent` reads `ageNow()`); an absent
- * one is a test or a direct caller drawing a frame, and for it "now" is the only honest answer.
- */
-const atOnce = (): string => new Date().toISOString();
 
 // The row's own shape, re-exported from `panel-row.ts` so a caller of the row table names this module for the
 // rows it gets back. The interface lives there because the options packing (`panel-options-wrap.ts`) and the
@@ -198,43 +190,6 @@ export function panelPinRows(
       : [{ text: ` ${markerCell(marker, glyph)} `, tail: tails.first, markerLevel: pin.level }]),
     ...optionRows(pin, frameWidth, style),
   ];
-}
-
-/**
- * Rows of every pin in `pins`, which must be the panel's *drawn* order (`panelSections`'s `flat`): the rows a
- * frame's window is cut from. Rows are grouped by pin, not identified by it — two pins can draw byte-identical
- * rows and a wrapping pin draws several that differ only in their empty `tail` — so the count each pin owns is
- * taken from the pin, never by scanning the table. Callers hand over the order the panel draws, not the order
- * the view was pinned in.
- *
- * `metaColumns` and `inner` are the frame's own figures, passed through for the reason `panelPinRows` names;
- * they are optional only for a caller with no frame to name (a row-counting test), which measures the reserve on
- * the pins it passed and derives `inner` from `panelTextColumns`' own subtraction. This table takes **no**
- * expansion signal: it is the caller that counts rows outside a frame, so every compact pin it builds owns its
- * one collapsed row whatever the bar of any frame would have done.
- */
-export function panelAllRows(
-  pins: readonly ViewPin[],
-  textWidth: number,
-  style: PanelStyle,
-  metaColumns?: number,
-  inner?: number,
-  now: string = atOnce(),
-): PanelRow[] {
-  const rows: PanelRow[] = [];
-  for (const pin of pins) {
-    // Each figure defaults on its own. Name `inner` alone and the reserve is measured from this pin alone;
-    // name `metaColumns` alone and `betweenGutters` is reconstructed below at that reserve's floor. A caller
-    // that is laying a frame out names both and gets neither default — which is why frame callers do.
-    const reserve = metaColumns ?? widestMetaColumns([pin], style.dim, now);
-    // Derived at the *reserve's floor* and not at a measured one: the floor is the smallest frame whose text
-    // column could have been `textWidth`, so the options rows can only be under-counted, never counted against
-    // columns the drawer never had. A caller that is laying a frame out names both figures and gets none of this.
-    const betweenGutters =
-      inner ?? textWidth + META_COLUMNS + META_SEPARATOR_COLUMNS + GUTTER_COLUMNS;
-    rows.push(...panelPinRows(pin, textWidth, style, reserve, betweenGutters, now, undefined));
-  }
-  return rows;
 }
 
 /**

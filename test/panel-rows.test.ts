@@ -9,11 +9,12 @@
 import { expect, test } from "bun:test";
 
 import { widestMetaColumns } from "../src/panel-frame-geometry.ts";
-import { panelAllRows, panelPinRows } from "../src/panel-rows.ts";
+import { panelPinRows } from "../src/panel-rows.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { NOW_AGE } from "./fixtures-age.ts";
 import { LATER, NOW, pin, view } from "./fixtures.ts";
+import { panelAllRows } from "./panel-all-rows.ts";
 import { built } from "./panel-frame.ts";
 import { innerAt } from "./panel-rows-frame.ts";
 /** What a test writes to ask for a frame; `drawnFrame` adds the sections the frame's title prints. */
