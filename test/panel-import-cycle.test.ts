@@ -64,6 +64,9 @@ const COLD_MODULES = [
   // The frame's row table: the walk that stamps an owner on every row, which reaches the row table, the
   // headings and the sections, and is reached by the layout. Newest edge of the #63 split.
   "src/panel-frame-table.ts",
+  // The one ranking: the comparison the listings sort by, the guard the sectioning reads, and the level rank
+  // the section ordering compares. Reached by `render.ts` and `panel-sections.ts` and reaching neither back.
+  "src/pin-order.ts",
 ];
 
 /**
@@ -143,6 +146,11 @@ function COLD_PROBE(modulePath: string, target: string): string {
   }
   if (modulePath.endsWith("panel-frame-table.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.panelOwnedRows!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("pin-order.ts")) {
+    // All three bindings: the rank table, the comparison and the guard. A cold load that hands back the sort
+    // and not the guard is the drift this module exists to make impossible.
+    return `import("${target}").then((m)=>{if(typeof m.comparePins!=="function"||typeof m.alreadyDrawn!=="function"||typeof m.levelRank!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   if (modulePath.endsWith("panel-options-row.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.fillOptionRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
