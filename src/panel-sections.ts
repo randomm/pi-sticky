@@ -112,7 +112,7 @@ export function panelSections(pins: readonly ViewPin[]): PanelSections {
       ? {
           kind: "group" as const,
           name: key.slice(GROUP_PREFIX.length),
-          // The level the group ranks on: its best pin's, which `orderPins` put first. Read off the pin
+          // The level the group ranks on: its best pin's, which the ranking put first. Read off the pin
           // rather than a caller's arithmetic, so the section ranks on what it actually holds.
           rank: groupRank(sectionPins),
           pins: sectionPins,
