@@ -284,7 +284,6 @@ test("a terminal with no room for both borders draws nothing, because one border
         owned: [],
         start: -1,
         height,
-        sections,
       }),
     ).toEqual([]);
   }

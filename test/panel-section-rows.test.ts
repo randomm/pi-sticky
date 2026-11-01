@@ -199,10 +199,11 @@ test("the frame's counts are the very sections its rows were laid out from", () 
     style,
   );
   expect(lines[0]).toContain("📌 Pinned · 2 warnings · 2 needs you · 3 more");
-  // The sections the layout carries out are the ones the frame printed counts for: three, in drawn order,
-  // with the row table holding one heading per section and one row per pin.
+  // The grouping the frame printed counts for is the one its rows were laid out from: three sections in
+  // drawn order, with the table holding one heading per section and one row per pin. Read off the same
+  // sectioning `framed` hands both the layout and the content, which is the carrier (`panel-lines.ts`).
   expect(
-    layout.sections.map((section) => [
+    panelSections(mixedView()).order.map((section) => [
       section.kind === "level" ? section.level : section.name,
       section.pins.length,
     ]),

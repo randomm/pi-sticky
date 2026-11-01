@@ -5,9 +5,9 @@ import { panelLayoutSections } from "./panel-frame-layout.ts";
  *
  * The row table is what both the frame's height and the drawn window come from, so a pin is wrapped once per
  * frame and a resize sizes the box at the width it is *drawn* at rather than the last cached one.
- * `panelLayoutSections` owns the height — section headings included — and is handed the very sections whose
- * `flat` the content prints, so the rows the frame draws and the counts its title prints were grouped from
- * one view and cannot disagree.
+ * `panelLayoutSections` owns the height — section headings included — and the content beside it carries the
+ * `order` of the very sections whose `flat` it prints, so the rows the frame draws and the counts its title
+ * prints were grouped from one view and cannot disagree.
  *
  * The `focused` the content carries is already the drawn focus — the component's flag and the key gate ANDed
  * by `keysLive` (`panel-frame-draw.ts`) — so this file never asks whether the panel takes keys: the bar, the
