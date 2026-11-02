@@ -74,14 +74,19 @@ export function overlayVisible(booted: Booted, columns = 120): boolean {
 }
 
 /**
- * The component on screen now, and a handle which answers the way pi-tui's does: granted only while the
- * overlay says it is drawn, and released by `unfocus()`.
+ * The component on screen now, with a handle a case can make hostile.
+ *
+ * The default `unfocus` is the honest one — it moves the held flag, the way pi-tui's does. A case that
+ * needs a host which throws on the release supplies its own, and then reads `held()` to check the flag
+ * came down anyway.
  */
 export function withHandle(
   booted: Booted,
+  unfocus?: () => void,
 ): Booted & { c: PanelComponent; held: () => boolean; visible(): boolean } {
   const c = onScreen(booted);
   const hh = panelHandle(() => overlayVisible(booted));
+  if (unfocus) hh.handle.unfocus = unfocus;
   c.setHandle(hh.handle);
   return { ...booted, c, held: hh.held, visible: () => overlayVisible(booted) };
 }
