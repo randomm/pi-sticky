@@ -201,28 +201,20 @@ export class PanelOwner {
   }
 
   /**
-   * Whether the panel on screen holds the keyboard — the component's own answer, `false` with no component.
-   *
-   * Asked through the owner rather than off the component by the release's caller (`session-rebuild.ts`) for
-   * the reason `isVisible()` is asked here: the owner is who installed the overlay and who holds its
-   * component, so it is the only reader that cannot answer about a panel it no longer has.
-   */
-  holdsKeys(): boolean {
-    return this.#record?.component?.isFocused() === true;
-  }
-
-  /**
    * Take the keyboard back from a panel this owner is not drawing — the one place that does.
    *
-   * Guarded by the owner's own `isVisible()` rather than the caller's: a component still believing it is
-   * focused over a frame pi will not composite is the whole of the state, and a caller that re-derived the
-   * answer would only be one more reader that could get it wrong. `unfocus()` is the whole ending — it moves
-   * the flag, releases the handle and reports through `onUnfocus`, which is what settles the rail — so the
-   * release asks for nothing else.
+   * Both halves belong to the owner for the reason `isAnySurfaceVisible()` does: it installed the overlay, so
+   * it holds the component and is the only reader that cannot answer about a panel it no longer has. The
+   * guards read the record directly, as `isVisible()` does, and are deliberately *conjunctive* — a component
+   * still believing it holds the keyboard over a frame this owner is not drawing is the whole of the state, so
+   * either half on its own would let a released panel be torn down or a drawn one lose its keys. `unfocus()`
+   * is the whole ending: it moves the flag, releases the handle and reports through `onUnfocus`, which is what
+   * settles the rail — so the release asks for nothing else.
    */
   releaseKeys(): void {
-    if (this.isVisible() || !this.holdsKeys()) return;
-    this.#record?.component?.unfocus();
+    const component = this.#record?.component;
+    if (!component?.isFocused() || this.isVisible()) return;
+    component.unfocus();
   }
 
   /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
