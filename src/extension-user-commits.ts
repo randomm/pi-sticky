@@ -15,8 +15,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { HostContext } from "./context.ts";
-import type { PanelOwner } from "./panel.ts";
 import type { PanelModeState } from "./panel-mode.ts";
+import type { PanelOwner } from "./panel.ts";
 import type { CommitLedger } from "./session-commits.ts";
 import type { RebuildCells, Rebuilt } from "./session-rebuild.ts";
 import { rebuildSession } from "./session-rebuild.ts";

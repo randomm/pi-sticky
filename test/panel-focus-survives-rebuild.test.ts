@@ -31,9 +31,9 @@ import type { PanelComponent } from "../src/panel-component.ts";
 import { FOCUS_KEY } from "../src/panel-keys.ts";
 import { KEY } from "../src/types.ts";
 import { withHandle } from "./panel-handle.ts";
+import { toolOf } from "./panel-lifecycle-autoshow-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
 import { boot, emptyBranch, pinEntry, uiEntry } from "./panel-lifecycle-fixture.ts";
-import { toolOf } from "./panel-lifecycle-autoshow-fixture.ts";
 
 /** The keystroke whose death the report was about, as pi-tui hands it. */
 const DOWN = "\x1b[B";
@@ -45,7 +45,6 @@ const TWO: readonly unknown[] = [
     { id: 2, uid: "bbbb2222", text: "Watch the migration", options: ["yes", "no"] },
   ]),
 ];
-
 
 /** The same two pins with the user's hide last in the record — what a reload boots into. */
 const HIDDEN_TWO = [...TWO, uiEntry(false)];
@@ -175,7 +174,12 @@ test("a panel whose pins have all gone from the branch leaves nothing holding th
   focused.focus();
   // The panel drew the pins it was booted with: the branch is empty, but what the user is looking at is the
   // state the last commit published, and pi is compositing it.
-  expect([focused.pins.length, focused.isFocused(), s.held(), s.visible()]).toEqual([2, true, true, true]);
+  expect([focused.pins.length, focused.isFocused(), s.held(), s.visible()]).toEqual([
+    2,
+    true,
+    true,
+    true,
+  ]);
 
   s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
   expect(s.visible()).toBe(false);

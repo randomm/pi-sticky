@@ -222,11 +222,14 @@ test("every rebuild ends with the keyboard, whoever the screen says owns it", ()
 
   // An unappended commit: the entries say nothing, the panel is settled by nobody, and the keyboard is still
   // handed back.
-  rebuildSession(contextWith([hideEntry]), cells([hideEntry], panel, {
-    drawn: false,
-    unseen: true,
-    released,
-  }));
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, {
+      drawn: false,
+      unseen: true,
+      released,
+    }),
+  );
   expect(released).toEqual(["release"]);
   // A rebuild with nothing to reconcile at all — no context — asks for nothing, because there is no session
   // whose surface could be holding anything.
