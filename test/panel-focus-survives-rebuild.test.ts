@@ -278,14 +278,13 @@ test("a release the host throws on still leaves the panel without the keyboard",
 });
 
 test("a panel whose pins have all gone from the branch leaves nothing holding the keyboard", async () => {
-  // The dismissal that strands the keyboard is the one nobody pressed: `/unpin` or the model's own cleanup
-  // empties the branch while the frame the user is looking at still holds the keys.
+  // The branch really is emptied here (`emptyBranch`) rather than assumed: the pins the user is looking at are
+  // the state the last commit published, so after the turn ending the *pin count* — not the mode cell, which
+  // records nothing for a focus-key open — is what answers false for the frame.
   const s = await withHandle(await boot(HIDDEN_TWO, 120));
   s.stub.fireShortcut(FOCUS_KEY, s.ctx);
   const focused = s.c;
   focused.focus();
-  // The pins the boot read back: the branch is empty, but what the user is looking at is the state the last
-  // commit published, and pi is compositing it.
   expect([focused.pins.length, focused.isFocused(), s.held(), s.visible()]).toEqual([
     2,
     true,
@@ -293,6 +292,7 @@ test("a panel whose pins have all gone from the branch leaves nothing holding th
     true,
   ]);
 
+  emptyBranch(s.ctx);
   s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
   expect(s.visible()).toBe(false);
   stranded(s);
