@@ -16,6 +16,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type { HostContext } from "./context.ts";
 import type { PanelModeState } from "./panel-mode.ts";
+import type { PanelOwner } from "./panel.ts";
 import type { CommitLedger } from "./session-commits.ts";
 import type { RebuildCells, Rebuilt } from "./session-rebuild.ts";
 import { rebuildSession } from "./session-rebuild.ts";
@@ -39,6 +40,8 @@ export interface UserCommitCells {
   live(): ExtensionContext | undefined;
   /** Draw both surfaces from the live state. */
   redraw(): void;
+  /** The owner that installed this session's overlay, or `undefined` when none is open. */
+  owner(): PanelOwner | undefined;
 }
 
 /**
@@ -54,6 +57,8 @@ export function createRebuildCells(cells: UserCommitCells): RebuildCells {
     ...cells.commits,
     panel: cells.panel,
     surfacesDrawn: cells.surfacesDrawn,
+    // Forwarded whole to the owner that installed the overlay, as the ledger's members are above.
+    releaseKeys: () => cells.owner()?.releaseKeys(),
     publish: cells.publish,
   };
 }

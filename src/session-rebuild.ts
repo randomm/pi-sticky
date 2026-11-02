@@ -50,11 +50,23 @@ export interface RebuildCells {
    */
   landed(): void;
   /**
-   * Whether an auto-show sits on the screen the entries do not account for — the second reason they are not
-   * the last word, outliving the commit itself: the branch may be read for the pins while the panel is still
-   * up because one of them was shown to the user, and the verb the entries hold is the hide that undid.
+   * Whether an auto-show or a focus-key open sits on the screen the entries do not account for — the second
+   * reason they are not the last word, outliving the commit itself: the branch may be read for the pins while
+   * the panel is still up because one of them was shown to the user, or because the user asked to read one,
+   * and the verb the entries hold is the hide that undid. Both transients are answered by one member because
+   * the rebuild treats them alike: it may not settle the screen away under either, and both end an interaction
+   * rather than latching (`panel-mode.ts`). The focus key is not in the ledger the way a commit is, so a
+   * rebuild which cannot see a component on screen cannot be honouring it either — that is the owner's
+   * question, not this one.
    */
   autoShowPending(): boolean;
+  /**
+   * End the keyboard an invisible panel still holds — the focus key's open or Enter-from-a-key, neither of
+   * which the entries can see. Asked of the owner that installed the overlay, which is the only reader of the
+   * component and of what its frame would answer for `visible()`; it refuses while a frame is on screen, so
+   * this call needs no guard of its own and runs after every settle above.
+   */
+  releaseKeys(): void;
   /** Report that this rebuild was handed the branch, which is what settles that claim. */
   sighted(): void;
   /** Commit the rebuilt state and view as the live ones. */
@@ -110,4 +122,7 @@ export function rebuildSession(ctx: HostContext | undefined, cells: RebuildCells
     }
     cells.sighted();
   }
+  // The keyboard follows the screen whatever the settle above decided, so it is asked outside that `if`: a
+  // boundary that declined to settle can still leave the flag held over a frame pi will not composite.
+  cells.releaseKeys();
 }

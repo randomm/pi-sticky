@@ -216,9 +216,11 @@ for (const band of WIDTH_BANDS) {
  * ids, same invariant; only the view differs, and that difference is the whole test.
  */
 for (const band of WIDTH_BANDS) {
+  // The widest band lays a pin beside an id that re-cuts every row, and the machine the suite runs on is
+  // shared: named so a busy host reports a slow frame rather than a broken one.
   test(`a wrapped pin beside a wide id is built within the frame's reserve from ${bandLabel(band)}`, () => {
     sweepBand(band, WIDTHS, assertNoRowOverrunsItsColumns, sweptFrameAlongsideWideId);
-  });
+  }, 20_000);
 }
 
 test("every id from 1 to 999 keeps its text whole at two widths where the reserve is tightest", () => {

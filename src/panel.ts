@@ -200,6 +200,29 @@ export class PanelOwner {
     return this.#wiring.deps.getView().pins.length;
   }
 
+  /**
+   * Take the keyboard back from a panel this owner is not drawing — the one place that does, since the owner
+   * installed the overlay and is the only reader of its component and of what its frame answers for
+   * `visible()`.
+   *
+   * pi stops routing keys to an overlay once its `visible()` answers false, so the release is asked when the
+   * component still holds the flag over a frame this owner is not drawing. It runs at the end of every
+   * rebuild.
+   */
+  releaseKeys(): void {
+    const component = this.#record?.component;
+    if (!component?.isFocused() || this.isVisible()) return;
+    try {
+      component.unfocus();
+    } catch {
+      // Contained the way `hidePanel` (`panel-user-verbs.ts`) contains the same ending: the flag is the part
+      // this extension owns and the part a throw must not survive, and a notice belongs to the host that
+      // just threw. No report — the rebuild has no ui to report to and the boundary's redraw is what the
+      // user needs.
+      component.setFocused(false);
+    }
+  }
+
   /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
   railDrawn?(iso: string): void {
     this.#consider.drawn(iso);
