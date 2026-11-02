@@ -114,6 +114,17 @@ export function contextWith(entries: readonly unknown[]): PanelContext {
 }
 
 /**
+ * Take the pins out from under a booted session, the way a `/unpin` or the model's own cleanup does: the
+ * branch and the entry readers answer empty while the overlay pi installed keeps standing. Both readers are
+ * the host's own answers, which is what lets a boundary that re-reads the branch see what pi would have.
+ */
+export function emptyBranch(ctx: PanelContext): void {
+  const readers = ctx.sessionManager as { getBranch(): unknown[]; getEntries(): unknown[] };
+  readers.getBranch = () => [];
+  readers.getEntries = () => [];
+}
+
+/**
  * Tell the extension the terminal is `columns` wide, the way pi-tui does: by asking the open panel's
  * `visible()` with it. That callback is the only width pi ever states, so driving it is the whole of
  * what a real resize does to the extension's view of the terminal — and the rail's handoff reads the

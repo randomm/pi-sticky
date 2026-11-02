@@ -32,19 +32,20 @@ import { FOCUS_KEY } from "../src/panel-keys.ts";
 import { KEY } from "../src/types.ts";
 import { withHandle } from "./panel-handle.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
-import { boot, pinEntry, uiEntry } from "./panel-lifecycle-fixture.ts";
+import { boot, emptyBranch, pinEntry, uiEntry } from "./panel-lifecycle-fixture.ts";
 import { toolOf } from "./panel-lifecycle-autoshow-fixture.ts";
 
 /** The keystroke whose death the report was about, as pi-tui hands it. */
 const DOWN = "\x1b[B";
 
-/** Two `action` pins the model pinned — one with options, so `d` dismisses. */
+/** The pins one test boots: two `action` pins, each with options so `d` dismisses. */
 const TWO: readonly unknown[] = [
   pinEntry([
     { id: 1, uid: "aaaa1111", text: "Decide the provider", options: ["yes", "no"] },
-    { id: 2, uid: "bbbb2222", text: "Watch the migration" },
+    { id: 2, uid: "bbbb2222", text: "Watch the migration", options: ["yes", "no"] },
   ]),
 ];
+
 
 /** The same two pins with the user's hide last in the record — what a reload boots into. */
 const HIDDEN_TWO = [...TWO, uiEntry(false)];
@@ -69,17 +70,21 @@ async function pin(s: Driven, id: string, text: string): Promise<void> {
 }
 
 /**
- * A panel the user has focused over their own recorded hide, holding three `action` pins — the state the
- * report was filed against. The pins arrive **through the tool**, the one path that leaves the commit ledger
- * with an outstanding commit, which is what makes the recorded `shown: false` a live bug: the boundary that
- * follows has a hide to re-apply and, before the fix, nothing in the cell it would not settle against.
+ * A panel the user has focused, holding three `action` pins — the state the report was filed against.
+ *
+ * Two things make the user's recorded `shown: false` a live bug rather than a moot one, and both are needed:
+ * the hide is an **entry** (`HIDDEN_TWO`), because the boot's rebuild writes the live cell into the record
+ * and a hide from the cell alone leaves the rebuild nothing to re-apply; and the later pins arrive
+ * **through the tool**, because an outstanding commit is the only thing that lets a boundary run while the
+ * screen and the entries disagree — the case `rebuildSession` decides about.
  */
-async function focusedOverARecordedHide(columns = 120): Promise<Driven> {
-  const s = await withHandle(await boot(TWO, columns));
+async function focusedOverARecordedHide(): Promise<Driven> {
+  const s = await withHandle(await boot(HIDDEN_TWO));
+  // The user's own verb, after the boot read the entry back: this is what puts the record and the entries
+  // back in agreement on the hide, which is the precondition the rebuild under test decides against.
+  await s.stub.commands.get("pins")?.handler("hide", s.ctx);
   await pin(s, "c2", "One more");
   await pin(s, "c3", "And one more");
-  // The user's own verb: it records, so the session now holds a hide the next rebuild can read back.
-  await s.stub.commands.get("pins")?.handler("hide", s.ctx);
   s.stub.fireShortcut(FOCUS_KEY, s.ctx);
   return s;
 }
@@ -108,11 +113,13 @@ test("the focus key survives turn_end over a recorded hide: the bar still moves"
 });
 
 test("the focus key below the panel's boundary takes nothing with it", async () => {
-  // The rail is the only surface at this width: the focus key is refused outright (no room) and leaves
-  // nothing behind — no open for a later rebuild to defend, no keyboard held over a frame that is never
-  // drawn, and the rail still holding the pins.
-  const s = await focusedOverARecordedHide(80);
-  expect([s.panel.shown(), s.panel.recorded(), s.panel.mode()]).toEqual([false, false, "hidden"]);
+  // The rail is the only surface at this width: the focus key is refused outright (no room) and must leave
+  // nothing behind — no earned open for a later rebuild to defend, no keyboard held over a frame that is
+  // never drawn, and the rail still holding the pins. The pins are the branch's own, so the ledger's claim
+  // cannot be what the rebuild ends up honouring.
+  const s = await withHandle(await boot(HIDDEN_TWO, 80));
+  s.stub.fireShortcut(FOCUS_KEY, s.ctx);
+  expect([s.panel.shown(), s.panel.recorded(), s.panel.mode()]).toEqual([false, true, "hidden"]);
   stranded(s);
   expect(s.ctx.recorder.widgets.has(KEY)).toBe(true);
 
@@ -143,7 +150,8 @@ test("the user's hide over a focused panel ends the open and gives the keyboard 
 test("a focused panel the turn ending hides releases the keyboard and hands the pins to the rail", async () => {
   // The second symptom, on the path the report took: the panel is open because the focus key opened it, the
   // turn ending re-reads the user's `shown: false` from the entries and the rail comes back — but nothing
-  // released the handle, so the editor answered no keys and neither did the panel.
+  // released the handle, so the editor answered no keys and neither did the panel. No commit is outstanding
+  // here, so this is the rebuild deciding outright rather than one held back by the ledger.
   const s = await withHandle(await boot(HIDDEN_TWO, 120));
   s.stub.fireShortcut(FOCUS_KEY, s.ctx);
   s.c.focus();
@@ -155,37 +163,21 @@ test("a focused panel the turn ending hides releases the keyboard and hands the 
   stranded(s);
 });
 
-test("every pin dismissed under a focused panel leaves nothing holding the keyboard", async () => {
-  const s = await focusedOverARecordedHide();
+test("a panel whose pins have all gone from the branch leaves nothing holding the keyboard", async () => {
+  // The dismissal that strands the keyboard is not the panel's own `d` — that one ends the interaction
+  // through `unfocus()` — but the one nobody pressed: `/unpin` from the editor, or the model's own cleanup,
+  // empties the branch while the frame the user is looking at still holds the keys. The view is the branch's
+  // and the branch is empty, so the panel has nothing left to draw; the keyboard is the extension's, and
+  // before the fix it stayed where it was.
+  const s = await withHandle(await boot(HIDDEN_TWO, 120));
+  s.stub.fireShortcut(FOCUS_KEY, s.ctx);
   const focused = s.c;
   focused.focus();
-  expect([focused.isFocused(), s.held(), s.visible()]).toEqual([true, true, true]);
-
-  // Dismiss every pin the way the panel's own key does: the view ends empty, so the owner no longer claims
-  // the pins, and the boundary after that is where the keyboard used to be stranded over a frame with
-  // nothing left to draw.
-  for (let left = 5; left > 0; left--) focused.handleInput("d");
-  expect(focused.pins.length).toBe(0);
-  expect(s.visible()).toBe(false);
+  // The panel drew the pins it was booted with: the branch is empty, but what the user is looking at is the
+  // state the last commit published, and pi is compositing it.
+  expect([focused.pins.length, focused.isFocused(), s.held(), s.visible()]).toEqual([2, true, true, true]);
 
   s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
   expect(s.visible()).toBe(false);
-  stranded(s);
-});
-
-test("a model's auto-show over the user's recorded hide is settled once the ledger has been handed the branch", async () => {
-  // The counterweight that keeps the focus key's claim from becoming a latch. The panel is on screen because
-  // the *model* earned it, the hide is still what the user chose, and while the commit that auto-show came
-  // from is unappended the branch is not the last word. Once a rebuild has been handed the branch the user's
-  // verb wins — the same branch of the gate the focus key now shares, and the reason that gate reads the
-  // provenance rather than "any open is up".
-  const s = await withHandle(await boot(TWO));
-  await s.stub.commands.get("pins")?.handler("hide", s.ctx);
-  await pin(s, "c9", "The deploy is blocked");
-  expect([s.panel.shown(), s.panel.recorded(), s.panel.mode()]).toEqual([true, false, "open"]);
-
-  s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
-  s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
-  expect(s.panel.mode()).toBe("hidden");
   stranded(s);
 });

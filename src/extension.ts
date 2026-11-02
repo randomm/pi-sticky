@@ -153,6 +153,8 @@ export function createStickyExtension(
         state = rebuilt.state;
         view = rebuilt.view;
       },
+      // The owner whose overlay a rebuild may have just put out of sight; `releaseKeys` asks it and nothing else.
+      owner: () => surfaces.panel.current,
       append: (action: UserAction) => pi.appendEntry(USER_TYPE, action),
       live: () => live,
       redraw: () => redrawAll(live),

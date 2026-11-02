@@ -58,6 +58,8 @@ function cells(opts: { appendThrows?: boolean; live?: boolean } = {}) {
     },
     live: () => (opts.live === undefined || opts.live ? live() : undefined),
     redraw: () => seen.push("redraw"),
+    // No overlay in this case: the release is the owner's, and these cells answer for an instance with none.
+    owner: () => undefined,
   };
   return { cells: base, seen };
 }

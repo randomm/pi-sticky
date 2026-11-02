@@ -62,6 +62,8 @@ function cells(
     holds?: ViewPin[];
     /** Records that the rebuild told the ledger the branch held the commit. */
     landed?: () => void;
+    /** Filled with one entry per release the rebuild asked for. */
+    released?: string[];
   },
 ): RebuildCells {
   const holds = opts.holds ?? [];
@@ -84,6 +86,9 @@ function cells(
     landed: () => opts.landed?.(),
     autoShowPending: () => opts.autoShow ?? false,
     sighted: () => {},
+    // Recorded rather than ignored: which boundary releases a stranded keyboard is the point of one case
+    // below, and a stub that always released would answer it as well as one that never did.
+    releaseKeys: () => opts.released?.push("release"),
     publish: () => {},
   };
 }
@@ -204,6 +209,29 @@ test("an auto-show's peek ending leaves a drawn panel the entries may still sett
     cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
   );
   expect(panel.mode()).toBe("hidden");
+});
+
+test("every rebuild ends with the keyboard, whoever the screen says owns it", () => {
+  // The release is not a branch of the entry read — it is what every boundary ends with, including the ones
+  // the ledger holds back. A keyboard stranded over a frame pi will not composite is deaf for the editor and
+  // unreachable for the panel, and the state is reachable from a settle this function declines to make at
+  // all, so the ask cannot be conditional on the settle having run.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.autoOpen("focus");
+  const released: string[] = [];
+
+  // An unappended commit: the entries say nothing, the panel is settled by nobody, and the keyboard is still
+  // handed back.
+  rebuildSession(contextWith([hideEntry]), cells([hideEntry], panel, {
+    drawn: false,
+    unseen: true,
+    released,
+  }));
+  expect(released).toEqual(["release"]);
+  // A rebuild with nothing to reconcile at all — no context — asks for nothing, because there is no session
+  // whose surface could be holding anything.
+  rebuildSession(undefined, cells([], panel, { drawn: false, unseen: false, released }));
+  expect(released).toEqual(["release"]);
 });
 
 test("a commit whose pin the branch has moved on from is not held, and does not settle the panel", () => {
