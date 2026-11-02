@@ -4,14 +4,19 @@
  * The report was a panel whose arrows stopped moving. Two separate gaps wore that one symptom, and both are
  * invisible to an assertion that reads the component's own flag:
  *
- * 1. **The rebuild took the frame from under a focused panel.** `focusFromShortcut` opens transiently through
- *    `autoOpen("focus")` and records nothing, so at `turn_end` `rebuildSession` re-applied the user's recorded
- *    `shown: false` and hid the panel the user had just focused — and pi-tui's handle `focus()`
+ * 1. **The rebuild settled the frame out from under a focused panel.** `focusFromShortcut` opens transiently
+ *    through `autoOpen("focus")` and records nothing, so at `turn_end` `rebuildSession` re-applied the user's
+ *    recorded `shown: false` and hid the panel the user had just focused — and pi-tui's handle `focus()`
  *    (`tui.js:430-435`) is a silent no-op on an overlay its own `visible()` refuses, so the frame came back
- *    and the keys never did. The rebuild's own gate is the fix: an open the *focus key* earned outranks the
- *    entries the way the commit ledger's auto-show claim already does, because the focus key appends nothing
- *    and touches no commit. `test/session-rebuild.test.ts` pins that gate at the cell — narrowing it to
- *    `"autoshow"` must turn that case red.
+ *    and the keys never did. What keeps the frame standing is the rebuild's two-part gate: the entries may not
+ *    be read at all while a surface is drawn or the record says shown, and not while `autoShowPending()` reports
+ *    a screen they do not account for. That cell answers one boolean and carries no provenance — `autoOpen
+ *    ("focus")` and `autoOpen("autoshow")` differ only in where the open *ends* — so no booted case can say
+ *    *which* transient the boundary honoured, and these cases are read as "the frame survived", never as "the
+ *    focus key was what saved it". What the cell cannot see, `test/session-rebuild.test.ts` pins at the cell:
+ *    that an outstanding claim settles nothing, that a spent one settles everything, and that neither term is
+ *    redundant with the other. Narrowing the gate to the ledger's own claim, or dropping either term, turns a
+ *    case there red.
  * 2. **Nothing ever released the keyboard.** When the turn ending hid the panel over a focused component —
  *    the user's recorded hide re-applied, or the last pin dismissed out from under the frame — the component
  *    stayed focused and the handle stayed held, so the editor answered no keys and neither did the panel.
@@ -30,10 +35,10 @@ import { expect, test } from "bun:test";
 import type { PanelComponent } from "../src/panel-component.ts";
 import { FOCUS_KEY } from "../src/panel-keys.ts";
 import { KEY } from "../src/types.ts";
-import { withHandle } from "./panel-handle.ts";
+import { onScreen, overlayVisible, panelHandle, withHandle } from "./panel-handle.ts";
 import { toolOf } from "./panel-lifecycle-autoshow-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
-import { boot, emptyBranch, pinEntry, uiEntry } from "./panel-lifecycle-fixture.ts";
+import { boot, emptyBranch, frameWidth, pinEntry, uiEntry } from "./panel-lifecycle-fixture.ts";
 
 /** The keystroke whose death the report was about, as pi-tui hands it. */
 const DOWN = "\x1b[B";
@@ -144,6 +149,113 @@ test("the user's hide over a focused panel ends the open and gives the keyboard 
   s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
   expect(s.panel.mode()).toBe("hidden");
   stranded(s);
+});
+
+test("a focused panel whose terminal narrows below the boundary releases the keyboard", async () => {
+  // The width term of the release's guard, and the reason it is the owner's `isVisible()` rather than the mode
+  // cell or the pin count. The count is the tempting stand-in — a frame too narrow to draw holds no pins — and
+  // it is wrong: `isVisible()` asks it *only while the cell says shown*, so the hidden panel this case ends on
+  // answers false while the rail draws its pins, and a release that read the count would leave this keyboard
+  // stranded over a frame nobody is drawing. The *terminal* is what moves here, stated by pi-tui through the
+  // installed `visible()` (`frameWidth`); nothing settles the cell, so the mode is the same on both sides of
+  // the boundary and says nothing about it. The handle is the honest one and reads the width pi-tui is stating
+  // now — 120, then 80 — so it refuses what pi-tui would refuse, and pi-tui itself leaves the flag alone.
+  const stated = { columns: 120 };
+  const s = await boot(HIDDEN_TWO, 120);
+  await toolOf(s.stub).execute(
+    "c1",
+    { action: "pin", text: "One more", level: "action" },
+    undefined,
+    undefined,
+    s.ctx,
+  );
+  s.stub.fireShortcut(FOCUS_KEY, s.ctx);
+  const c = onScreen(s);
+  const hh = panelHandle(() => overlayVisible(s, stated.columns));
+  c.setHandle(hh.handle);
+  c.focus();
+  expect([
+    s.panel.shown(),
+    s.panel.mode(),
+    c.isFocused(),
+    hh.held(),
+    overlayVisible(s, 120),
+  ]).toEqual([true, "open", true, true, true]);
+
+  stated.columns = 80;
+  frameWidth(s.ctx.recorder, 80);
+  expect([c.isFocused(), hh.held(), overlayVisible(s, stated.columns)]).toEqual([
+    true,
+    true,
+    false,
+  ]);
+
+  s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
+  expect([c.isFocused(), hh.held()]).toEqual([false, false]);
+  expect(s.ctx.recorder.widgets.has(KEY)).toBe(true);
+});
+
+test("a panel the owner is drawing keeps its keyboard across every rebuild", async () => {
+  // The other half of the guard, and the only case in the file that runs the release against a panel the
+  // owner says it is drawing: a release that dropped that term would take the keys from a panel the user is
+  // looking at, and every other case here ends on one the owner has stopped drawing. A panel the user showed
+  // themselves, holding the focus key's open and a commit the branch has not written yet — the entries settle
+  // nothing on this path, so the boundary is free to take the keyboard and must not.
+  const s = await withHandle(await boot(TWO, 120));
+  await toolOf(s.stub).execute(
+    "c9",
+    { action: "pin", text: "One more", level: "action" },
+    undefined,
+    undefined,
+    s.ctx,
+  );
+  s.stub.fireShortcut(FOCUS_KEY, s.ctx);
+  expect([s.panel.shown(), s.panel.recorded(), s.panel.mode()]).toEqual([true, true, "open"]);
+  expect([s.c.isFocused(), s.held(), s.visible()]).toEqual([true, true, true]);
+
+  s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
+  // Still focused, still holding the handle — and the bar still moves, which is what a user who never left
+  // the panel would notice first if the release had reached past the screen.
+  expect([s.c.isFocused(), s.held(), s.visible()]).toEqual([true, true, true]);
+  const before = s.c.selection;
+  s.c.handleInput(DOWN);
+  expect(s.c.selection).toBe(before + 1);
+});
+
+test("the focus key's open over the user's own hide survives the boundary that re-reads it", async () => {
+  // The counterweight to the case below, and the one the focus key's claim has to carry on its own. The user
+  // hid the panel with their verb; the model then pinned an `info` note, which does not demand attention
+  // (`demandsAttention`, `panel-mode.ts`), so the ledger's auto-show claim is never raised and the panel stays
+  // out of sight with the pins on the rail. The focus key is what puts the frame back over that hide, and the
+  // boundary now has a settled answer in the entries — *hidden* — with nothing outstanding to hold it back.
+  // Only the open the key earned stands between that answer and the screen, and the rebuild may not settle it
+  // away: the keyboard and the bar are the observable form of the same verdict, because a frame the boundary
+  // put out of sight takes the keys with it and the arrow stops moving.
+  const s = await withHandle(await boot(HIDDEN_TWO, 120));
+  await s.stub.commands.get("pins")?.handler("hide", s.ctx);
+  await toolOf(s.stub).execute(
+    "c9",
+    { action: "pin", text: "A note, not a blocker", level: "info" },
+    undefined,
+    undefined,
+    s.ctx,
+  );
+  s.stub.fireShortcut(FOCUS_KEY, s.ctx);
+  s.c.focus();
+  expect([s.panel.shown(), s.panel.recorded(), s.panel.mode()]).toEqual([true, false, "open"]);
+
+  s.stub.emit("turn_end", { turnIndex: 0, toolResultEntryIds: [] }, s.ctx);
+  expect([s.panel.shown(), s.panel.mode(), s.c.isFocused(), s.held(), s.visible()]).toEqual([
+    true,
+    "open",
+    true,
+    true,
+    true,
+  ]);
+  const before = s.c.selection;
+  s.c.handleInput(DOWN);
+  expect(s.c.selection).toBe(before + 1);
+  expect(s.ctx.recorder.widgets.has(KEY)).toBe(false);
 });
 
 test("a focused panel the turn ending hides releases the keyboard and hands the pins to the rail", async () => {

@@ -144,10 +144,14 @@ test("an auto-show's peek ending leaves a drawn panel the entries may still sett
 });
 
 test("the focus key's claim outranks the entries exactly as the auto-show's does", () => {
-  // The gate's second half, in the coordinate the cell speaks. `autoShowPending()` is how the cell reports a
+  // The gate's second half, in the coordinate the cell speaks. `autoShowPending()` is how the caller reports a
   // screen the entries do not account for, and the focus key earns one the same way an `action` pin does:
-  // through `autoOpen`, which appends nothing. Narrowing the gate back to the ledger's own claim — or to
-  // `earned === "autoshow"` — must turn this case red, because the two transients are one rule read two ways.
+  // through `autoOpen`, which appends nothing. What this pins is the rebuild's half — that a claim which is
+  // outstanding settles nothing — and it is pinned *through that cell* rather than through the provenance,
+  // because `RebuildCells` has no provenance to read: `autoOpen("focus")` and `autoOpen("autoshow")` differ
+  // only in where the open ends (`panel-mode.ts`). Narrowing the gate back to the ledger's own claim must
+  // turn this red; making it answer for the focus key alone would not, which is why the booted case in
+  // `panel-focus-survives-rebuild.test.ts` is the one that carries the focus key's open on its own.
   const panel = createPanelMode(DEFAULT_CONFIG);
   panel.settle(false); // the user's own hide, which the entry below repeats
   panel.autoOpen("focus"); // …and the focus key put the frame back, recording nothing
@@ -162,10 +166,10 @@ test("the focus key's claim outranks the entries exactly as the auto-show's does
   expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual([true, false, "open"]);
 });
 
-test("the focus key's claim outranks the entries exactly as the auto-show's does", () => {
-  // The gate's second half in the coordinate the cell speaks: `autoShowPending()` is how it reports a screen
-  // the entries do not account for, and the focus key earns one the way an `action` pin does — through
-  // `autoOpen`, which appends nothing. Narrowing the gate back to the ledger's own claim must turn this red.
+test("the same rebuild settles the frame once the claim is spent", () => {
+  // The pair to the case above, and the half that case cannot state on its own: with the claim *settled* the
+  // entries are the last word again, so the focus key's open is a transience and not a latch. Written as the
+  // mirror of the case above — same opening, one cell differing — rather than as a second copy of it.
   const panel = createPanelMode(DEFAULT_CONFIG);
   panel.settle(false); // the user's own hide, which the entry below repeats
   panel.autoOpen("focus"); // …and the focus key put the frame back, recording nothing
@@ -174,11 +178,10 @@ test("the focus key's claim outranks the entries exactly as the auto-show's does
 
   rebuildSession(
     contextWith([hideEntry]),
-    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
   );
-  // Handed the branch and still standing: an open the user pulled over their own transcript is not settled
-  // away by the hide they wrote before it.
-  expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual(before);
+  // The claim gone, the hide the user wrote is honoured and the frame the key raised goes with it.
+  expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual([false, false, "hidden"]);
 });
 
 test("every rebuild ends with the keyboard, whoever the screen says owns it", () => {

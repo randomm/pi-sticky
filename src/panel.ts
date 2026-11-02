@@ -204,12 +204,15 @@ export class PanelOwner {
    * Take the keyboard back from a panel this owner is not drawing — the one place that does.
    *
    * Both halves belong to the owner for the reason `isAnySurfaceVisible()` does: it installed the overlay, so
-   * it holds the component and is the only reader that cannot answer about a panel it no longer has. The
-   * guards read the record directly, as `isVisible()` does, and are deliberately *conjunctive* — a component
-   * still believing it holds the keyboard over a frame this owner is not drawing is the whole of the state, so
-   * either half on its own would let a released panel be torn down or a drawn one lose its keys. `unfocus()`
-   * is the whole ending: it moves the flag, releases the handle and reports through `onUnfocus`, which is what
-   * settles the rail — so the release asks for nothing else.
+   * it holds the component and is the only reader of what that overlay's frame answers for `visible()`. The
+   * guard is deliberately *conjunctive* — a component still believing it holds the keyboard over a frame this
+   * owner is not drawing is the whole of the state, so either half on its own would tear a released panel
+   * down or leave a drawn one without its keys. `isVisible()` is that predicate and no stand-in for it: the
+   * mode cell alone answers "shown" for a view with nothing left to draw and for a terminal too narrow for a
+   * frame, and the pin count alone answers "has pins" for a hidden panel the rail is drawing — each would
+   * unfocus a panel the user is looking at, or leave the stranded one standing. `unfocus()` is the whole
+   * ending: it moves the flag, releases the handle and reports through `onUnfocus`, which is what settles the
+   * rail — so the release asks for nothing else.
    */
   releaseKeys(): void {
     const component = this.#record?.component;
