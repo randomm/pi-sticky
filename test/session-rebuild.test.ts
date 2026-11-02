@@ -211,6 +211,25 @@ test("an auto-show's peek ending leaves a drawn panel the entries may still sett
   expect(panel.mode()).toBe("hidden");
 });
 
+test("the focus key's claim outranks the entries exactly as the auto-show's does", () => {
+  // The gate's second half, in the coordinate the cell speaks. `autoShowPending()` is how the cell reports a
+  // screen the entries do not account for, and the focus key earns one the same way an `action` pin does:
+  // through `autoOpen`, which appends nothing. Narrowing the gate back to the ledger's own claim — or to
+  // `earned === "autoshow"` — must turn this case red, because the two transients are one rule read two ways.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.settle(false); // the user's own hide, which the entry below repeats
+  panel.autoOpen("focus"); // …and the focus key put the frame back, recording nothing
+  expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual([true, false, "open"]);
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+  );
+  // The boundary was handed the branch and still left the frame standing: an open the user pulled over their
+  // own transcript is not settled away by the hide they wrote before it.
+  expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual([true, false, "open"]);
+});
+
 test("every rebuild ends with the keyboard, whoever the screen says owns it", () => {
   // The release is not a branch of the entry read — it is what every boundary ends with, including the ones
   // the ledger holds back. A keyboard stranded over a frame pi will not composite is deaf for the editor and
