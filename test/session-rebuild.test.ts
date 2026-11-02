@@ -20,78 +20,10 @@ import { expect, test } from "bun:test";
 
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createPanelMode } from "../src/panel-mode.ts";
-import type { PanelModeState } from "../src/panel-mode.ts";
 import { rebuildSession } from "../src/session-rebuild.ts";
-import type { RebuildCells, Rebuilt } from "../src/session-rebuild.ts";
-import { UI_TYPE } from "../src/types.ts";
-import type { ViewPin } from "../src/types.ts";
+import type { Rebuilt } from "../src/session-rebuild.ts";
 import { contextWith } from "./panel-lifecycle-fixture.ts";
-
-/** A pin the branch and a commit can agree on: one uid, one instant, `updatedAt` movable by the test. */
-function branchPin(id: number): ViewPin {
-  return {
-    id,
-    uid: `u${id}`,
-    text: `pin ${id}`,
-    level: "action",
-    source: "agent",
-    createdAt: "2026-10-23T10:00:00.000Z",
-    updatedAt: "2026-10-23T10:00:00.000Z",
-  };
-}
-
-/** What `landed` below collects; one array per file is enough — each case asserts on its own run. */
-const landed: number[] = [];
-
-/** The entries of a session whose last panel verb was `shown`. */
-const hideEntry = { type: "custom", customType: UI_TYPE, data: { v: 1, shown: false } };
-
-/**
- * The cells of one rebuild over `entries`, with the four answers the caller owns: what is drawn, whether a
- * commit is unappended, whether an auto-show sits on the screen the entries do not account for, and what the
- * outstanding commit published for the branch to be checked against.
- */
-function cells(
-  entries: readonly unknown[],
-  panel: PanelModeState,
-  opts: {
-    drawn: boolean;
-    unseen: boolean;
-    published?: Rebuilt[];
-    autoShow?: boolean;
-    holds?: ViewPin[];
-    /** Records that the rebuild told the ledger the branch held the commit. */
-    landed?: () => void;
-    /** Filled with one entry per release the rebuild asked for. */
-    released?: string[];
-  },
-): RebuildCells {
-  const holds = opts.holds ?? [];
-  return {
-    reconstruct: (ctx) => {
-      // Read the entries the context carries, so a test that passed a context with no branch is caught by
-      // the type rather than by an unused parameter.
-      void ctx.sessionManager.getEntries();
-      const rebuilt: Rebuilt = {
-        state: { v: 1, nextId: 1, pins: holds, removed: [] },
-        view: { pins: holds, removed: [] },
-      };
-      opts.published?.push(rebuilt);
-      return rebuilt;
-    },
-    panel,
-    surfacesDrawn: () => opts.drawn,
-    unseen: () => opts.unseen,
-    published: () => holds,
-    landed: () => opts.landed?.(),
-    autoShowPending: () => opts.autoShow ?? false,
-    sighted: () => {},
-    // Recorded rather than ignored: which boundary releases a stranded keyboard is the point of one case
-    // below, and a stub that always released would answer it as well as one that never did.
-    releaseKeys: () => opts.released?.push("release"),
-    publish: () => {},
-  };
-}
+import { branchPin, hideEntry, landed, rebuildCells } from "./session-rebuild-cells.ts";
 
 test("an unappended commit means the entries are not the last word", () => {
   const panel = createPanelMode(DEFAULT_CONFIG);
@@ -100,7 +32,7 @@ test("an unappended commit means the entries are not the last word", () => {
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: false, unseen: true }),
+    rebuildCells([hideEntry], panel, { drawn: false, unseen: true }),
   );
   // The branch holds the hide the auto-show just undid; reading it now would put the panel out of sight
   // under a pin the user has not seen. `recorded()` is the same — the user's verb is not restated either.
@@ -114,7 +46,7 @@ test("nothing unseen and nothing drawn: the entries decide outright, screen and 
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: false, unseen: false }),
+    rebuildCells([hideEntry], panel, { drawn: false, unseen: false }),
   );
   expect(panel.mode()).toBe("hidden");
   // The record moved too: with nothing on screen there is no transient to protect, so this is the user's
@@ -129,7 +61,7 @@ test("a panel that is on screen is settled from the entry without moving the rec
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false }),
   );
   expect(panel.shown()).toBe(false);
   // The half the whole transience rests on: without this, one auto-open after a `/pins hide` would teach
@@ -150,7 +82,7 @@ test("an auto-show the branch has not been read for outranks the entries, but ne
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
   );
   expect(panel.shown()).toBe(true);
   expect(panel.recorded()).toBe(false);
@@ -159,7 +91,7 @@ test("an auto-show the branch has not been read for outranks the entries, but ne
   // are the last word again, and the panel goes back to what the user recorded.
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
   );
   expect(panel.shown()).toBe(false);
 });
@@ -175,7 +107,7 @@ test("a recorded verb outranks an auto-show still standing", () => {
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
   );
   // The entry says hidden and the cell's record says shown; the cell's own record is the user's last verb,
   // so the screen settles to what the entries say and the record is not restated over it.
@@ -199,14 +131,14 @@ test("an auto-show's peek ending leaves a drawn panel the entries may still sett
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
   );
   expect(panel.mode()).toBe("peek");
   expect(panel.recorded()).toBe(false);
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: false }),
   );
   expect(panel.mode()).toBe("hidden");
 });
@@ -223,11 +155,30 @@ test("the focus key's claim outranks the entries exactly as the auto-show's does
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
   );
   // The boundary was handed the branch and still left the frame standing: an open the user pulled over their
   // own transcript is not settled away by the hide they wrote before it.
   expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual([true, false, "open"]);
+});
+
+test("the focus key's claim outranks the entries exactly as the auto-show's does", () => {
+  // The gate's second half in the coordinate the cell speaks: `autoShowPending()` is how it reports a screen
+  // the entries do not account for, and the focus key earns one the way an `action` pin does — through
+  // `autoOpen`, which appends nothing. Narrowing the gate back to the ledger's own claim must turn this red.
+  const panel = createPanelMode(DEFAULT_CONFIG);
+  panel.settle(false); // the user's own hide, which the entry below repeats
+  panel.autoOpen("focus"); // …and the focus key put the frame back, recording nothing
+  const before = [panel.shown(), panel.recorded(), panel.mode()];
+  expect(before).toEqual([true, false, "open"]);
+
+  rebuildSession(
+    contextWith([hideEntry]),
+    rebuildCells([hideEntry], panel, { drawn: true, unseen: false, autoShow: true }),
+  );
+  // Handed the branch and still standing: an open the user pulled over their own transcript is not settled
+  // away by the hide they wrote before it.
+  expect([panel.shown(), panel.recorded(), panel.mode()]).toEqual(before);
 });
 
 test("every rebuild ends with the keyboard, whoever the screen says owns it", () => {
@@ -243,7 +194,7 @@ test("every rebuild ends with the keyboard, whoever the screen says owns it", ()
   // handed back.
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, {
+    rebuildCells([hideEntry], panel, {
       drawn: false,
       unseen: true,
       released,
@@ -252,7 +203,7 @@ test("every rebuild ends with the keyboard, whoever the screen says owns it", ()
   expect(released).toEqual(["release"]);
   // A rebuild with nothing to reconcile at all — no context — asks for nothing, because there is no session
   // whose surface could be holding anything.
-  rebuildSession(undefined, cells([], panel, { drawn: false, unseen: false, released }));
+  rebuildSession(undefined, rebuildCells([], panel, { drawn: false, unseen: false, released }));
   expect(released).toEqual(["release"]);
 });
 
@@ -268,7 +219,7 @@ test("a commit whose pin the branch has moved on from is not held, and does not 
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, { drawn: false, unseen: true, holds: [published] }),
+    rebuildCells([hideEntry], panel, { drawn: false, unseen: true, holds: [published] }),
   );
   expect(panel.mode()).toBe(before);
 });
@@ -282,7 +233,7 @@ test("a commit the branch holds at the same instant is held, and its pins stay p
 
   rebuildSession(
     contextWith([hideEntry]),
-    cells([hideEntry], panel, {
+    rebuildCells([hideEntry], panel, {
       drawn: false,
       unseen: true,
       holds: [held],
@@ -297,7 +248,7 @@ test("a rebuild with no context changes nothing", () => {
   const panel = createPanelMode(DEFAULT_CONFIG);
   const published: Rebuilt[] = [];
   const before = panel.mode();
-  rebuildSession(undefined, cells([], panel, { drawn: true, unseen: false, published }));
+  rebuildSession(undefined, rebuildCells([], panel, { drawn: true, unseen: false, published }));
   expect(panel.mode()).toBe(before);
   // …and it did not read a branch it was not given, nor publish a state it did not build.
   expect(published).toEqual([]);
