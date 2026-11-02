@@ -9,6 +9,12 @@
  * released nothing still read `true` through it. The handle below starts released, the way an overlay opened
  * `nonCapturing` is, which is what lets a test tell `unfocus()` having run from its never having been called.
  *
+ * The `visible` it is built with is what makes it honest: pi-tui's handle `focus()` returns without taking
+ * focus from an overlay its own `visible()` callback answers false for, so a handle which recorded the
+ * *asking* reported a keyboard pi had thrown away — the one state the focus bugs left behind. With `visible`
+ * supplied the handle grants what pi-tui would grant and revokes what it would refuse, so `held()` answers
+ * "pi would route a keystroke here" rather than "someone asked".
+ *
  * The accessor: the overlay's component changes whenever a panel goes out of sight and back — a hide, a
  * focus-key open, a settle — so a test that cached the component across one of those asserts on a dead one.
  */
@@ -19,14 +25,16 @@ import { panelComponent } from "./panel-lifecycle-fixture.ts";
 import type { Booted } from "./panel-lifecycle-fixture.ts";
 
 /**
- * A pi-tui overlay handle the test holds: focus is a cell, and the two verbs move it.
+ * A pi-tui overlay handle the test holds: focus is a cell, the two verbs move it, and `focus()` honours the
+ * visibility question pi-tui asks before it grants one. Without `visible` the handle grants every ask, which
+ * is the older, unconditional shape the pre-existing keyboard cases were written against.
  */
-export function panelHandle() {
+export function panelHandle(visible?: () => boolean) {
   let held = false;
   return {
     handle: {
       focus: () => {
-        held = true;
+        if (!visible || visible()) held = true;
       },
       unfocus: () => {
         held = false;
@@ -50,10 +58,30 @@ export function onScreen(booted: Booted): PanelComponent {
   return c;
 }
 
-/** The component on screen now, and a handle this file holds rather than the recorder's. */
-export function withHandle(booted: Booted): Booted & { c: PanelComponent; held: () => boolean } {
+/**
+ * The overlay's own `visible()` — pi-tui's question, asked of the callback this extension installed.
+ *
+ * pi-tui consults it before it honours a `handle.focus()` and before it composites a frame, so reading the
+ * installed callback is how a test asks what pi would have answered rather than what the extension believes.
+ * Throws rather than answering `false`: an overlay opened without one is a fixture that lost the thing it was
+ * meant to read, not a panel pi would refuse to draw.
+ */
+export function overlayVisible(booted: Booted, columns = 120): boolean {
+  const options = booted.ctx.recorder.customCalls.at(-1)?.options?.overlayOptions;
+  const visible = typeof options === "function" ? undefined : options?.visible;
+  if (!visible) throw new Error("the panel's overlay was opened without a visible() callback");
+  return visible(columns, 24);
+}
+
+/**
+ * The component on screen now, and a handle which answers the way pi-tui's does: granted only while the
+ * overlay says it is drawn, and released by `unfocus()`.
+ */
+export function withHandle(
+  booted: Booted,
+): Booted & { c: PanelComponent; held: () => boolean; visible(): boolean } {
   const c = onScreen(booted);
-  const hh = panelHandle();
+  const hh = panelHandle(() => overlayVisible(booted));
   c.setHandle(hh.handle);
-  return { ...booted, c, held: hh.held };
+  return { ...booted, c, held: hh.held, visible: () => overlayVisible(booted) };
 }
