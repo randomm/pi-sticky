@@ -191,23 +191,27 @@ test("every rebuild ends with the keyboard, whoever the screen says owns it", ()
   // all, so the ask cannot be conditional on the settle having run.
   const panel = createPanelMode(DEFAULT_CONFIG);
   panel.autoOpen("focus");
-  const released: string[] = [];
 
   // An unappended commit: the entries say nothing, the panel is settled by nobody, and the keyboard is still
-  // handed back.
+  // handed back — exactly once for this call.
+  const heldBack: string[] = [];
   rebuildSession(
     contextWith([hideEntry]),
     rebuildCells([hideEntry], panel, {
       drawn: false,
       unseen: true,
-      released,
+      released: heldBack,
     }),
   );
-  expect(released).toEqual(["release"]);
+  expect(heldBack).toEqual(["release"]);
   // A rebuild with nothing to reconcile at all — no context — asks for nothing, because there is no session
-  // whose surface could be holding anything.
-  rebuildSession(undefined, rebuildCells([], panel, { drawn: false, unseen: false, released }));
-  expect(released).toEqual(["release"]);
+  // whose surface could be holding anything. Its own array: a shared one would pass on the release above.
+  const noContext: string[] = [];
+  rebuildSession(
+    undefined,
+    rebuildCells([], panel, { drawn: false, unseen: false, released: noContext }),
+  );
+  expect(noContext).toEqual([]);
 });
 
 test("a commit whose pin the branch has moved on from is not held, and does not settle the panel", () => {
