@@ -201,23 +201,26 @@ export class PanelOwner {
   }
 
   /**
-   * Take the keyboard back from a panel this owner is not drawing — the one place that does.
+   * Take the keyboard back from a panel this owner is not drawing — the one place that does, since the owner
+   * installed the overlay and is the only reader of its component and of what its frame answers for
+   * `visible()`.
    *
-   * Both halves belong to the owner for the reason `isAnySurfaceVisible()` does: it installed the overlay, so
-   * it holds the component and is the only reader of what that overlay's frame answers for `visible()`. The
-   * guard is deliberately *conjunctive* — a component still believing it holds the keyboard over a frame this
-   * owner is not drawing is the whole of the state, so either half on its own would tear a released panel
-   * down or leave a drawn one without its keys. `isVisible()` is that predicate and no stand-in for it: the
-   * mode cell alone answers "shown" for a view with nothing left to draw and for a terminal too narrow for a
-   * frame, and the pin count alone answers "has pins" for a hidden panel the rail is drawing — each would
-   * unfocus a panel the user is looking at, or leave the stranded one standing. `unfocus()` is the whole
-   * ending: it moves the flag, releases the handle and reports through `onUnfocus`, which is what settles the
-   * rail — so the release asks for nothing else.
+   * pi stops routing keys to an overlay once its `visible()` answers false, so the release is asked when the
+   * component still holds the flag over a frame this owner is not drawing. It runs at the end of every
+   * rebuild.
    */
   releaseKeys(): void {
     const component = this.#record?.component;
     if (!component?.isFocused() || this.isVisible()) return;
-    component.unfocus();
+    try {
+      component.unfocus();
+    } catch {
+      // Contained the way `hidePanel` (`panel-user-verbs.ts`) contains the same ending: the flag is the part
+      // this extension owns and the part a throw must not survive, and a notice belongs to the host that
+      // just threw. No report — the rebuild has no ui to report to and the boundary's redraw is what the
+      // user needs.
+      component.setFocused(false);
+    }
   }
 
   /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */

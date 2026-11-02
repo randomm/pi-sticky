@@ -57,10 +57,7 @@ export function createRebuildCells(cells: UserCommitCells): RebuildCells {
     ...cells.commits,
     panel: cells.panel,
     surfacesDrawn: cells.surfacesDrawn,
-    // The release belongs to the owner that installed the overlay: it is the only reader of the component pi
-    // has and of what that overlay's frame answers for `visible()`. Forwarded whole, as the ledger's members
-    // are above. No owner means nothing drawn and nothing to release, which is the answer for a session that
-    // ended as much as for a panel that is not open.
+    // Forwarded whole to the owner that installed the overlay, as the ledger's members are above.
     releaseKeys: () => cells.owner()?.releaseKeys(),
     publish: cells.publish,
   };

@@ -122,12 +122,7 @@ export function rebuildSession(ctx: HostContext | undefined, cells: RebuildCells
     }
     cells.sighted();
   }
-  // The keyboard follows the screen, and this is the last word on both. pi routes keys to an overlay only
-  // while its `visible()` answers true, and it releases focus on its own when a frame takes the overlay away
-  // — but the focus flag the component keeps and the handle it was handed are this extension's, so a boundary
-  // that settles the panel out from under a focused component leaves it answering keys pi is not routing: the
-  // editor deaf, the panel drawn by nobody, and `Esc` the only way out. Nothing else in the extension can
-  // reach that state, so nothing else may undo it: this runs after every settle above, and only the owner —
-  // which is who installed the overlay and who reads its `visible()` — is asked either question.
+  // The keyboard follows the screen whatever the settle above decided, so it is asked outside that `if`: a
+  // boundary that declined to settle can still leave the flag held over a frame pi will not composite.
   cells.releaseKeys();
 }
