@@ -23,7 +23,7 @@ export function branchPin(id: number): ViewPin {
   };
 }
 
-/** What `landed` below collects; one array per file is enough — each case asserts on its own run. */
+/** What `landed` below collects: each case asserts on its own run. */
 export const landed: number[] = [];
 
 /** The entries of a session whose last panel verb was `shown`. */
@@ -70,7 +70,7 @@ export function rebuildCells(
     autoShowPending: () => opts.autoShow ?? false,
     sighted: () => {},
     // Recorded rather than ignored: which boundary releases a stranded keyboard is the point of one case
-    // below, and a stub that always released would answer it as well as one that never did.
+    // below. Each case passes its own array, so a release from one call cannot answer for another.
     releaseKeys: () => opts.released?.push("release"),
     publish: () => {},
   };
