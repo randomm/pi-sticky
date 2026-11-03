@@ -110,15 +110,58 @@ interface SpawnOutcome {
 }
 
 /**
- * How long `fileSet` waits for `npm` before calling the run dead, in milliseconds.
+ * How long a real pack run may take before `fileSet` calls it dead.
  *
- * `--dry-run` builds a tarball in memory and writes nothing, so a healthy run on this tree costs under half a
- * second — the working-tree control asserts exactly that, so a bound above what it measures is the bound this
- * suite actually pays. The bound is not a budget the healthy path needs: it is what turns a registry that has
- * stopped answering into a refusal rather than a `bun test` that never finishes. The controls read this
- * constant rather than re-typing it, so the bound asserted is the bound passed.
+ * `--dry-run` builds a tarball in memory and writes nothing, so a healthy run on this tree costs under a
+ * second — but a loaded shared CI runner spends over one in `npm` alone, and a bound near that reports a slow
+ * pack as a timeout. It is not a budget the healthy path needs: it is what turns a registry that has stopped
+ * answering into a refusal rather than a `bun test` that never finishes. The working-tree control asserts the
+ * healthy run still finishes well inside it, so a bound nobody has seen work cannot survive here.
  */
-export const PACK_TIMEOUT_MS = 2_000;
+export const PACK_RELEASE_TIMEOUT_MS = 10_000;
+
+/**
+ * Run `body` with the pack bound shortened, for the one control that needs it.
+ *
+ * Only `fileSet` reads the bound, so a control that drives a fault and restores the value in a `finally`
+ * cannot leak a shortened bound into another test — and the healthy-path control still measures against
+ * `PACK_RELEASE_TIMEOUT_MS`, the bound a release actually pays.
+ */
+export function withPackTimeout(bound: number, body: () => void): void {
+  currentTimeout = bound;
+  try {
+    body();
+  } finally {
+    currentTimeout = PACK_RELEASE_TIMEOUT_MS;
+  }
+}
+
+/** How a pack run is named in every refusal it earns, so one string says which command failed. */
+const PACK_CAUSE = "npm pack --dry-run --json";
+
+/**
+ * How the reader refuses a run that outlived its bound, naming the bound the release pays.
+ *
+ * The message always names `PACK_RELEASE_TIMEOUT_MS` — the fault the guard exists for is a registry that
+ * stopped answering a *release*, and a refusal that tracked a control's shortened bound would report the
+ * knob rather than the timeout. The bound a run was actually given is not part of the message; the
+ * stalled-registry control asserts the wording this builds and the seam control asserts the bound passed.
+ */
+export function timeoutRefusal(): string {
+  return `timed out after ${String(PACK_RELEASE_TIMEOUT_MS)}ms without producing a payload`;
+}
+
+/**
+ * The bound the stalled-registry control pays, far below `PACK_RELEASE_TIMEOUT_MS`.
+ *
+ * The timeout branch cannot be driven with a payload, only with a run that never exits, and the only knob
+ * that ends such a run is its bound. Giving it one of its own costs a quarter-second for that control rather
+ * than the full release timeout on every suite run.
+ */
+export const PACK_STALL_TIMEOUT_MS = 250;
+
+/** The bound the current pack run waits on; `PACK_RELEASE_TIMEOUT_MS` unless `withPackTimeout` shortened it. */
+let currentTimeout = PACK_RELEASE_TIMEOUT_MS;
 
 /**
  * The environment a pack run is given: `PATH` and nothing else.
@@ -156,13 +199,13 @@ export const packSpawn: { run: typeof Bun.spawnSync } = { run: Bun.spawnSync };
  * into `-1` is how a dead tool becomes an odd exit status and an empty set becomes a passing answer.
  */
 export function fileSet(): string[] {
-  const cause = "npm pack --dry-run --json";
+  const cause = PACK_CAUSE;
   let spawn: ReturnType<typeof Bun.spawnSync<"pipe", "pipe">>;
   try {
     spawn = packSpawn.run(["npm", "pack", "--dry-run", "--json"], {
       cwd: ROOT,
       env: packEnv(),
-      timeout: PACK_TIMEOUT_MS,
+      timeout: currentTimeout,
     });
   } catch (error) {
     throw new Error(
@@ -174,9 +217,7 @@ export function fileSet(): string[] {
   // stopped a registry that had stopped answering. Reading it as a kill would blame a signal nobody chose.
   const outcome = spawn as unknown as SpawnOutcome;
   if (outcome.exitedDueToTimeout === true) {
-    throw new Error(
-      `${cause} timed out after ${String(PACK_TIMEOUT_MS)}ms without producing a payload`,
-    );
+    throw new Error(`${cause} ${timeoutRefusal()}`);
   }
   // The cast is the runtime against the bun-types declaration, which types `exitCode` as a plain number and
   // names the kill signal on the async subprocess only; bun reports `signalCode` on a killed sync one.

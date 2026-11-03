@@ -10,21 +10,39 @@
  *
  * Nothing here states what the release *should* be; the expected values are in the tests.
  */
-import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { PACK_TIMEOUT_MS, fileSet, packSpawn, packedTops } from "./release-automation-pack.ts";
+import {
+  PACK_RELEASE_TIMEOUT_MS,
+  PACK_STALL_TIMEOUT_MS,
+  fileSet,
+  packSpawn,
+  packedTops,
+  timeoutRefusal,
+  withPackTimeout,
+} from "./release-automation-pack.ts";
+
+/** The stand-in `PATH` directories this file creates, each removed in `afterEach`. */
+const SCRATCH: string[] = [];
 
 /** A `PATH` holding nothing but `npm`, so a spawn resolves that one program and no other. */
 function onlyNpmOnPath(): string {
-  return mkdtempSync(join(tmpdir(), "pi-sticky-pack-path-"));
+  const path = mkdtempSync(join(tmpdir(), "pi-sticky-pack-path-"));
+  SCRATCH.push(path);
+  return path;
 }
 
 /** A quoted string for stdout bytes the shell would otherwise interpret. */
 function quoted(text: string): string {
   return JSON.stringify(text);
+}
+
+/** A literal string as a regex, for a refusal read straight out of the reader's own message. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** The options a pack spawn is allowed to carry, as the seam sees them. */
@@ -35,7 +53,7 @@ interface SpawnOptions {
 }
 
 /** The states of a pack run that no payload can express, each named by the refusal it must produce. */
-type PackCase = { body: string; refusal: RegExp; why: string };
+type PackCase = { body: string; refusal: RegExp; why: string; bound?: number };
 
 /**
  * The cases the bound must tell apart, read through `fileSet` with a stand-in `npm` on a one-directory `PATH`.
@@ -72,9 +90,13 @@ const PACK_CASES: PackCase[] = [
   {
     // The stand-in cannot shell out to `sleep` — its PATH holds only the stand-in itself — so it loops on a
     // builtin instead, which is the stalled-registry state: no output, no exit, and the bound ends the run.
+    // It waits on `PACK_STALL_TIMEOUT_MS` rather than the release bound, so proving the timeout branch bites
+    // costs a quarter-second and not the whole ten; the control asserts both the bound the run was given and
+    // the refusal's wording, which always names the bound a release pays.
     body: "i=0; while [ $i -lt 100000000 ]; do i=$((i+1)); done",
-    refusal: new RegExp(`timed out after ${String(PACK_TIMEOUT_MS)}ms without producing a payload`),
+    refusal: new RegExp(escapeRegExp(timeoutRefusal())),
     why: "a run that outlived the bound is refused as a timeout, not as a kill",
+    bound: PACK_STALL_TIMEOUT_MS,
   },
 ];
 
@@ -82,6 +104,9 @@ const PACK_CASES: PackCase[] = [
 interface PackFault {
   message: string;
 }
+
+/** What `packWith` answers: the set read, the reason it refused, or (for a bounded run) both facts of the run. */
+type PackOutcome = PackFault | string[] | { spawnTimeout: number | undefined; fault?: string };
 
 /**
  * Write a stand-in `npm` whose script is `body`, run the pack command through the *production* spawn, and
@@ -93,29 +118,66 @@ interface PackFault {
  * `PATH` is swapped for the duration of the call and restored before it returns, so `fileSet` — which reads it
  * when it spawns — sees the stand-in and no later test sees a borrowed `PATH`.
  */
-function packWith(body: string): PackFault | string[] {
+function packWith(body: string, bound?: number): PackOutcome {
   const path = onlyNpmOnPath();
   const npm = join(path, "npm");
-  // The `\n` is a real newline for the stand-in's shell: the caller's body arrives as a single-quoted POSIX
-  // string, and an escaped one there is two characters the shell would try to run.
+  // The stand-in is a POSIX shell script and its first line has to be the interpreter: the caller's body
+  // arrives as a single-quoted string, so `\n` here is written as a real newline rather than escaped.
   writeFileSync(npm, `#!/bin/sh\n${body}\n`);
   chmodSync(npm, 0o755);
   const saved = process.env.PATH;
   process.env.PATH = path;
+  let outcome: PackOutcome = [];
+  // A `bound` shortens the wait for one fault-driven run only, and the seam recorder captures the bound the
+  // spawn was actually handed — installed inside the callback, since that is when the call it records runs.
+  // `withPackTimeout` puts the release bound back before this returns, so no later test borrows it.
+  let spawnTimeout: number | undefined;
+  let stalled: { spawnTimeout: number | undefined; fault?: string } | undefined;
+  const run = packSpawn.run;
+  const record = () => {
+    packSpawn.run = ((command: string[], options?: SpawnOptions) => {
+      spawnTimeout = options?.timeout;
+      return run(command, options);
+    }) as typeof Bun.spawnSync;
+  };
   try {
-    return fileSet();
+    withPackTimeout(bound ?? PACK_RELEASE_TIMEOUT_MS, () => {
+      if (bound !== undefined) record();
+      outcome = fileSet();
+    });
   } catch (error) {
-    return { message: error instanceof Error ? error.message : String(error) };
+    outcome = { message: error instanceof Error ? error.message : String(error) };
   } finally {
+    packSpawn.run = run;
     process.env.PATH = saved;
+    if (bound !== undefined) {
+      stalled = {
+        spawnTimeout,
+        fault: Array.isArray(outcome) ? undefined : (outcome as PackFault).message,
+      };
+    }
   }
+  return stalled ?? outcome;
 }
 
+/** How a pack run is named at the front of every refusal the reader makes. */
+const PACK_CAUSE = "npm pack --dry-run --json";
+
 /** Assert the pack run refused, and that its refusal said `pattern`. */
-function expectPackRefusal(body: string, pattern: RegExp, why: string): void {
-  const outcome = packWith(body);
-  expect(Array.isArray(outcome), `${why}: answered a set instead of refusing`).toBe(false);
-  expect((outcome as PackFault).message, why).toMatch(pattern);
+function expectPackRefusal(failed: PackCase): void {
+  const outcome = packWith(failed.body, failed.bound);
+  if (failed.bound !== undefined) {
+    // The stalled case proves two things about the same run: the bound it was given, and the refusal the
+    // reader built for it — a control that only matched the message would pass with the whole ten.
+    const given = outcome as { spawnTimeout?: number; fault?: string };
+    expect(
+      { spawnTimeout: given.spawnTimeout, fault: given.fault },
+      `${failed.why}: the run was given the stall bound and refused with the release bound in its words`,
+    ).toEqual({ spawnTimeout: failed.bound, fault: `${PACK_CAUSE} ${timeoutRefusal()}` });
+    return;
+  }
+  expect(Array.isArray(outcome), `${failed.why}: answered a set instead of refusing`).toBe(false);
+  expect((outcome as PackFault).message, failed.why).toMatch(failed.refusal);
 }
 
 test("the packed-set reader reads the working tree", () => {
@@ -133,8 +195,8 @@ test("the packed-set reader reads the working tree", () => {
     elapsed = Math.min(elapsed, performance.now() - started);
   }
   expect(
-    elapsed < PACK_TIMEOUT_MS / 2,
-    `a healthy pack ran in ${String(Math.round(elapsed))}ms, under half the ${String(PACK_TIMEOUT_MS)}ms bound`,
+    elapsed < PACK_RELEASE_TIMEOUT_MS / 2,
+    `a healthy pack ran in ${String(Math.round(elapsed))}ms, under half the ${String(PACK_RELEASE_TIMEOUT_MS)}ms bound`,
   ).toBe(true);
 });
 
@@ -143,12 +205,18 @@ test("the packed-set reader refuses a spawn that never produced a payload", () =
   // a passing "nothing extra was packed" looks like, so a run that produced no payload has to be an error.
   // Every one runs through `fileSet`, so the refusal under test is the one the assertion makes.
   for (const failed of PACK_CASES) {
-    expectPackRefusal(failed.body, failed.refusal, `the reader refuses ${failed.why}`);
+    expectPackRefusal({ ...failed, why: `the reader refuses ${failed.why}` });
   }
   expect(
     packWith(`printf %s ${quoted('[{"files":[{"path":"src/a.ts"},{"path":"skills/x/S.md"}]}]')}`),
     "while the shape npm does produce still reads",
   ).toEqual(["skills/", "src/"]);
+});
+
+afterEach(() => {
+  // Every `PATH` stand-in above is a directory in the OS temp dir; leaving them behind is what filled a CI
+  // host with hundreds of `pi-sticky-pack-path-*` entries over repeated runs.
+  for (const path of SCRATCH.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
 test("the packed-set reader tells a timeout from a kill and from a non-zero exit", () => {
@@ -157,11 +225,11 @@ test("the packed-set reader tells a timeout from a kill and from a non-zero exit
   // timeout folded into the kill branch would report SIGTERM — the signal bun sends to end the wait — as if the
   // suite had chosen to kill npm, and folded into the exit branch would report "exited null". The timeout case
   // itself lives in `PACK_CASES` above, run past the bound.
-  expectPackRefusal(
-    "kill -TERM $$",
-    /was killed by SIGTERM without exiting/,
-    "a kill of the same shape says killed, not timed out",
-  );
+  expectPackRefusal({
+    body: "kill -TERM $$",
+    refusal: /was killed by SIGTERM without exiting/,
+    why: "a kill of the same shape says killed, not timed out",
+  });
   expect(
     () => packedTops({ exitCode: null, stdout: "", stderr: "" }),
     "a kill with no signal named still says it never exited",
@@ -204,7 +272,7 @@ test("the pack spawn is given PATH alone, not the environment it runs in", () =>
   expect(Object.keys(given).sort(), "PATH and nothing else").toEqual(["PATH"]);
   expect(given.PATH, "the PATH the suite has").toBe(process.env.PATH);
   expect(seen[0]?.all?.timeout, "the bound the healthy-run control measures against").toBe(
-    PACK_TIMEOUT_MS,
+    PACK_RELEASE_TIMEOUT_MS,
   );
   expect(JSON.stringify(given), "no registry, cache or token travelled with it").not.toInclude(
     probe,
@@ -217,7 +285,9 @@ test("the packed-set reader reports a missing npm as a fault, not as an empty ta
   // command that is not on PATH, and swallowing that into `[]` is the silent pass this guards. Driven by an
   // empty PATH rather than a patched `spawnSync`, so the code under test is the spawn call itself.
   const saved = process.env.PATH;
-  process.env.PATH = mkdtempSync(join(tmpdir(), "pi-sticky-empty-path-"));
+  const empty = mkdtempSync(join(tmpdir(), "pi-sticky-empty-path-"));
+  SCRATCH.push(empty);
+  process.env.PATH = empty;
   try {
     expect(fileSet, "a missing npm throws rather than answering []").toThrow(
       /could not be started:.*npm/,

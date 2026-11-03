@@ -10,8 +10,8 @@
  * asserted to read first, so a reader that threw on everything fails here rather than passing only its
  * `toThrow` half.
  */
-import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -29,6 +29,12 @@ import {
 
 /** Where a control's stand-in doc lives: the OS temp dir, never a tracked path. */
 const SCRATCH = mkdtempSync(join(tmpdir(), "pi-sticky-release-doc-"));
+
+afterAll(() => {
+  // Every doc the controls below wrote lives here; leaving it behind is what filled a CI host with
+  // `pi-sticky-release-doc-*` directories over repeated runs.
+  rmSync(SCRATCH, { recursive: true, force: true });
+});
 
 /** Read a control's own doc, by the absolute path it was written to. */
 function readScratch(path: string): string {
