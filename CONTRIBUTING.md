@@ -58,15 +58,19 @@ PR is reviewed like a deploy, not like a merge.
 
 - **Never hand-edit `CHANGELOG.md` and never create a tag by hand.** Both are generated; a hand-written
   entry is overwritten by the next release PR and a hand-made tag desynchronises the release-please
-  manifest. Nothing is published or tagged outside a merged release PR, and the manifest seeds `0.0.0` —
-  release-please's "nothing released yet" — so the first release PR it opens is `0.1.0`. Two one-time
+  manifest. Nothing is published or tagged outside a merged release PR, and the first release is `0.1.0` — the
+  `initial-version` in `release-please-config.json`, so merging the release PR is the release and the first
+  version npm serves is that one. Two one-time
   operator steps make the automation work: add the `RELEASE_PLEASE_TOKEN` secret, and configure the npm
   trusted publisher for repo `randomm/pi-sticky`, workflow filename `release-please.yml`, environment name
   **empty**.
 - **Close a stale release PR** rather than letting it sit across later merges. A PR that has drifted from
   main carries a version bump nobody reviewed, and the next run recomputes it anyway.
 - **Breaking changes:** mark the type with `!` and add a `BREAKING CHANGE:` footer
-  (`feat(panel)!: drop the rail below 80 columns`). That is what makes release-please bump the major.
+  (`feat(panel)!: drop the rail below 80 columns`). While the project is below 1.0.0 — which
+  `bump-minor-pre-major: true` in `release-please-config.json` keeps it at — that is what makes
+  release-please bump the **minor**, not the major: a breaking change takes `0.1.0` to `0.2.0`, so it never
+  publishes `1.0.0` by accident.
 - **No issue numbers in scopes** — `fix(#12): x` is rejected by `pr-title-check.yml`, because squash-merge
   makes the title the commit subject and a scope that renders as a markdown link is not a parseable
   conventional-commit header. Link the issue with `Closes #N` in the PR body instead.
