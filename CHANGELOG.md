@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/randomm/pi-sticky/compare/v0.1.0...v0.1.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **release:** stop the publish gate flaking and leaking temp dirs ([#89](https://github.com/randomm/pi-sticky/issues/89)) ([7929255](https://github.com/randomm/pi-sticky/commit/7929255f417710b5b2718bcd66e4afd31860186a))
+
 ## 0.1.0 (2026-11-03)
 
 
