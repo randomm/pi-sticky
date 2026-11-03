@@ -180,25 +180,28 @@ function expectPackRefusal(failed: PackCase): void {
   expect((outcome as PackFault).message, failed.why).toMatch(failed.refusal);
 }
 
-test("the packed-set reader reads the working tree", () => {
-  // The shipped tree has to answer at all: every refusal below is worth nothing if the reader also refuses a
-  // run that worked, and this is the call the tarball assertion in `release-automation.test.ts` makes. The
-  // second half is what makes the bound a tested value: `npm pack --dry-run` writes nothing, so the healthy run
-  // is measured against `PACK_TIMEOUT_MS` here and the bound cannot grow to a figure the suite has not seen.
-  // Best of three: one spawn of a real `npm` is what is being timed, and a machine doing other things can
-  // spend longer in it than the reader's own bound allows. Three are taken so the assertion measures the
-  // reader's floor rather than the host's moment — the bound itself stays the tested value either way.
-  let elapsed = Number.POSITIVE_INFINITY;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const started = performance.now();
-    expect(() => fileSet(), "the shipped tree packs").not.toThrow();
-    elapsed = Math.min(elapsed, performance.now() - started);
-  }
-  expect(
-    elapsed < PACK_RELEASE_TIMEOUT_MS / 2,
-    `a healthy pack ran in ${String(Math.round(elapsed))}ms, under half the ${String(PACK_RELEASE_TIMEOUT_MS)}ms bound`,
-  ).toBe(true);
-});
+test(
+  "the packed-set reader reads the working tree",
+  () => {
+    // The shipped tree has to answer at all: every refusal below is worth nothing if the reader also refuses a
+    // run that worked, as the tarball assertion in `release-automation.test.ts` makes this call. The second
+    // half makes the bound a tested value: `npm pack --dry-run` writes nothing, so the healthy run is measured
+    // against `PACK_RELEASE_TIMEOUT_MS`. Best of three: a loaded host can outlast one real `npm` spawn,
+    // so this measures the reader's floor, not the host's moment.
+    let elapsed = Number.POSITIVE_INFINITY;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const started = performance.now();
+      expect(() => fileSet(), "the shipped tree packs").not.toThrow();
+      elapsed = Math.min(elapsed, performance.now() - started);
+    }
+    expect(
+      elapsed < PACK_RELEASE_TIMEOUT_MS / 2,
+      `a healthy pack ran in ${String(Math.round(elapsed))}ms, under half the ${String(PACK_RELEASE_TIMEOUT_MS)}ms bound`,
+    ).toBe(true);
+  },
+  // Bun's 5s default would fire before the three spawns can each wait out their bound.
+  3 * PACK_RELEASE_TIMEOUT_MS + 5_000,
+);
 
 test("the packed-set reader refuses a spawn that never produced a payload", () => {
   // Each case is how a dead reader would otherwise reach the comparison as data: an empty set is exactly what
@@ -237,11 +240,10 @@ test("the packed-set reader tells a timeout from a kill and from a non-zero exit
 });
 
 test("the pack spawn is given PATH alone, not the environment it runs in", () => {
-  // What the isolation buys. The suite's own environment carries registry, proxy and cache variables a
-  // developer's shell or CI sets, and `npm` reads them: pointed at a different registry it reports a different
-  // file set while still exiting 0, which is the one answer this guard must not accept. The environment is not
-  // visible in a spawn's result, so the control replaces the seam `fileSet` spawns through, records what it was
-  // handed and answers with a payload of its own — the assertion is on the arguments the real call made.
+  // What the isolation buys: the suite's environment carries registry, proxy and cache variables a developer's
+  // shell or CI sets and `npm` reads them, so pointed at a different registry it reports a different file set
+  // while still exiting 0 — the one answer this guard must not accept. The environment is not visible in a
+  // spawn's result, so the control replaces the seam `fileSet` spawns through and records what it was handed.
   const run = packSpawn.run;
   const seen: { env?: Record<string, string>; timeout?: unknown; all?: SpawnOptions }[] = [];
   const probe = "the-suite-registry-leaked";
