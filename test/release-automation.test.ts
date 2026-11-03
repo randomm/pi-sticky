@@ -31,6 +31,7 @@ import {
   workflowTriggers,
 } from "./release-automation-contracts.ts";
 import { declaredTops, fileSet } from "./release-automation-pack.ts";
+import { FIRST_RELEASE } from "./release-automation-version.ts";
 import {
   defaultPermissions,
   hasEnvironmentKey,
@@ -195,9 +196,21 @@ test("the release-please config is the root package, tagged without a component"
   expect(config, "the version is seeded by the manifest, not the config").not.toHaveProperty(
     "release-as",
   );
-  expect(config, "the version is seeded by the manifest, not the config").not.toHaveProperty(
-    "initial-version",
+});
+
+test("the release-please config starts the first release at 0.1.0 and keeps it pre-1.0", () => {
+  // Without these two keys release-please published 1.0.0 as its first release: with no tag behind the
+  // manifest's `0.0.0` seed it has no latest release, so `initialReleaseVersion()` answers its own default of
+  // `1.0.0` rather than the first minor above the seed. `initial-version` replaces that default, and
+  // `bump-minor-pre-major` is what keeps every later release pre-1.0 — a breaking change below 1.0.0 bumps
+  // minor instead of jumping to the major that would publish 1.0.0. `release-as` would force this one version
+  // and then have to be removed by hand, so the config carries neither.
+  const config = JSON.parse(readRepoFile("release-please-config.json")) as Record<string, unknown>;
+  expect(config["initial-version"], "the first release, not release-please's 1.0.0 default").toBe(
+    FIRST_RELEASE,
   );
+  expect(config["bump-minor-pre-major"], "breaking changes stay below 1.0.0").toBe(true);
+  expect(config, "no hand-removed override").not.toHaveProperty("release-as");
 });
 
 test("the changelog shows five types and hides the five plumbing ones", () => {
