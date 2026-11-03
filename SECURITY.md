@@ -29,6 +29,12 @@ The threat model is a hostile model talking to a human's terminal.
   only prefills `Re #<id>: ` in the editor). Any path where pin text triggers behaviour without the
   user is a vulnerability. Note that `src/` does read user input and call pi APIs — the claim is
   that it never runs what a pin says, not that it does nothing.
+- **A shipped skill sending the agent to an external script.** The skills under `skills/` are the policy
+  layer and run nothing themselves, but `sticky-noni` instructs the agent to run noni's census script, and
+  a skill is loaded content the agent follows. A shipped `SKILL.md` that tells the agent to execute
+  something, or to treat a file it reads as instructions rather than as content to quote, is a vulnerability
+  in scope here: the skill's own authority is the only thing that makes the run legitimate, so a widened
+  claim in one is the attack. See the untrusted-text rule in `skills/sticky-noni/SKILL.md`.
 
 **Out of scope (open a regular issue):**
 

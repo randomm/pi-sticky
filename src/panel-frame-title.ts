@@ -15,9 +15,10 @@
  * pins and it may mix levels freely — a `Now` group holding one warning and two facts contributes `1
  * warning` and `2 more` to this title, not a `3 Now` segment — so the numbers are summed over the view
  * rather than read one segment off each section. They are still summed over the *sections* the frame was
- * laid out on (`panelLayoutSections` hands its `order` back) rather than over a second pass over the pins:
- * every pin of the view is a member of some section, so the totals are the same answer read from the one
- * grouping the headings under this title came from.
+ * laid out on (read off `PanelContent.sections`, which `openFrame` fills from the one `PanelSections` the
+ * frame is built from — see `panel-lines.ts`) rather than over a second pass over the pins: every pin of the
+ * view is a member of some section, so the totals are the same answer read from the one grouping the headings
+ * under this title came from.
  */
 import type { PanelSection } from "./panel-sections.ts";
 import { LEVEL_KINDS } from "./panel-sections.ts";

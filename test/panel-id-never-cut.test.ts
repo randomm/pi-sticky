@@ -4,8 +4,8 @@
  * At 33 columns — what the overlay resolves to in a 120-column terminal, and the width the real session
  * this came out of drew at — a pin's first row read `#100 …`: the text kept a column and the id lost
  * one. The cause was two callers of one geometry disagreeing. `panelLayoutSections` sized the text column at
- * `frameWidth - 4 - 10` (`META_RESERVE`, a flat guess) while `buildPanelLines` cut each finished row at
- * `width - 4`; on a pin whose text needed every column, the tail sat in the columns the cut took.
+ * `frameWidth - 4 - 10`, a flat reserve guessed at the tail's width, while `buildPanelLines` cut each finished
+ * row at `width - 4`; on a pin whose text needed every column, the tail sat in the columns the cut took.
  *
  * The fix is one arithmetic, in `panel-frame-geometry.ts`, sized from the *actual* tail (`#999 12:00`)
  * rather than a flat reserve, and floored at one column of text so a row that cannot show its text still

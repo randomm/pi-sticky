@@ -18,7 +18,7 @@
  */
 import { expect, test } from "bun:test";
 
-/** The modules whose import order used to matter, each reachable on its own as the first thing loaded. */
+/** The modules this guard loads cold — one wrong edge among them is the cycle the file exists to refuse. */
 const COLD_MODULES = [
   "src/panel-rows.ts",
   "src/panel-frame-layout.ts",
@@ -38,7 +38,7 @@ const COLD_MODULES = [
   "src/render.ts",
   "src/rail-lines.ts",
   // The frame path evaluates it: `panel-frame-layout.ts` builds each heading through it, and it reaches
-  // `panel-rows.ts` for the level glyph — so it is on the graph whose import order used to matter.
+  // `panel-rows.ts` for the level glyph — so it is on the graph this guard loads cold.
   "src/panel-section-headings.ts",
   // The wrap. It reaches `panel-frame.ts` for the marker cell's width and `panel-tail.ts` for the tail's
   // reserve, both of which are read at module scope by the row table's callers; a cold load is the only way to
@@ -64,6 +64,9 @@ const COLD_MODULES = [
   // The frame's row table: the walk that stamps an owner on every row, which reaches the row table, the
   // headings and the sections, and is reached by the layout. Newest edge of the #63 split.
   "src/panel-frame-table.ts",
+  // The one ranking: the comparison the listings sort by, the guard the sectioning reads, and the level rank
+  // the section ordering compares. Reached by `render.ts` and `panel-sections.ts` and reaching neither back.
+  "src/pin-order.ts",
 ];
 
 /**
@@ -143,6 +146,11 @@ function COLD_PROBE(modulePath: string, target: string): string {
   }
   if (modulePath.endsWith("panel-frame-table.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.panelOwnedRows!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("pin-order.ts")) {
+    // All three bindings: the rank table, the comparison and the guard. A cold load that hands back the sort
+    // and not the guard is the drift this module exists to make impossible.
+    return `import("${target}").then((m)=>{if(typeof m.comparePins!=="function"||typeof m.alreadyDrawn!=="function"||typeof m.levelRank!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   if (modulePath.endsWith("panel-options-row.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.fillOptionRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;

@@ -16,11 +16,12 @@ import {
   widestMetaColumns,
 } from "../src/panel-frame-geometry.ts";
 import { HINT } from "../src/panel-lines.ts";
-import { GUTTER_COLUMNS, panelAllRows, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
+import { GUTTER_COLUMNS, panelContentRows, panelPinRows } from "../src/panel-rows.ts";
 import { panelSections } from "../src/panel-sections.ts";
 import type { PanelStyle as RenderPanelStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { LATER, pin } from "./fixtures.ts";
+import { panelAllRows } from "./panel-all-rows.ts";
 import { built, framed } from "./panel-frame.ts";
 import { infoView, levelPin } from "./panel-sections-fixture.ts";
 /** The selection marker, spelled from its code point: a literal of it in source is rewritten on the way in. */

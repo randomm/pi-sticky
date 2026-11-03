@@ -66,14 +66,13 @@ import type { PanelStyle } from "./render.ts";
  * The half of the component's state a frame is drawn from, and the one way it may be written.
  *
  * `PanelComponentState` is the only implementation the extension has, and this names it rather than two
- * bare getters: the bar and the flag are written only through setters that drop the memorised frame with
- * the write, and a look-alike carrying just the values would let a frame be keyed on a bar no setter can
- * move — the stale bar `panel-component-state.ts` exists to make unrepresentable.
+ * bare getters: the bar is written only through a setter that drops the memorised frame with the write, and a
+ * look-alike carrying just the values would let a frame be keyed on a bar no setter can move — the stale bar
+ * `panel-component-state.ts` exists to make unrepresentable. `setFocused` is left out because `drawFrame`
+ * reads the flag and never moves it: the focus belongs to the interaction verbs (`panel-component-focus.ts`),
+ * not to a frame request.
  */
-export type PanelFrameState = Pick<
-  PanelComponentState,
-  "selection" | "focused" | "setSelection" | "setFocused"
->;
+export type PanelFrameState = Pick<PanelComponentState, "selection" | "focused" | "setSelection">;
 
 /** What one frame is drawn from: the sectioning, the width asked for, the colours and the terminal height. */
 export interface PanelDraw {

@@ -2,7 +2,8 @@
  * The panel's working list: the view's pins grouped into sections, and flattened back out into the one
  * order the panel draws, scrolls, selects and acts on.
  *
- * Ranking alone was not enough. `orderPins` puts every warning above every action above every fact, so
+ * Ranking alone was not enough. `orderPins` (`render.ts`, over `comparePins` in `pin-order.ts`) puts every
+ * warning above every action above every fact, so
  * in a twelve-pin session the one pin the user came to read still sat under eleven facts, with nothing on
  * screen to say which was which (the regression that motivated pins v2). Sections give the panel a second
  * grouping *after* the ranking, and the flattened list is the module's other half, and the more
@@ -28,7 +29,7 @@
  * and prints no heading (`panel-frame-layout.ts` skips an empty one). Nothing here infers a section from pin
  * text: text is untrusted.
  */
-import { orderPins } from "./render.ts";
+import { alreadyDrawn, comparePins, levelRank } from "./pin-order.ts";
 import type { PinLevel, ViewPin } from "./types.ts";
 
 /** What marks a bucket key as a group's rather than a level's — the internal spelling, never a field. */
@@ -69,53 +70,6 @@ export interface PanelSections {
   flat: readonly ViewPin[];
 }
 
-/** Where a level sits in the ordering: warning, then action, then info. Derived, so the order lives once. */
-const LEVEL_ORDER: Record<PinLevel, number> = {
-  warning: LEVEL_KINDS.indexOf("warning"),
-  action: LEVEL_KINDS.indexOf("action"),
-  info: LEVEL_KINDS.indexOf("info"),
-};
-
-/**
- * Whether `pins` is already in the order the panel draws — the order `panelSections` itself produces.
- *
- * The check reads one adjacent pair at a time, and it must read *every key* `orderPins` sorts by: a level
- * must never step *backwards* toward `info`, so the view still splits into the same sections, and inside one
- * run of equal levels an unreplied pin must never sit after a replied one, nor a lower id before a higher
- * one — those are the two comparisons `orderPins` (`render.ts`) makes below its level rank, so a pair that
- * breaks either is a pair that sort would move. Checking the levels and the ids but not the reply stamp was
- * the bug: `viewFrom` (`state.ts`) stamps `repliedAt` onto an array still in creation order, so a view whose
- * *newer* pin was answered first reads `[5 replied, 4 unreplied]` — descending ids, and a guard that looked
- * only at the ids waved it through. The panel then drew the answered pin above the one awaiting a decision
- * while the rail, `/pins` and the model listing showed the other way round, and `d`/`Enter` — which index
- * this very array — acted on the pin the bar was not on.
- *
- * The group a pin carries is deliberately *not* a key here: two adjacent pins of one level that differ only
- * in their group are in the order this function will leave them, and the grouping below reads the group
- * rather than re-deriving it.
- *
- * `PanelComponent` hands the layout the `flat` it memorised on every frame, and a function that sorted that
- * list again would re-rank *within* each level and quietly undo the section ordering the same call asked for;
- * sections are not a relabelling of the ranking, so the second ranking must be detected rather than trusted
- * away. A view in insertion order passes this only when it already reads in drawn order, and then sorting it
- * changes nothing — so the guard never accepts an order it has not just checked, and costs nothing it does
- * not already guarantee.
- */
-function alreadyDrawn(pins: readonly ViewPin[]): boolean {
-  for (let i = 1; i < pins.length; i++) {
-    const previous = pins[i - 1] as ViewPin;
-    const current = pins[i] as ViewPin;
-    if (LEVEL_ORDER[previous.level] > LEVEL_ORDER[current.level]) return false;
-    if (previous.level !== current.level) continue;
-    // The same key `orderPins` compares: unreplied before replied, and only within one reply state the ids.
-    const previousReplied = previous.repliedAt === undefined ? 0 : 1;
-    const currentReplied = current.repliedAt === undefined ? 0 : 1;
-    if (previousReplied > currentReplied) return false;
-    if (previousReplied === currentReplied && previous.id < current.id) return false;
-  }
-  return true;
-}
-
 /**
  * The sections of `pins`, in the order the panel draws them, with the flattened list beside them.
  *
@@ -136,7 +90,7 @@ function alreadyDrawn(pins: readonly ViewPin[]): boolean {
  */
 export function panelSections(pins: readonly ViewPin[]): PanelSections {
   if (pins.length === 0) return { order: [], flat: [] };
-  const ranked = alreadyDrawn(pins) ? pins : orderPins(pins);
+  const ranked = alreadyDrawn(pins) ? pins : [...pins].sort(comparePins);
   const buckets = new Map<string, ViewPin[]>();
   for (const pin of ranked) {
     // A pin belongs to its group's section *or* its level's section, never both. A group is the model's
@@ -158,7 +112,7 @@ export function panelSections(pins: readonly ViewPin[]): PanelSections {
       ? {
           kind: "group" as const,
           name: key.slice(GROUP_PREFIX.length),
-          // The level the group ranks on: its best pin's, which `orderPins` put first. Read off the pin
+          // The level the group ranks on: its best pin's, which the ranking put first. Read off the pin
           // rather than a caller's arithmetic, so the section ranks on what it actually holds.
           rank: groupRank(sectionPins),
           pins: sectionPins,
@@ -197,7 +151,7 @@ export function panelSections(pins: readonly ViewPin[]): PanelSections {
  * occur at once (one bucket per kind, and a level either has its own bucket or gets a counting section).
  */
 function compareSections(a: PanelSection, b: PanelSection): number {
-  const byLevel = LEVEL_ORDER[rankOf(a)] - LEVEL_ORDER[rankOf(b)];
+  const byLevel = levelRank(rankOf(a)) - levelRank(rankOf(b));
   if (byLevel !== 0) return byLevel;
   // A counting section has no best pin to tie on, so it takes the lowest id there can be and sits after any
   // drawn section of its rank — the ordering the paragraph above states.

@@ -1,23 +1,23 @@
 /**
- * The shared colour contract, the ranking, and the two *text* surfaces of a pin list: the model-facing
+ * The shared colour contract, and the two *text* surfaces of a pin list: the model-facing
  * listing every tool result and the compaction reminder carries, and the plain-text listing `/pins` shows.
  * Pure — this module takes no host import but pi's `Theme` type — which is why no test here needs a session,
  * a provider or a uiContext.
  *
  * The compact rail above the editor is drawn by `rail-lines.ts`, which imports the ranking, the folding and
- * the style contract from here; the panel draws its own frames (`panel-lines.ts`, `panel-peek.ts`). What
- * stays in this file is what all of them share: one ranking, one fold, one mapping from theme to colours.
+ * the style contract; the panel draws its own frames (`panel-lines.ts`, `panel-peek.ts`). What stays in this
+ * file is the theme mapping and the two listings. The ranking itself — the comparison and the fast-path guard
+ * that reads it — is `pin-order.ts`, which the panel's sectioning reads too, so the order the listings show
+ * and the order the panel draws are one rule and not two.
  */
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import { foldBreaks } from "./escape.ts";
 
+import { comparePins } from "./pin-order.ts";
 import { modelRow, pinsTextRow } from "./pin-rows-text.ts";
 
 import type { PinLevel, PinView, ViewPin } from "./types.ts";
-
-/** Rank of a level: warning first, then what the user must decide, then facts. */
-const LEVEL_RANK: Record<PinLevel, number> = { warning: 0, action: 1, info: 2 };
 
 /** How a drawn string is coloured; `plainStyle` is the identity version used in tests. */
 export interface Style {
@@ -82,17 +82,14 @@ export const plainStyle: Style = {
   dim: (s) => s,
 };
 
-/** Warning, then action, then info; within a level unreplied first, then newest first. */
+/**
+ * Warning, then action, then info; within a level unreplied first, then newest first.
+ *
+ * The comparison is `comparePins` (`pin-order.ts`) — the same one `alreadyDrawn` reads, so the order these
+ * listings show is the order the panel draws and the guard vouches for, spelled once.
+ */
 export function orderPins(pins: readonly ViewPin[]): ViewPin[] {
-  return [...pins].sort((a, b) => {
-    if (LEVEL_RANK[a.level] !== LEVEL_RANK[b.level]) {
-      return LEVEL_RANK[a.level] - LEVEL_RANK[b.level];
-    }
-    const aReplied = a.repliedAt === undefined ? 0 : 1;
-    const bReplied = b.repliedAt === undefined ? 0 : 1;
-    if (aReplied !== bReplied) return aReplied - bReplied;
-    return b.id - a.id;
-  });
+  return [...pins].sort(comparePins);
 }
 
 /**

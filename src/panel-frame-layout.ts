@@ -4,8 +4,8 @@
  * `panelLayoutSections` is the one place a frame's rows are built, so the table `buildPanelLines` draws *is*
  * the table the frame's height was counted from — a pin is wrapped once per frame, and a caller cannot ask
  * for one frame and draw another. It is also the one place the frame is *grouped*: the caller hands over the
- * sections `panelSections` produced — one grouping per frame — and the layout carries that same `order`
- * back out on the layout it returns, which is the only copy the frame's title reads. Ranking and sectioning
+ * sections `panelSections` produced — one grouping per frame — and that same `order` is what the frame's title
+ * reads, carried to the drawer on `PanelContent.sections` (`panel-lines.ts`) from the very object handed here. Ranking and sectioning
  * both happen in `panel-sections.ts`; this module consumes its answer and never asks the question again.
  *
  * The rows are counted *after* the expansion has been decided: a `compact` pin owns its full entry while it
@@ -117,9 +117,10 @@ function panelRowStartOf(all: readonly PanelOwned[], index: number): number {
  *
  * `sections` is the one grouping the frame is built from, and the only one: the caller — `PanelComponent`
  * through `PanelMemory`, or the test helper that draws a frame the way the component does — sections the
- * view once and hands the result here, and this function hands the very same `order` back on the layout so
- * the drawer can print the frame's counts off it. A frame whose title grouped the pins for itself is the
- * failure this shape removes: two groupings can disagree, and one grouping cannot.
+ * view once and hands the result here, and the drawer prints the frame's counts off the very same order, read
+ * from `PanelContent.sections` (`panel-lines.ts`) rather than carried back out of this table. A frame whose
+ * title grouped the pins for itself is the failure this shape removes: two groupings can disagree, and one
+ * grouping cannot.
  *
  * `sections.flat` is the drawn order and `selection` indexes into it, never into the caller's own array; the
  * heading rows a multi-section view gains sit between the sections without shifting an index, because a
@@ -197,6 +198,5 @@ export function panelLayoutSections(
     owned,
     start: panelRowStartOf(owned, selection),
     height: panelFrameRows(owned.length, terminalRows),
-    sections: sections.order,
   };
 }

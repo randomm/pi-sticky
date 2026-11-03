@@ -71,7 +71,9 @@ export interface PanelContent {
   replyHint: string;
   /**
    * The sections the frame's rows were laid out from — the same `PanelSections.order` the layout was built
-   * from, and the only thing the counts in the frame's title are read off.
+   * from, and the only thing the counts in the frame's title are read off. **This is the carrier**: one frame
+   * holds one `readonly PanelSection[]`, and `openFrame` (`panel-frame-draw.ts`) fills it from the same
+   * `PanelSections` object it hands the layout, so the title and the headings cannot be two answers.
    *
    * Carried in rather than derived from `pins`: a builder that grouped the pins again would ask the question
    * a second time, and the two answers could disagree (a second grouping also walks the whole view, so the

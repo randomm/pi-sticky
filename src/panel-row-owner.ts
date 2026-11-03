@@ -16,7 +16,6 @@
  * several rows and one pin, so the two come apart and only this pair holds both.
  */
 import type { PanelRow } from "./panel-row.ts";
-import type { PanelSection } from "./panel-sections.ts";
 
 /**
  * The pin a row of the table belongs to, or `null` for a row that belongs to no pin: the heading over a
@@ -34,19 +33,16 @@ export interface PanelOwned {
 }
 
 /**
- * One frame's rows, the row the selection starts at, the rows the frame needs, and the sections the rows
- * were laid out from. Returned by `panelLayoutSections`, the one place the pins are wrapped for a frame.
+ * One frame's rows, the row the selection starts at and the rows the frame needs. Returned by
+ * `panelLayoutSections`, the one place the pins are wrapped for a frame.
+ *
+ * The sections the rows were built from are *not* carried here. One value carries them to the drawer —
+ * `PanelContent.sections` (`panel-lines.ts`), which `openFrame` (`panel-frame-draw.ts`) fills from the same
+ * `PanelSections` this layout is built from — and the layout is a table, not a second copy of the grouping.
  */
 export interface PanelLayout {
   owned: PanelOwned[];
   /** Table position of the selected pin's first row, or -1 when the selection names no pin. */
   start: number;
   height: number;
-  /**
-   * The very `PanelSections.order` the caller handed in, carried back out so the drawer prints its frame's
-   * counts off the grouping the rows were built from rather than asking the pins again — a second grouping
-   * is a second answer to the same question, and one value in and back out is what makes a title that
-   * disagrees with its headings unrepresentable rather than merely unlikely.
-   */
-  sections: readonly PanelSection[];
 }
