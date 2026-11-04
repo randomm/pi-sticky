@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/randomm/pi-sticky/compare/v0.1.1...v0.1.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* **release:** wire release_created to the publish job ([#91](https://github.com/randomm/pi-sticky/issues/91)) ([98510ae](https://github.com/randomm/pi-sticky/commit/98510aebe529dc7e6d1a547947fb06ee5b051304))
+
 ## [0.1.1](https://github.com/randomm/pi-sticky/compare/v0.1.0...v0.1.1) (2026-11-03)
 
 
