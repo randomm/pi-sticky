@@ -30,6 +30,7 @@ import {
   topCancelInProgress,
   workflowTriggers,
 } from "./release-automation-contracts.ts";
+import { gateOutput, jobOutput, publishGate } from "./release-automation-outputs.ts";
 import { declaredTops, fileSet } from "./release-automation-pack.ts";
 import { FIRST_RELEASE } from "./release-automation-version.ts";
 import {
@@ -100,9 +101,22 @@ test("the release workflow triggers on main, gates publish, and never cancels", 
   });
   expect(branchList(text), "the branch list on its own").toEqual(["main"]);
   expect(jobFieldOf("needs"), "publish waits for release-please").toBe("release-please");
-  expect(jobFieldOf("if"), "publish runs only for a created release").toBe(
-    "${{ needs.release-please.outputs.release_created }}",
-  );
+  expect(jobFieldOf("if"), "publish runs only for a created release").toBe(publishGate());
+  // The other half of the same gate: `publish` reads one output of `release-please`, and that job forwards
+  // nothing until it declares the output — a `needs:` context carries only what the upstream job maps. When
+  // v0.1.0 and v0.1.1 shipped, the step produced `release_created`, the job never forwarded it, the gate read
+  // the empty string and `publish` was `skipped` both times with the tag and the release already there.
+  const releasePlease = jobBody(readRepoFile(RELEASE_WORKFLOW), "release-please");
+  expect(
+    jobOutput(releasePlease, gateOutput(publishGate())),
+    "release-please declares the output publish gates on, from its release step",
+  ).toEqual({ state: "present", value: "${{ steps.release.outputs.release_created }}" });
+  // And the expression must name a step that exists: a mapping pointing at an `id:` the job does not have
+  // gates exactly as blankly as no mapping at all, so the target of the read is pinned beside its name.
+  expect(
+    stepWith(releasePlease, "googleapis/release-please-action@v5").map((field) => field.key),
+    "the release step's own inputs, so the reader really found that step",
+  ).toEqual(["token", "config-file", "manifest-file"]);
   expect(topCancelInProgress(text), "a release in flight is never cancelled").toBe(false);
 });
 

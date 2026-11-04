@@ -22,6 +22,7 @@ import {
   readRepoFile,
   topCancelInProgress,
 } from "./release-automation-contracts.ts";
+import { jobOutput } from "./release-automation-outputs.ts";
 import {
   defaultPermissions,
   hasEnvironmentKey,
@@ -275,4 +276,25 @@ test("the PR-title rule separates the titles it must accept from the ones it mus
     "and a dropped one is visible",
   ).toEqual(["opened", "edited", "synchronize"]);
   expect(eventTypes(file, "push"), "an event the workflow does not use").toEqual([]);
+});
+
+test("the output reader refuses a gate whose output the job never maps", () => {
+  // The defect the gate ships with: `publish` reads `needs.release-please.outputs.release_created` while the
+  // job declares no `outputs:` block, so the gate reads empty and `publish` is `skipped` with the tag already
+  // cut — v0.1.0 and v0.1.1 both shipped that way.
+  const body = jobBody(workflow(), "release-please");
+  expect(jobOutput(body, "release_created"), "the shipped job maps it").toEqual({
+    state: "present",
+    value: "${{ steps.release.outputs.release_created }}",
+  });
+  expect(
+    jobOutput(body.replace("    outputs:\n", ""), "release_created"),
+    "a job that declares no block is refused",
+  ).toEqual({ state: "absent" });
+  expect(jobOutput(body.replace("release_created:", "x:"), "release_created")).toEqual({
+    state: "absent",
+  });
+  expect(jobOutput(body, "no_such_output"), "a name the file never writes").toEqual({
+    state: "absent",
+  });
 });
