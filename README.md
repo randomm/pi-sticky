@@ -15,8 +15,8 @@ are for decisions the agent needs, blockers, risks and final results — not for
 pi install npm:pi-sticky
 ```
 
-That is the recommended form: you get a pinned version from the npm registry, published from this repo
-with provenance, so what loads is what was released. The two alternates:
+That is the recommended form: you get a pinned version from the npm registry, and releases published by
+this repo's automation carry provenance, so what loads is what was released. The two alternates:
 
 ```sh
 pi install git:github.com/randomm/pi-sticky   # tracks the repo, refreshes on `pi update`
@@ -195,29 +195,40 @@ position, so a miscount is an answer given to the wrong option.
 
 ### The rail
 
-When the panel is not drawn, the pins appear above the editor instead:
+When the panel is not drawn, the pins appear above the editor instead. Both samples below were emitted by
+`renderRailLines` at a 60-column terminal, so they are the strings themselves:
 
 ```text
 📌 Pinned for you (2) · /pins
- ! #2 4m  CI is red on the replay branch
- ? #1 3h  Decide which provider to keep
+ ! #2 1h  CI is red on the replay branch
+ ? #1 1d  Decide which provider to keep
 ```
 
 One line per pin, in ranked order: a marker for the attention level (`!` warning, `?` action, `•`
 info), the id, the pin's **age**, and the text (one line). The age is how long ago the pin was made,
 counted from when you see it: `now` under a minute, then whole minutes (`4m`), hours (`3h`) and days
-(`2d`). When the pins do not all fit, the row that would have been the last pin becomes
-`+<n> more · /pins`: at `PI_STICKY_MAX_LINES` 3 with four pins, three are drawn and the tail row reads
-`+1 more · /pins`.
+(`2d`).
+
+`PI_STICKY_MAX_LINES` is the whole budget, header included, and one row of that budget is spent on the
+`+<n> more · /pins` tail: the row that would have held the last pin the budget could not draw becomes it.
+So at `PI_STICKY_MAX_LINES` 3 the header leaves room for **one** pin and the tail reads `+2 more · /pins`
+— a budget of `maxLines` never draws more than `maxLines - 2` pins once anything is hidden. Four pins at
+that budget:
 
 ```text
 📌 Pinned for you (4) · /pins
  ! #4 1m  Deploy is blocked on the flaky migration
- ? #3 8m  Pick a provider for the staging box
-   +1 more · /pins
+   +2 more · /pins
 ```
 
-`PI_STICKY_MAX_LINES` is the whole budget, header included.
+The same four pins one row higher — `PI_STICKY_MAX_LINES` 4 — draw two of them and hide one:
+
+```text
+📌 Pinned for you (4) · /pins
+ ! #4 1m  Deploy is blocked on the flaky migration
+ ? #3 1h  Pick a provider for the staging box
+   +1 more · /pins
+```
 
 ### Replying to a pin
 
@@ -230,10 +241,10 @@ Replying to pin #3 (warning): `CI is red on the replay branch`
 here is what I decided
 ```
 
-The pin's text comes back inside a backtick code span, and that is why a link-shaped pin text is never
-clickable: rendered as a code span, `[click](https://evil.example)` is drawn verbatim and no terminal
-link is emitted from it. Your own words after the blank line are passed through exactly as you typed
-them, so a link you put there is yours rather than one the pin slipped in.
+The pin's text comes back inside a backtick code span, and that hardening covers **only the pin's quoted
+text**: rendered as a code span, `[click](https://evil.example)` is drawn verbatim and no terminal link is
+emitted from it. Your own words after the blank line are passed through exactly as you typed them, so a
+link you put there is yours rather than one the pin slipped in.
 
 The rewrite, and the record that this pin was answered, happen for any message whose first characters
 are the marker; a draft that merely contains it is an ordinary message. If the id names no visible
@@ -241,8 +252,9 @@ pin you get `No pin #<digits> to reply to.` and the message is sent as typed.
 
 An answered pin stays on screen until the agent unpins it or the user dismisses it, and the marking
 depends on the surface: the rail and the panel dim the whole row and open its text column with
-`↩ `, while `/pins` and the `pin_for_user` tool result have no colour and say
-`(replied by the user at HH:MM)` after the text instead.
+`↩ `, while `/pins` and the `pin_for_user` tool result draw no colour and say
+`(replied by the user at HH:MM)` after the text instead — the local clock time the reply arrived at,
+or `--:--` when the reply's stamp does not parse.
 
 ## Tool reference
 
@@ -478,9 +490,9 @@ same: if they collide, whichever one still holds its own default keeps it and th
 Rebinding matters because pi resolves a clash between extension shortcuts silently — last
 registration wins — and the default focus key `ctrl+alt+p` is the one pi's own plan-mode example
 extension registers: point `PI_STICKY_FOCUS_KEY` at a free combination and restart pi to take the
-panel's focus back. After any rebind, run `/hotkeys` to see which id actually won; a `ctrl+alt` chord can
-also be taken by the OS or by dictation software, and `PI_STICKY_FOCUS_KEY` / `PI_STICKY_TOGGLE_KEY`
-rebind it, or `off` drops that shortcut.
+panel's focus back. After a rebind, run pi's `/hotkeys` to see which id actually won — a `ctrl+alt` chord
+can also be taken by the OS or by a dictation hook. Both ids are in the table above, and either can be set
+to `off` to drop that shortcut.
 
 ## Modes
 
@@ -535,21 +547,35 @@ wrapped text, and that its option rows are on screen with the bar both on and of
 with one of them either way) — moving the bar off it cuts the text back to its single row and keeps those rows.
 
 Two samples show the strings the code emits, so a screen that disagrees with one of them is a bug rather
-than a mis-reading. The first is the rail at `PI_STICKY_MAX_LINES` 3 with four pins, showing the
-`+<n> more · /pins` tail (**The rail**). The second is a focused frame: the `›` selection bar has taken the
-marker column of the pin under it, that pin's `options` row is drawn whole beneath it, and the `Warnings`
-heading stands over its section (a focused frame is the full frame, so `PI_STICKY_PANEL` can stay `peek`).
-Headings appear only when two or more sections hold pins, and `Warnings` and `FYI` are two, so the frame
-below needs one warning and one fact — the `1 warning · 1 more` title is the same pair counted by level:
+than a mis-reading, and each was emitted by the drawer that draws it on your screen: the rails by
+`renderRailLines` with the plain style, the frame by `buildPanelLines` through the same sectioning and row
+table `PanelComponent` uses. Both rails were taken at a 60-column terminal. The first rail is at
+`PI_STICKY_MAX_LINES` 3 with four pins, showing the `+<n> more · /pins` tail (**The rail**). The second is a
+focused frame, drawn at 57 columns: the `›` selection bar has taken the marker column of the pin under it
+(that pin's level glyph gives way to it), that pin's `options` row is drawn whole beneath it, and the
+`Warnings` heading stands over its section (a
+focused frame is the full frame, so `PI_STICKY_PANEL` can stay `peek`). Headings appear only when two or
+more sections hold pins, and four sections below hold pins — two level sections and the `Now` group, beside
+the level the group's pins already count in — so their headings are all drawn, each level heading with its
+level's glyph in the marker column and the group's heading indented to where a word sits, not a glyph. The
+title counts the same pins **by level, never by group**, which is why the `Now` group's one action is what
+the `1 needs you` segment is and its warning is counted in `2 warnings`. The bottom border
+carries the option prefix `1–2 answer` before the keys because the pin under the bar has two options, and
+where the label will not fit the border it is cut with `…` — here it stops mid-word *with* that ellipsis,
+never without one:
 
 ```text
-╭ 📌 Pinned · 1 warning · 1 more ─────────────────╮
-│   Warnings                                     │
-│ › #4  1m  Deploy is blocked on the flaky test  │
-│   1 Roll it back   2 Wait for the fix          │
-│   FYI                                          │
-│ • #2  8m  The staging box is on the old image  │
-╰ ↑↓/jk move · Enter reply · d dismiss · Esc bac │
+╭ 📌 Pinned · 2 warnings · 1 needs you · 1 more ────────╮
+│  ! Warnings                                           │
+│ › Deploy is blocked on the flaky          #4          │
+│      migration                            2h          │
+│ 1 Roll it back   2 Wait for the fix                   │
+│  ! Keep provider A                        #3 2h       │
+│    Now                                                │
+│  ? Restart the queue                      #2 3h       │
+│  • FYI                                                │
+│  • The staging box is on the old image    #1 3h       │
+╰ 1–2 answer · ↑↓/jk move · Enter reply · d dismiss · … ╯
 ```
 
 Then check the two surfaces that cannot be checked by looking: `/pins` prints the plain-text listing, and
@@ -566,8 +592,9 @@ What survives a terminal whose theme draws no colour — claimed only where the 
   column with `›`, replacing that pin's level glyph; the theme's selected colours are painted on top of
   that, not instead of it. Nothing is marked while the panel is unfocused.
 - **A replied pin keeps a mark without colour.** The rail and the panel open its text column with `↩ `
-  (the theme dims it); `/pins` and the `pin_for_user` tool result have no colour at all and say
-  `(replied by the user at HH:MM)` after the text instead.
+  (the theme dims it); `/pins` and the `pin_for_user` tool result draw no colour and say
+  `(replied by the user at HH:MM)` after the text instead — `HH:MM` is the local clock time the reply
+  arrived at, or `--:--` when its stamp does not parse.
 - **`Re #<id>: ` is plain text** in the editor, so a reply is legible and typeable without colour.
 
 What does depend on colour, and so wants a theme that draws one: the emphasis that makes the selected row

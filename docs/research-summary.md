@@ -54,9 +54,8 @@ the first-release version the docs state.
 `package.json` carried `engines.bun` for the same claim. Neither is true of a user: pi runs on Node, and
 nothing in `src/`, `test/` or `.github/` reads `engines` (the release-automation checks read `files`,
 `publishConfig`, `dependencies` and `repository` alone), so the field only made npm warn every installer.
-Bun is the **contributor** toolchain — package manager, Biome, test runner — and `CONTRIBUTING.md`
-already carries it as such. The README now leads with `pi install npm:pi-sticky`, which that publishing
-automation makes the form that gets a pinned, provenance-published version.
+The one place that still states a bun floor is the `minimumReleaseAge` comment in `bunfig.toml`, which is a
+contributor-side constraint on that toolchain.
 
 ## 3. Findings that change the plan
 
