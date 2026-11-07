@@ -8,7 +8,7 @@ All five tested assumptions held; none of the "if it is false" fallbacks is need
 | ID | Assumption (plan §8) | Result | Test in `test/spike.test.ts` | What the test shows |
 |---|---|---|---|---|
 | A1 | With codemode active, a `model-only` tool stays declared to the model and its `promptGuidelines` reach the system prompt. | Held | `A1 model-only tool stays declared under codemode` | With `codemode: true`, `probe` is in `getActiveToolNames()` and `PROBE-GUIDELINE` is in request 0; the call executes once, its `details` land on the branch as a tool result, and request 1 carries them back to the model. |
-| A2 | `appendEntry()` from a command handler and from a `pi.events` handler (mid-run) lands on `getBranch()` and leaves the next request valid. | Held | `A2 appendEntry from command and bus lands on the branch` | Both entries are on the branch in order (`{n:1}` from `/probe`, `{n:2}` from the bus handler fired inside `execute()`); the next request still has the assistant tool call immediately followed by its tool result, with no error. |
+| A2 | `appendEntry()` from a command handler and from a `pi.events` handler (mid-run) lands on `getBranch()` and leaves the next request valid. | Held | `A2 appendEntry from command and bus lands on the branch` | Both entries are on the branch in order (`{n:1}` from `/probe`, `{n:2}` from the bus handler fired inside `execute()`); the next request is judged structurally, never by serialising it to a string: the assistant tool call is immediately followed by its tool result, no message of the request carries `stopReason` `"error"`, `isError` or an `errorMessage`, and `h.errors` is empty for the run. |
 | A3 | After `session.compact()`, `getBranch()` still returns the pre-compaction tool results and `session_compact` fires. | Held | `A3 compaction keeps old tool results on the branch` | One `compaction` entry carries the canned summary, the earlier probe tool result is still on the branch and in `branchSnapshots()`, and the `session_compact` handler ran once. |
 | A4 | `navigateTree()` to an entry before a pin fires `session_tree` and `getBranch()` drops the later snapshots. | Held | `A4 tree navigation drops later entries` | Navigating to the second turn's user message fires `session_tree` once with `newLeafId` set to that message's parent; the branch keeps only the first probe result. |
 | A5 | A `before_agent_start` `message` reaches the model while another extension returns `systemPrompt` in the same event. | Held | `A5 message combines with another extension's systemPrompt` | Both `X-MARK` and `Y-MARK` are in request 0 as separate fields: the prompt is the leading system message, the `message` travels as its own model-visible message. |
@@ -24,7 +24,14 @@ Confirmed by reading `test/harness.ts` (with `harness-build.ts`, `harness-run.ts
   `SessionManager.create`, with `noExtensions: true`, so no configured extension and no `~/.pi` package is
   discovered. `PI_OFFLINE=1` is set at module scope in `test/harness.ts`, before any pi object is
   constructed — not inside `createHarness()`, so a test that builds a pi object of its own is already
-  offline. `buildSession()` owns the dir: if any step after `mkdtempSync()` throws, the half-built session is
+  offline. `noContextFiles` is passed to the same loader, so no `AGENTS.md`/`CLAUDE.md` of any kind —
+  an ancestor of the temp dir or one under `agentDir` — enters a harness request: a request is the same
+  on a clean CI runner as on a machine that keeps an `AGENTS.md` in its home directory, and a test that
+  wants context-file behaviour opts back in with `createHarness({ contextFiles: true })`. An empty
+  `AGENTS.override.md` inside `dir` would not do it: pi's loader shadows one directory, not its
+  ancestors. `test/harness-context-isolation.test.ts` plants a marker `AGENTS.md` above a test-owned
+  `TMPDIR` root and asserts both halves — the marker is absent by default, and present with the flag.
+  `buildSession()` owns the dir: if any step after `mkdtempSync()` throws, the half-built session is
   disposed and the dir removed before the error is rethrown, so a failed `createHarness()` leaks nothing.
   `dispose()` awaits `session.abort()`, then waits out any write still in flight inside the dir (see
   **pi writes into the temp dir behind a `void`ed refresh** below), then removes the dir in a `finally`, so the

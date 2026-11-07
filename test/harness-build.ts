@@ -113,6 +113,12 @@ async function buildSteps(
     settingsManager,
     extensionFactories: inline,
     noExtensions: true,
+    // Ambient context files are off unless a test asks for them: pi walks `cwd` up to `/` plus
+    // `agentDir` for AGENTS.md/CLAUDE.md, so without this the host's own files (and a machine's
+    // home-directory AGENTS.md in particular) are pasted into every harness request and decide
+    // what a test sees. An empty AGENTS.override.md inside `dir` would not do: pi's loader
+    // shadows one directory, not its ancestors.
+    noContextFiles: !options.contextFiles,
   });
   // Reload first: `DefaultResourceLoader.reload()` reloads the settings manager and
   // re-merges global and project settings, which would discard overrides applied earlier.
