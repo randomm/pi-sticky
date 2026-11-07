@@ -13,6 +13,7 @@ import type { PanelCallOptions, PanelCustomFactory, PanelRecord } from "./panel-
 import { PanelComponent } from "./panel-component.ts";
 import type { PanelWiring } from "./panel-deps.ts";
 import { PANEL_OVERLAY_OPTIONS } from "./panel-geometry.ts";
+import type { GrantWindow } from "./panel-grant-window.ts";
 import { replyHint } from "./panel-hint.ts";
 import type { PanelHost } from "./panel-host.ts";
 import type { PanelMode } from "./panel-mode.ts";
@@ -52,6 +53,8 @@ export function panelFactory(
      * keyboard stay two questions.
      */
     interactiveOpen(): boolean;
+    /** The owner's grant window, opened and closed around the handle's `focus()` (see `PanelHost`). */
+    grants: GrantWindow;
   },
 ): PanelCustomFactory {
   const deps = wiring.deps;
@@ -89,6 +92,12 @@ export function panelFactory(
       isVisible: () => hooks.panelVisible(),
       mode: hooks.mode,
       interactiveOpen: hooks.interactiveOpen,
+      // The grant window, opened and closed by the component's focus verb around the handle's `focus()`, and
+      // read by the owner's per-frame `visible()` below. pi-tui asks that callback *inside* the ask
+      // (`tui.js:430-436`), so the owner must know a grant is in flight there rather than reconciling a
+      // keyboard that has not landed yet. The factory hands the owner's own cell straight to the host.
+      beginGrant: hooks.grants.begin,
+      endGrant: hooks.grants.end,
       // The panel's one notify line, through the extension: the component has no context of its own and
       // the live one belongs to the session that drew it.
       notify: (message, type) => deps.notify(message, type),

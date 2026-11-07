@@ -249,3 +249,43 @@ export class PanelMemory {
     this.#sections = { order: [], flat: [] };
   }
 }
+
+/**
+ * What `PanelComponent.update()` decides about a view that moved under a frame it drew.
+ *
+ * The judgement, and nothing else: the component carries out whichever answer this gives, because the writes
+ * — the bar, the memory, the freeze, the render request — belong to the object that owns them. Kept beside the
+ * memory it reads so the two cannot disagree about what "the frame still answers the bar" means.
+ *
+ * - `keep` — the frame still describes what pi-tui is showing, so the call must not touch it.
+ * - `freeze` — the frame's bar is a pin this view no longer holds, but it is **still the bar the user was
+ *   shown**: the marker never moved and the panel still has the keyboard. Those rows are what the user is
+ *   reading, the frame's `selection` indexes *its* rows so there is nothing to clamp it to, and the keys keep
+ *   refusing that row. Leave the screen exactly as pi-tui drew it.
+ * - `settle` — the bar moved, or the panel lost focus while the frame stood: the interaction opened over those
+ *   rows has ended — answered, refused or left — and a frame is not owed a second life. Without this the panel
+ *   would be stranded drawing rows of a view nobody is looking at. A *refused* move is not that news: it has
+ *   no effect to settle (`panel-input.ts` answers the row the user aimed at).
+ * - `redraw` — no frame at all: re-clamp the bar to the live order and let the next request lay rows out.
+ */
+export type ViewMove = "keep" | "freeze" | "settle" | "redraw";
+
+/**
+ * The one question `update()` asks, answered from what the component can read.
+ *
+ * `answersBar` is `frameAnswersBar` (`panel-component-bar.ts`) over the live view; `barOnFrameRow` is the
+ * drawn pair's own `selection` against the frame's, and `focused` is the flag as it stands. The freeze is set
+ * by the caller on the way to the drawer rather than read off the frame: `invalidateFrame()` is the user's
+ * door and clears it whenever the bar or the focus moves, so a frame frozen at an earlier publish cannot
+ * outlive a keystroke that moved the marker off its row.
+ */
+export function viewMoveOf(
+  frame: PanelFrame | undefined,
+  answersBar: boolean,
+  barOnFrameRow: boolean,
+  focused: boolean,
+): ViewMove {
+  if (answersBar) return "keep";
+  if (frame === undefined) return "redraw";
+  return barOnFrameRow && focused ? "freeze" : "settle";
+}

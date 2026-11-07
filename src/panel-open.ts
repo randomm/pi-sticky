@@ -27,7 +27,9 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 
 import type { PanelCallOptions, PanelRecord } from "./panel-call.ts";
+import type { PanelComponent } from "./panel-component.ts";
 import type { PanelWiring } from "./panel-deps.ts";
+import type { GrantWindow } from "./panel-grant-window.ts";
 import { panelCallOptions, panelFactory } from "./panel-overlay.ts";
 
 /** What the owner hands the open: closures over its own live state, and the two reports it owes the user. */
@@ -46,6 +48,11 @@ export interface PanelOpenHooks {
   onFailed(reason: string): void;
   /** The overlay's per-frame question, answered and recorded by the owner (width, rail, visibility). */
   visible(columns: number, rows: number): boolean;
+  /**
+   * Open and close the owner's **grant window** around the handle's `focus()`, which the factory hands to the
+   * host so the component's focus verb reaches it (see `PanelHost.beginGrant` and `panel-grant-window.ts`).
+   */
+  grants: GrantWindow;
 }
 
 /**
@@ -72,6 +79,7 @@ export function openPanelOverlay(
         // open frames are different sizes, and the cell is the extension's, not the component's.
         mode: () => wiring.deps.panelMode().mode(),
         interactiveOpen: () => wiring.deps.panelMode().interactiveOpen(),
+        grants: hooks.grants,
       }),
       panelCallOptions(hooks.visible, hooks.onHandle),
     )
@@ -83,4 +91,58 @@ export function openPanelOverlay(
 /** What a rejected `custom()` says about itself, for the one line the user is told. */
 function reasonOf(err: unknown): string {
   return err instanceof Error && err.message !== "" ? err.message : String(err);
+}
+
+/**
+ * The owner's half of the open: the closures `panelFactory` builds the overlay through.
+ *
+ * Kept here, beside the call they are handed to, rather than on the owner: every one is a closure over a
+ * session the owner knows is still alive, and each reads the owner *now* rather than capturing a value — the
+ * component outlives the microtask `custom()` resolves on, and a hidden panel can be focused a session later
+ * than the object its factory was made over. `onFailed` is the one member that must not: it compares against
+ * the record this open published, so a late failure of a superseded open cannot forget the panel in its place.
+ */
+export function ownerOpenHooks(
+  owner: PanelHooksOwner,
+  ctx: ExtensionContext,
+  record: PanelRecord,
+): PanelOpenHooks {
+  return {
+    tui: () => owner.tui(),
+    onTui: (tui) => owner.rememberTui(tui),
+    // The interaction ended: the earned open ends with it, and then the surfaces are settled. The ending goes
+    // to the cell before the redraw rather than after, because `refresh()` is what asks the rail and the
+    // overlay what the panel is doing — a rail reconsidered against the still-open answer is a rail that stood
+    // down for pins it should have taken back.
+    onUnfocus: () => {
+      owner.endEarnedOpen();
+      owner.refresh();
+    },
+    panelVisible: () => owner.isVisible(),
+    onHandle: (handle) => owner.component()?.setHandle(handle),
+    onFailed: (reason) => {
+      owner.forget(record);
+      ctx.ui.notify(`pins panel unavailable: ${reason}`, "warning");
+    },
+    visible: (columns, rows) => owner.frame(columns, rows),
+    grants: owner.grants,
+  };
+}
+
+/** What `ownerOpenHooks` reads of the owner: its live cells, each asked at the moment the host asks. */
+export interface PanelHooksOwner {
+  /** The TUI pi handed this panel's factory, which is where a frame is requested from. */
+  tui(): TUI | undefined;
+  rememberTui(tui: TUI): void;
+  /** The overlay's component, read at the moment the host asks (also `KeyboardCells`' member). */
+  component(): PanelComponent | undefined;
+  endEarnedOpen(): void;
+  refresh(): void;
+  isVisible(): boolean;
+  /** Forget the record only if it is still the one this open published. */
+  forget(record: PanelRecord): void;
+  /** The per-frame question: width, rail, visibility — answered and recorded by the owner. */
+  frame(columns: number, rows: number): boolean;
+  /** The depth counter, handed to the factory so it can bracket the handle's own `focus()`. */
+  grants: GrantWindow;
 }

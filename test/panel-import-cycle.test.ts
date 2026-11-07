@@ -81,6 +81,19 @@ const COLD_MODULES = [
   // The focused border's label: it composes the hint the builder draws, and used to import that string out of
   // `panel-lines.ts` — which imports `focusedHint` back. Now both reach `panel-hint-text.ts`.
   "src/panel-option-hint.ts",
+  // The keyboard's three newest modules, #98. The reconciliation reads a member pi-tui declares on `TuiBase`
+  // and not on `TUI`, the hatch reaches the key gates, and the owner's keyboard members sit between the
+  // reconciliation and the record — none of them was on the graph this guard loads, and a cold load is the only
+  // way to see whether any of them became a cycle the suite's own ordering hides.
+  "src/panel-focus-reconcile.ts",
+  "src/panel-escape-hatch.ts",
+  "src/panel-owner-keyboard.ts",
+  // The grant window: a counter with no imports at all, cold because it is reached from the frame callback,
+  // which is the one path a module-scope read would break first.
+  "src/panel-grant-window.ts",
+  // The update's decision, which reaches the frame cache, the candidate and the clamp — the three the component
+  // already read, so this is the edge that could have closed a loop between them.
+  "src/panel-component-view-move.ts",
 ];
 
 /**
@@ -200,6 +213,25 @@ function COLD_PROBE(modulePath: string, target: string): string {
   }
   if (modulePath.endsWith("panel-tick-guard.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.createTickGuard!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-focus-reconcile.ts")) {
+    // The oracle and its gate: a module that evaluated but handed back an `undefined` `reconcileFocus` would
+    // leave every reconciliation point silently doing nothing, which is the defect this file is for.
+    return `import("${target}").then((m)=>{if(typeof m.reconcileFocus!=="function"||typeof m.piCanAnswer!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-escape-hatch.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.registerEscapeHatch!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-owner-keyboard.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.ownerKeyboard!=="function"||typeof m.reconcileOnFrame!=="function"||typeof m.ownerShow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-grant-window.ts")) {
+    // The counter itself, exercised: an `active()` that answered `true` for a fresh window would silence the
+    // per-frame reconciliation forever, so the probe arms one and disarms it.
+    return `import("${target}").then((m)=>{const g=m.createGrantWindow();if(g.active())throw new Error("bindings missing");g.begin();if(!g.active())throw new Error("bindings missing");g.end();g.end();if(g.active())throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-component-view-move.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.applyViewMove!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   // The builder: the module that reads both halves of the arithmetic, so it is the one whose import order
   // a future edit is most likely to change.

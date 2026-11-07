@@ -39,6 +39,7 @@ import { registerSessionHandlers } from "./extension-session-handlers.ts";
 import { appendUserAction, createRebuildCells } from "./extension-user-commits.ts";
 import type { UserCommitCells } from "./extension-user-commits.ts";
 import { createPanelWiring } from "./panel-deps.ts";
+import { registerEscapeHatch } from "./panel-escape-hatch.ts";
 import { createPanelMode } from "./panel-mode.ts";
 import type { PanelModeState } from "./panel-mode.ts";
 import { settlePanel } from "./panel-settle.ts";
@@ -220,9 +221,37 @@ export function createStickyExtension(
       panelShortcuts(() => surfaces.panel.current),
     );
 
+    // The escape hatch (`panel-escape-hatch.ts`), beside the shortcuts and for the reason they are not one:
+    // both reach the panel through the *editor's* input path, so neither exists once the panel holds pi's
+    // focus. Registered here, at activation, in every mode — `PanelOwner.open()` is not a registration site.
+    //
+    // Registered against the session this activation adopts, because that context's `ui` is the one whose
+    // input path the keystroke arrives on, and a stale registration on a retired context's ui is one the user
+    // cannot fire. The activation itself precedes any context — pi loads extensions, then starts the session —
+    // so the one place with both a live context and a session about to be drawn is the boundary that
+    // installs it; the cell makes that once per session, and `session_shutdown` below takes it off. pi's own
+    // reload emits `session_shutdown` before the `session_start` that follows, and pi clears its listeners
+    // with the session, so a reload always registers a new handler on a new ui. In rpc, print and json
+    // `onTerminalInput` is pi's no-op returning a no-op unsubscribe: the call runs, nothing is registered,
+    // and there is no terminal to escape from.
+    //
+    // Contained the way every host call here is: a ui whose session has gone throws, and an extension that
+    // lost its tool over a listener nobody could install is the worse failure.
+    let escapeHatch: (() => void) | undefined;
+    const installEscapeHatch = (ctx: ExtensionContext): void => {
+      if (escapeHatch) return;
+      try {
+        escapeHatch = registerEscapeHatch(ctx, () => surfaces.panel.current?.keyboard());
+      } catch {
+        escapeHatch = undefined;
+      }
+    };
+
     registerSessionHandlers(pi, {
       adopt: (ctx) => {
         live = ctx;
+        // The hatch belongs to the session's input path, so it goes on with the context that owns it.
+        installEscapeHatch(ctx);
       },
       rebuild: (ctx) => {
         rebuildSession(ctx, rebuildCells);
@@ -234,6 +263,10 @@ export function createStickyExtension(
       // and the width forgotten, the panel last.
       shutdown: () => {
         tick.stop();
+        // The hatch goes with the session, beside the hand: pi clears its own input listeners on a reset, and
+        // an unsubscribe after that is a no-op — but a *later* session's listener must not be this one's.
+        escapeHatch?.();
+        escapeHatch = undefined;
         live = undefined;
         state = EMPTY_STATE;
         view = { pins: [], removed: [] };
