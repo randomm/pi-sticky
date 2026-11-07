@@ -9,9 +9,9 @@
  *
  * What is left here is the object pi-tui holds: the host, the theme it colours itself with, the memory, the
  * pair the keys read, and the members the host and the key dispatcher call. Drawing is `panel-frame-draw.ts`;
- * what the frame still answers about the bar (`frameAnswersBar`, `drawnKeysOf`, and the freeze `update()`
- * sets) is `panel-component-bar.ts`; the focus verbs are `panel-component-focus.ts`'s and the keys are
- * dispatched by `panel-input.ts`. This class hands pi-tui its callbacks and owns the state those four read.
+ * what the frame still answers about the bar (`frameAnswersBar`, `drawnKeysOf`, the freeze `update()` sets) is
+ * `panel-component-bar.ts`; the bar's verbs and the drawn order they clamp to are
+ * `panel-component-bar-move.ts`; focus is `panel-component-focus.ts`' and the keys are `panel-input.ts`'s.
  *
  * Keys reach this component only while the overlay holds focus (pi-tui routes input to the focused
  * component alone), which is why the keys hint is drawn only while focused — in the bottom border, and
@@ -27,6 +27,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
 
+import { moveBar, panelBarOrder, selectBar } from "./panel-component-bar-move.ts";
+import type { PanelBar } from "./panel-component-bar-move.ts";
 import { drawnKeysOf, frameAnswersBar, frameDrawOf, liveKeys } from "./panel-component-bar.ts";
 import type { PanelFocus } from "./panel-component-focus.ts";
 import { focusPanel, unfocusPanel } from "./panel-component-focus.ts";
@@ -104,16 +106,14 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * Replace the view the panel draws, re-clamping the selected pin to what is left — or leaving the frame
-   * standing over the view that dropped it, which is the same call's other judgement (`panel-component-bar.ts`).
-   *
-   * Cheap when nothing changed: `refresh()` calls this on every redraw, and an invalidate that repaints a
-   * byte-identical view costs a full layout pass over every pin for no visible reason.
+   * Replace the view the panel draws, re-clamping the bar to what is left — or leaving the frame over the view
+   * that dropped it (`panel-component-bar.ts`). Cheap when nothing changed: `refresh()` calls this on every
+   * redraw, and repainting a byte-identical view costs a layout pass for nothing.
    */
   update(): void {
     const frame = this.#memory.frame;
-    // So long as the frame describes what pi-tui is showing, this call must not touch it: `#drawn()` below has
-    // already re-sectioned the *new* view, and the clamp after it clamps to *that* list's length, which would
+    // So long as the frame describes what pi-tui is showing, this call must not touch it: `#sections()` below
+    // has already re-sectioned the *new* view, and the clamp after it clamps to *that* list's length, which would
     // slide the bar off the row the overlay is still drawing. The two readings of "does the frame still answer the bar'"
     // are `panel-component-bar.ts`'s; what this call adds is the freeze's own condition, below.
     if (frameAnswersBar(frame, this.#host.getView().pins)) {
@@ -152,7 +152,7 @@ export class PanelComponent implements Component {
       this.#host.requestRender();
       return;
     }
-    const pins = this.#drawn();
+    const pins = this.pins;
     // The clamp moves the bar through the state's own setter, so the frame cannot outlive the selection —
     // and it is the same clamp `render()` applies, so the two entry points cannot disagree about the floor.
     const selection = clampSelection(this.#state.selection, pins.length);
@@ -200,23 +200,34 @@ export class PanelComponent implements Component {
 
   /**
    * Set the focus flag and drop the frame: the dispatcher's door, the one `containKey`'s catch calls when a
-   * key's host call threw and the panel may not be left holding the keyboard. The focus verbs move the same
-   * flag as part of taking or ending the interaction; this is the one that only moves the flag.
+   * key's host call threw and the panel may not hold the keyboard. The focus verbs move the same flag as part
+   * of taking or ending the interaction; this one only moves the flag.
    */
   setFocused(focused: boolean): void {
     this.#state.setFocused(focused);
   }
 
-  /**
-   * Move the bar without a key, clamped to the pins that exist: the same `clampSelection` `render()` applies,
-   * floored at zero, because `panel-input.ts` cannot index a negative one — and a non-integer answered with the
-   * top row, since `Math.min`/`Math.max` both propagate `NaN` and a bar matching no row is a bar not drawn.
-   */
+  /** The bar's verbs and the cells they move, all in `panel-component-bar-move.ts` — which also owns the pair a
+   * move has to carry with the bar. `bar()` is built per call so no cell outlives a reload. */
   select(index: number): void {
-    const pins = this.#drawn();
-    const row = Number.isInteger(index) ? index : 0;
-    this.#state.setSelection(Math.max(0, clampSelection(row, pins.length)));
-    this.#host.requestRender();
+    selectBar(this.bar(), index);
+  }
+
+  moveTo(frameIndex: number, liveIndex: number, step: number): void {
+    moveBar(this.bar(), frameIndex, liveIndex, step);
+  }
+
+  bar(): PanelBar {
+    return {
+      state: this.#state,
+      memory: this.#memory,
+      pins: this.pins,
+      host: this.#host,
+      drawnKeys: () => this.#drawnKeys,
+      setDrawnKeys: (pair) => {
+        this.#drawnKeys = pair;
+      },
+    };
   }
 
   get selection(): number {
@@ -229,24 +240,16 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * The pins the panel draws — `#sections()`'s flattened list, the array the bar is drawn over *is* the
-   * array the keys index. The memo, and why this component is its only reader, are `panel-frame-cache.ts`.
-   */
-  #drawn(): readonly ViewPin[] {
-    return this.#sections().flat;
-  }
-
-  /**
-   * The sections the panel draws from (`PanelMemory.sectionsOf`): the order the keys index *and* the
-   * grouping the frame's counts come from, so one call answers both for one frame.
+   * The sections the panel draws from — `panelBarOrder` (`panel-component-bar-move.ts`), beside the verbs that
+   * clamp the bar to that order. The memo is the memory's, `panel-frame-cache.ts`.
    */
   #sections(): PanelSections {
-    return this.#memory.sectionsOf(this.#host.getView().pins);
+    return panelBarOrder(this.#memory, this.#host);
   }
 
-  /** The pins the panel is drawing, in the order it draws them. See `#drawn` for that order. */
+  /** The pins the panel is drawing, in the order it draws them — `#sections()` flattened. */
   get pins(): readonly ViewPin[] {
-    return this.#drawn();
+    return this.#sections().flat;
   }
 
   /** The keys' pair — the cell `panel-component-bar.ts` explains, written only by the drawer. */
@@ -290,10 +293,7 @@ export class PanelComponent implements Component {
     this.#memory.invalidateFrame();
   }
 
-  /**
-   * The one key dispatch, contained — the guard is `containKey` (`panel-input.ts`), which states why a key
-   * that throws is swallowed there.
-   */
+  /** The one key dispatch, contained — the guard is `containKey` (`panel-input.ts`), which says why. */
   handleInput(data: string): void {
     containKey(data, this, this.#host);
   }

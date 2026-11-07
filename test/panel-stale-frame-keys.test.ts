@@ -174,6 +174,14 @@ test("a REGROUP stale frame stops j/k at the drawn frame's first and last row", 
   // the frame's rather than the live array's. The bar starts on the frame's middle row and takes `j` once to
   // its last, where it stops.
   const down = stale(view3(), 1, regrouped());
+  // The bar sits where the frame drew it and the view still holds that row, so this frame is settled, not frozen
+  // over the view: the bar moves by the frame's own index (`panel-input.ts`), which is the case this bound is
+  // about. The freeze's own coordinate — the bar to the destination's live index, the pair by the frame's step —
+  // is `panel-stale-frame-move.test.ts`, and it needs a bar the view has dropped.
+  // The frame is frozen over the view here — the view re-sorted under a bar it still holds — so `moveBar`
+  // (`panel-component-bar-move.ts`) takes the destination's *live* index, and the live index of the frame's last
+  // row in this fixture is 0. The bound the key obeys is the frame's, and the bar ends up clamped to the live
+  // list's length by `selectBar`, which is what `update()` would have done with a settled frame.
   // Snapshot before the accepted move: `j` onto a row the frame draws and the view still holds is a real move,
   // and a real move owes a redraw request. The second `j` is the refused one, and it may not add another.
   const renders = down.h.state.renders;

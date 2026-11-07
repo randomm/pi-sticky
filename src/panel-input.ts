@@ -51,8 +51,18 @@ export interface PanelKeyTarget {
    * order now holds at that index — the same wrong pin the fallback would hand out.
    */
   drawnKeys(): DrawnKeys;
-  /** Move the bar and ask for a frame. */
+  /**
+   * Move the bar and ask for a frame. The never-drawn component's move — it has no frame to keep the pair of.
+   */
   select(index: number): void;
+  /**
+   * The move, in one call: the bar and the keys' pair, both written from one reading of the freeze. A move may
+   * not write one without the other — the acting keys read the pair, so a bar moved alone leaves `d` answering
+   * the row the marker just left. `frameIndex` is the destination's row in the frame the bar was drawn from and
+   * `liveIndex` its row in the live order; `panel-component-bar-move.ts` says which of the two the bar takes and
+   * why the pair then follows the frame's `step` rather than either index.
+   */
+  moveTo(frameIndex: number, liveIndex: number, step: number): void;
   /** End the interaction: the handle, the owner, and a frame. */
   unfocus(): void;
   /** Move the focus flag and drop the memorised frame — the half of `unfocus()` the guard below needs. */
@@ -150,8 +160,8 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
     }
     return;
   }
-  const moved = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
-  if (moved === 0) return;
+  const step = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
+  if (step === 0) return;
   // The bar stays where the frame drew it while the frame's own row is on screen: the pair *is* the bar for a
   // panel the user has seen, so a move is asked for only when it has somewhere to go. Both bounds and the
   // destination are the frame's — a frame of three rows is three rows the user can walk to, whatever the view
@@ -161,19 +171,27 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
   // neither the state nor the pair, so the panel keeps drawing those rows and keeps answering the bar the user
   // aimed at, and it is the focus (`panel-component-focus.ts`) or an accepted move that ends the frame.
   const from = drawn.hasFrame ? drawn.selection : target.selection;
-  const next = from + moved;
+  const next = from + step;
   if (next < 0 || next >= pins.length) return;
   const destination = pins[next];
   if (destination === undefined) return;
   if (drawn.hasFrame) {
     // Settled: the frame's own row, and a pin the view still holds — `drawnKeys()` already refused a row the
-    // view dropped, so the destination here is one the user can act on. The bar moves by the *frame's* step,
-    // never by `next`: `select()` clamps against the live list, and a frame with more rows than the view has
-    // pins would have the frame's last row clamped onto the view's last, leaving the user with a bar the frame
-    // never drew and a key that answers the row below it.
-    const stepped = target.selection + moved;
+    // view dropped, so the destination here is one the user can act on. The bar moves by the **frame's** index,
+    // never by a live one: `select()` clamps against the live list, so a frame with more rows than the view has
+    // pins would clamp the frame's last row onto the view's last and leave the user with a bar the frame never
+    // drew, and any index read off the live order instead of the frame's own step lands the marker a row away
+    // from where the user aimed it.
+    const stepped = target.selection + step;
     if (stepped < 0 || !target.pins.some((live) => live.id === destination.id)) return;
-    target.select(stepped);
+    // …but a frame **frozen over the view** (`frameOverView()`) is the one case where the frame's index is not an
+    // index into what `select()` is about to clamp against: `update()` left those rows standing over a view that
+    // dropped their bar and returned without re-sectioning, so the live list is the *new* order. Writing the
+    // frame's index there parks the marker on the pin the bar moved off while the acting key follows the pair to
+    // another — so for that one frame the bar goes to the destination's **live** index, which is where the marker
+    // the user sees is drawn, and the pair is advanced by the frame's step: the same pin in both orders, because
+    // each is the view sorted. One coordinate, whichever way the two orders came apart.
+    target.moveTo(stepped, target.pins.indexOf(destination), step);
     return;
   }
   target.select(next);
