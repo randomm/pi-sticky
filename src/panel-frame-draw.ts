@@ -55,6 +55,7 @@ import { buildOpenLines } from "./panel-component-open.ts";
 import type { PanelComponentState } from "./panel-component-state.ts";
 import { expandedPinOf } from "./panel-expand.ts";
 import type { PanelFrame, PanelMemory } from "./panel-frame-cache.ts";
+import type { DrawnKeys } from "./panel-frame-cache.ts";
 import { sameFrame } from "./panel-frame-cache.ts";
 import type { PanelHost } from "./panel-host.ts";
 import type { PanelMode } from "./panel-mode.ts";
@@ -84,6 +85,18 @@ export interface PanelDraw {
   style: PanelStyle;
   /** The open frame's terminal height. `undefined` means no TUI to ask (`panelMaxRows`'s fallback). */
   terminalRows: number | undefined;
+  /**
+   * What the component records beside the frame it is about to memorise: the drawn order and the bar this
+   * frame draws its marker on — the pair the keys resolve through (`DrawnKeys`, `panel-frame-cache.ts`).
+   *
+   * Optional, and the candidate (`panel-component-frame.ts`) is the caller that leaves it out: a candidate
+   * draws nothing, so it has no bar to record, and recording one would hand the keys a pair no screen ever
+   * showed. Handed to the drawer rather than read back off the cache afterwards because the writer of the pair
+   * must be the writer of the frame — one call, from the same values, so the two cannot name two different
+   * rows. What it keeps is exactly what `update()`'s clamp and a later `invalidate()` leave behind: the keys
+   * answer the rows the user was looking at, not the order a rebuild put in the list afterwards.
+   */
+  recordDrawn?: (drawn: DrawnKeys) => void;
 }
 
 /**
@@ -125,14 +138,29 @@ export function drawFrame(
   state: PanelFrameState,
 ): string[] {
   const key = frameKey(host);
+  const cached = memory.frame;
   const selection = clampSelection(state.selection, draw.sections.flat.length);
   const focused = state.focused;
   const expanded = expandedPinOf(draw.sections.flat, key.mode, key.keys, focused, selection);
   const candidate = frameOf([], draw, key, focused, selection, expanded);
-  const cached = memory.frame;
   // The width is compared here and not in `sameFrame` because it is the one thing a candidate cannot name:
   // `update()` must ignore it (a redraw is not a resize), while this caller knows the width it was asked for.
+  // A hit returns the rows this frame was compared to, and the keys' pair was recorded with them when they were
+  // laid out — so the hit gets no write, and must not get one. It is how a panel keeps drawing the rows the user
+  // is looking at after the view moved under them, and taking the pair from this call's readings would re-home
+  // the keys on the view the screen does not show.
   if (cached && sameFrame(cached, candidate) && cached.width === draw.width) return cached.lines;
+  // A frame the component **froze** (`PanelMemory.frozen`, set by `PanelComponent.update()` when the frame's bar
+  // turns out to name a pin the view has dropped) is handed back verbatim on the miss too: laying this request
+  // out would draw the frame of a view nobody is looking at, and take the bar's marker, the border's option hint
+  // and the keys' pair along with it. Nothing read from the *view* may be compared against it — the frozen bar's
+  // pin is not in the view, which is exactly why the frame stands, and a check against the live order would
+  // release the freeze in the same breath as `update()` set it. The width is the one exception, and it is not a
+  // question about the view: it is whether the cached lines can still be drawn at all, so a resize lets go and
+  // the panel draws what it can at the width it was asked for. Releasing is never this function's judgement to
+  // make: `PanelComponent.update()` decides whether the frame still stands over the view, and
+  // `invalidateFrame()`/`dispose()` are the doors that end one.
+  if (cached !== undefined && memory.frozen && cached.width === draw.width) return cached.lines;
   // Past the hit there is no way back, so the clamp is a write like any other — through the setter that
   // drops the frame with it, and only when the bar actually moved. The component must not keep a selection
   // its own rows did not draw, since the keys index the bar and not the frame; a hit needs no write because
@@ -148,6 +176,10 @@ export function drawFrame(
           draw.style,
         )
       : buildOpenLines(draw.terminalRows, openFrame(draw, key, selection, focused, expanded));
+  // The keys' pair is recorded with the frame, from the same clamped bar and the same drawn array these rows
+  // were cut from, so a key can never resolve a row this frame did not draw. The miss is the only writer: it is
+  // the one thing that changes what is on the screen, and the hit above must not write it.
+  draw.recordDrawn?.({ hasFrame: true, pins: draw.sections.flat, selection });
   memory.frame = frameOf(lines, draw, key, focused, selection, expanded);
   return lines;
 }

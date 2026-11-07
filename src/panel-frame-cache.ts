@@ -132,6 +132,37 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
 }
 
 /**
+ * The pair the bar was **drawn** on: the frame's own drawn order and the bar's index into it.
+ *
+ * The one record of what the user was looking at. The frame's `pins` is the array `PanelMemory` sectioned
+ * when the frame was drawn and `selection` is the bar `drawFrame` clamped and drew its marker on
+ * (`panel-frame-draw.ts`), so the two name a row together or name nothing — which is why they travel as one
+ * value and are never read apart. The keys resolve through it rather than through the live drawn order:
+ * `update()` drops the frame and only asks pi-tui for a frame, so between the drop and the next request the
+ * live order can be re-sorted or shortened by a rebuild while the screen still shows the rows the bar was
+ * drawn on. A key that then indexed the live array acted on a pin the bar was not on — and `d`'s dismissal is
+ * a `pi-sticky.user` entry that reconstruct re-applies session-wide, so a row the view no longer holds has to
+ * be **refused**, not re-resolved.
+ *
+ * `hasFrame` is what makes that refusal distinguishable from the case that must keep working. A component pi-tui
+ * has never rendered has no pair at all, and its keys answer the live pins — that is the state the focus key
+ * reaches, and the only answer there is. Once a frame has been drawn, a pair that no longer describes a row the
+ * view holds is `undefined` **with `hasFrame` still true**, and a key on it does nothing: falling back to the
+ * live pins would be the original bug, just reached one step later.
+ *
+ * Declared beside the frame and not inside it: it is a *reading* of members of the frame, and the frame itself —
+ * its key, its builder and its comparison — is the cache's business and unchanged by this.
+ */
+export interface DrawnKeys {
+  /** Whether a frame has ever been drawn — the difference between "answer from the live pins" and "refuse". */
+  readonly hasFrame: boolean;
+  /** The frame's drawn order, the array `selection` indexes. */
+  readonly pins: readonly ViewPin[];
+  /** The bar's index in that order, as the frame drew it — already clamped, by `drawFrame`. */
+  readonly selection: number;
+}
+
+/**
  * What the component has memorised: the last frame, and the drawn order its rows were built in.
  *
  * The two are one object because they are one fact: a frame is drawn from the sectioned view, so a caller
@@ -149,6 +180,7 @@ export function sameFrame(frame: PanelFrame | undefined, candidate: PanelFrame):
  */
 export class PanelMemory {
   #frame: PanelFrame | undefined;
+  #frozen = false;
   #source: readonly ViewPin[] | undefined;
   #sections: PanelSections = { order: [], flat: [] };
 
@@ -159,6 +191,29 @@ export class PanelMemory {
 
   set frame(frame: PanelFrame | undefined) {
     this.#frame = frame;
+    // A frame replaced is a frame drawn: the freeze belonged to the one before it, and does not travel.
+    this.#frozen = false;
+  }
+
+  /**
+   * Whether the memorised frame is **frozen** — handed to `drawFrame` as the panel on screen whatever the view
+   * now says, and read by nothing else.
+   *
+   * Set once, by `PanelComponent.update()`, for the one frame whose bar sits on a pin the view has dropped:
+   * those rows are what the user is looking at, so the frame that carries them is what the keys must answer and
+   * what the next frame request must hand back. It belongs to the frame and travels with every door that drops
+   * one, which is why it lives here rather than on the component; the freeze's *lifetime* is the overlay's, and
+   * the two doors that end it are the user moving the bar or the focus (a setter of `panel-component-state.ts`,
+   * hence `invalidateFrame`) and `dispose()` — see `PanelComponent.update()`, which withholds this from the
+   * panel settling while the frozen bar still stands.
+   */
+  get frozen(): boolean {
+    return this.#frozen;
+  }
+
+  /** Freeze the memorised frame; a no-op while there is no frame to freeze. */
+  set frozen(frozen: boolean) {
+    if (!frozen || this.#frame !== undefined) this.#frozen = frozen;
   }
 
   /**
@@ -183,11 +238,13 @@ export class PanelMemory {
    */
   invalidateFrame(): void {
     this.#frame = undefined;
+    this.#frozen = false;
   }
 
   /** Forget both halves. Safe before anything has been drawn or ordered. */
   invalidate(): void {
     this.#frame = undefined;
+    this.#frozen = false;
     this.#source = undefined;
     this.#sections = { order: [], flat: [] };
   }

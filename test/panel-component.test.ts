@@ -239,6 +239,10 @@ test("after a dismissal the selection is clamped to the pins that are left", () 
   expect([fresh.selection, fresh.render(40)]).toEqual([0, []]);
 });
 
+// A panel the user has seen answers the rows on the screen, and this one has seen a row: `focus()` asks pi-tui
+// for a frame, so the bar sits on the pin the view holds and Enter is a key with an answer — it opens the reply
+// and lets go of the keyboard. (The same key on a panel with *nothing* to answer is refused and keeps the focus:
+// `panel-stale-frame-keys.test.ts`, and a refusal may not have an effect.)
 test("Enter asks for a reply on the selected pin and lets go of the focus", () => {
   const { c, handle, state } = component(pins("One", "Two"));
   c.focus();
@@ -249,9 +253,11 @@ test("Enter asks for a reply on the selected pin and lets go of the focus", () =
   expect([c.isFocused(), handle.isFocused()]).toEqual([false, false]);
 });
 
-test("Enter with no pin to reply to still lets go of the focus", () => {
+// The empty panel is the refusal, not the reply: no row, no pin, nothing to draft, and the interaction the user
+// is in is left exactly where it was — the key that has no answer has no effect either.
+test("Enter with no pin to reply to keeps the focus", () => {
   const { c, state } = component([]);
   c.focus();
   c.handleInput("\r");
-  expect([state.replies, c.isFocused()]).toEqual([[], false]);
+  expect([state.replies, c.isFocused()]).toEqual([[], true]);
 });

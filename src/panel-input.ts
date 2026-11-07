@@ -18,6 +18,7 @@ import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 
 import type { KeyId } from "@earendil-works/pi-tui";
 
+import type { DrawnKeys } from "./panel-frame-cache.ts";
 import type { PanelHost } from "./panel-host.ts";
 import { isDismissKey, isSubmitKey, optionKeyPressed, presses } from "./panel-keys.ts";
 import type { PanelMode } from "./panel-mode.ts";
@@ -27,12 +28,29 @@ import type { ViewPin } from "./types.ts";
 const UP_KEYS: readonly KeyId[] = ["up", "k"];
 const DOWN_KEYS: readonly KeyId[] = ["down", "j"];
 
-/** What the dispatch needs of the component: the bar, and the ways to change what is drawn. */
+/**
+ * What the dispatch needs of the component: the frame's bar, and the ways to change what is drawn.
+ *
+ * `drawnKeys()` is where every key resolves the pin it acts on. `pins` and `selection` stay the *live* read —
+ * `PanelComponent.pins` is the order the next frame is drawn from and `select()` clamps to it — but a key that
+ * indexed them could act on a pin the bar was never drawn on, because `update()` drops the frame and only
+ * asks pi-tui for one: until that request arrives the screen still shows the frame's rows.
+ */
 export interface PanelKeyTarget {
-  /** The pins the panel is drawing, in the order it draws them. */
+  /** The pins the panel is drawing, in the order it draws them. Live, and not what the keys index. */
   readonly pins: readonly ViewPin[];
   /** The selected *pin* index, not a row index: a pin that wraps owns several rows. */
   readonly selection: number;
+  /**
+   * The pins and the bar **as the last frame drew them**, with `hasFrame` saying whether one was ever drawn.
+   *
+   * `hasFrame: false` names the fallback — the live pins, which is all a focused-but-never-rendered component
+   * can answer with, and what the focus key reaches, since `focusPanel` only requests a frame. Once a frame has
+   * been drawn its pair is the only thing a key may act on: a row of it the view no longer holds is answered
+   * with a `selection` that names no pin, and the key is refused rather than re-resolved to whatever the live
+   * order now holds at that index — the same wrong pin the fallback would hand out.
+   */
+  drawnKeys(): DrawnKeys;
   /** Move the bar and ask for a frame. */
   select(index: number): void;
   /** End the interaction: the handle, the owner, and a frame. */
@@ -75,27 +93,41 @@ export interface PanelKeyHost {
  * hands the focus back.
  *
  * The bar stops at both ends of the list rather than wrapping, because a selection that wrapped off the
- * bottom would leave the user looking for a pin they had just scrolled out of.
+ * bottom would leave the user looking for a pin they had just scrolled out of — and the ends it stops at, and
+ * the pin every acting key addresses, are the **drawn frame's**. `target.drawnKeys()` is the pair the marker
+ * the user aimed with was painted on; the live drawn order may have been re-sorted or shortened since, and a
+ * key that followed it would dismiss or answer a pin nobody selected. A frame row the view no longer holds
+ * addresses nothing, so its key is refused: nothing asked of the host, no interaction ended, and the bar left
+ * where the frame drew it — which is why a refusal may not go through `select()` either, since every bar write
+ * drops the frame the guard reads.
  */
 export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: PanelKeyHost): void {
   if (data === "" || isKeyRelease(data) || isKeyRepeat(data)) return;
   // The gate is the host's *key* answer and not its frame: a panel pi-tui is still drawing may be one the
   // cell has stopped treating as open (`PI_STICKY_PANEL=open`, `panel-mode.ts`), and a hidden panel is not on
-  // screen at all. Either way the focus is where the user is not, and the editor is where they are.
+  // screen at all. Either way the focus is where the user is not, and the editor is where they are. This gate
+  // and the Escape branch below both return before any acting pin is resolved or refused.
   if (!host.isVisible() || !host.interactiveOpen()) {
     target.unfocus();
     return;
   }
-  const pins = target.pins;
   if (matchesKey(data, "escape")) {
     target.unfocus();
     return;
   }
-  const pin = pins[target.selection];
+  const drawn = target.drawnKeys();
+  // `hasFrame` false is the never-drawn component: its pair is the live pins and the bar as they are now, so a
+  // row the frame never drew is not a row to refuse. With a frame, the pair is the screen the user aimed at,
+  // and the `selection` outside it that `PanelComponent.drawnKeys()` answers for a dropped row names no pin —
+  // which is what the four branches below turn into a refusal.
+  const pins = drawn.pins;
+  const pin = drawn.hasFrame ? pins[drawn.selection] : target.pins[target.selection];
   if (isSubmitKey(data)) {
     // Enter both answers the pin and ends the interaction: the user reads the reply in the editor, so a
-    // panel still holding focus over it would be in the way.
-    if (pin) host.startReply(pin.id);
+    // panel still holding focus over it would be in the way. With no pin to answer there is no draft to
+    // write, and ending the interaction would be an effect the refused key still had.
+    if (!pin) return;
+    host.startReply(pin.id);
     target.unfocus();
     return;
   }
@@ -120,8 +152,30 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
   }
   const moved = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
   if (moved === 0) return;
-  const next = target.selection + moved;
+  // The bar stays where the frame drew it while the frame's own row is on screen: the pair *is* the bar for a
+  // panel the user has seen, so a move is asked for only when it has somewhere to go. Both bounds and the
+  // destination are the frame's — a frame of three rows is three rows the user can walk to, whatever the view
+  // …and a row the view has dropped is no row to stop on. The bar itself is not moved until that is
+  // known, because `select()` writes the state, every state write drops the frame, and a refused key would
+  // otherwise have spent the frame it was refused for. A refusal is the whole of the key's effect: it writes
+  // neither the state nor the pair, so the panel keeps drawing those rows and keeps answering the bar the user
+  // aimed at, and it is the focus (`panel-component-focus.ts`) or an accepted move that ends the frame.
+  const from = drawn.hasFrame ? drawn.selection : target.selection;
+  const next = from + moved;
   if (next < 0 || next >= pins.length) return;
+  const destination = pins[next];
+  if (destination === undefined) return;
+  if (drawn.hasFrame) {
+    // Settled: the frame's own row, and a pin the view still holds — `drawnKeys()` already refused a row the
+    // view dropped, so the destination here is one the user can act on. The bar moves by the *frame's* step,
+    // never by `next`: `select()` clamps against the live list, and a frame with more rows than the view has
+    // pins would have the frame's last row clamped onto the view's last, leaving the user with a bar the frame
+    // never drew and a key that answers the row below it.
+    const stepped = target.selection + moved;
+    if (stepped < 0 || !target.pins.some((live) => live.id === destination.id)) return;
+    target.select(stepped);
+    return;
+  }
   target.select(next);
 }
 
