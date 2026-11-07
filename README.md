@@ -279,7 +279,9 @@ or `--:--` when the reply's stamp does not parse.
 | `list` | — | Returns the current listing. |
 
 Every result carries the whole current state in its `details`, which is where the pins live on the
-session branch. A refusal is returned with `isError` and the same `details`, never thrown.
+session branch. A refusal is returned with `isError` and the same `details`, never thrown. Every listing
+the model sees opens with the header `Pinned for the user now (<n> of <maxPins>):` — the model's own,
+not the `/pins` header you read or the rail's; `<maxPins>` is `PI_STICKY_MAX_PINS`.
 
 What the tool refuses rather than quietly fixes — each answer names the field and the rule:
 
@@ -661,9 +663,11 @@ bun test
 ```
 
 `bun run check` runs Biome over `src` and `test` and then `tsc --noEmit`. `bun test` enforces the
-coverage gate: 80% line and function coverage, from `bunfig.toml`. Tests never touch your real pi
-setup — no test reads `~/.pi`, your settings, your extensions or your credentials, and none calls a
-real model.
+coverage gate: 80% line and function coverage, from `bunfig.toml`. The test harness never reads your
+real pi setup and never calls a real model: it builds each session against a fresh temporary directory
+rather than `~/.pi`, loads no user extensions or settings, and answers every request from the faux
+provider (see the header of `test/harness.ts`). Your own pi setup is not part of what the suite
+exercises.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) lists the commands and the rules that bite; [AGENTS.md](AGENTS.md)
 is the authoritative rulebook for the repo. Participation is governed by
