@@ -98,7 +98,7 @@ describe("terminal escapes", () => {
     expect(clean(`${ESC}^private${cp(0x9c)}tail`)).toBe("tail");
   });
 
-  test("pi-tui's private APC marker cannot survive", () => {
+  test("sanitizePinText: pi-tui's private APC marker cannot survive", () => {
     // Unterminated APC: everything after the introducer is payload, so the trailing
     // letter goes with it. Terminated by BEL, only the marker itself goes.
     expect(clean(`a${ESC}_pi:cb`)).toBe("a");

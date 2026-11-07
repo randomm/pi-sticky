@@ -36,7 +36,7 @@ const pin = (
   extra: Partial<Pick<ViewPin, "group" | "options" | "compact">> = {},
 ): ViewPin => ({ ...levelPin(id, `pin ${id}`, level), ...extra });
 
-test("a group whose name is hostile text draws as text and closes at the width", () => {
+test("built frame: a group whose name is hostile text draws as text and closes at the width", () => {
   const hostile = pin(1, "info", { group: "\u001b[31mred\u001b[0m # heading\nsecond line" });
   // A companion of another level, so the view has two drawn sections: one section draws no heading at all
   // (spec 3.5), and a lone grouped pin's frame would have no heading row left to make this promise about.

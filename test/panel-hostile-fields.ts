@@ -65,9 +65,6 @@ export function linesOf(text: string): string[] {
   return text.split(BREAK_SPLIT);
 }
 
-/** One break, chosen by `index`, so each sweep case names a shape rather than the same one six times. */
-export const breakAt = (index: number): string => BREAKS[index % BREAKS.length] ?? "\n";
-
 /** A group name that opens as an invented pin row and ends in its evidence word. */
 export const hostileGroup = (brk: string): string => `${FAKE_ROW}${brk}${HOSTILE_TAILS[0]}`;
 

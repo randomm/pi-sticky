@@ -36,9 +36,11 @@
 import type { AgeClock } from "./panel-age.ts";
 import { ageBucket } from "./panel-age.ts";
 import type { TickGuard } from "./panel-tick-guard.ts";
+import { TICK_INTERVAL_MS } from "./panel-tick-interval.ts";
 
-/** How often the age is asked whether it moved: a whole minute, the coarsest bucket the age is drawn at. */
-export const TICK_INTERVAL_MS = 60_000;
+// Re-exported so the hand, its tests and its interval keep naming this module for the number; the constant
+// itself lives in a leaf so `panel-age.ts` can divide by it without importing the hand that imports it.
+export { TICK_INTERVAL_MS } from "./panel-tick-interval.ts";
 
 /** What the extension gives the tick: the two questions it asks and the one thing it does. */
 export interface TickWiring {

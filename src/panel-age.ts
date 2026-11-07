@@ -13,7 +13,7 @@
  * is what both the tick and the frame cache compare, so "has the age moved?" is one question with one
  * answer rather than two that drift.
  */
-import { TICK_INTERVAL_MS } from "./panel-tick.ts";
+import { TICK_INTERVAL_MS } from "./panel-tick-interval.ts";
 
 /** Reads the current instant as an ISO stamp — the shape every `createdAt` in the state already has. */
 export type AgeClock = () => string;

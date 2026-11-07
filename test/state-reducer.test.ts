@@ -123,7 +123,7 @@ describe("applyAction update", () => {
     }
   });
 
-  test("an unknown id reports no pin with that number", () => {
+  test("update: an unknown id reports no pin with that number", () => {
     const result = applyAction(
       one,
       { op: "update", id: 9, text: "x", source: "agent", now: LATER },
@@ -199,7 +199,7 @@ describe("applyAction unpin", () => {
     expect(result.state).toBe(three);
   });
 
-  test("an unknown id reports no pin with that number", () => {
+  test("unpin: an unknown id reports no pin with that number", () => {
     const result = applyAction(
       three,
       { op: "unpin", ids: [9], source: "agent", now: LATER },

@@ -1,4 +1,3 @@
-import { panelLayoutSections } from "./panel-frame-layout.ts";
 /**
  * The open panel's rows: one layout pass at the width pi-tui just handed over, and the builder handed that
  * very table.
@@ -15,6 +14,7 @@ import { panelLayoutSections } from "./panel-frame-layout.ts";
  * expansion answers a second, narrower fact the frame hands it — `frame.expanded`, the pin the bar is on when
  * that pin is `compact` — because a frame can be focused and still expand nothing.
  */
+import { panelLayoutSections } from "./panel-frame-layout.ts";
 import { buildPanelLines } from "./panel-lines.ts";
 import type { PanelContent } from "./panel-lines.ts";
 import type { PanelSections } from "./panel-sections.ts";

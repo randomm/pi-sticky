@@ -79,7 +79,7 @@ test("the tool result carries content and a state snapshot for the branch", asyn
   }
 });
 
-test("the user can dismiss a pin while the model is silent, and it stays gone after reload", async () => {
+test("the user can dismiss a pin while the model is silent: the rail line is gone and it stays gone after reload", async () => {
   const h = await createHarness({ factories: [extension] });
   try {
     await pin(h, "Decide X");

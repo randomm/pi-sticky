@@ -10,7 +10,7 @@
  * what the border says, and the frame's escape policy (`borderLine` → `fitLabel`) cuts the result with `…`
  * when the panel is too narrow to draw it whole.
  */
-import { HINT } from "./panel-lines.ts";
+import { HINT } from "./panel-hint-text.ts";
 import { MAX_OPTIONS } from "./pin-fields.ts";
 import type { ViewPin } from "./types.ts";
 

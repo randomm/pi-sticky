@@ -26,9 +26,7 @@ import {
   type FauxProviderHandle,
   type FauxResponseStep,
   type TranscriptContext,
-  fauxAssistantMessage,
   fauxProvider,
-  fauxToolCall,
 } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
@@ -44,11 +42,6 @@ import {
 import { settlePendingWrites, settleSessionAbort } from "./harness-settle.ts";
 import { RecordingUi } from "./recording-ui.ts";
 import { uiContextForPi } from "./ui-context-for-pi.ts";
-
-/** Scripted step helpers, re-exported so a resume test does not import the harness twice. */
-export const resumeCall = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
-  fauxToolCall(name, args);
-export const resumeReply = (text: string) => fauxAssistantMessage(text);
 
 /**
  * The answer a session-replacing action gives back on a resumed session. `newSession`, `fork` and

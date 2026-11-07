@@ -121,7 +121,7 @@ describe("string sequences", () => {
     expect(stripSequences(`a${ESC}_pi:c${BEL}b`)).toBe("ab");
   });
 
-  test("pi-tui's private APC marker cannot survive", () => {
+  test("stripSequences: pi-tui's private APC marker cannot survive", () => {
     // Unterminated APC: everything after the introducer is payload, so the trailing letter goes.
     expect(stripSequences(`a${ESC}_pi:cb`)).toBe("a");
   });

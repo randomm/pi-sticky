@@ -140,14 +140,6 @@ export function userEntries(h: Harness): unknown[] {
 }
 
 /**
- * Every `ctx.ui.custom()` call the session made, oldest first. A reload or a branch change opens a
- * new overlay, so "the panel" is always the *last* of these — the earlier ones are closed records.
- */
-export function panelCalls(h: Harness): readonly RecordedCustomCall[] {
-  return h.ui.customCalls;
-}
-
-/**
  * The panel the user is looking at: the newest `custom()` record, which is the one the session opened
  * most recently. One definition of the indexing, so a lifecycle assertion reads `panelCall(h)?.options`
  * and a width statement reaches the predicate of the overlay the session last opened.

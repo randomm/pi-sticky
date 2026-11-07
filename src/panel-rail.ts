@@ -1,6 +1,3 @@
-import type { PanelDeps } from "./panel-deps.ts";
-import { railStamp } from "./panel-geometry.ts";
-import type { PanelMode } from "./panel-mode.ts";
 /**
  * The rail's install guard: the one cache between "the answer may have changed" and the expensive
  * `setExtensionWidget` call.
@@ -34,6 +31,9 @@ import type { PanelMode } from "./panel-mode.ts";
  * The owner hands the key the bucket it read its own view at, so the age in the key is the age the rows
  * print — and a minute that did not move costs a comparison, exactly as a frame that changed nothing does.
  */
+import type { PanelDeps } from "./panel-deps.ts";
+import { railStamp } from "./panel-geometry.ts";
+import type { PanelMode } from "./panel-mode.ts";
 
 /**
  * The frame term of the guard's key: the cell's own name for the two frames that own the pins, and `"none"`
