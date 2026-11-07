@@ -4,50 +4,37 @@
 
 pi-sticky is a pi extension: the main agent calls the `pin_for_user` tool, and the pin stays
 visible — in a panel at the top right, or in a compact rail above the editor when there is no room for
-it — until the agent unpins it or the user dismisses it. The user can reply to a specific pin from the
-main editor, and the reply reaches the model with the pin quoted as context. Pins are for decisions
-the agent needs, blockers, risks and final results — not for progress updates.
+it — until the agent unpins it or the user dismisses it. Ask *pin a reminder for me to rotate the API key
+tomorrow* and the reminder sits beside your transcript until you deal with it. The user can reply to a
+specific pin from the main editor, and the reply reaches the model with the pin quoted as context. Pins
+are for decisions the agent needs, blockers, risks and final results — not for progress updates.
 
 ## Install
 
 ```sh
-pi install git:github.com/randomm/pi-sticky
+pi install npm:pi-sticky
 ```
 
-Or from a local clone:
+That is the recommended form: you get a pinned version from the npm registry, published from this repo
+with provenance, so what loads is what was released. The two alternates:
 
 ```sh
-pi install /path/to/pi-sticky
+pi install git:github.com/randomm/pi-sticky   # tracks the repo, refreshes on `pi update`
+pi install /path/to/pi-sticky                 # a local clone, for working on the extension itself
 ```
 
-pi loads the extension from that path and does not copy it, so restart pi to pick up changes. There
-is no build step — the extension is TypeScript loaded through pi's jiti loader — and it requires bun
-`>=1.2.20`.
+pi loads the extension from a path install and does not copy it, so restart pi to pick up changes. There
+is no build step — the extension is TypeScript loaded through pi's jiti loader.
 
-To see what is installed, remove an extension, or update one:
-
-```sh
-pi list
-pi remove <source as shown by pi list>   # pi uninstall is an alias
-pi update --extensions                   # all installed packages
-pi update git:github.com/randomm/pi-sticky   # one package
-```
-
-Bare `pi update` updates pi itself, not this extension. A clone installed by path is updated with
-`git pull` in the clone, then a pi restart.
-
-Install with `pi install` only. Never symlink or copy this repository into
-`~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
-isolation).
-
-## Getting started
+## Try it
 
 1. Ask the agent: *pin a reminder for me to rotate the API key tomorrow*. The pin appears at the top
    right of the terminal (or in the rail above the editor below 100 columns), and stays there until
    the agent unpins it or you dismiss it.
-2. Focus the panel with `ctrl+alt+p`. `↑`/`↓` move the bar; `Enter` puts `Re #<id>: ` in the editor
-   and a number `1`–`4` puts one of the pin's options there after the marker — either way you press
-   Enter yourself. `d` dismisses the pin under the bar, `Esc` hands the keyboard back.
+2. Focus the panel with `ctrl+alt+p` (`ctrl+alt+t` toggles the panel itself). `↑`/`↓` move the bar;
+   `Enter` puts `Re #<id>: ` in the editor and a number `1`–`4` puts one of the pin's options there
+   after the marker — either way you press Enter yourself. `d` dismisses the pin under the bar, `Esc`
+   hands the keyboard back.
 3. Ask the agent to pin a question you have to answer. An `action` or `warning` pin earns the full
    frame; a plain `info` pin rests as a three-row peek beside your transcript.
 
@@ -55,6 +42,24 @@ The extension also ships the skills the agent loads when they fit the task — s
 [Skills](#skills). To start a long run with a Now/Backlog board, run `/skill:sticky-run-board`. With
 [noni](https://github.com/randomm/noni) (private at the time of writing) attached, see
 [Using with noni](#using-with-noni).
+
+## Managing the install
+
+To see what is installed, remove an extension, or update one:
+
+```sh
+pi list
+pi remove <source as shown by pi list>   # pi uninstall is an alias
+pi update --extensions                   # all installed packages
+pi update npm:pi-sticky                  # one package
+```
+
+Bare `pi update` updates pi itself, not this extension. A clone installed by path or git URL is refreshed
+in the clone (or by `pi update`, for the cached checkout), then a pi restart.
+
+Install with `pi install` only. Never symlink or copy this repository into
+`~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
+isolation).
 
 ## Why
 
@@ -201,7 +206,17 @@ When the panel is not drawn, the pins appear above the editor instead:
 One line per pin, in ranked order: a marker for the attention level (`!` warning, `?` action, `•`
 info), the id, the pin's **age**, and the text (one line). The age is how long ago the pin was made,
 counted from when you see it: `now` under a minute, then whole minutes (`4m`), hours (`3h`) and days
-(`2d`). When the pins do not all fit, the last row reads `+<n> more · /pins`.
+(`2d`). When the pins do not all fit, the row that would have been the last pin becomes
+`+<n> more · /pins`: at `PI_STICKY_MAX_LINES` 3 with four pins, three are drawn and the tail row reads
+`+1 more · /pins`.
+
+```text
+📌 Pinned for you (4) · /pins
+ ! #4 1m  Deploy is blocked on the flaky migration
+ ? #3 8m  Pick a provider for the staging box
+   +1 more · /pins
+```
+
 `PI_STICKY_MAX_LINES` is the whole budget, header included.
 
 ### Replying to a pin
@@ -210,10 +225,15 @@ Start a message with `Re #<id>:` — typed by hand or put there by `Enter` in th
 rewrites it before the model sees it:
 
 ```text
-Replying to pin #3 (warning): "CI is red on the replay branch"
+Replying to pin #3 (warning): `CI is red on the replay branch`
 
 here is what I decided
 ```
+
+The pin's text comes back inside a backtick code span, and that is why a link-shaped pin text is never
+clickable: rendered as a code span, `[click](https://evil.example)` is drawn verbatim and no terminal
+link is emitted from it. Your own words after the blank line are passed through exactly as you typed
+them, so a link you put there is yours rather than one the pin slipped in.
 
 The rewrite, and the record that this pin was answered, happen for any message whose first characters
 are the marker; a draft that merely contains it is an ordinary message. If the id names no visible
@@ -273,12 +293,13 @@ name goes along as your request:
 /skill:sticky-run-board start a board for the migration
 ```
 
-To load none of them, narrow the package in your pi settings — `[]` means none of that type:
+To load none of them, narrow the package in your pi settings — `[]` means none of that type, and
+`source` is how you installed it (`npm:pi-sticky` for the recommended form above):
 
 ```json
 {
   "packages": [
-    { "source": "git:github.com/randomm/pi-sticky", "skills": [] }
+    { "source": "npm:pi-sticky", "skills": [] }
   ]
 }
 ```
@@ -457,7 +478,9 @@ same: if they collide, whichever one still holds its own default keeps it and th
 Rebinding matters because pi resolves a clash between extension shortcuts silently — last
 registration wins — and the default focus key `ctrl+alt+p` is the one pi's own plan-mode example
 extension registers: point `PI_STICKY_FOCUS_KEY` at a free combination and restart pi to take the
-panel's focus back.
+panel's focus back. After any rebind, run `/hotkeys` to see which id actually won; a `ctrl+alt` chord can
+also be taken by the OS or by dictation software, and `PI_STICKY_FOCUS_KEY` / `PI_STICKY_TOGGLE_KEY`
+rebind it, or `off` drops that shortcut.
 
 ## Modes
 
@@ -500,7 +523,9 @@ that must not load it. `pi install`, plus the `PI_ENSEMBLE_ROLE` guard, is the s
 
 Last verified against pi **1.3.0** (2026-10-25). The exact `devDependencies` pins make
 `bun install --frozen-lockfile` reproducible; they are not a support claim — the extension runs inside
-whatever pi you have installed. Requires bun `>=1.2.20`.
+whatever pi you have installed. pi runs on Node, and installing the extension needs nothing else: the
+bun requirement is a contributor one, for the package manager, the linter and the test runner (see
+[CONTRIBUTING.md](CONTRIBUTING.md) and [Development and contributing](#development-and-contributing)).
 
 Manual acceptance lives in the three sections above — **"The panel"**, **"The rail"** and
 **"Replying to a pin"**: at ≥ 100 columns check the panel, below 100 check the rail, focus it with the
@@ -508,6 +533,58 @@ focus key, reply with `Re #<id>:`, exercise `/pins` and `/unpin`, and check that
 `/reload`. With the panel focused, move the bar onto a `compact` pin and check that it draws its whole
 wrapped text, and that its option rows are on screen with the bar both on and off it (`1`–`4` fill the editor
 with one of them either way) — moving the bar off it cuts the text back to its single row and keeps those rows.
+
+Two samples show the strings the code emits, so a screen that disagrees with one of them is a bug rather
+than a mis-reading. The first is the rail at `PI_STICKY_MAX_LINES` 3 with four pins, showing the
+`+<n> more · /pins` tail (**The rail**). The second is a focused frame: the `›` selection bar has taken the
+marker column of the pin under it, that pin's `options` row is drawn whole beneath it, and the `Warnings`
+heading stands over its section (a focused frame is the full frame, so `PI_STICKY_PANEL` can stay `peek`).
+Headings appear only when two or more sections hold pins, and `Warnings` and `FYI` are two, so the frame
+below needs one warning and one fact — the `1 warning · 1 more` title is the same pair counted by level:
+
+```text
+╭ 📌 Pinned · 1 warning · 1 more ─────────────────╮
+│   Warnings                                     │
+│ › #4  1m  Deploy is blocked on the flaky test  │
+│   1 Roll it back   2 Wait for the fix          │
+│   FYI                                          │
+│ • #2  8m  The staging box is on the old image  │
+╰ ↑↓/jk move · Enter reply · d dismiss · Esc bac │
+```
+
+Then check the two surfaces that cannot be checked by looking: `/pins` prints the plain-text listing, and
+RPC draws the rail as plain text with no panel at all (see [Modes](#modes) and [Accessibility](#accessibility)).
+
+## Accessibility
+
+What survives a terminal whose theme draws no colour — claimed only where the panel really draws it:
+
+- **The level glyphs are characters.** `!` warning, `?` action and `•` info are drawn as text on both the
+  rail and the panel, and the theme colours them *in addition*, so the three levels stay three different
+  characters with no colour anywhere.
+- **The selection bar is a character, not only a highlight.** The row the bar sits on opens its marker
+  column with `›`, replacing that pin's level glyph; the theme's selected colours are painted on top of
+  that, not instead of it. Nothing is marked while the panel is unfocused.
+- **A replied pin keeps a mark without colour.** The rail and the panel open its text column with `↩ `
+  (the theme dims it); `/pins` and the `pin_for_user` tool result have no colour at all and say
+  `(replied by the user at HH:MM)` after the text instead.
+- **`Re #<id>: ` is plain text** in the editor, so a reply is legible and typeable without colour.
+
+What does depend on colour, and so wants a theme that draws one: the emphasis that makes the selected row
+read as selected at a glance (without it, the `›` is the only cue), the dimming of a replied row, and the
+colouring of the level markers, the header and the frame.
+
+Two fall-backs are worth knowing. The panel is an overlay that covers part of the transcript, so when
+covering the transcript is the difficulty, `/pins` is the plain-text answer: the same pins, ranked the
+same way, as lines. And in RPC there is no overlay, focus or key input at all — the rail is drawn as
+plain text, without colour ([Modes](#modes)).
+
+## Further reading
+
+[docs/research-summary.md](docs/research-summary.md) is the spec: the research findings and the operator
+decisions this extension implements, and the document that wins wherever the code and it disagree.
+[docs/plan.md](docs/plan.md) is the original working plan — superseded history, kept because `src/` and
+`test/` still cite its sections; read it only for what research-summary no longer records.
 
 ## Development and contributing
 

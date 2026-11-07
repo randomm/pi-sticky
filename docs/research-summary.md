@@ -50,6 +50,14 @@ which is why the publish job declares no `environment:` key. `test/release-autom
 automation, the pair npm's trusted publisher matches, and the manifest and `package.json` version together with
 the first-release version the docs state.
 
+**Superseded (issue #95):** the README told users the extension "requires bun `>=1.2.20`" and
+`package.json` carried `engines.bun` for the same claim. Neither is true of a user: pi runs on Node, and
+nothing in `src/`, `test/` or `.github/` reads `engines` (the release-automation checks read `files`,
+`publishConfig`, `dependencies` and `repository` alone), so the field only made npm warn every installer.
+Bun is the **contributor** toolchain — package manager, Biome, test runner — and `CONTRIBUTING.md`
+already carries it as such. The README now leads with `pi install npm:pi-sticky`, which that publishing
+automation makes the form that gets a pinned, provenance-published version.
+
 ## 3. Findings that change the plan
 
 ### pi API
