@@ -54,8 +54,10 @@ the first-release version the docs state.
 `package.json` carried `engines.bun` for the same claim. Neither is true of a user: pi runs on Node, and
 nothing in `src/`, `test/` or `.github/` reads `engines` (the release-automation checks read `files`,
 `publishConfig`, `dependencies` and `repository` alone), so the field only made npm warn every installer.
-The one place that still states a bun floor is the `minimumReleaseAge` comment in `bunfig.toml`, which is a
-contributor-side constraint on that toolchain.
+What remains are contributor- and CI-side statements of a bun version, not user requirements: the
+`minimumReleaseAge` comment in `bunfig.toml` names the bun release that grew that install setting, and
+`setup-bun` in `ci.yml` and in `release-please.yml` pins `bun-version: 1.4.3` for the jobs that run the
+tests and cut the release.
 
 ## 3. Findings that change the plan
 

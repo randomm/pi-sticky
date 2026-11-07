@@ -195,12 +195,14 @@ position, so a miscount is an answer given to the wrong option.
 
 ### The rail
 
-When the panel is not drawn, the pins appear above the editor instead. Both samples below were emitted by
-`renderRailLines` at a 60-column terminal, so they are the strings themselves:
+When the panel is not drawn, the pins appear above the editor instead. Every rail sample below is the
+emitter's own output: `renderRailLines` at a 60-column terminal with `plainStyle` — the characters and the
+layout, without the colour the theme adds. The pins are the ones named beside each sample, aged against
+the same instant the frame sample is:
 
 ```text
 📌 Pinned for you (2) · /pins
- ! #2 1h  CI is red on the replay branch
+ ! #2 3h  CI is red on the replay branch
  ? #1 1d  Decide which provider to keep
 ```
 
@@ -209,15 +211,14 @@ info), the id, the pin's **age**, and the text (one line). The age is how long a
 counted from when you see it: `now` under a minute, then whole minutes (`4m`), hours (`3h`) and days
 (`2d`).
 
-`PI_STICKY_MAX_LINES` is the whole budget, header included, and one row of that budget is spent on the
-`+<n> more · /pins` tail: the row that would have held the last pin the budget could not draw becomes it.
-So at `PI_STICKY_MAX_LINES` 3 the header leaves room for **one** pin and the tail reads `+2 more · /pins`
-— a budget of `maxLines` never draws more than `maxLines - 2` pins once anything is hidden. Four pins at
-that budget:
+`PI_STICKY_MAX_LINES` is the whole budget, header included. When pins are hidden, the `+<n> more · /pins`
+tail takes the place of the last row the budget allowed: with `PI_STICKY_MAX_LINES` N and more pins than
+fit, the rail draws at most N − 2 pins plus that tail row. Four pins at `PI_STICKY_MAX_LINES` 3 — one
+pin, then the tail:
 
 ```text
 📌 Pinned for you (4) · /pins
- ! #4 1m  Deploy is blocked on the flaky migration
+ ! #4 2h  Deploy is blocked on the flaky migration
    +2 more · /pins
 ```
 
@@ -225,8 +226,8 @@ The same four pins one row higher — `PI_STICKY_MAX_LINES` 4 — draw two of th
 
 ```text
 📌 Pinned for you (4) · /pins
- ! #4 1m  Deploy is blocked on the flaky migration
- ? #3 1h  Pick a provider for the staging box
+ ! #4 2h  Deploy is blocked on the flaky migration
+ ! #2 3h  Restart the queue before the deadline
    +1 more · /pins
 ```
 
@@ -547,34 +548,59 @@ wrapped text, and that its option rows are on screen with the bar both on and of
 with one of them either way) — moving the bar off it cuts the text back to its single row and keeps those rows.
 
 Two samples show the strings the code emits, so a screen that disagrees with one of them is a bug rather
-than a mis-reading, and each was emitted by the drawer that draws it on your screen: the rails by
-`renderRailLines` with the plain style, the frame by `buildPanelLines` through the same sectioning and row
-table `PanelComponent` uses. Both rails were taken at a 60-column terminal. The first rail is at
-`PI_STICKY_MAX_LINES` 3 with four pins, showing the `+<n> more · /pins` tail (**The rail**). The second is a
-focused frame, drawn at 57 columns: the `›` selection bar has taken the marker column of the pin under it
-(that pin's level glyph gives way to it), that pin's `options` row is drawn whole beneath it, and the
-`Warnings` heading stands over its section (a
-focused frame is the full frame, so `PI_STICKY_PANEL` can stay `peek`). Headings appear only when two or
-more sections hold pins, and four sections below hold pins — two level sections and the `Now` group, beside
-the level the group's pins already count in — so their headings are all drawn, each level heading with its
-level's glyph in the marker column and the group's heading indented to where a word sits, not a glyph. The
-title counts the same pins **by level, never by group**, which is why the `Now` group's one action is what
-the `1 needs you` segment is and its warning is counted in `2 warnings`. The bottom border
-carries the option prefix `1–2 answer` before the keys because the pin under the bar has two options, and
-where the label will not fit the border it is cut with `…` — here it stops mid-word *with* that ellipsis,
-never without one:
+than a mis-reading. Neither is a picture of a real terminal. The rails are drawn with `plainStyle` — the
+characters and the layout, without the colour the theme adds. The frame is drawn through `buildPanelLines`
+at a fixed 57 columns, with a style whose every colouring is the identity function, over the same sectioning
+and row table `PanelComponent` uses: `panelSections`, then one `panelLayoutSections` pass at that width and
+the same selection, then the builder handed that very table. Both rails were taken at a 60-column terminal.
+The first rail is at `PI_STICKY_MAX_LINES` 3 with four pins — `#4 warning` *Deploy is blocked on the flaky
+migration*, `#2 warning` *Restart the queue before the deadline*, `#3 action` *Pick a provider for the staging
+box* and `#1 action` *Decide which provider to keep*, two hours, three hours, three hours and one day old at
+the same instant as the frame below — showing the `+<n> more · /pins` tail (**The rail**).
+
+The frame is drawn from these seven pins — each one `#id level, text, options, group`, with every instant
+aged against the fixed `2026-10-23T14:30:00Z` the panel fixtures draw ages at, so three of them read `3h`
+and the group's pin reads `2h`:
+
+| Pin | Level | Text | Options | Group |
+| --- | --- | --- | --- | --- |
+| `#4` | `warning` | Deploy is blocked on the flaky migration | `Roll it back`, `Wait for the fix` | — |
+| `#2` | `warning` | Keep provider A | — | — |
+| `#1` | `warning` | CI is red on the replay branch | — | — |
+| `#5` | `action` | Rotate the API key tomorrow | — | `Now` |
+| `#3` | `action` | Restart the queue | — | — |
+| `#7` | `info` | Backups run nightly | — | — |
+| `#6` | `info` | The staging box is on the old image | — | — |
+
+The selection bar sits on `#4`, the top-ranked pin in the drawn order, and the panel holds focus (a focused
+frame is the full frame, so `PI_STICKY_PANEL` can stay `peek`). Every one of the four sections holds a pin,
+so headings are drawn: two or more sections with pins is the condition, and the `Now` group pins a fourth —
+its one `action` counts as a level pin for the title and leaves the level's own section holding `#3`.
+
+So the title counts **by level, never by group**: `3 warnings` is `#4`, `#2` and `#1`, the `2 needs you` is
+`#3` and the group's `#5`, and `2 more` is `#6` and `#7`. Each level heading carries its level's glyph in the
+marker column (`!`, `?`, `•`); the group heading carries no glyph and opens two columns in, at the text
+column its pins share — the `    Now` row above `#5`. The `›` selection bar has taken the marker column of
+`#4`, so that pin's `!` gives way to it; its text is too wide for one row and wraps to a second, and its
+`options` row is drawn whole beneath that. The bottom border carries the option prefix `1–2 answer` before
+the keys because the pin under the bar has two options, and the whole label does not fit the border at 57
+columns, so it is cut with `…` — here it stops mid-word *with* that ellipsis, never without one:
 
 ```text
-╭ 📌 Pinned · 2 warnings · 1 needs you · 1 more ────────╮
+╭ 📌 Pinned · 3 warnings · 2 needs you · 2 more ────────╮
 │  ! Warnings                                           │
 │ › Deploy is blocked on the flaky          #4          │
-│      migration                            2h          │
+│      migration                            3h          │
 │ 1 Roll it back   2 Wait for the fix                   │
-│  ! Keep provider A                        #3 2h       │
+│  ! Keep provider A                        #2 3h       │
+│  ! CI is red on the replay branch         #1 3h       │
 │    Now                                                │
-│  ? Restart the queue                      #2 3h       │
+│  ? Rotate the API key tomorrow            #5 2h       │
+│  ? Needs you                                          │
+│  ? Restart the queue                      #3 3h       │
 │  • FYI                                                │
-│  • The staging box is on the old image    #1 3h       │
+│  • Backups run nightly                    #7 3h       │
+│  • The staging box is on the old image    #6 3h       │
 ╰ 1–2 answer · ↑↓/jk move · Enter reply · d dismiss · … ╯
 ```
 
@@ -592,16 +618,16 @@ What survives a terminal whose theme draws no colour — claimed only where the 
   column with `›`, replacing that pin's level glyph; the theme's selected colours are painted on top of
   that, not instead of it. Nothing is marked while the panel is unfocused.
 - **A replied pin keeps a mark without colour.** The rail and the panel open its text column with `↩ `
-  (the theme dims it); `/pins` and the `pin_for_user` tool result draw no colour and say
-  `(replied by the user at HH:MM)` after the text instead — `HH:MM` is the local clock time the reply
-  arrived at, or `--:--` when its stamp does not parse.
+  (the theme dims it), and `/pins` and the `pin_for_user` tool result mark it with the words
+  `(replied by the user at HH:MM)` under *Replying to a pin* — which also says what `HH:MM` is, and what
+  they draw when its stamp does not parse.
 - **`Re #<id>: ` is plain text** in the editor, so a reply is legible and typeable without colour.
 
 What does depend on colour, and so wants a theme that draws one: the emphasis that makes the selected row
 read as selected at a glance (without it, the `›` is the only cue), the dimming of a replied row, and the
 colouring of the level markers, the header and the frame.
 
-Two fall-backs are worth knowing. The panel is an overlay that covers part of the transcript, so when
+Two fallbacks are worth knowing. The panel is an overlay that covers part of the transcript, so when
 covering the transcript is the difficulty, `/pins` is the plain-text answer: the same pins, ranked the
 same way, as lines. And in RPC there is no overlay, focus or key input at all — the rail is drawn as
 plain text, without colour ([Modes](#modes)).
