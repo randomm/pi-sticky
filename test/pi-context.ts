@@ -12,8 +12,6 @@
  * binding matters because `RecordingUi` keeps its stores as class fields — an unbound copy would record
  * into nowhere, and a spread of the class instance would leave every method `undefined`.
  */
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-
 import { uiForPi } from "./wiring-stubs.ts";
 
 /** What a built context is: pi's interface, plus the recorder the assertions read. */
@@ -54,9 +52,3 @@ export function piContext<T extends object>(
   // return `SessionEntry[]`, and the entries tests build are that structural subset.
   return Object.assign(ctx, { recorder }) as unknown as TestContext<T>;
 }
-
-/** The context shape the extension's handlers are typed against. */
-export type ExtensionTestContext = ExtensionContext & {
-  recorder: unknown;
-  sessionManager: { getBranch: () => unknown[]; getEntries: () => unknown[] };
-};

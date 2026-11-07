@@ -67,6 +67,20 @@ const COLD_MODULES = [
   // The one ranking: the comparison the listings sort by, the guard the sectioning reads, and the level rank
   // the section ordering compares. Reached by `render.ts` and `panel-sections.ts` and reaching neither back.
   "src/pin-order.ts",
+  // The age's instant and its bucket: the module that divides an instant by the tick's interval, cold because
+  // the interval used to live in `panel-tick.ts` — the module that imports `ageBucket` back. Read at call time
+  // rather than at module scope, so that edge never threw on its own; this is the load that would show it.
+  "src/panel-age.ts",
+  // The minute's hand itself: the other half of that pair, now armed with a leaf module's interval that it
+  // re-exports rather than a constant it owns. `start()` is what touches `setInterval`, so a cold load
+  // evaluates the module without arming a timer.
+  "src/panel-tick.ts",
+  // The tick's containment: type-only imports of the hand and its wiring, so a value edge creeping back here
+  // (or a constant read before the hand finished evaluating) is what a cold load catches.
+  "src/panel-tick-guard.ts",
+  // The focused border's label: it composes the hint the builder draws, and used to import that string out of
+  // `panel-lines.ts` — which imports `focusedHint` back. Now both reach `panel-hint-text.ts`.
+  "src/panel-option-hint.ts",
 ];
 
 /**
@@ -166,6 +180,26 @@ function COLD_PROBE(modulePath: string, target: string): string {
   }
   if (modulePath.endsWith("pin-rows-text.ts")) {
     return `import("${target}").then((m)=>{if(typeof m.modelRow!=="function"||typeof m.pinsTextRow!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-option-hint.ts")) {
+    // Both labels, and the leaf's string reached through the re-export chain: a cold load that hands back
+    // `focusedHint` but not the plain `HINT` it is built from is the same missing binding wearing a
+    // different hat, and this module is the half of the hint pair that used to import the builder.
+    return `import("${target}").then((m)=>{if(typeof m.optionHint!=="function"||typeof m.focusedHint!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-age.ts")) {
+    // The instant's two readers, and the interval the bucket is divided by — the constant that used to be
+    // imported out of the module that imports this one back.
+    return `import("${target}").then((m)=>{if(typeof m.ageAt!=="function"||typeof m.ageBucket!=="function"||m.ageBucket("2026-01-01T00:01:00.000Z")!==29453761)throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-tick.ts")) {
+    // The hand and the interval it is armed with, which now comes from `panel-tick-interval.ts` and is
+    // re-exported here: a chain that dropped the re-export leaves the lifecycle tests' `TICK_INTERVAL_MS`
+    // undefined rather than throwing, so the probe asserts the value rather than its presence.
+    return `import("${target}").then((m)=>{if(typeof m.PanelTick!=="function"||m.TICK_INTERVAL_MS!==60000)throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
+  }
+  if (modulePath.endsWith("panel-tick-guard.ts")) {
+    return `import("${target}").then((m)=>{if(typeof m.createTickGuard!=="function")throw new Error("bindings missing");console.log("OK")},(e)=>{console.error(String(e&&e.message||e));process.exit(1)})`;
   }
   // The builder: the module that reads both halves of the arithmetic, so it is the one whose import order
   // a future edit is most likely to change.

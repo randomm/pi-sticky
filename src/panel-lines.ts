@@ -53,8 +53,9 @@ import { GUTTER_COLUMNS } from "./panel-tail.ts";
 import type { PanelStyle } from "./render.ts";
 import type { ViewPin } from "./types.ts";
 
-/** The keys the panel answers, written into the bottom border while the panel holds focus. */
-export const HINT = "↑↓/jk move · Enter reply · d dismiss · Esc back";
+// Re-exported so the frame tests keep naming this module for the border's words; the string itself lives in
+// a leaf so `panel-option-hint.ts` can compose it without importing the builder that imports its `focusedHint`.
+export { HINT } from "./panel-hint-text.ts";
 
 /** What the builder draws. `pins` is the *drawn order* — `panelSections`'s flattened list, which is what the component hands the frame and what `selection` indexes into. */
 export interface PanelContent {

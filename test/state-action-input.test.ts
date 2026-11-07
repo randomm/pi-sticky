@@ -102,7 +102,7 @@ describe("applyAction refuses a pin with nothing to pin", () => {
     }
   });
 
-  test("a level or source outside its union is refused, not written into state", () => {
+  test("pin: a level or source outside its union is refused, not written into state", () => {
     for (const level of ["", "urgent", 5, {}, [], null, undefined]) {
       const result = applyAction(
         EMPTY_STATE,
@@ -142,7 +142,7 @@ describe("applyAction refuses an update whose fields are not what they claim", (
     }
   });
 
-  test("a level or source outside its union is refused, not written into state", () => {
+  test("update: a level or source outside its union is refused, not written into state", () => {
     // Both are copied into state and then drawn (`MARKER[pin.level]`) or named in an error, and
     // `isPinState` refuses a state carrying them — so without this check the pins would silently
     // vanish on the next rebuild.

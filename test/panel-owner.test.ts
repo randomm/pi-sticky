@@ -200,7 +200,7 @@ test("a show that the terminal cannot fit says so once, and still records the ch
   expect(h.screen.shown).toBe(true);
 });
 
-test("a same-count change of *which* pins the view holds still reinstalls the rail", async () => {
+test("the panel owner: a same-count change of *which* pins the view holds still reinstalls the rail", async () => {
   // `RailComponent` snapshots the view it was built with, so a key that counted pins alone would keep
   // drawing the previous view after a `/unpin 1` immediately followed by a pin of the same level: same
   // count, different pins, and a rail nobody asked to redraw.

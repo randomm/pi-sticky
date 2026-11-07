@@ -1,4 +1,3 @@
-import type { AgeClock } from "./panel-age.ts";
 /**
  * The extension's minute hand, owned by one extension instance and started by one session.
  *
@@ -19,13 +18,11 @@ import type { AgeClock } from "./panel-age.ts";
  *   the hand when the owner says neither surface is drawn, and never starts one: a teardown that could
  *   rebuild a hand would re-arm the clock the surface just asked to stop.
  */
+import type { AgeClock } from "./panel-age.ts";
 import type { TickGuard } from "./panel-tick-guard.ts";
 import { createTickGuard } from "./panel-tick-guard.ts";
 import { PanelTick } from "./panel-tick.ts";
 import type { TickWiring } from "./panel-tick.ts";
-
-/** The handle the surfaces hold: say the hand is no longer wanted, safely, more than once. */
-export type TickStop = () => void;
 
 /** How a session's minute hand is built: with *this session's* containment in hand. */
 export type MakeTick = (guard: TickGuard) => PanelTick;

@@ -109,7 +109,7 @@ test("a group section is headed by the group's own name, with no level glyph", (
   expect(markerRow(rows)).toContain(`${SELECTED} pin 1`);
 });
 
-test("a group whose name is hostile text draws as text and closes at the width", () => {
+test("framed panel: a group whose name is hostile text draws as text and closes at the width", () => {
   const hostile = pin(1, "info", { group: "\u001b[31mred\u001b[0m # heading\nsecond line" });
   // A companion of another level, so the view has two drawn sections. One section draws no heading at all
   // (spec 3.5), so a lone grouped pin's frame would have no heading row left for this to be a promise about.

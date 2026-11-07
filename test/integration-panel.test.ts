@@ -187,7 +187,7 @@ test("the panel keeps drawing through a reload, and the user's hide comes back w
   }
 });
 
-test("the user can dismiss a pin while the model is silent, and it stays gone after reload", async () => {
+test("the user can dismiss a pin while the model is silent: the panel draws nothing and the rail stays uninstalled after reload", async () => {
   const h = await createHarness({ factories: [extension] });
   try {
     await resize(h, 120);
