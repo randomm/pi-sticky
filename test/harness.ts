@@ -7,7 +7,11 @@
  * included) are never discovered, and no test reaches a real model — the faux provider from
  * `@earendil-works/pi-ai` answers every request. `PI_OFFLINE=1` is set for the test process
  * at module scope below, before any pi object can be constructed, so pi never fetches
- * packages over the network. Sessions are file-backed inside the temp dir, because a manual
+ * packages over the network. The loader also gets `noContextFiles`, so no `AGENTS.md` or
+ * `CLAUDE.md` — neither the machine's nor one planted above the temp dir — reaches a request:
+ * a test asserts on what pi-sticky puts in the prompt, never on what the host happens to
+ * have written above the temp directory. `contextFiles: true` opts a test back in.
+ * Sessions are file-backed inside the temp dir, because a manual
  * `compact()` on an in-memory session writes no compaction entry.
  *
  * `h.requests` records every context the faux model receives, in order, by wrapping the
@@ -69,6 +73,16 @@ export interface HarnessOptions {
   keepRecentTokens?: number;
   /** Override `compaction.reserveTokens` for the same reason. */
   reserveTokens?: number;
+  /**
+   * Let pi's ambient context files back in. Default false, which passes `noContextFiles` to
+   * `DefaultResourceLoader`: no `AGENTS.md`/`CLAUDE.md` — ancestor or `agentDir` — enters a
+   * harness request, so a request is the same on a clean CI runner and on a developer machine
+   * that keeps an `AGENTS.md` in its home directory. Only a test that asserts on context-file
+   * behaviour needs this; see `test/harness-context-isolation.test.ts`. The one session builder
+   * outside the harness, `test/resume-harness.ts`, builds its loader through pi's
+   * `createAgentSessionServices` and is not covered by this flag.
+   */
+  contextFiles?: boolean;
 }
 
 export interface Harness {

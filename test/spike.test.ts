@@ -13,6 +13,7 @@ import type {
   ToolExposure,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { assertTurnSucceeded } from "./harness-run.ts";
 import { branchSnapshots, call, createHarness, messageText, reply } from "./harness.ts";
 
 const PROBE_PARAMS = Type.Object({ note: Type.Optional(Type.String()) });
@@ -130,15 +131,37 @@ test("A2 appendEntry from command and bus lands on the branch", async () => {
       .filter((entry) => entry.type === "custom" && entry.customType === "probe");
     expect(custom.map((entry) => entry.data)).toEqual([{ n: 1 }, { n: 2 }]);
 
-    // The next request is still valid: the tool-call assistant message is followed by its
-    // tool result, and no error surfaced from the mid-run append.
+    // The next request is still valid, asserted structurally rather than by serialising the
+    // whole request to a string: the tool-call assistant message is followed by its tool
+    // result, no message of the request reports a failure, and pi reported no extension error
+    // for the mid-run append. (The old `not.toContain("error")` over `JSON.stringify(second)`
+    // read whatever the host's own AGENTS.md had injected into the prompt — "(0 errors)" in a
+    // quality-gate checklist — as this run's failure; harness isolation keeps the request free
+    // of ambient context, and these assertions judge only what pi put in the request.)
     const second = h.requests[1];
     expect(second).toBeDefined();
     const roles = second?.messages.map((message) => message.role);
     const callIndex = roles?.lastIndexOf("assistant");
     expect(callIndex).toBeGreaterThan(-1);
     expect(roles?.[(callIndex ?? 0) + 1]).toBe("toolResult");
-    expect(JSON.stringify(second)).not.toContain("error");
+    for (const message of second?.messages ?? []) {
+      // pi's Message role union has no "error" member: a failed assistant turn carries
+      // stopReason "error" and a failed tool result carries isError, so the failure fields are
+      // read off `unknown`, the way harness-run.ts narrows them.
+      const failure = message as { stopReason?: string; isError?: boolean; errorMessage?: string };
+      expect(failure.stopReason).not.toBe("error");
+      expect(failure.isError).not.toBe(true);
+      expect(failure.errorMessage).toBeUndefined();
+    }
+    // The channel a throwing extension handler reaches — test/harness-command-error.test.ts
+    // makes `h.errors` non-empty with `extensionPath` "command:probe", so this assertion is not
+    // vacuous. A throwing `pi.events.on` handler is out of A2's reach: pi 1.3.0's event bus
+    // catches it and writes it to console.error, so it never arrives here.
+    expect(h.errors).toEqual([]);
+    // And the turn-level check the harness itself applies to a run, on the whole transcript this
+    // session built: an assistant turn pi did not complete fails here even when the request
+    // records above look well-formed.
+    assertTurnSucceeded(h.session.messages, 0);
   } finally {
     await h.dispose();
   }
