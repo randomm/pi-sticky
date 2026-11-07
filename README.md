@@ -4,50 +4,37 @@
 
 pi-sticky is a pi extension: the main agent calls the `pin_for_user` tool, and the pin stays
 visible — in a panel at the top right, or in a compact rail above the editor when there is no room for
-it — until the agent unpins it or the user dismisses it. The user can reply to a specific pin from the
-main editor, and the reply reaches the model with the pin quoted as context. Pins are for decisions
-the agent needs, blockers, risks and final results — not for progress updates.
+it — until the agent unpins it or the user dismisses it. Ask *pin a reminder for me to rotate the API key
+tomorrow* and the reminder sits beside your transcript until you deal with it. The user can reply to a
+specific pin from the main editor, and the reply reaches the model with the pin quoted as context. Pins
+are for decisions the agent needs, blockers, risks and final results — not for progress updates.
 
 ## Install
 
 ```sh
-pi install git:github.com/randomm/pi-sticky
+pi install npm:pi-sticky
 ```
 
-Or from a local clone:
+That is the recommended form: you get a pinned version from the npm registry, and releases published by
+this repo's automation carry provenance, so what loads is what was released. The two alternates:
 
 ```sh
-pi install /path/to/pi-sticky
+pi install git:github.com/randomm/pi-sticky   # tracks the repo, refreshes on `pi update`
+pi install /path/to/pi-sticky                 # a local clone, for working on the extension itself
 ```
 
-pi loads the extension from that path and does not copy it, so restart pi to pick up changes. There
-is no build step — the extension is TypeScript loaded through pi's jiti loader — and it requires bun
-`>=1.2.20`.
+pi loads the extension from a path install and does not copy it, so restart pi to pick up changes. There
+is no build step — the extension is TypeScript loaded through pi's jiti loader.
 
-To see what is installed, remove an extension, or update one:
-
-```sh
-pi list
-pi remove <source as shown by pi list>   # pi uninstall is an alias
-pi update --extensions                   # all installed packages
-pi update git:github.com/randomm/pi-sticky   # one package
-```
-
-Bare `pi update` updates pi itself, not this extension. A clone installed by path is updated with
-`git pull` in the clone, then a pi restart.
-
-Install with `pi install` only. Never symlink or copy this repository into
-`~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
-isolation).
-
-## Getting started
+## Try it
 
 1. Ask the agent: *pin a reminder for me to rotate the API key tomorrow*. The pin appears at the top
    right of the terminal (or in the rail above the editor below 100 columns), and stays there until
    the agent unpins it or you dismiss it.
-2. Focus the panel with `ctrl+alt+p`. `↑`/`↓` move the bar; `Enter` puts `Re #<id>: ` in the editor
-   and a number `1`–`4` puts one of the pin's options there after the marker — either way you press
-   Enter yourself. `d` dismisses the pin under the bar, `Esc` hands the keyboard back.
+2. Focus the panel with `ctrl+alt+p` (`ctrl+alt+t` toggles the panel itself). `↑`/`↓` move the bar;
+   `Enter` puts `Re #<id>: ` in the editor and a number `1`–`4` puts one of the pin's options there
+   after the marker — either way you press Enter yourself. `d` dismisses the pin under the bar, `Esc`
+   hands the keyboard back.
 3. Ask the agent to pin a question you have to answer. An `action` or `warning` pin earns the full
    frame; a plain `info` pin rests as a three-row peek beside your transcript.
 
@@ -55,6 +42,24 @@ The extension also ships the skills the agent loads when they fit the task — s
 [Skills](#skills). To start a long run with a Now/Backlog board, run `/skill:sticky-run-board`. With
 [noni](https://github.com/randomm/noni) (private at the time of writing) attached, see
 [Using with noni](#using-with-noni).
+
+## Managing the install
+
+To see what is installed, remove an extension, or update one:
+
+```sh
+pi list
+pi remove <source as shown by pi list>   # pi uninstall is an alias
+pi update --extensions                   # all installed packages
+pi update npm:pi-sticky                  # one package
+```
+
+Bare `pi update` updates pi itself, not this extension. A clone installed by path or git URL is refreshed
+in the clone (or by `pi update`, for the cached checkout), then a pi restart.
+
+Install with `pi install` only. Never symlink or copy this repository into
+`~/.pi/agent/extensions/`: pi-rukas forwards that directory to its subagents (see Disabling and
+isolation).
 
 ## Why
 
@@ -114,8 +119,9 @@ counts are always by level, never by group, so a `Now` group holding your only w
 
 The frame is divided into **sections**, each with a heading row over its pins. The three level headings
 are fixed words the model cannot write — `Warnings`, `Needs you`, `FYI` — and a group's heading is the
-name the agent gave the group. Headings are drawn only when **two or more** sections hold pins: a view of
-one level alone, and a view of a single group alone, both draw the plain list with no heading at all. The
+name the agent gave the group. Headings are drawn only when **two or more** sections hold at least one pin
+each: a view of one level alone, and a view of a single group alone, both draw the plain list with no
+heading at all — a section that holds no pin owns no rows and prints no heading. The
 section the selected pin belongs to is kept on screen with it, so the bar is never stranded under a heading
 that has scrolled away — unless keeping the heading would cost the pin one of its own rows, in which case
 the heading goes and every row of the pin stays.
@@ -190,19 +196,50 @@ position, so a miscount is an answer given to the wrong option.
 
 ### The rail
 
-When the panel is not drawn, the pins appear above the editor instead:
+When the panel is not drawn, the pins appear above the editor instead. Every rail sample below is the
+emitter's own output: `renderRailLines` at a 60-column terminal with `plainStyle` — the characters and the
+layout, without the colour the theme adds. The pins are the ones named beside each sample, aged against
+the same instant the frame sample is. The first sample's two pins:
+
+| Pin | Level | Text | Age |
+| --- | --- | --- | --- |
+| `#2` | `warning` | CI is red on the replay branch | `3h` |
+| `#1` | `action` | Decide which provider to keep | `1d` |
 
 ```text
 📌 Pinned for you (2) · /pins
- ! #2 4m  CI is red on the replay branch
- ? #1 3h  Decide which provider to keep
+ ! #2 3h  CI is red on the replay branch
+ ? #1 1d  Decide which provider to keep
 ```
 
 One line per pin, in ranked order: a marker for the attention level (`!` warning, `?` action, `•`
 info), the id, the pin's **age**, and the text (one line). The age is how long ago the pin was made,
 counted from when you see it: `now` under a minute, then whole minutes (`4m`), hours (`3h`) and days
-(`2d`). When the pins do not all fit, the last row reads `+<n> more · /pins`.
-`PI_STICKY_MAX_LINES` is the whole budget, header included.
+(`2d`).
+
+`PI_STICKY_MAX_LINES` is the whole budget, header included. When pins are hidden, the `+<n> more · /pins`
+tail takes the place of the last row the budget allowed: with `PI_STICKY_MAX_LINES` N and more pins than
+fit, the rail draws at most N − 2 pins plus that tail row (with `PI_STICKY_MAX_LINES` at least 3 — the
+floor in the [Configuration](#configuration) table, and below it there is no row left for the tail). Four
+pins at `PI_STICKY_MAX_LINES` 3 — one pin, then the tail:
+
+```text
+📌 Pinned for you (4) · /pins
+ ! #4 2h  Deploy is blocked on the flaky migration
+   +2 more · /pins
+```
+
+The same four pins — `#4 warning` *Deploy is blocked on the flaky migration*, `#2 warning` *Restart the
+queue before the deadline*, `#3 action` *Pick a provider for the staging box* and `#1 action` *Decide
+which provider to keep*, two hours, three hours, three hours and one day old at that same instant — one
+row higher, `PI_STICKY_MAX_LINES` 4, draw two of them and hide one:
+
+```text
+📌 Pinned for you (4) · /pins
+ ! #4 2h  Deploy is blocked on the flaky migration
+ ! #2 3h  Restart the queue before the deadline
+   +1 more · /pins
+```
 
 ### Replying to a pin
 
@@ -210,10 +247,15 @@ Start a message with `Re #<id>:` — typed by hand or put there by `Enter` in th
 rewrites it before the model sees it:
 
 ```text
-Replying to pin #3 (warning): "CI is red on the replay branch"
+Replying to pin #3 (warning): `CI is red on the replay branch`
 
 here is what I decided
 ```
+
+The pin's text comes back inside a backtick code span, and that hardening covers **only the pin's quoted
+text**: rendered as a code span, `[click](https://evil.example)` is drawn verbatim and no terminal link is
+emitted from it. Your own words after the blank line are passed through exactly as you typed them, so a
+link you put there is yours rather than one the pin slipped in.
 
 The rewrite, and the record that this pin was answered, happen for any message whose first characters
 are the marker; a draft that merely contains it is an ordinary message. If the id names no visible
@@ -221,8 +263,9 @@ pin you get `No pin #<digits> to reply to.` and the message is sent as typed.
 
 An answered pin stays on screen until the agent unpins it or the user dismisses it, and the marking
 depends on the surface: the rail and the panel dim the whole row and open its text column with
-`↩ `, while `/pins` and the `pin_for_user` tool result have no colour and say
-`(replied by the user at HH:MM)` after the text instead.
+`↩ `, while `/pins` and the `pin_for_user` tool result draw no colour and say
+`(replied by the user at HH:MM)` after the text instead — the local clock time the reply arrived at,
+or `--:--` when the reply's stamp does not parse.
 
 ## Tool reference
 
@@ -273,12 +316,13 @@ name goes along as your request:
 /skill:sticky-run-board start a board for the migration
 ```
 
-To load none of them, narrow the package in your pi settings — `[]` means none of that type:
+To load none of them, narrow the package in your pi settings — `[]` means none of that type, and
+`source` is how you installed it (`npm:pi-sticky` for the recommended form above):
 
 ```json
 {
   "packages": [
-    { "source": "git:github.com/randomm/pi-sticky", "skills": [] }
+    { "source": "npm:pi-sticky", "skills": [] }
   ]
 }
 ```
@@ -457,7 +501,9 @@ same: if they collide, whichever one still holds its own default keeps it and th
 Rebinding matters because pi resolves a clash between extension shortcuts silently — last
 registration wins — and the default focus key `ctrl+alt+p` is the one pi's own plan-mode example
 extension registers: point `PI_STICKY_FOCUS_KEY` at a free combination and restart pi to take the
-panel's focus back.
+panel's focus back. After a rebind, run pi's `/hotkeys` to see which id actually won — a `ctrl+alt` chord
+can also be taken by the OS or by a dictation hook. Both ids are in the table above, and either can be set
+to `off` to drop that shortcut.
 
 ## Modes
 
@@ -500,7 +546,9 @@ that must not load it. `pi install`, plus the `PI_ENSEMBLE_ROLE` guard, is the s
 
 Last verified against pi **1.3.0** (2026-10-25). The exact `devDependencies` pins make
 `bun install --frozen-lockfile` reproducible; they are not a support claim — the extension runs inside
-whatever pi you have installed. Requires bun `>=1.2.20`.
+whatever pi you have installed. pi runs on Node, and installing the extension needs nothing else: the
+bun requirement is a contributor one, for the package manager, the linter and the test runner (see
+[CONTRIBUTING.md](CONTRIBUTING.md) and [Development and contributing](#development-and-contributing)).
 
 Manual acceptance lives in the three sections above — **"The panel"**, **"The rail"** and
 **"Replying to a pin"**: at ≥ 100 columns check the panel, below 100 check the rail, focus it with the
@@ -508,6 +556,101 @@ focus key, reply with `Re #<id>:`, exercise `/pins` and `/unpin`, and check that
 `/reload`. With the panel focused, move the bar onto a `compact` pin and check that it draws its whole
 wrapped text, and that its option rows are on screen with the bar both on and off it (`1`–`4` fill the editor
 with one of them either way) — moving the bar off it cuts the text back to its single row and keeps those rows.
+
+Two samples show the strings the code emits, so a screen that disagrees with one of them is a bug rather
+than a mis-reading. Neither is a picture of a real terminal. The rails are drawn with `plainStyle` — the
+characters and the layout, without the colour the theme adds. The frame is drawn through `buildPanelLines`
+at a fixed 57 columns with `NO_PANEL_COLOUR` — the colourless panel style of `src/panel-host.ts` — over the
+same sectioning and row table `PanelComponent` uses: `panelSections`, then one `panelLayoutSections` pass at
+that width and the same selection, then the builder handed that very table. Both rails were taken at a
+60-column terminal. The first rail sample is at `PI_STICKY_MAX_LINES` 3 with four pins — `#4 warning` *Deploy
+is blocked on the flaky migration*, `#2 warning` *Restart the queue before the deadline*, `#3 action` *Pick a
+provider for the staging box* and `#1 action` *Decide which provider to keep* — two hours, three hours, three
+hours and one day old at the same instant as the frame below. Those four are the pins behind both `+<n> more
+· /pins` samples in **The rail**; the first sample there takes its own two pins, and they are named beside it.
+
+The frame is drawn from these seven pins — each one `#id level, text, options, group, age`, with every
+instant aged against the fixed `2026-10-23T14:30:00Z` the panel fixtures draw ages at. The `Age` column is
+what the emitter prints for each pin's instant at that same instant, and every row of the frame below
+follows from this table:
+
+| Pin | Level | Text | Options | Group | Age |
+| --- | --- | --- | --- | --- | --- |
+| `#4` | `warning` | Deploy is blocked on the flaky migration | `Roll it back`, `Wait for the fix` | — | `2h` |
+| `#2` | `warning` | Keep provider A | — | — | `3h` |
+| `#1` | `warning` | CI is red on the replay branch | — | — | `3h` |
+| `#5` | `action` | Rotate the API key tomorrow | — | `Now` | `2h` |
+| `#3` | `action` | Restart the queue | — | — | `3h` |
+| `#7` | `info` | Backups run nightly | — | — | `3h` |
+| `#6` | `info` | The staging box is on the old image | — | — | `3h` |
+
+The selection bar sits on `#4` — `selection` 0, the first pin of the flattened drawn order, which is also the
+top-ranked pin — and the panel holds focus (a focused frame is the full frame, so `PI_STICKY_PANEL` can stay
+`peek`). Every one of the four sections holds a pin, so headings are drawn: at least one pin in each of two or
+more sections is the condition, and the `Now` group pins a fourth — its one `action` counts as a level pin for
+the title and leaves the level's own section holding `#3`.
+
+So the title counts **by level, never by group**: `3 warnings` is `#4`, `#2` and `#1`, the `2 needs you` is
+`#3` and the group's `#5`, and `2 more` is `#6` and `#7`. Each level heading carries its level's glyph in the
+marker column (`!`, `?`, `•`); the group heading carries no glyph and opens two columns in, at the text
+column its pins share — the `    Now` row above `#5`. The `›` selection bar has taken the marker column of
+`#4`, so that pin's `!` gives way to it; its text is too wide for one row and wraps to a second, and its
+`options` row is drawn whole beneath that. The bottom border carries the option prefix `1–2 answer` before
+the keys because the pin under the bar has two options, and the whole label does not fit the border at 57
+columns, so it is cut with `…` — here it stops mid-word *with* that ellipsis, never without one:
+
+```text
+╭ 📌 Pinned · 3 warnings · 2 needs you · 2 more ────────╮
+│  ! Warnings                                           │
+│ › Deploy is blocked on the flaky          #4          │
+│      migration                            2h          │
+│ 1 Roll it back   2 Wait for the fix                   │
+│  ! Keep provider A                        #2 3h       │
+│  ! CI is red on the replay branch         #1 3h       │
+│    Now                                                │
+│  ? Rotate the API key tomorrow            #5 2h       │
+│  ? Needs you                                          │
+│  ? Restart the queue                      #3 3h       │
+│  • FYI                                                │
+│  • Backups run nightly                    #7 3h       │
+│  • The staging box is on the old image    #6 3h       │
+╰ 1–2 answer · ↑↓/jk move · Enter reply · d dismiss · … ╯
+```
+
+Then check the two surfaces that cannot be checked by looking: `/pins` prints the plain-text listing, and
+RPC draws the rail as plain text with no panel at all (see [Modes](#modes) and [Accessibility](#accessibility)).
+
+## Accessibility
+
+What survives a terminal whose theme draws no colour — claimed only where the panel really draws it:
+
+- **The level glyphs are characters.** `!` warning, `?` action and `•` info are drawn as text on both the
+  rail and the panel, and the theme colours them *in addition*, so the three levels stay three different
+  characters with no colour anywhere.
+- **The selection bar is a character, not only a highlight.** The row the bar sits on opens its marker
+  column with `›`, replacing that pin's level glyph; the theme's selected colours are painted on top of
+  that, not instead of it. Nothing is marked while the panel is unfocused.
+- **A replied pin keeps a mark without colour.** The rail and the panel open its text column with `↩ `
+  (the theme dims it), and `/pins` and the `pin_for_user` tool result mark it with the words
+  `(replied by the user at HH:MM)` under *Replying to a pin* — which also says what `HH:MM` is, and what
+  they draw when its stamp does not parse.
+- **`Re #<id>: ` is plain text** in the editor, so a reply is legible and typeable without colour.
+
+What does depend on colour, and so wants a theme that draws one: the emphasis that makes the selected row
+read as selected at a glance (without it, the `›` is the only cue), the dimming of a replied row, and the
+colouring of the level markers, the header and the frame.
+
+Two fallbacks are worth knowing. The panel is an overlay that covers part of the transcript, so when
+covering the transcript is the difficulty, `/pins` is the plain-text answer: the same pins, ranked the
+same way, as lines. And in RPC there is no overlay, focus or key input at all — the rail is drawn as
+plain text, without colour ([Modes](#modes)).
+
+## Further reading
+
+[docs/research-summary.md](docs/research-summary.md) is the spec: the research findings and the operator
+decisions this extension implements, and the document that wins wherever the code and it disagree.
+[docs/plan.md](docs/plan.md) is the original working plan — superseded history, kept because `src/` and
+`test/` still cite its sections; read it only for what research-summary no longer records.
 
 ## Development and contributing
 

@@ -50,6 +50,15 @@ which is why the publish job declares no `environment:` key. `test/release-autom
 automation, the pair npm's trusted publisher matches, and the manifest and `package.json` version together with
 the first-release version the docs state.
 
+**Superseded (issue #95):** the README told users the extension "requires bun `>=1.2.20`" and
+`package.json` carried `engines.bun` for the same claim. Neither is true of a user: pi runs on Node, and
+nothing in `src/`, `test/` or `.github/` reads `engines` (the release-automation checks read `files`,
+`publishConfig`, `dependencies` and `repository` alone), so the field only made npm warn every installer.
+What remains are contributor- and CI-side statements of a bun version, not user requirements: the
+`minimumReleaseAge` comment in `bunfig.toml` names the bun release that grew that install setting, and
+`setup-bun` in `ci.yml` and in `release-please.yml` pins `bun-version: 1.4.3` for the jobs that run the
+tests and cut the release.
+
 ## 3. Findings that change the plan
 
 ### pi API

@@ -43,9 +43,6 @@
     "check": "biome check src test && tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
-  "engines": {
-    "bun": ">=1.2.20"
-  },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
