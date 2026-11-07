@@ -523,7 +523,8 @@ setup — no test reads `~/.pi`, your settings, your extensions or your credenti
 real model.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) lists the commands and the rules that bite; [AGENTS.md](AGENTS.md)
-is the authoritative rulebook for the repo. Report security problems through
+is the authoritative rulebook for the repo. Participation is governed by
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report security problems through
 [SECURITY.md](SECURITY.md), not a public issue.
 
 ## License

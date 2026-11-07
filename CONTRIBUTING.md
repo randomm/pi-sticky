@@ -27,6 +27,22 @@ Both `bun run check` and `bun test` must pass before you push — they are exact
 `.pi/verify-cmd` gate run. Fix lint and format complaints by running Biome, not by hand, and never
 add `// biome-ignore`, `@ts-ignore` or a coverage-threshold lowering to get to green.
 
+## Dependencies and toolchain
+
+Every version in this repo is pinned on purpose, and a pin is a reviewed decision rather than a
+default: the host packages sit in `peerDependencies` as `"*"` and in `package.json`
+`devDependencies` at exact versions, and CI installs the toolchain at the version its own step
+names. The three `@earendil-works/pi` packages are one unit — pi maps them to its own copies at
+load time, so a change to one is a change to all three in the same commit, never a partial bump.
+
+Moving a pin, or the CI toolchain version, is a deliberate commit that a reviewer reads: it is not
+something an automated dependency bot does here. There is no dependabot or automerge config, and
+there does not need to be one for new releases: `bunfig.toml` `minimumReleaseAge` refuses any
+registry package younger than its own window, so a freshly released version cannot enter the lockfile
+until it has sat there for a while. The numbers themselves live in `bunfig.toml` and in
+`package.json` `devDependencies` — read them there rather than copying them into prose, so this page
+cannot go stale when a pin moves.
+
 ## Rules that bite
 
 - **300-line cap per `.ts` file** in `src/` and `test/`, enforced by `test/file-size.test.ts`.
@@ -80,6 +96,12 @@ PR is reviewed like a deploy, not like a merge.
   with that same name. Adding `environment:` to `.github/workflows/release-please.yml` — or renaming that
   file — breaks every automatic release while leaving all the checks green. The workflow file's own header
   states the same pair; `test/release-automation.test.ts` fails if either half drifts.
+
+## Code of Conduct
+
+Participation in this project is governed by the [Contributor Code of Conduct](CODE_OF_CONDUCT.md),
+adapted from Contributor Covenant. Report a conduct problem through the private channel that file
+names.
 
 ## License
 
