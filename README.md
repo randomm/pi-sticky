@@ -119,8 +119,9 @@ counts are always by level, never by group, so a `Now` group holding your only w
 
 The frame is divided into **sections**, each with a heading row over its pins. The three level headings
 are fixed words the model cannot write — `Warnings`, `Needs you`, `FYI` — and a group's heading is the
-name the agent gave the group. Headings are drawn only when **two or more** sections hold pins: a view of
-one level alone, and a view of a single group alone, both draw the plain list with no heading at all. The
+name the agent gave the group. Headings are drawn only when **two or more** sections hold at least one pin
+each: a view of one level alone, and a view of a single group alone, both draw the plain list with no
+heading at all — a section that holds no pin owns no rows and prints no heading. The
 section the selected pin belongs to is kept on screen with it, so the bar is never stranded under a heading
 that has scrolled away — unless keeping the heading would cost the pin one of its own rows, in which case
 the heading goes and every row of the pin stays.
@@ -198,7 +199,12 @@ position, so a miscount is an answer given to the wrong option.
 When the panel is not drawn, the pins appear above the editor instead. Every rail sample below is the
 emitter's own output: `renderRailLines` at a 60-column terminal with `plainStyle` — the characters and the
 layout, without the colour the theme adds. The pins are the ones named beside each sample, aged against
-the same instant the frame sample is:
+the same instant the frame sample is. The first sample's two pins:
+
+| Pin | Level | Text | Age |
+| --- | --- | --- | --- |
+| `#2` | `warning` | CI is red on the replay branch | `3h` |
+| `#1` | `action` | Decide which provider to keep | `1d` |
 
 ```text
 📌 Pinned for you (2) · /pins
@@ -213,8 +219,9 @@ counted from when you see it: `now` under a minute, then whole minutes (`4m`), h
 
 `PI_STICKY_MAX_LINES` is the whole budget, header included. When pins are hidden, the `+<n> more · /pins`
 tail takes the place of the last row the budget allowed: with `PI_STICKY_MAX_LINES` N and more pins than
-fit, the rail draws at most N − 2 pins plus that tail row. Four pins at `PI_STICKY_MAX_LINES` 3 — one
-pin, then the tail:
+fit, the rail draws at most N − 2 pins plus that tail row (with `PI_STICKY_MAX_LINES` at least 3 — the
+floor in the [Configuration](#configuration) table, and below it there is no row left for the tail). Four
+pins at `PI_STICKY_MAX_LINES` 3 — one pin, then the tail:
 
 ```text
 📌 Pinned for you (4) · /pins
@@ -222,7 +229,10 @@ pin, then the tail:
    +2 more · /pins
 ```
 
-The same four pins one row higher — `PI_STICKY_MAX_LINES` 4 — draw two of them and hide one:
+The same four pins — `#4 warning` *Deploy is blocked on the flaky migration*, `#2 warning` *Restart the
+queue before the deadline*, `#3 action` *Pick a provider for the staging box* and `#1 action` *Decide
+which provider to keep*, two hours, three hours, three hours and one day old at that same instant — one
+row higher, `PI_STICKY_MAX_LINES` 4, draw two of them and hide one:
 
 ```text
 📌 Pinned for you (4) · /pins
@@ -550,32 +560,35 @@ with one of them either way) — moving the bar off it cuts the text back to its
 Two samples show the strings the code emits, so a screen that disagrees with one of them is a bug rather
 than a mis-reading. Neither is a picture of a real terminal. The rails are drawn with `plainStyle` — the
 characters and the layout, without the colour the theme adds. The frame is drawn through `buildPanelLines`
-at a fixed 57 columns, with a style whose every colouring is the identity function, over the same sectioning
-and row table `PanelComponent` uses: `panelSections`, then one `panelLayoutSections` pass at that width and
-the same selection, then the builder handed that very table. Both rails were taken at a 60-column terminal.
-The first rail is at `PI_STICKY_MAX_LINES` 3 with four pins — `#4 warning` *Deploy is blocked on the flaky
-migration*, `#2 warning` *Restart the queue before the deadline*, `#3 action` *Pick a provider for the staging
-box* and `#1 action` *Decide which provider to keep*, two hours, three hours, three hours and one day old at
-the same instant as the frame below — showing the `+<n> more · /pins` tail (**The rail**).
+at a fixed 57 columns with `NO_PANEL_COLOUR` — the colourless panel style of `src/panel-host.ts` — over the
+same sectioning and row table `PanelComponent` uses: `panelSections`, then one `panelLayoutSections` pass at
+that width and the same selection, then the builder handed that very table. Both rails were taken at a
+60-column terminal. The first rail sample is at `PI_STICKY_MAX_LINES` 3 with four pins — `#4 warning` *Deploy
+is blocked on the flaky migration*, `#2 warning` *Restart the queue before the deadline*, `#3 action` *Pick a
+provider for the staging box* and `#1 action` *Decide which provider to keep* — two hours, three hours, three
+hours and one day old at the same instant as the frame below. Those four are the pins behind both `+<n> more
+· /pins` samples in **The rail**; the first sample there takes its own two pins, and they are named beside it.
 
-The frame is drawn from these seven pins — each one `#id level, text, options, group`, with every instant
-aged against the fixed `2026-10-23T14:30:00Z` the panel fixtures draw ages at, so three of them read `3h`
-and the group's pin reads `2h`:
+The frame is drawn from these seven pins — each one `#id level, text, options, group, age`, with every
+instant aged against the fixed `2026-10-23T14:30:00Z` the panel fixtures draw ages at. The `Age` column is
+what the emitter prints for each pin's instant at that same instant, and every row of the frame below
+follows from this table:
 
-| Pin | Level | Text | Options | Group |
-| --- | --- | --- | --- | --- |
-| `#4` | `warning` | Deploy is blocked on the flaky migration | `Roll it back`, `Wait for the fix` | — |
-| `#2` | `warning` | Keep provider A | — | — |
-| `#1` | `warning` | CI is red on the replay branch | — | — |
-| `#5` | `action` | Rotate the API key tomorrow | — | `Now` |
-| `#3` | `action` | Restart the queue | — | — |
-| `#7` | `info` | Backups run nightly | — | — |
-| `#6` | `info` | The staging box is on the old image | — | — |
+| Pin | Level | Text | Options | Group | Age |
+| --- | --- | --- | --- | --- | --- |
+| `#4` | `warning` | Deploy is blocked on the flaky migration | `Roll it back`, `Wait for the fix` | — | `2h` |
+| `#2` | `warning` | Keep provider A | — | — | `3h` |
+| `#1` | `warning` | CI is red on the replay branch | — | — | `3h` |
+| `#5` | `action` | Rotate the API key tomorrow | — | `Now` | `2h` |
+| `#3` | `action` | Restart the queue | — | — | `3h` |
+| `#7` | `info` | Backups run nightly | — | — | `3h` |
+| `#6` | `info` | The staging box is on the old image | — | — | `3h` |
 
-The selection bar sits on `#4`, the top-ranked pin in the drawn order, and the panel holds focus (a focused
-frame is the full frame, so `PI_STICKY_PANEL` can stay `peek`). Every one of the four sections holds a pin,
-so headings are drawn: two or more sections with pins is the condition, and the `Now` group pins a fourth —
-its one `action` counts as a level pin for the title and leaves the level's own section holding `#3`.
+The selection bar sits on `#4` — `selection` 0, the first pin of the flattened drawn order, which is also the
+top-ranked pin — and the panel holds focus (a focused frame is the full frame, so `PI_STICKY_PANEL` can stay
+`peek`). Every one of the four sections holds a pin, so headings are drawn: at least one pin in each of two or
+more sections is the condition, and the `Now` group pins a fourth — its one `action` counts as a level pin for
+the title and leaves the level's own section holding `#3`.
 
 So the title counts **by level, never by group**: `3 warnings` is `#4`, `#2` and `#1`, the `2 needs you` is
 `#3` and the group's `#5`, and `2 more` is `#6` and `#7`. Each level heading carries its level's glyph in the
@@ -590,7 +603,7 @@ columns, so it is cut with `…` — here it stops mid-word *with* that ellipsis
 ╭ 📌 Pinned · 3 warnings · 2 needs you · 2 more ────────╮
 │  ! Warnings                                           │
 │ › Deploy is blocked on the flaky          #4          │
-│      migration                            3h          │
+│      migration                            2h          │
 │ 1 Roll it back   2 Wait for the fix                   │
 │  ! Keep provider A                        #2 3h       │
 │  ! CI is red on the replay branch         #1 3h       │
