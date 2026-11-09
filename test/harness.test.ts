@@ -202,7 +202,9 @@ test("RecordingUi records custom calls and replays the component with input", as
   expect(ui.customCount).toBe(1);
   expect(ui.customCalls[0]?.result).toBe("selected");
   expect(ui.customCalls[0]?.options).toEqual({ overlay: true });
-  expect(ui.customCalls[0]?.handle?.isFocused()).toBe(true);
+  // Not focused: pi-tui hands out a handle that is unfocused until something asks (`tui.js:419`), and this
+  // test asks nothing — the overlay records the component, the handle and the result, not a focus nobody claimed.
+  expect(ui.customCalls[0]?.handle?.isFocused()).toBe(false);
 
   const control = ui.lastCustom();
   expect(control?.render(30)).toEqual(["pins@30"]);

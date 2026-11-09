@@ -78,6 +78,17 @@ export interface PanelHost {
    * gate on the frame alone would keep answering `d` and `Enter` to a panel the user has already left.
    */
   interactiveOpen(): boolean;
+  /**
+   * Open and close the host's **grant window**, which the component's focus verb wraps around the handle's
+   * `focus()`.
+   *
+   * pi-tui asks the overlay's own `visible()` inside that call (`tui.js:431-436`), and the owner reconciles
+   * the focus there. Reading pi's focus cell mid-grant answers "not focused" about a keyboard that is one
+   * statement from being granted, and releases it. A host with no reconciliation to protect has no window to
+   * open, so both members are optional.
+   */
+  beginGrant?(): void;
+  endGrant?(): void;
   /** Tell the user one line, on the surface the extension still has. */
   notify(message: string, type?: "info" | "warning" | "error"): void;
   /** Put `Re #<id>: ` at the front of the editor draft and focus the editor. `answer` is the text of the

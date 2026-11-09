@@ -145,7 +145,11 @@ test("stub TUI satisfies the members a widget or panel factory calls", async () 
 });
 
 test("overlay handle records focus and visibility transitions", () => {
+  // pi-tui's `OverlayHandle` starts unfocused (`tui.js:419`): focus is a thing the overlay is *asked for*,
+  // never a state it arrives in. Everything below is that one fact, followed through the handle.
   const handle = createOverlayHandle();
+  expect(handle.isFocused()).toBe(false);
+  handle.focus();
   expect(handle.isFocused()).toBe(true);
   expect(handle.isHidden()).toBe(false);
   handle.setHidden(true);

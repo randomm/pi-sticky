@@ -15,6 +15,13 @@
  * that set ever widens, every such payload still fails the test here and reaches nothing. Movement keys,
  * which cannot destroy anything, keep going through `matchesKey` alone so they still answer Kitty forms.
  *
+ * The third gate here is not destructive but is the one that matters most: Ctrl+C is the key a locked-out
+ * user reaches for, and pi-tui routes it to the focused component like any other byte, so recognition of it
+ * is `isCtrlCPress` and the panel's release depends on it. It is spelled as literal bytes rather than through
+ * `matchesKey(data, "ctrl+c")` because that one consults pi-tui's *module-global* Kitty flag: with the flag
+ * off it rejects the Kitty form and, once on, accepts the release and repeat forms of the same key. A test
+ * suite must not mutate that flag, and a lockout release must not depend on what a terminal negotiated.
+ *
  * The two ids below are the defaults only: the grammar an operator's rebind has to pass and the
  * registration itself live in `panel-shortcuts.ts`. They are stated here, next to the panel's other
  * keystrokes, and `config.ts` imports them for its fallbacks so neither default is spelled twice.
@@ -76,4 +83,40 @@ export function isSubmitKey(data: string): boolean {
 /** One of `keys` pressed, whatever shape the terminal sent it in. */
 export function presses(data: string, keys: readonly KeyId[]): boolean {
   return keys.some((key) => matchesKey(data, key));
+}
+
+/**
+ * A press of Ctrl+C, in the three forms a terminal actually sends for it and in nothing else:
+ *
+ * - `"\x03"` — the legacy control byte, what every terminal without a enhanced protocol sends;
+ * - `"\x1b[99;5u"` — the Kitty CSI-u press (code point 99 = `c`, modifier 5 = Ctrl);
+ * - `"\x1b[27;5;99~"` — xterm's `modifyOtherKeys` spelling of the same press.
+ *
+ * The set is closed by equality rather than by a parser, which is the point: a Kitty *release* (`…:3u`) or
+ * *repeat* (`…:2u`) is a different byte sequence and releases nothing, and a paste or a bracketed-paste
+ * stream that merely *contains* 0x03 is a payload, not a keystroke. `isKeyRelease`/`isKeyRepeat` at the head
+ * of the dispatcher already drop the release and repeat forms; this gate does not lean on them, so a release
+ * is refused twice rather than once by accident of ordering.
+ *
+ * `matchesKey` is deliberately not consulted, for the module-header reason: the answer must not change with
+ * pi-tui's global protocol flag.
+ */
+const CTRL_C_PRESSES = new Set(["\x03", "\x1b[99;5u", "\x1b[27;5;99~"]);
+
+/** A press of Ctrl+C — see `CTRL_C_PRESSES` for exactly which bytes that is. */
+export function isCtrlCPress(data: string): boolean {
+  return CTRL_C_PRESSES.has(data);
+}
+
+/**
+ * The panel's *only* neutral exit, spelled the way the dispatcher spells it today: the bare `\x1b` byte.
+ *
+ * Deliberately narrower than `matchesKey(data, "escape")`, which also accepts the Kitty and
+ * `modifyOtherKeys` spellings. Widening the escape hatch to those would make a keystroke that ends a modal
+ * depend on what the terminal negotiated, and a hatch that misfires consumes a byte the editor would
+ * otherwise have answered. The dispatcher's own Escape branch keeps its wider test, so a Kitty Escape still
+ * leaves the panel when pi routes it to the component.
+ */
+export function isEscapePress(data: string): boolean {
+  return data === "\x1b";
 }

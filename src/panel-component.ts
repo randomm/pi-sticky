@@ -31,13 +31,13 @@ import { moveBar, panelBarOrder, selectBar } from "./panel-component-bar-move.ts
 import type { PanelBar } from "./panel-component-bar-move.ts";
 import { drawnKeysOf, frameAnswersBar, frameDrawOf, liveKeys } from "./panel-component-bar.ts";
 import type { PanelFocus } from "./panel-component-focus.ts";
-import { focusPanel, unfocusPanel } from "./panel-component-focus.ts";
-import { frameCandidate } from "./panel-component-frame.ts";
+import { focusPanel, panelFocusCells, unfocusPanel } from "./panel-component-focus.ts";
 import type { PanelComponentState } from "./panel-component-state.ts";
 import { createPanelComponentState } from "./panel-component-state.ts";
+import { applyViewMove } from "./panel-component-view-move.ts";
 import { PanelMemory, sameFrame } from "./panel-frame-cache.ts";
 import type { DrawnKeys, PanelFrame } from "./panel-frame-cache.ts";
-import { clampSelection, drawFrame } from "./panel-frame-draw.ts";
+import { drawFrame } from "./panel-frame-draw.ts";
 import type { PanelDraw } from "./panel-frame-draw.ts";
 import { NO_PANEL_COLOUR } from "./panel-host.ts";
 import type { PanelHost } from "./panel-host.ts";
@@ -87,6 +87,11 @@ export class PanelComponent implements Component {
     this.#handle = handle;
   }
 
+  /** The handle pi handed this overlay, for the one reader that is not the component itself: the escape hatch. */
+  handle(): OverlayHandle | undefined {
+    return this.#handle;
+  }
+
   /**
    * The style to draw with, resolved on first use: the host's if it has one, else the mapping its own theme
    * implies — through `panelThemeStyle`, the very mapping the rail builds, so one mapping colours both
@@ -106,70 +111,23 @@ export class PanelComponent implements Component {
   }
 
   /**
-   * Replace the view the panel draws, re-clamping the bar to what is left — or leaving the frame over the view
-   * that dropped it (`panel-component-bar.ts`). Cheap when nothing changed: `refresh()` calls this on every
-   * redraw, and repainting a byte-identical view costs a layout pass for nothing.
+   * Replace the view the panel draws, re-clamping the bar to what is left — or leaving the frame standing over
+   * the view that dropped it. The decision and its writes are `applyViewMove`'s
+   * (`panel-component-view-move.ts`), over the four outcomes of `viewMoveOf` (`panel-frame-cache.ts`).
    */
   update(): void {
-    const frame = this.#memory.frame;
-    // So long as the frame describes what pi-tui is showing, this call must not touch it: `#sections()` below
-    // has already re-sectioned the *new* view, and the clamp after it clamps to *that* list's length, which would
-    // slide the bar off the row the overlay is still drawing. The two readings of "does the frame still answer the bar'"
-    // are `panel-component-bar.ts`'s; what this call adds is the freeze's own condition, below.
-    if (frameAnswersBar(frame, this.#host.getView().pins)) {
-      this.#host.requestRender();
-      return;
-    }
-    // The frame's bar is a pin this view no longer holds. It keeps standing until the panel settles, which is
-    // this call's judgement alone:
-    //
-    // - **still the bar the user was shown** (it never moved, and the panel still has the keyboard): those rows
-    //   are what the user is reading, the frame's `selection` indexes *its* rows so there is nothing to clamp it
-    //   to, and `drawnKeys()` keeps refusing that row. Freeze, and leave the screen as pi-tui drew it;
-    // - **the bar moved, or the panel lost focus while it stood**: the interaction opened over those rows has
-    //   ended — answered, refused or left — and a frame is not owed a second life. Without this the panel would
-    //   be stranded drawing rows of a view nobody is looking at. A *refused* move is not that news: it has no
-    //   effect to settle, and the pair is left alone (`panel-input.ts` answers the row the user aimed at).
-    if (frame !== undefined) {
-      // The freeze, set here on the way to `drawFrame` rather than read off the frame: `invalidateFrame()` is the
-      // user's door and clears it whenever the bar or the focus moves, so a frame frozen at an earlier publish
-      // cannot outlive a keystroke that moved the marker off its row.
-      if (this.#drawnKeys?.selection === frame.selection && this.#state.focused) {
-        this.#memory.frozen = true;
-        // No re-sectioning and no redraw: the memory's drawn order has to stay the array these rows were laid
-        // out over, because the move guard in `panel-input.ts` reads that array and re-sectioning it would have
-        // a key refuse a row the frame really drew. The next request hits the cache; the freeze is what stops a
-        // repaint (the minute over, a theme change) from drawing a view the user is not looking at.
-        return;
-      }
-      // Settle on the view that answered. The bar comes home first, through the same clamp every other entry
-      // point uses: the frozen marker indexes *its* rows and the frame is about to be replaced by one drawn over
-      // a shorter view. Writing it drops the frame and the pair together, as the state's setters do — a pair left
-      // behind after its frame is gone would have the next key answer a bar nobody drew.
-      this.#drawnKeys = undefined;
-      this.#memory.invalidateFrame();
-      this.#memory.frozen = false;
-      this.#host.requestRender();
-      return;
-    }
-    const pins = this.pins;
-    // The clamp moves the bar through the state's own setter, so the frame cannot outlive the selection —
-    // and it is the same clamp `render()` applies, so the two entry points cannot disagree about the floor.
-    const selection = clampSelection(this.#state.selection, pins.length);
-    if (selection !== this.#state.selection) this.#state.setSelection(selection);
-    // One comparison, through the cache's own test, over the candidate `panel-component-frame.ts` spells
-    // with the very builder `render()` memorises: `width` and `lines` are the two members `sameFrame`
-    // ignores, which is what lets a redraw (not a resize) hit.
-    if (
-      sameFrame(
-        this.#memory.frame,
-        frameCandidate(pins, this.#state.focused, selection, this.#host),
-      )
-    ) {
-      return;
-    }
-    this.invalidate();
-    this.#host.requestRender();
+    applyViewMove({
+      memory: this.#memory,
+      state: this.#state,
+      host: this.#host,
+      livePins: () => this.#host.getView().pins,
+      drawnOrder: () => this.pins,
+      drawnKeys: () => this.#drawnKeys,
+      setDrawnKeys: (pair) => {
+        this.#drawnKeys = pair;
+      },
+      invalidate: () => this.invalidate(),
+    });
   }
 
   /**
@@ -234,9 +192,14 @@ export class PanelComponent implements Component {
     return this.#state.selection;
   }
 
-  /** The three things a focus change needs: the flag's cell, the handle, and the host. */
+  /** The collaborators a focus change needs — assembled by `panelFocusCells` (`panel-component-focus.ts`). */
   #interactive(): PanelFocus {
-    return { state: this.#state, handle: this.#handle, host: this.#host };
+    return panelFocusCells({
+      state: this.#state,
+      handle: () => this.#handle,
+      host: this.#host,
+      tui: () => this.#tui,
+    });
   }
 
   /**

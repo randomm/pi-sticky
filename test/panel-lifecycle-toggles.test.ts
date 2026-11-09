@@ -26,6 +26,7 @@ import {
 } from "./panel-lifecycle-fixture.ts";
 import { wiring } from "./panel-owner-wiring.ts";
 
+import type { PanelComponent } from "../src/panel-component.ts";
 import type { PanelOwner } from "../src/panel.ts";
 
 test("/pins with no argument keeps its listing notify and opens nothing new", async () => {
@@ -99,19 +100,21 @@ test("a hide whose host teardown throws ends the interaction and says so, withou
   if (!built) throw new Error("no panel was opened to hide");
   // The recorder keeps a plain `Component`; this is the component the factory built (`PanelComponent`),
   // reached the way `panelComponent()` reaches it — through `unknown`, since the recorder's own type is.
-  const component = built as unknown as {
-    focus(): void;
-    isFocused(): boolean;
-    setHandle(handle: { focus(): void; unfocus(): void }): void;
-  };
+  const component = built as unknown as Pick<PanelComponent, "focus" | "isFocused" | "setHandle">;
   // The handle the owner handed the component, replaced with the one member this case makes fail. A
-  // `focus()` on a handle that cannot answer it is what the focus key does first, so the seam is complete.
+  // `focus()` on a handle that cannot answer it is what the focus key does first, so the seam is complete,
+  // and `isFocused()` grants it the way pi does (`tui.js:467`) so the reconciliation after the ask finds the
+  // panel where the user left it: the throw below is the *teardown*, which is the case under test.
+  const grant = { held: false };
   component.setHandle({
-    focus: () => {},
+    focus: () => {
+      grant.held = true;
+    },
     unfocus: () => {
       throw new Error("handle is gone");
     },
-  });
+    isFocused: () => grant.held,
+  } as unknown as Parameters<typeof component.setHandle>[0]);
   component.focus();
   expect(component.isFocused()).toBe(true);
 

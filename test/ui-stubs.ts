@@ -32,10 +32,22 @@ export function createPlainTheme(): Theme {
   } as unknown as Theme;
 }
 
-/** Overlay handle that tracks visibility and focus without a terminal. */
+/**
+ * Overlay handle that tracks visibility and focus without a terminal.
+ *
+ * Starts **released** and **shown**, which is what an overlay opened `nonCapturing` actually is: pi never
+ * took the keyboard, so a test that reads `isFocused()` before anything asked has read pi's answer and not
+ * a fixture's hope. A handle that starts focused makes every "the panel let go" assertion vacuous — it was
+ * never holding anything.
+ *
+ * The two no-op guards pi-tui imposes on a `focus()` ask (tui.js:431-436) are not modelled here, and that is
+ * the difference between this handle and `panel-handle.ts`'s: this one is for a component test that has no
+ * overlay to be on or off a stack, while a keyboard test that has to be able to *lose* a focus ask uses the
+ * stack model. Use that one when the question is whether pi granted the keyboard.
+ */
 export function createOverlayHandle(): OverlayHandle {
   let hidden = false;
-  let focused = true;
+  let focused = false;
   return {
     hide: () => {
       hidden = true;
@@ -43,10 +55,12 @@ export function createOverlayHandle(): OverlayHandle {
     },
     setHidden: (value: boolean) => {
       hidden = value;
+      if (value) focused = false;
     },
     isHidden: () => hidden,
     focus: () => {
-      focused = true;
+      // pi-tui drops the ask from an entry it is not drawing; so does this.
+      if (!hidden) focused = true;
     },
     unfocus: () => {
       focused = false;
@@ -56,10 +70,31 @@ export function createOverlayHandle(): OverlayHandle {
   };
 }
 
-/** Stub TUI passed to widget and component factories; renders are requested by the test. */
-export function createStubTui(): TUI {
+/**
+ * Stub TUI passed to widget and component factories; renders are requested by the test.
+ *
+ * The two focus members are a **cell**, not no-ops: `setFocus` writes it and `getFocusedComponent()` reads
+ * it, so `panel-focus-reconcile.ts` has a pi to reconcile against and a test can assert where the keystrokes
+ * would actually have gone. An editor component is installed as the initial focus, the way pi has its editor
+ * focused before an overlay is shown — which is what makes "the panel gave the keyboard back" an observable
+ * fact rather than the absence of a flag. `showOverlay` shares the cell with the handle it returns for the
+ * same reason: a stub whose handle and focus cell are two separate beliefs cannot detect the disagreement
+ * this issue is about.
+ */
+/** The stub, with the two members only the fixtures reach: pi's focus reader, and its editor. */
+export interface StubTui extends TUI {
+  /** pi-tui declares this on `TuiBase` (`tui.d.ts:301`) and the `TUI` interface does not carry it. */
+  getFocusedComponent(): Component | null;
+  /** The component pi had focused before any overlay took the keyboard. */
+  editorComponent: Component;
+}
+
+export function createStubTui(): StubTui {
   const noop = () => {};
   const children: Component[] = [];
+  /** What pi's `focusedComponent` is: written by `setFocus`, read by `getFocusedComponent()`. */
+  const editor: Component = { render: () => [], invalidate: () => {} };
+  let focusCell: Component | null = editor;
   const stub: Record<string, unknown> = {
     mode: "test",
     children,
@@ -89,8 +124,42 @@ export function createStubTui(): TUI {
     setShowHardwareCursor: noop,
     getClearOnShrink: () => false,
     setClearOnShrink: noop,
-    setFocus: noop,
-    showOverlay: () => createOverlayHandle(),
+    setFocus: (component: Component | null) => {
+      focusCell = component;
+    },
+    getFocusedComponent: () => focusCell,
+    /** The component pi had focused before any overlay took the keyboard — its editor. */
+    editorComponent: editor,
+    showOverlay: (component: Component) => {
+      // `nonCapturing` is what the panel opens with, so showing does not steal the focus; the handle obeys
+      // the same two guards pi-tui's does and answers `isFocused()` from the cell above.
+      let hidden = false;
+      let onStack = true;
+      const grant = () => onStack && !hidden;
+      return {
+        hide: () => {
+          onStack = false;
+          hidden = true;
+          if (focusCell === component) focusCell = editor;
+        },
+        setHidden: (value: boolean) => {
+          if (hidden === value) return;
+          hidden = value;
+          if (value && focusCell === component) focusCell = editor;
+        },
+        isHidden: () => hidden,
+        focus: () => {
+          if (!grant()) return;
+          focusCell = component;
+        },
+        unfocus: () => {
+          if (focusCell !== component) return;
+          focusCell = editor;
+        },
+        isFocused: () => focusCell === component,
+        getBounds: () => undefined,
+      } as unknown as OverlayHandle;
+    },
     hideOverlay: noop,
     hasOverlay: () => false,
     start: noop,
@@ -104,7 +173,7 @@ export function createStubTui(): TUI {
     // A stubbed terminal never replies to an OSC 10/11 query, so no colours are reported.
     queryTerminalColors: async () => ({}),
   };
-  return stub as unknown as TUI;
+  return stub as unknown as StubTui;
 }
 
 /** A fixed set of lines as a Component, for tests that need one without a factory. */

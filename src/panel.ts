@@ -10,10 +10,10 @@
  * - An open overlay blocks `switchTuiMode` (pi's `hasOverlayEntries`), so the panel is opened *once
  *   per session*, not per visibility change; `visible()` decides each frame.
  * - `session_start` and `session_tree` are the only open points, and each closes the previous panel by
- *   calling its `done()` exactly once — pi's own `close()` is `closed`-guarded and a no-op after
+ *   calling its `done()` exactly once — pi's `close()` is `closed`-guarded and a no-op after a
  *   `resetExtensionUI`, so nothing here touches `OverlayHandle.hide()`.
- * - `nonCapturing` for the overlay's whole life: showing never steals focus, so the shortcuts are the
- *   only way in and `Escape` in `handleInput` the only way out.
+ * - `nonCapturing` for the overlay's whole life: showing never steals focus, so the shortcuts are the only
+ *   way in, and `Escape` in `handleInput` or the escape hatch the only way out.
  *
  * Geometry and the refusal strings live in `panel-geometry.ts` and `panel-refusals.ts`; the overlay call
  * itself in `panel-open.ts`; the release of a dropped record in `panel-close.ts`. Because an open overlay
@@ -30,18 +30,31 @@ import { newPanelRecord } from "./panel-call.ts";
 import { releasePanel } from "./panel-close.ts";
 import type { PanelComponent } from "./panel-component.ts";
 import type { PanelWiring } from "./panel-deps.ts";
+import type { HatchKeyboard } from "./panel-escape-hatch.ts";
 import { judgeColumns, panelIsVisible } from "./panel-geometry.ts";
-import { openPanelOverlay } from "./panel-open.ts";
+import { createGrantWindow } from "./panel-grant-window.ts";
+import type { GrantWindow } from "./panel-grant-window.ts";
+import { openPanelOverlay, ownerOpenHooks } from "./panel-open.ts";
+import type { KeyboardCells, OwnerVerbCells } from "./panel-owner-keyboard.ts";
+import {
+  ownerFocus,
+  ownerHide,
+  ownerKeyboard,
+  ownerShow,
+  ownerToggle,
+  reconcileOnFrame,
+  reconcilePanelFocus,
+  releaseKeysOutsideScreen,
+} from "./panel-owner-keyboard.ts";
 import type { RailConsider } from "./panel-rail-consider.ts";
 import { createRailConsider } from "./panel-rail-consider.ts";
 import { createRailHandoff } from "./panel-rail-handoff.ts";
 import { ownerHasSurface } from "./panel-surfaces.ts";
-import type { PanelVerbCells } from "./panel-user-verbs.ts";
-import { focusFromShortcut, hidePanel, showPanel, togglePanel } from "./panel-user-verbs.ts";
 
 /**
- * The panel owner: open, close, the two visibility answers and the rail's reconsideration. A fresh instance
- * per extension call, so nothing of it survives `session_shutdown`.
+ * The panel owner: open, close, the two visibility answers and the rail's reconsideration. Fresh per
+ * extension call, so nothing of it survives `session_shutdown`. The keyboard questions it also answers are
+ * `panel-owner-keyboard.ts`'s.
  */
 export class PanelOwner {
   #wiring: PanelWiring;
@@ -57,6 +70,8 @@ export class PanelOwner {
    * the record the failure belongs to. The next `open()` reports it once and clears it.
    */
   #closeFailure: string | undefined;
+  /** Whether a focus grant is in flight, which is when the per-frame reconciliation must not speak. */
+  readonly #grants = createGrantWindow();
 
   constructor(wiring: PanelWiring) {
     this.#wiring = wiring;
@@ -81,75 +96,52 @@ export class PanelOwner {
   }
 
   /**
-   * Open the panel for this session. Called from `session_start` and `session_tree`, each of which has just
-   * cleared the host's overlays, and from nowhere else: a visibility change is not a reason to open anything,
-   * because `visible()` already handles that without a second overlay.
+   * Open the panel for this session — from `session_start` and `session_tree` only, each of which has
+   * just cleared the host's overlays. A visibility change is not a reason to open anything: `visible()`
+   * already handles that without a second overlay.
    */
   open(ctx: ExtensionContext): void {
+    // Asked while the previous record still stands — the close inside reconciles the panel the branch change
+    // is replacing before a new one is published over it.
     this.close();
     if (!ctx.hasUI || ctx.mode !== "tui") return;
 
     const ui = ctx.ui;
     // A close that could not release its overlay leaves pi's stack holding an entry nothing owns, and every
-    // later `isVisible()` answers for an overlay that is not on screen. The user hears it once, here, because
-    // this is the first point with a ui to report to and the owner has no other.
+    // later `isVisible()` answers for an overlay that is not on screen. The user hears it once, here: this is
+    // the first point with a ui to report to.
     if (this.#closeFailure !== undefined) {
       ui.notify(`pins panel: an earlier overlay did not close (${this.#closeFailure}).`, "warning");
       this.#closeFailure = undefined;
     }
-    // A uiContext without `custom` is not a bug to report: pi's own UI context always has it, and a context
-    // built by hand for a lifecycle test need not. The rail draws either way, which is the fallback the panel
-    // is designed to have — and no record is published, so `close()` on a session that never opened a panel
-    // does not look like a close.
+    // A uiContext without `custom` is not a bug to report: pi's own context always has it, and a hand-built
+    // one need not. The rail draws either way, and no record is published, so `close()` on a session that
+    // never opened a panel does not look like a close.
     if (typeof ui.custom !== "function") return;
 
     const record: PanelRecord = newPanelRecord();
-    // Published *now*, before the host has built anything: `custom()` is a promise, so the component
-    // arrives on a later microtask, and a rail that waited for it would draw nothing in the turn that
-    // asked for it. `isVisible()` answers from this record and the live view, which is what makes the
-    // handoff decidable in the same turn as `open()`.
+    // Published *now*, before the host has built anything: `custom()` is a promise, so the component arrives
+    // on a later microtask and a rail that waited for it would draw nothing in the turn that asked.
+    // `isVisible()` answers from this record and the live view, which makes the handoff decidable in that turn.
     this.#record = record;
     this.#consider.consider(false);
     // The overlay itself is `panel-open.ts`'s to build; the owner hands over only closures over a session it
     // knows is still alive.
-    openPanelOverlay(ctx, record, this.#wiring, {
-      tui: () => this.#tui,
-      onTui: (tui) => {
-        this.#tui = tui;
-      },
-      // The interaction ended: the earned open ends with it, and then the surfaces are settled. The ending
-      // goes to the cell before the redraw rather than after, because `refresh()` is what asks the rail and
-      // the overlay what the panel is doing — a rail reconsidered against the still-open answer is a rail
-      // that stood down for pins it should have taken back.
-      onUnfocus: () => {
-        this.#wiring.deps.panelMode().endEarnedOpen();
-        this.refresh();
-      },
-      panelVisible: () => this.isVisible(),
-      onHandle: (handle) => {
-        this.#record?.component?.setHandle(handle);
-      },
-      onFailed: (reason) => {
-        if (this.#record === record) this.#record = undefined;
-        ctx.ui.notify(`pins panel unavailable: ${reason}`, "warning");
-      },
-      visible: (columns, rows) => this.#visible(columns, rows),
-    });
+    openPanelOverlay(ctx, record, this.#wiring, ownerOpenHooks(this, ctx, record));
   }
 
   /**
    * The overlay's per-frame question, answered and recorded. pi-tui calls this every render cycle with the
-   * terminal's real dimensions, which is the only width the extension is ever *given*, so the frame records
-   * it and the answer is judged against it — with the user's flag and the pins, all read now. Reading now
-   * rather than at open time is what lets a resize or a toggle change what the overlay draws without
-   * reopening it, and it is what a resize *is* from here: the only way a widening reaches a rail that was
-   * drawn narrow, since pi keeps the component a factory returned until the key is written again. The
-   * `consider(true)` below is the guarded one, so a frame that changed nothing costs a comparison.
+   * terminal's real dimensions — the only width the extension is ever *given* — so the width is noted and
+   * judged against, with the flag and the pins read *now*: that is what lets a resize change what the overlay
+   * draws without reopening it, and the only way a widening reaches a rail drawn narrow.
    */
-  #visible(columns: number, _rows: number): boolean {
+  #frame(columns: number, _rows: number): boolean {
     this.#wiring.terminal.note(columns);
     this.#consider.consider(true);
-    return this.isVisible();
+    const shown = this.isVisible();
+    reconcileOnFrame(this.keyboardCells);
+    return shown;
   }
 
   /**
@@ -157,24 +149,23 @@ export class PanelOwner {
    *
    * The record is dropped first and unconditionally, so nothing `releasePanel()` does — nor a host whose
    * teardown throws — can leave the extension still answering `isVisible()` for a panel the user closed. The
-   * width is *not* dropped with it: pi-tui states a width when the terminal changes and the only thing that
-   * listens is the overlay's `visible()`, so closing the panel does not make the terminal a different width —
-   * and a session whose panel is closed, or reopened on a branch change, has no later statement to wait for.
-   * Dropping it left an open overlay answering `visible()` with 0 forever, which is the pins on neither
-   * surface: the rail had already stood down for a panel that claimed there was no room for it.
+   * width is *not* dropped with it: pi-tui states a width when the terminal changes, the only listener is the
+   * overlay's `visible()`, and a closed panel does not make the terminal a different width — a reopened one
+   * would then have no later statement to wait for and would answer `visible()` with 0 forever, which is the
+   * pins on neither surface.
    */
   close(): void {
     const record = this.#record;
+    // Asked while the record is still published: the close of a panel pi still routes to is the case the
+    // reconciliation exists for, and `releasePanel` below is what takes the entry out of pi's stack.
+    reconcilePanelFocus(this.keyboardCells);
     this.#record = undefined;
     this.#tui = undefined;
-    // One edge, both halves: `RailHandoff` drops the installed answer and the minute it was installed for
-    // together, so the owner cannot record one and forget the other.
+    // One edge, both halves: `RailHandoff` drops the installed answer and its minute together.
     this.#consider.consider(false);
     // A close of a panel that was never opened has nothing to say, and must not overwrite a verdict the
-    // owner still owes the user: an empty `close()` used to clear a real wedge recorded a moment earlier, and
-    // the warning for an entry still sitting in pi's stack was lost. A close that *did* reach a record
-    // answers for itself, including the one at the top of `open()` — which is why the report there clears the
-    // verdict before it.
+    // owner still owes the user — an empty `close()` once cleared a real wedge recorded a moment earlier and
+    // lost the warning for an entry still in pi's stack. A close that *did* reach a record answers for itself.
     if (record) this.#closeFailure = releasePanel(record) ?? this.#closeFailure;
   }
 
@@ -199,83 +190,7 @@ export class PanelOwner {
   #pins(): number {
     return this.#wiring.deps.getView().pins.length;
   }
-
-  /**
-   * Take the keyboard back from a panel this owner is not drawing — the one place that does, since the owner
-   * installed the overlay and is the only reader of its component and of what its frame answers for
-   * `visible()`.
-   *
-   * pi stops routing keys to an overlay once its `visible()` answers false, so the release is asked when the
-   * component still holds the flag over a frame this owner is not drawing. It runs at the end of every
-   * rebuild.
-   */
-  releaseKeys(): void {
-    const component = this.#record?.component;
-    if (!component?.isFocused() || this.isVisible()) return;
-    try {
-      component.unfocus();
-    } catch {
-      // Contained the way `hidePanel` (`panel-user-verbs.ts`) contains the same ending: the flag is the part
-      // this extension owns and the part a throw must not survive, and a notice belongs to the host that
-      // just threw. No report — the rebuild has no ui to report to and the boundary's redraw is what the
-      // user needs.
-      component.setFocused(false);
-    }
-  }
-
-  /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
-  railDrawn?(iso: string): void {
-    this.#consider.drawn(iso);
-  }
-
-  /**
-   * Whether either surface is on screen — the minute hand's one question. On the owner because only it knows
-   * whether it published an overlay or wrote a rail; the rule over the readers is `panel-surfaces.ts`'s.
-   */
-  isAnySurfaceVisible(): boolean {
-    return ownerHasSurface(this, this.#wiring);
-  }
-
-  /**
-   * Tell the open component that the view changed, and ask for the rail to be reconsidered; does nothing
-   * when no panel is open.
-   *
-   * The rail is decided when it is *installed*, not when it is asked to render: pi keeps the component a
-   * factory returned until the key is written again, so a visibility change that only redrew the overlay
-   * would leave a rail standing over a panel that had just taken the pins (and the reverse). Both surfaces
-   * are settled here, the one place every change passes, and both halves are guarded against a change that
-   * did not happen — this runs on every frame as well as every edit.
-   */
-  refresh(): void {
-    this.#record?.component?.update();
-    this.#consider.consider(true);
-  }
-
-  // The user's verbs: `panel-user-verbs.ts`, over the owner's wiring, its component and its refresh. Each is
-  // one call; what they do and the two rules they obey are said there.
-  show(ctx: HostContext | undefined): void {
-    showPanel(this.#verbCells(), ctx);
-  }
-
-  /** Give the panel the keyboard. Works whether or not it is drawn at the moment. */
-  focus(): void {
-    this.#record?.component?.focus();
-  }
-
-  hide(): void {
-    hidePanel(this.#verbCells());
-  }
-
-  toggle(ctx: HostContext | undefined): void {
-    togglePanel(this.#verbCells(), ctx);
-  }
-
-  focusFromShortcut(ctx: HostContext | undefined): void {
-    focusFromShortcut(this.#verbCells(), ctx);
-  }
-
-  /** What the four verbs read of the owner: its wiring, its component, and the way to settle both surfaces. */
-  #verbCells(): PanelVerbCells {
+  #verbCells(): OwnerVerbCells {
     return {
       wiring: this.#wiring,
       component: () => this.#record?.component,
@@ -284,10 +199,102 @@ export class PanelOwner {
     };
   }
 
-  // The width this instance was last told — what every visibility question is measured in, and the number
-  // both the refusals and the rail's key are spelled from. Asked of the wiring, not a module global: two
-  // sessions in one process have two terminals (`panel-width.ts`, `judgeColumns`).
+  /** Take the keyboard back from a panel this owner is not drawing. */
+  releaseKeys(): void {
+    releaseKeysOutsideScreen(this.keyboardCells, () => this.isVisible());
+  }
+
+  /** What the escape hatch may ask of the open panel. */
+  keyboard(): HatchKeyboard | undefined {
+    return ownerKeyboard(this.keyboardCells);
+  }
+
+  /** The four readers the user's verbs need, all live. */
+  /** Tell the rail's handoff the minute its rows were just stamped at, from the draw that stamped them. */
+  railDrawn?(iso: string): void {
+    this.#consider.drawn(iso);
+  }
+
+  /**
+   * Whether either surface is on screen — the minute hand's one question. On the owner because only it knows
+   * whether it published an overlay or wrote a rail.
+   */
+  isAnySurfaceVisible(): boolean {
+    return ownerHasSurface(this, this.#wiring);
+  }
+  /**
+   * Tell the open component that the view changed, and ask for the rail to be reconsidered; does nothing when
+   * no panel is open.
+   *
+   * The rail is decided when it is *installed*, not when it is asked to render: pi keeps the component a
+   * factory returned until the key is written again, so a visibility change that only redrew the overlay would
+   * leave a rail standing over a panel that had just taken the pins (and the reverse). Both surfaces are
+   * settled here — the one place every change passes, each half guarded against a change that did not happen.
+   */
+  refresh(): void {
+    this.#record?.component?.update();
+    this.#consider.consider(true);
+  }
+
+  // The user's verbs. What they do and the rules they obey are `panel-user-verbs.ts`'s; the cells they read
+  // and the dispatch are `panel-owner-verbs.ts`'s.
+  show(ctx: HostContext | undefined): void {
+    ownerShow(this.#verbCells(), ctx);
+  }
+
+  /** Give the panel the keyboard. */
+  focus(): void {
+    this.#record?.component?.focus();
+  }
+
+  hide(): void {
+    ownerHide(this.#verbCells());
+  }
+
+  toggle(ctx: HostContext | undefined): void {
+    ownerToggle(this.#verbCells(), ctx);
+  }
+
+  focusFromShortcut(ctx: HostContext | undefined): void {
+    ownerFocus(this.#verbCells(), ctx);
+  }
+
+  /**
+   * The width every visibility question is measured in, and the number the refusals and the rail's key are
+   * spelled from. Asked of the wiring, never a module global: two sessions in one process have two terminals.
+   */
   #columns(): number {
     return judgeColumns(this.#wiring.terminal.status());
+  }
+
+  // `PanelHooksOwner` (`panel-open.ts`): what the open's closures read, all answered *now*.
+  tui(): TUI | undefined {
+    return this.#tui;
+  }
+
+  rememberTui(tui: TUI): void {
+    this.#tui = tui;
+  }
+
+  endEarnedOpen(): void {
+    this.#wiring.deps.panelMode().endEarnedOpen();
+  }
+
+  forget(record: PanelRecord): void {
+    if (this.#record === record) this.#record = undefined;
+  }
+
+  frame(columns: number, rows: number): boolean {
+    return this.#frame(columns, rows);
+  }
+
+  /** The keyboard's readers, as a value: `PanelOpenHooks` wants the counter itself, not a method. */
+  get keyboardCells(): KeyboardCells {
+    return { component: () => this.#record?.component, tui: () => this.#tui, grants: this.#grants };
+  }
+
+  /** The depth counter, so the factory can bracket the handle's own `focus()`. */
+  get grants(): GrantWindow {
+    return this.#grants;
   }
 }

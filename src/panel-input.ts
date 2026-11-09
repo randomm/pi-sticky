@@ -13,6 +13,12 @@
  * `PI_STICKY_PANEL=open`, where the frame stays the full one. And the peek is drawn without being interactive
  * at all: three rows, no bar, nothing a key could address. Either way a key has no visible answer, so it is
  * handed back: `unfocus()` puts the focus where the user is typing and tells the owner to settle the rail.
+ *
+ * The fallthrough is the other half of that promise. A key the panel does not answer is not the panel's key
+ * to keep: every unclaimed byte except Ctrl+C is dropped (the panel is a modal and stray letters must not
+ * reach the editor under it), and Ctrl+C — the key a user presses when a modal will not let go — *ends* the
+ * interaction instead. `isCtrlCPress` (`panel-keys.ts`) is a closed set of literal bytes, so a release, a
+ * repeat or a paste-shaped payload containing 0x03 stays inert like any other unclaimed key.
  */
 import { isKeyRelease, isKeyRepeat, matchesKey } from "@earendil-works/pi-tui";
 
@@ -20,7 +26,13 @@ import type { KeyId } from "@earendil-works/pi-tui";
 
 import type { DrawnKeys } from "./panel-frame-cache.ts";
 import type { PanelHost } from "./panel-host.ts";
-import { isDismissKey, isSubmitKey, optionKeyPressed, presses } from "./panel-keys.ts";
+import {
+  isCtrlCPress,
+  isDismissKey,
+  isSubmitKey,
+  optionKeyPressed,
+  presses,
+} from "./panel-keys.ts";
 import type { PanelMode } from "./panel-mode.ts";
 import type { ViewPin } from "./types.ts";
 
@@ -161,7 +173,15 @@ export function dispatchPanelKey(data: string, target: PanelKeyTarget, host: Pan
     return;
   }
   const step = presses(data, UP_KEYS) ? -1 : presses(data, DOWN_KEYS) ? 1 : 0;
-  if (step === 0) return;
+  if (step === 0) {
+    // The one unclaimed key the panel does not keep. pi-tui routes *every* byte to the focused component,
+    // Ctrl+C included, and pi binds Ctrl+C on the editor (`app.clear`): while the panel holds the focus the
+    // user's own exit is unreachable, so the key that is supposed to interrupt has to be the one unclaimed
+    // byte that ends the modal. It is not forwarded — pi-tui has already routed this byte here — it releases,
+    // and the *next* press arrives at the editor.
+    if (isCtrlCPress(data)) target.unfocus();
+    return;
+  }
   // The bar stays where the frame drew it while the frame's own row is on screen: the pair *is* the bar for a
   // panel the user has seen, so a move is asked for only when it has somewhere to go. Both bounds and the
   // destination are the frame's — a frame of three rows is three rows the user can walk to, whatever the view
