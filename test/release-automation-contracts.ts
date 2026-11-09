@@ -1,5 +1,5 @@
 /**
- * The readers the release-automation tests assert through: the two workflows, the release-please config and
+ * The readers the release-automation tests assert through: the workflows, the release-please config and
  * manifest, and the tarball `npm pack` would build.
  *
  * They live here rather than in the tests because the alternative is worse: a test that pinned a workflow's
@@ -17,7 +17,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { type PackageJson, parsePackageJson } from "./release-automation-package.ts";
+import {
+  type PackageJson,
+  parsePackageJson,
+  resolvesToAFile,
+} from "./release-automation-package.ts";
 import {
   type Read,
   blockFieldsAtIndent,
@@ -41,6 +45,9 @@ export const RELEASE_WORKFLOW = join(WORKFLOWS_DIR, "release-please.yml");
 /** The PR-title guard ported from vipune, read by `pr-title-check.test.ts`. */
 export const PR_TITLE_WORKFLOW = join(WORKFLOWS_DIR, "pr-title-check.yml");
 
+/** The CI workflow, read by `release-automation-ci.test.ts`; operator-owned, so read-only to this suite. */
+export const CI_WORKFLOW = join(WORKFLOWS_DIR, "ci.yml");
+
 /** Read a file from the repo root; the only place the root is spelled. */
 export function readRepoFile(path: string): string {
   return readFileSync(join(ROOT, path), "utf8");
@@ -48,7 +55,7 @@ export function readRepoFile(path: string): string {
 
 // Re-exported so the release tests reach the whole contract through one module while the validator keeps its
 // own file, which is what lets each of them stay small enough to read as a unit.
-export { parsePackageJson, type PackageJson };
+export { parsePackageJson, type PackageJson, resolvesToAFile };
 
 /**
  * A workflow's `on:` block as `event → its filters`, read off a YAML parse.

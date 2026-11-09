@@ -27,6 +27,7 @@ import {
   publishField,
   pushBranches,
   readRepoFile,
+  resolvesToAFile,
   topCancelInProgress,
   workflowTriggers,
 } from "./release-automation-contracts.ts";
@@ -247,15 +248,20 @@ test("the changelog shows five types and hides the five plumbing ones", () => {
   ]);
 });
 
-test("package.json publishes publicly with provenance and keeps its files list", () => {
+test("package.json publishes publicly and loads the one extension it ships", () => {
   expect(pkg.publishConfig, "publishConfig").toEqual({ access: "public", provenance: true });
   expect(pkg.dependencies, "runtime dependencies stay empty").toEqual({});
+  // pi reads `pi.extensions` as a unit: one non-string entry costs the entire field, and an entry that names
+  // no file leaves pi with nothing to load — silently. The refusal controls and the resolution reader are in
+  // `release-automation-package-controls.test.ts`; `pi.skills` is pinned by `test/skills.test.ts`.
+  expect(pkg.extensions, "the one entry point pi is told to load").toEqual(["./src/index.ts"]);
+  expect(pkg.extensions.map(resolvesToAFile), "each one is a file in the tree").toEqual([true]);
 });
 
 test("the packed set is the files list plus what npm always adds", () => {
-  // The assertion that makes `files` a fact rather than an intention. npm adds package.json even when the
-  // list omits it, so the packed top level is compared to the list plus that one entry — and a stray
-  // directory under the root that `files` never named would show up here as an extra element.
+  // npm adds package.json even when the list omits it, so the packed top level is compared to the list plus
+  // that one entry — and a stray directory under the root that `files` never named would show up here as an
+  // extra element.
   expect(fileSet(), "the packed top level").toEqual(EXPECTED_PACKED);
   expect(declaredTops(pkg.files), "the manifest's own list, in the packed form").toEqual(
     EXPECTED_PACKED,
