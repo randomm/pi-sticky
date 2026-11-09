@@ -201,9 +201,9 @@ describe("combining marks", () => {
 
 describe("budget", () => {
   // The tool refuses an over-long text now (`tool-guards-text-budget.test.ts`), so the cut below is
-  // the budget of the one caller that cannot refuse: `reconstruct` rebuilds pins from a session file
-  // with no config in hand and reaches `sanitizePinText` through `cleanPinText` with the config's own
-  // budget. 400 is `DEFAULT_CONFIG.maxChars` (src/config.ts) — the number the refusal's doc pins
+  // the budget of the one caller that cannot refuse — the tests that drive `sanitizePinText` with a
+  // budget no production caller sets; `reconstruct` rebuilds pins from a session file with no config in
+  // hand and runs only `cleanPinText`, which cleans without cutting. 400 is `DEFAULT_CONFIG.maxChars` (src/config.ts) — the number the refusal's doc pins
   // compose — and 40 is the smallest the clamp permits, so no budget here is one no caller sets.
   const ascii = (n: number): string => "a".repeat(n);
   // Built from numbers rather than from a source literal or a single code point: an astral

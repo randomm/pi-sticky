@@ -133,6 +133,15 @@ const ZERO_WIDTH = "\u200B";
 export const MARK_BREAK = "\u00AD";
 
 /**
+ * The reply's own smuggled invisibles — U+200B and the mark's soft-hyphen break U+00AD — removed
+ * before the reply is folded onto a row, so a break shape between soft-hyphen fragments of the mark
+ * cannot reassemble the mark for a reader that drops the invisible.
+ */
+function stripReplyInvisibles(text: string): string {
+  return text.replaceAll(ZERO_WIDTH, "").replaceAll(MARK_BREAK, "");
+}
+
+/**
  * The user's words as the row may quote them: no U+200B, no `\u00AD`, no `"` (it would close the row's own
  * quote) and no intact reply mark (it would read as the extension's own). See `repliedSuffix`.
  *
@@ -143,7 +152,7 @@ export const MARK_BREAK = "\u00AD";
  * break, since the substitution below only ever looks for the intact string.
  */
 function quoteAnswer(text: string): string {
-  const bare = text.replaceAll(ZERO_WIDTH, "").replaceAll(MARK_BREAK, "");
+  const bare = stripReplyInvisibles(text);
   const broken = `(${MARK_BREAK}${REPLIED_MARK.slice(1)}`;
   return bare.replaceAll('"', "'").replaceAll(REPLIED_MARK, broken);
 }
@@ -153,17 +162,17 @@ function quoteAnswer(text: string): string {
  * (options: 1) <a>  2) <b>) (compact)`.
  *
  * One line, whatever any field carries — the text, the group, each option and the reply are folded **by this
- * row**, in the order it spells them: `foldBreaks(pin.text)`, then `foldBreaks(reply)`, then the mark. The
- * fold cannot be left to the suffix that quotes the reply, because the fold is what removes every break shape
- * (`escape.ts`) and `formatLocalTime` inside that suffix never runs one over its argument: an unfolded reply
- * would hand a row containing a live CR to a model that is told a row is one line. The reply sits between the
- * text and the closing parenthesis of the mark, and inside a quote of its own: a row the model is told to
- * trust must not let the user's words start a record of their own, and the reply was already cut to the
- * reply's own ceilings at the write (`sanitize-reply.ts`), so a row is bounded by the pin's text plus those
- * ceilings plus the unchanged suffix.
+ * row**, in the order it spells them: `foldBreaks(pin.text)`, then the reply's invisibles are stripped and
+ * `foldBreaks` runs over what is left, then the mark. The fold cannot be left to the suffix that quotes the
+ * reply, because the fold is what removes every break shape (`escape.ts`) and `formatLocalTime` inside that
+ * suffix never runs one over its argument: an unfolded reply would hand a row containing a live CR to a model
+ * that is told a row is one line. The reply sits between the text and the closing parenthesis of the mark, and
+ * inside a quote of its own: a row the model is told to trust must not let the user's words start a record of
+ * their own, and the reply was already cut to the reply's own ceilings at the write (`sanitize-reply.ts`), so a
+ * row is bounded by the pin's text plus those ceilings plus the unchanged suffix.
  */
 export function modelRow(pin: ViewPin): string {
-  const answer = pin.reply === undefined ? "" : foldBreaks(pin.reply);
+  const answer = pin.reply === undefined ? "" : foldBreaks(stripReplyInvisibles(pin.reply));
   return `#${pin.id} [${pin.level}]${groupPart(pin)} ${foldBreaks(pin.text)}${repliedSuffix(pin, answer)}${optionsPart(pin)}${compactPart(pin)}`;
 }
 

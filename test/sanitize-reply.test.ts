@@ -3,6 +3,9 @@ import { expect, test } from "bun:test";
 import { MAX_REPLY_GRAPHEMES, MAX_REPLY_UNITS } from "../src/bounds.ts";
 import { sanitizeReplyText } from "../src/sanitize-reply.ts";
 import { MAX_MARKS_PER_GRAPHEME, cleanPinText, graphemesOf } from "../src/sanitize.ts";
+import { userActionFrom } from "../src/session-entries.ts";
+import { LATER } from "./fixtures.ts";
+import { replyEntry, userActionWithText } from "./reply-entry-fixture.ts";
 
 // The reply is the user's own words, quoted verbatim into the tool result the model reads, so it passes the
 // same cleaning the pin text passes (`sanitize.ts`) and then the reply's own ceilings (`bounds.ts`). These
@@ -216,4 +219,26 @@ test("sanitizeReplyText caps combining marks per grapheme before the length cut"
   expect(cut).toBeDefined();
   expect(cut?.includes("\u0300".repeat(MAX_MARKS_PER_GRAPHEME + 1))).toBe(false);
   expect(cut?.length).toBeLessThanOrEqual(MAX_MARKS_PER_GRAPHEME + 3);
+});
+
+test("every text sanitizeReplyText returns survives userActionFrom unchanged", () => {
+  // The one round trip the two ceilings have to earn: a reply the writer kept — cleaned, or cut to the
+  // reply's own ceilings — is a reply the reader has to hand back whole, or the words the user gave are
+  // lost twice over. Each case below is a writer answer: a clean fit, a cut at the grapheme ceiling, a cut
+  // of a wide cluster and a cut of an ASCII run, plus one reply that only the pass could have cleaned.
+  const cases: string[] = [
+    "yes, ship it",
+    "\u001B]8;;http://evil\u0007see\u0007 \u202Enow",
+    chars("a", MAX_REPLY_GRAPHEMES),
+    chars("a", MAX_REPLY_GRAPHEMES + 1),
+    C25.repeat(C25_RUN),
+    C10.repeat(C10_RUN),
+    chars("x", 5000),
+  ];
+  for (const raw of cases) {
+    const kept = sanitizeReplyText(raw);
+    expect(kept).toBeDefined();
+    const read = userActionFrom(replyEntry(userActionWithText("uid-1", LATER, kept)));
+    expect(read?.text).toBe(kept);
+  }
 });

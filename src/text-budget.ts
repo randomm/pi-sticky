@@ -6,9 +6,9 @@
  * `MAX_TEXT_UNITS`) stays the answer for callers that have no config; this module answers for the
  * caller that does.
  *
- * The cut survives in `sanitizePinText` for the one path that cannot refuse: `reconstruct` rebuilds
- * pins out of a session file with no config in hand, so a text that got there by any other route is
- * still cut rather than drawn over budget.
+ * The cut lives in `sanitizePinText`, the pass that bounds a text to its ceiling for a caller that
+ * cannot refuse; the session-file readers (`reconstruct`) run only `cleanPinText`, which cleans without
+ * cutting, so no production path hands a text to the cut after the fact.
  *
  * The sentence is exported because every copy of it — the README's bullet, its env-table row and the
  * sticky-basics skill — is pinned byte-for-byte to this builder by the doc-fact tests, none of which
