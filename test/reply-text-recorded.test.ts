@@ -31,6 +31,7 @@ import {
   userAction,
   userEntry,
 } from "./fixtures.ts";
+import { userActionWithText } from "./reply-entry-fixture.ts";
 import { DECIDE, REWRITTEN, submitted } from "./reply-support.ts";
 
 const cp = (...codes: number[]): string => String.fromCodePoint(...codes);
@@ -67,12 +68,20 @@ describe("isUserAction and a `text`", () => {
     expect(isUserAction({ ...base, text: "" })).toBe(true);
   });
 
-  test("a text the guard will not vouch for is refused rather than truncated", () => {
+  test("a text the guard will not vouch for costs the words, not the entry", () => {
+    // The ruling, stated where the reader is asserted: a non-string is judged as *no field* and the entry is
+    // still read as a reply; only a string past the reply's unit ceiling is refused outright, and the writer
+    // cannot produce one. `test/state-guards-reply.test.ts` owns the guard cases themselves.
     expect(isUserAction({ ...base, text: OVER_CEILING })).toBe(false);
-    expect(isUserAction({ ...base, text: 7 })).toBe(false);
-    expect(isUserAction({ ...base, text: ["yes"] })).toBe(false);
-    expect(isUserAction({ ...base, text: { words: "yes" } })).toBe(false);
-    expect(isUserAction({ ...base, text: true })).toBe(false);
+    for (const bad of [7, ["yes"], { words: "yes" }, true]) {
+      expect(isUserAction({ ...base, text: bad })).toBe(true);
+      expect(userActionFrom(raw({ ...base, text: bad }))).toEqual({
+        v: 1,
+        uid: "uid-1",
+        action: "reply",
+        at: LATER,
+      });
+    }
   });
 
   test("a bad text does not make a non-action into an action", () => {
@@ -99,7 +108,7 @@ describe("userActionFrom copies `text` by name", () => {
   const branchOf = (details: unknown): unknown[] => [toolResultEntry(details)];
 
   test("a reply's words are copied, cleaned of everything the pin text is cleaned of", () => {
-    expect(userActionFrom(userEntry(userAction("uid-1", "reply", LATER, " yes ")))).toEqual({
+    expect(userActionFrom(userEntry(userActionWithText("uid-1", LATER, " yes ")))).toEqual({
       v: 1,
       uid: "uid-1",
       action: "reply",
@@ -108,7 +117,7 @@ describe("userActionFrom copies `text` by name", () => {
     });
     const cleaned = userActionFrom(
       userEntry(
-        userAction("uid-1", "reply", LATER, "\u001B]8;;http://evil\u0007see\u0007 \u202Enow"),
+        userActionWithText("uid-1", LATER, "\u001B]8;;http://evil\u0007see\u0007 \u202Enow"),
       ),
     );
     expect(cleaned?.text).toBe("see now");
@@ -129,15 +138,13 @@ describe("userActionFrom copies `text` by name", () => {
     );
   });
 
-  test("a text past the guard's ceiling is refused as an entry, which the writer cannot produce", () => {
-    // `isUserAction` refuses a text over `MAX_REPLY_UNITS` and `userActionFrom` refuses the entry with it —
-    // the one place the "no text at all" rule is *not* honoured, and honest only because the writer cuts the
+  test("a text past the reply's ceiling is refused as an entry, which the writer cannot produce", () => {
+    // `isUserAction` refuses a *string* over `MAX_REPLY_UNITS` and `userActionFrom` refuses the entry with it
+    // — the one shape the "no text at all" rule does not cover, and honest only because the writer cuts the
     // reply before it stores it (`sanitize-reply.ts`), so no real session ever holds this shape. Pinned so a
-    // change to the writer's order is caught here rather than as a reply mark that vanished: an entry the
-    // guard refuses is no reply at all, and the pin loses the mark beside its text.
+    // change to the writer's order is caught here rather than as an unbounded row reaching the model.
     const branch = branchOf(snapshot);
     expect(userActionFrom(raw({ ...base, text: OVER_CEILING }))).toBeUndefined();
-    expect(userActionFrom(raw({ ...base, text: 7 }))).toBeUndefined();
     expect(
       reconstruct(branch, [raw({ ...base, text: OVER_CEILING })]).view.pins[0]?.repliedAt,
     ).toBeUndefined();
@@ -170,15 +177,6 @@ describe("userActionFrom copies `text` by name", () => {
     expect(emptied.view.pins[0]?.reply).toBeUndefined();
   });
 
-  test("a text the guard refuses drops the entry, which the writer cannot produce", () => {
-    // `isUserAction` refuses an over-long or non-string text, and `userActionFrom` refuses the entry with it
-    // — the one place the "no text at all" rule is *not* honoured, and honest only because the writer cuts the
-    // reply before it stores it (`sanitize-reply.ts`), so no real entry can reach this shape. Pinned so that
-    // a change to the writer's order is caught here rather than as a reply mark that vanished.
-    expect(userActionFrom(raw({ ...base, text: OVER_CEILING }))).toBeUndefined();
-    expect(userActionFrom(raw({ ...base, text: 7 }))).toBeUndefined();
-  });
-
   test("only a pi-sticky.user entry is read, and `uid` is copied uncleaned", () => {
     expect(userActionFrom(customEntry(base, "pi-sticky.state"))).toBeUndefined();
     expect(userActionFrom({ type: "custom", customType: "pi-sticky.user", data: base })).toEqual({
@@ -203,7 +201,7 @@ describe("the projection puts the recorded words on the pin the agent rewrote", 
     const rewritten = state([pin(1, "Decide Y")], 2);
     const rebuilt = reconstruct(
       [toolResultEntry(rewritten)],
-      [userEntry(userAction("uid-1", "reply", LATER, "yes"))],
+      [userEntry(userActionWithText("uid-1", LATER, "yes"))],
     );
     expect(rebuilt.view.pins[0]?.text).toBe("Decide Y");
     expect(rebuilt.view.pins[0]?.reply).toBe("yes");
@@ -214,8 +212,8 @@ describe("the projection puts the recorded words on the pin the agent rewrote", 
     // `at` is the writer's clock and two submissions can carry the same stamp; array order is the session's
     // own record of which came last, and the model must read the answer the user wrote last.
     const rebuilt = reconstruct(branch, [
-      userEntry(userAction("uid-1", "reply", LATER, "first")),
-      userEntry(userAction("uid-1", "reply", LATER, "second")),
+      userEntry(userActionWithText("uid-1", LATER, "first")),
+      userEntry(userActionWithText("uid-1", LATER, "second")),
     ]);
     expect(rebuilt.view.pins[0]?.reply).toBe("second");
   });
@@ -225,7 +223,7 @@ describe("the projection puts the recorded words on the pin the agent rewrote", 
     // says nothing, so it must not take the surviving answer with it. It is also the shape a second, empty
     // submission of the same pin produces.
     const rebuilt = reconstruct(branch, [
-      userEntry(userAction("uid-1", "reply", NOW, "yes")),
+      userEntry(userActionWithText("uid-1", NOW, "yes")),
       userEntry(userAction("uid-1", "reply", LATER)),
     ]);
     expect(rebuilt.view.pins[0]?.reply).toBe("yes");
@@ -235,7 +233,7 @@ describe("the projection puts the recorded words on the pin the agent rewrote", 
   test("a reply to a uid the branch no longer holds projects nothing, and answers no other pin", () => {
     // Uids are never reused, so an answer to a gone pin is a fact about nothing. Asserted with `every` rather
     // than a `not.toContain` so a row that never drew cannot certify it.
-    const rebuilt = reconstruct(branch, [userEntry(userAction("uid-gone", "reply", LATER, "yes"))]);
+    const rebuilt = reconstruct(branch, [userEntry(userActionWithText("uid-gone", LATER, "yes"))]);
     expect(rebuilt.view.pins.every((p) => p.reply === undefined)).toBe(true);
     expect(rebuilt.view.pins.every((p) => p.repliedAt === undefined)).toBe(true);
   });
@@ -244,7 +242,7 @@ describe("the projection puts the recorded words on the pin the agent rewrote", 
     // The dismissed pin is gone from the view, so there is no pin for the answer to ride on — and no other
     // pin may inherit it: uids are never reused, so these words are a fact about nothing.
     const rebuilt = reconstruct(branch, [
-      userEntry(userAction("uid-1", "reply", LATER, "yes")),
+      userEntry(userActionWithText("uid-1", LATER, "yes")),
       userEntry(userAction("uid-1", "dismiss", NOW)),
     ]);
     expect(rebuilt.view.pins).toEqual([]);

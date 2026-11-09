@@ -93,15 +93,19 @@ function repliedSuffix(pin: ViewPin, text: string): string {
  * The model's row: `#<id> [<level>] (group: <g>) <text> (replied by the user at HH:MM: "<reply>")
  * (options: 1) <a>  2) <b>) (compact)`.
  *
- * One line, whatever any field carries — the text, the group, each option and the reply are folded, and
- * the suffix interpolates `formatLocalTime`, which is already ASCII `HH:MM` or `--:--`. The reply sits
- * between the text and the closing parenthesis of the mark, and inside a quote of its own: a row the model
- * is told to trust must not let the user's words start a record of their own, and the reply was already cut
- * to the reply's own ceilings at the write and the read (`sanitize-reply.ts`), so a row is bounded by the
- * pin's text plus those ceilings plus the unchanged suffix.
+ * One line, whatever any field carries — the text, the group, each option and the reply are folded **by this
+ * row**, in the order it spells them: `foldBreaks(pin.text)`, then `foldBreaks(reply)`, then the mark. The
+ * fold cannot be left to the suffix that quotes the reply, because the fold is what removes every break shape
+ * (`escape.ts`) and `formatLocalTime` inside that suffix never runs one over its argument: an unfolded reply
+ * would hand a row containing a live CR to a model that is told a row is one line. The reply sits between the
+ * text and the closing parenthesis of the mark, and inside a quote of its own: a row the model is told to
+ * trust must not let the user's words start a record of their own, and the reply was already cut to the
+ * reply's own ceilings at the write (`sanitize-reply.ts`), so a row is bounded by the pin's text plus those
+ * ceilings plus the unchanged suffix.
  */
 export function modelRow(pin: ViewPin): string {
-  return `#${pin.id} [${pin.level}]${groupPart(pin)} ${foldBreaks(pin.text)}${repliedSuffix(pin, foldBreaks(pin.reply ?? ""))}${optionsPart(pin)}${compactPart(pin)}`;
+  const answer = pin.reply === undefined ? "" : foldBreaks(pin.reply);
+  return `#${pin.id} [${pin.level}]${groupPart(pin)} ${foldBreaks(pin.text)}${repliedSuffix(pin, answer)}${optionsPart(pin)}${compactPart(pin)}`;
 }
 
 /**

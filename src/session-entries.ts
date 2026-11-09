@@ -21,12 +21,13 @@
  *
  * A reply's `text` is cleaned here too, at this read side and not only at the write: a session file is
  * written by an earlier run and can be edited by anything that can reach it, so the escape-strip that
- * protects a drawn string runs wherever the string is *read back*, exactly as it does for `at`. It is the
- * one field the reader cuts as well as cleans, and against the reply's own ceilings — a hand-written entry
- * is the only writer that can exceed them, and a rebuild that drew one at 100 KB would draw it forever.
+ * protects a drawn string runs wherever the string is *read back*, exactly as it does for `at` — the one
+ * pass, `cleanPinText`, and no second cut. The cut belongs to the writer (`sanitize-reply.ts`), the only
+ * party that can put a long reply on an entry; what the reader refuses instead is any `text` past
+ * `MAX_REPLY_UNITS`, which `isUserAction` counts before this field is copied. A `text` the guard accepts is
+ * therefore a `text` the reader hands on whole, and a malformed one costs the words rather than the entry.
  */
 import { MAX_OPTIONS, MIN_OPTIONS, storedField } from "./pin-fields.ts";
-import { sanitizeReplyText } from "./sanitize-reply.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
 
@@ -134,9 +135,10 @@ export function snapshotFromCustom(entry: unknown): PinState | undefined {
  * The data of a `pi-sticky.user` custom entry, if it holds a usable user action. The uid is the
  * pin's own and is compared as stored, so it is copied uncleaned (see the module header); `at` is
  * copied through `cleanPinText`, because it is the timestamp the user-removal error and the replied
- * marker print. `text` — the reply's own words — is copied by name through `sanitizeReplyText`, the same
- * discipline as the three optional pin fields above: a value the pass empties is *no key* rather than an
- * empty one, so a dismiss entry never grows a `text` a pre-reply entry could not have had.
+ * marker print. `text` — the reply's own words — is copied by name through the same pass, the same
+ * discipline as the three optional pin fields above: a value the pass empties, or one that is not a string at
+ * all, is *no key* rather than an empty one, so a dismiss entry never grows a `text` a pre-reply entry could
+ * not have had and a malformed word costs the words rather than the entry.
  */
 export function userActionFrom(entry: unknown): UserAction | undefined {
   if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== USER_TYPE) {
@@ -144,7 +146,11 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
   }
   if (!isUserAction(entry.data)) return undefined;
   const at = cleanPinText(entry.data.at);
-  const text = entry.data.text === undefined ? undefined : sanitizeReplyText(entry.data.text);
+  // Read with the one pass `at` is read with — `isUserAction` has already refused anything past the reply's
+  // unit ceiling, so nothing here has to cut. A `text` the pass empties is *no key*: the mark says the user
+  // answered, and an empty quote would claim they answered with nothing.
+  const text =
+    typeof entry.data.text === "string" ? cleanPinText(entry.data.text) || undefined : undefined;
   return {
     v: 1,
     uid: entry.data.uid,

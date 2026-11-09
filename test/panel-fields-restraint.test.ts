@@ -16,6 +16,11 @@ import { expect, test } from "bun:test";
 
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { expandedPinOf } from "../src/panel-expand.ts";
+import { sameFrame } from "../src/panel-frame-cache.ts";
+import type { PanelFrame } from "../src/panel-frame-cache.ts";
+import { frameOf } from "../src/panel-frame-draw.ts";
+import type { FrameKey } from "../src/panel-frame-draw.ts";
 import { railStamp } from "../src/panel-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { buildPeekLines } from "../src/panel-peek.ts";
@@ -24,6 +29,7 @@ import { renderRailLines } from "../src/rail-lines.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
+import { RAIL_AGE } from "./fixtures-age.ts";
 import { NOW } from "./fixtures.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 
@@ -118,6 +124,93 @@ test("a field-only change still repaints the panel, because its cache keys on th
     before.order.map((section) => section.kind),
   );
   expect(after.flat[0]?.group).toBe("Now");
+});
+
+test("a reply is invisible to the rail, the peek, the frame key and the ordering", () => {
+  // AC5, on the two caches and the one strip that must not notice the field. The pair is two pins that differ
+  // *only* in `reply`, with `repliedAt` held equal: the mark itself still moves a pin per `replyRank`, and
+  // that pre-existing behaviour is not what this asserts. What it asserts is that the user's words — which
+  // the listing and `/pins` draw — reach none of these three surfaces.
+  const plain = { ...levelPin(1, "ship the gate", "warning"), repliedAt: NOW };
+  const answered: ViewPin = { ...plain, reply: "ship it" };
+
+  // The rail's own guard: a change it cannot show must not reinstall the strip.
+  expect(railStamp([answered])).toBe(railStamp([plain]));
+  expect(railOf(answered)).toEqual(railOf(plain));
+  // Byte-exact, not just equal-to-itself: the row is the one the rail drew before any reply existed.
+  expect(railOf(answered)[1]).toBe(` ! #1 ${RAIL_AGE}  ↩ ship the gate`);
+
+  // The peek has the same promise at the other end of the width range.
+  expect(peekOf(answered)).toEqual(peekOf(plain));
+
+  // The frame key, and the honest form of the claim. `sameFrame` compares `pins` by **array identity** (see
+  // `panel-frame-cache.ts`), so no pair of separately built arrays can ever be a hit — a `true` here has to
+  // come from one array handed to both candidates. The purity that is checkable is the *key*: two frames
+  // built over one published array, in which two pins differ only in `reply` with `repliedAt` equal, agree
+  // field for field. The `false` on a bar move is what says the comparison is reading something.
+  const published: ViewPin[] = [plain, answered];
+  const frame = candidate(published);
+  expect(sameFrame(frame, { ...frame })).toBe(true);
+  // The same array through the builder again is also a hit — which is the point: a reply on a pin is not a
+  // repaint, because nothing the key reads moved. A *different* array is a miss, and so is the bar moving.
+  expect(sameFrame(frame, candidate(published))).toBe(true);
+  expect(sameFrame(frame, candidate([plain, answered]))).toBe(false);
+  expect(sameFrame(frame, candidateWithBar(published))).toBe(false);
+  // …and the reply is not in the key: copying the answer onto the pins changes no field `sameFrame` reads.
+  const keyed = (f: PanelFrame): unknown[] => [
+    f.selection,
+    f.focused,
+    f.expanded,
+    f.replyHint,
+    f.mode,
+    f.keys,
+    f.ageNow,
+  ];
+  const withReply = candidate([plain, { ...plain, reply: "ship it" }]);
+  const withoutReply = candidate([plain, { ...plain }]);
+  expect(keyed(withReply)).toEqual(keyed(withoutReply));
+
+  // The drawn ordering: two pins that differ only in `reply`, `repliedAt` equal, sort identically.
+  const ordered = (reply?: string): ViewPin => ({
+    ...levelPin(1, "ship the gate", "warning"),
+    repliedAt: NOW,
+    ...(reply === undefined ? {} : { reply }),
+  });
+  expect(
+    panelSections([ordered("ship it"), levelPin(2, "other", "info")]).flat.map((s) => s.id),
+  ).toEqual(panelSections([ordered(), levelPin(2, "other", "info")]).flat.map((s) => s.id));
+  expect(panelSections([ordered("ship it")]).flat[0]?.group).toBe(
+    panelSections([ordered()]).flat[0]?.group,
+  );
+});
+
+/**
+ * A candidate frame in the shape `drawFrame` hands the cache, built by `frameOf` rather than a literal, over
+ * these pins. One bar, one focus, one mode: the pins array is the only thing two candidates differ by.
+ */
+function candidate(pins: readonly ViewPin[], selection = 0): PanelFrame {
+  const key: FrameKey = { replyHint: "", mode: "open", keys: true, ageNow: NOW, ageKey: 0 };
+  return {
+    ...frameOf(
+      ["╭──╮", "│gate│", "╰──╯"],
+      { sections: panelSections(pins), width: 6, style, terminalRows: 24 },
+      key,
+      false,
+      selection,
+      expandedPinOf(pins, key.mode, key.keys, false, selection),
+    ),
+    pins,
+  };
+}
+
+/** The same candidate with the bar one row down — the pair that says `candidate` is not always a hit. */
+const candidateWithBar = (pins: readonly ViewPin[]): PanelFrame => candidate(pins, 1);
+
+test("the rail row of a replied pin is the row this issue's rail draws, byte for byte", () => {
+  // The exact string rather than a `toContain("↩")`: the mark's position is what an earlier drawing got
+  // wrong, and a looser assertion would pass against either form.
+  const replied: ViewPin = { ...levelPin(1, "Decide X", "info"), repliedAt: NOW, reply: "yes" };
+  expect(railOf(replied)[1]).toBe(` • #1 ${RAIL_AGE}  ↩ Decide X`);
 });
 
 test("a wrapping compact pin stays one line in the rail, where no bar can rest on it", () => {

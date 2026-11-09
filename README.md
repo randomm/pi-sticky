@@ -265,8 +265,8 @@ pin you get `No pin #<digits> to reply to.` and the message is sent as typed.
 beside the pin's id, so they are still there for the agent to read after it has rewritten the pin — a
 `pin_for_user` `update` changes the pin's text and leaves your answer standing beside it. `/pins` prints
 them after an arrow (`#3 [warning] … Deploy blocked → ship it`), and the tool result names them inside the
-reply mark (`(replied by the user at 14:30: "ship it")`). They are the user's own words, so they are cut
-to a length rather than refused, and what reaches the model is quoted so it cannot read them as another
+reply mark (`(replied by the user at 14:30: "ship it")`). They are the user's own words, so they are cut to
+1600 characters rather than refused, and what reaches the model is quoted so it cannot read them as another
 record.
 
 An answered pin stays on screen until the agent unpins it or the user dismisses it, and the marking
