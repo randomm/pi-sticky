@@ -91,9 +91,14 @@ function pinsOptionsLine(pin: ViewPin): string {
  *
  * - every `"` becomes `'`: the answer is quoted with `"…"`, so a reply holding a quote would close it early and
  *   everything after it would stop reading as the user's words and start reading as the row's;
- * - every mark is broken with U+200B: `(replied by the user at` is the one string on the row the model is told
- *   to read as the extension's own statement of when the user answered, and the row draws exactly one. The
- *   sanitizer keeps `U+200B` inside words (it strips only *edge* invisibles), so this is the row's job.
+ * - every U+200B is removed and every mark is then broken with `\u00AD` (a soft hyphen): `(replied by the user
+ *   at` is the one string on the row the model is told to read as the extension's own statement of when the user
+ *   answered, and the row draws exactly one. The sanitizer keeps `U+200B` inside words (it strips only *edge*
+ *   invisibles), so a reply can carry the mark already broken — or break it one character in — and either way
+ *   reach the row looking like the extension's own sentence. Removing the invisible first is what stops a reply
+ *   from pre-seeding a break or repairing one. The break the row itself inserts is therefore **not** U+200B: an
+ *   invisible break would leave the quoted copy holding the extension's sentence intact for anything that
+ *   ignores that one codepoint — the model among them.
  *
  * Together they mean a reply can neither open the row's quote nor say the extension's sentence inside it. Both
  * are display-only, like the fold one line up that turns a break into a space rather than letting it end the row.
@@ -101,22 +106,41 @@ function pinsOptionsLine(pin: ViewPin): string {
 function repliedSuffix(pin: ViewPin, text: string): string {
   if (pin.repliedAt === undefined) return "";
   const answer = text === "" ? "" : `: "${quoteAnswer(text)}"`;
-  return ` (replied by the user at ${formatLocalTime(pin.repliedAt)}${answer})`;
+  return ` ${REPLIED_MARK} ${formatLocalTime(pin.repliedAt)}${answer})`;
 }
 
-/** The mark both rows spell — the string a reply must not be able to reproduce inside its own quote. */
-const REPLIED_MARK = "(replied by the user at";
+/**
+ * The mark both rows spell — the string a reply must not be able to reproduce inside its own quote, and the
+ * only place its wording is written. `repliedSuffix` is built **from** it, so the two cannot drift: were one
+ * reworded and not the other, the substitution below would guard a string no row ever prints. Exported for
+ * `test/reply-rows.test.ts`, which holds that pairing.
+ */
+export const REPLIED_MARK = "(replied by the user at";
 
-/** U+200B, the one invisible the sanitizer leaves inside words — see `quoteAnswer`. */
+/**
+ * U+200B, the one invisible the sanitizer leaves inside words — the character a reply can use to forge the mark,
+ * which is why `quoteAnswer` removes every one of them before it breaks the mark.
+ */
 const ZERO_WIDTH = "\u200B";
 
 /**
- * The user's words as the row may quote them: no `"` (it would close the row's own quote) and no intact reply
- * mark (it would read as the extension's own). See `repliedSuffix`.
+ * The break the row puts inside a quoted mark. A soft hyphen rather than U+200B: the point of breaking the mark
+ * is that a reader of the row cannot reassemble the extension's sentence out of the user's words, and an
+ * invisible break is reassembled by simply ignoring one codepoint.
+ */
+const MARK_BREAK = "\u00AD";
+
+/**
+ * The user's words as the row may quote them: no U+200B, no `"` (it would close the row's own quote) and no
+ * intact reply mark (it would read as the extension's own). See `repliedSuffix`.
+ *
+ * The U+200B pass runs **first**: a reply that already holds the mark broken, or broken one character in, would
+ * otherwise survive as a second mark that only the invisible gives away.
  */
 function quoteAnswer(text: string): string {
-  const broken = REPLIED_MARK.replace("(", `(${ZERO_WIDTH}`);
-  return text.replaceAll('"', "'").replaceAll(REPLIED_MARK, broken);
+  const bare = text.replaceAll(ZERO_WIDTH, "");
+  const broken = `(${MARK_BREAK}${REPLIED_MARK.slice(1)}`;
+  return bare.replaceAll('"', "'").replaceAll(REPLIED_MARK, broken);
 }
 
 /**

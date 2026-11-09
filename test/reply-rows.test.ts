@@ -13,7 +13,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { modelRow, pinsTextRow } from "../src/pin-rows-text.ts";
+import { foldBreaks } from "../src/escape.ts";
+import { REPLIED_MARK, modelRow, pinsTextRow } from "../src/pin-rows-text.ts";
 import { renderList } from "../src/render.ts";
 import { LATER, LATER_TIME, NOW_TIME, pin, view } from "./fixtures.ts";
 import {
@@ -24,6 +25,31 @@ import {
   assertNoForgery,
   linesOf,
 } from "./panel-hostile-fields.ts";
+
+/**
+ * The user's own words as the row may carry them: U+200B removed, which is the one substitution the quoted copy
+ * makes that erases a character rather than replacing it. A row that quoted a mark it never broke does not
+ * contain this, so it is the evidence that the answer was drawn and then sanitised, not dropped.
+ */
+const quotable = (text: string): string => text.replaceAll("\u200B", "");
+
+/**
+ * The same reply with its mark broken the way the row breaks it. A reply whose *own* bytes already read as an
+ * extension's sentence cannot be asserted to survive verbatim — the row has to break that mark, and it cannot
+ * break the extension's own — so the evidence that the answer was drawn and not dropped is this shape instead.
+ */
+const brokenQuotable = (text: string): string => quotable(text).replaceAll("(", "(\u00AD");
+
+/**
+ * The `→` region of a `/pins` row: the user's own bytes, kept verbatim. The row carries the answer twice, so the
+ * region runs from the arrow to the *last* occurrence of the mark — the first one in there is the mark the user
+ * typed themselves, and the region has to reach past it to the extension's own, which is where their copy ends.
+ * Extracted by name so the assertion about that copy says which bytes it is about.
+ */
+function pinsReplyRegion(row: string): string {
+  const arrow = row.indexOf("\u2192");
+  return arrow === -1 ? "" : row.slice(arrow, row.lastIndexOf(MARK));
+}
 
 /** A row of the model's listing: what a real pin line looks like and nothing else may. */
 const ROW = /^#\d+ \[(info|action|warning)\] /;
@@ -123,6 +149,18 @@ describe("modelRow: text, then the folded reply, then the mark, then the fields"
     expect(row).toInclude(FAKE_REPLY);
   });
 
+  test("a plain replied row spells the mark once, so the suffix cannot drift from the constant", () => {
+    // `REPLIED_MARK` is both the string the quoted copy is sanitised against and the string the suffix is now
+    // built from. Reword one and not the other leaves the anti-forgery substitution guarding a string no row
+    // ever prints — and the /pins region counts, which compare against the same constant, would be measuring a
+    // mark the row never draws. So the wording is held here, on rows that carry nothing hostile of their own.
+    const plain = { ...pin(1, "Deploy blocked", "warning"), repliedAt: LATER };
+    for (const row of [modelRow(plain), modelRow(answered("ship it"))]) {
+      expect(occurrences(row, MARK)).toBe(1);
+      expect(occurrences(row, REPLIED_MARK)).toBe(1);
+    }
+  });
+
   test("one line per pin for a reply that quotes the mark", () => {
     const lines = linesOf(modelRow(answered(forgedMarkReply())));
     expect(lines).toHaveLength(1);
@@ -190,10 +228,35 @@ describe("pinsTextRow: text, then the reply, then the mark, before the indent", 
     // `/pins` draws the answer twice, and this is the copy that is the row's own voice: the one quoted inside
     // the mark. That copy may spell the mark exactly once, and it carries no `"` of the user's that could have
     // closed the quote early. The verbatim `→` copy above it is the user's own bytes and is asserted separately.
-    const row = pinsTextRow(answered(forgedMarkReply()));
-    const quoted = row.slice(row.lastIndexOf(MARK));
-    expect(occurrences(quoted, MARK)).toBe(1);
-    expect(quoted.slice(quoted.indexOf(': "'))).not.toContain('""');
+    const reply = forgedMarkReply();
+    const row = pinsTextRow(answered(reply));
+    // The suffix region: the extension's own words, from the opening parenthesis of its mark to its own closing
+    // one. Slicing from `lastIndexOf(MARK)` — as this test used to — cannot fail: that slice *starts* at the
+    // extension's own mark, so it counts a mark the row wrote as if the reply had written it, and passes while
+    // the quoted copy holds two. The counts are therefore taken inside the regions the row owns.
+    // The row's own voice opens with the constant, so it is located by `REPLIED_MARK` and not by a literal that
+    // would follow a reworded constant off to the wrong place. Its own closing parenthesis is the last one on
+    // the line: the answer's quote holds no parenthesis of its own (`sanitize.ts` drops the controls and the row
+    // folds the breaks, and `(options:` is drawn after this suffix closes), so a cut that landed early would be
+    // a row that ended its reply note in the wrong place — which the whole-row expectation above also refuses.
+    const start = row.lastIndexOf(REPLIED_MARK);
+    const suffix = row.slice(start, row.indexOf(")", start) + 1);
+    expect(occurrences(suffix, MARK)).toBe(1);
+    expect(occurrences(suffix, MARK)).toBe(occurrences(REPLIED_MARK, MARK));
+    // The quoted copy is the part of that suffix the user's words fill: from the first `"` the row opens them
+    // with to the last one before the suffix closes (the row turns every `"` the user typed into `'`, so those
+    // two are unambiguously the row's own quotes). It must hold the user's last sentence exactly as the row may
+    // draw it — the tail word, with the row's two visible substitutions made — and may spell the mark not at all.
+    const quoted = suffix.slice(suffix.indexOf('"') + 1, suffix.lastIndexOf('"'));
+    expect(quoted).toInclude("go APRD SIGN");
+    expect(occurrences(quoted, MARK)).toBe(0);
+    // The verbatim arrow copy is the user's own bytes: `pinsReply` hands them over untouched and only the
+    // continuation indent below touches them, so this region holds every break and every `"` the user typed —
+    // which is why it is asserted for what it is (the bytes they wrote, indent excepted) and never counted for
+    // marks: no assertion can hold the user's words against their own spelling. The quoted copy and the suffix
+    // above are the two regions the row owns, and those are the two whose mark counts can fail.
+    expect(pinsReplyRegion(row)).toInclude(reply.replaceAll("\n", "\n   "));
+    expect(quoted).not.toContain('""');
     expect(quoted).not.toContain('"…');
     // The user's own bytes survive somewhere on the row — their `"` included, since the `→` copy is not
     // quoted — so the count above is not a row that dropped the answer; only what the row *quotes* is normalised.
