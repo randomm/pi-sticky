@@ -17,6 +17,7 @@ import { DEFAULT_CONFIG } from "../src/config.ts";
 import { createStickyExtension } from "../src/extension.ts";
 import { cleanPinText } from "../src/sanitize.ts";
 import { EMPTY_STATE } from "../src/state.ts";
+import { textBudgetRefusal } from "../src/text-budget.ts";
 import { createPinTool } from "../src/tool.ts";
 import { TOOL_NAME } from "../src/types.ts";
 import { LATER, localTime } from "./fixtures.ts";
@@ -33,11 +34,16 @@ test("updating a pin the user dismissed names who removed it and when", async ()
   expect(text(result)).toBe(`Pin #1 was removed by the user at ${localTime(LATER)}.`);
 });
 
-test("text over the budget is cut and the result says so", async () => {
+test("text over the budget is refused, not cut, and says what it received", async () => {
+  // The tool-level half of the change. `tool-guards-text-budget.test.ts` owns the boundary and the
+  // stores-nothing proof; what is pinned *here* is that the cut is gone from the tool's answer — the
+  // notice the old behaviour appended, and the ellipsis it left in the stored text.
   const h = harness([], { maxChars: 40 });
   const result = await h.call({ action: "pin", text: "x".repeat(80) });
-  expect(text(result)).toContain("(text was cut to 40 characters)");
-  expect(result.details.pins[0]?.text).toHaveLength(40);
+  expect(result.isError).toBe(true);
+  expect(text(result)).toBe(textBudgetRefusal(40, 80));
+  expect(text(result)).not.toContain("(text was cut to");
+  expect(result.details.pins, "nothing was stored").toEqual([]);
 });
 
 test("hostile text is sanitized before it reaches the state", async () => {

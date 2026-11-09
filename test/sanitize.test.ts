@@ -200,6 +200,11 @@ describe("combining marks", () => {
 });
 
 describe("budget", () => {
+  // The tool refuses an over-long text now (`tool-guards-text-budget.test.ts`), so the cut below is
+  // the budget of the one caller that cannot refuse: `reconstruct` rebuilds pins from a session file
+  // with no config in hand and reaches `sanitizePinText` through `cleanPinText` with the config's own
+  // budget. 400 is `DEFAULT_CONFIG.maxChars` (src/config.ts) — the number the refusal's doc pins
+  // compose — and 40 is the smallest the clamp permits, so no budget here is one no caller sets.
   const ascii = (n: number): string => "a".repeat(n);
   // Built from numbers rather than from a source literal or a single code point: an astral
   // character written into this file does not survive being written, and a code point above the
@@ -210,6 +215,8 @@ describe("budget", () => {
   const family = base(0xdc68) + ZWJ + base(0xdc69) + ZWJ + base(0xdc67);
 
   test("text of exactly maxChars graphemes is not cut", () => {
+    // The point the tool layer must also accept verbatim (`tool-guards-text-budget.test.ts` holds
+    // that half); here it is the budget cut's own edge — one grapheme under the cut, whole.
     const result = sanitizePinText(ascii(400), 400);
     expect(result.text).toBe(ascii(400));
     expect(result.truncated).toBe(false);

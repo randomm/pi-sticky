@@ -76,9 +76,12 @@ describe("cleanPinText applies every pass and no budget", () => {
     expect(cleanPinText(raw)).toBe(expected);
   });
 
-  test("text longer than a budget is left whole, and cut at the smallest configurable budget", () => {
+  test("text longer than a budget is left whole by the clean, and cut by the budget caller", () => {
     // 40 is the smallest maxChars the tool can be configured with (the clamp in src/config.ts), so
     // the cut below is a budget a real caller sets rather than a number invented for the assertion.
+    // The tool now *refuses* past its budget, so the caller left with a cut to prove is the one with
+    // no config to refuse with — `reconstruct`, through `cleanPinText` — which is why the whole text
+    // and the cut are asserted side by side here rather than the cut alone.
     const raw = `   ${"keep".repeat(30)}${TAB}${NL}`;
     const whole = cleanPinText(raw);
     expect(whole).toBe("keep".repeat(30));
@@ -90,8 +93,9 @@ describe("cleanPinText applies every pass and no budget", () => {
   });
 
   test("the budget keeps a prefix of what cleanPinText returned, not a rewrite of it", () => {
-    // `reconstruct` shows the whole cleaned pin and the tool shows the cut: the two must agree about
-    // the characters present in both, which is only true if the budget is a suffix-free cut.
+    // `reconstruct` shows the whole cleaned pin and the budget caller shows the cut: the two must
+    // agree about the characters present in both, which is only true if the budget is a suffix-free
+    // cut. The escape inside the raw text is what makes the two halves disagree on the input.
     const raw = `a${ESC}[31m${"long".repeat(40)}${BEL}`;
     const whole = cleanPinText(raw);
     expect(whole).toBe(`a${"long".repeat(40)}`);
@@ -136,8 +140,10 @@ describe("cleanPinText is idempotent", () => {
       const once = cleanPinText(raw);
       expect(cleanPinText(once)).toBe(once);
     }
-    // Idempotence has to hold for output the *budget* produced as well: the reducer re-cleans the
-    // string the tool cut, so an ellipsis may not start a second cut or be dropped as a format mark.
+    // Idempotence has to hold for output the *budget* produced as well: the one caller left with a
+    // cut has no config, so its output is what the reducer and every later `reconstruct` re-clean —
+    // see `reconstruct`'s `cleanPinText` pass in src/session-entries.ts — and an ellipsis may not
+    // start a second cut or be dropped as a format mark.
     const cut = sanitizePinText("long ".repeat(200), MIN_MAX_CHARS).text;
     expect(cleanPinText(cut)).toBe(cut);
   });

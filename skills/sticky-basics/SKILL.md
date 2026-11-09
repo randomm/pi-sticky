@@ -49,6 +49,11 @@ I continue with the migration either way."
 `text` may hold newlines; every listing the model reads folds them onto one line, so it is the
 sentence break, not the line break, that separates thoughts.
 
+Keep it inside the budget: a text longer than `PI_STICKY_MAX_CHARS` **after cleaning** is refused, not
+cut — `text must be at most 400 characters after cleaning (got <n>)` — so a long pin is an error you
+rewrite, not a message the user reads with its ending gone. Count what the user sees, not bytes: a
+joined family is one character.
+
 ## options and compact
 
 `options` - 2 to 4 short choices the user can answer by number, for a pin whose answers are known

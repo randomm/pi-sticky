@@ -16,10 +16,11 @@
  *
  * `text` is the one field the reducer does not merely check but *rewrites*: it is handed to the ops
  * already run through `cleanPinText`, so a state this function returns never carries an escape byte
- * whatever its caller did. The tool (Task 5) still applies the grapheme budget with `sanitizePinText`
- * first, and cleaning twice is idempotent — the passes here only bound shape, never width. `group`
- * and each `options` entry are rewritten the same way, and bounded outright rather than cut, by the
- * shared checks in pin-fields.ts, which the tool runs too: neither layer trusts the other.
+ * whatever its caller did. The tool measures the grapheme budget before it calls here, because the
+ * budget is config and this module has none — it refuses an over-long text rather than cutting it
+ * (`text-budget.ts`); the passes here only bound shape, never width, and re-cleaning is idempotent.
+ * `group` and each `options` entry are rewritten the same way, and bounded outright rather than cut, by
+ * the shared checks in pin-fields.ts, which the tool runs too: neither layer trusts the other.
  */
 import {
   type ActionInput,

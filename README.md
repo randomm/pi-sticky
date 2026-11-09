@@ -285,8 +285,9 @@ not the `/pins` header you read or the rail's; `<maxPins>` is `PI_STICKY_MAX_PIN
 
 What the tool refuses rather than quietly fixes — each answer names the field and the rule:
 
-- `text` is sanitized and cut to `PI_STICKY_MAX_CHARS`, with the cut named back to the model. Text
-  that cleans to nothing is refused.
+- `text` is sanitized, and a text longer than `PI_STICKY_MAX_CHARS` after cleaning is refused rather
+  than cut: `text must be at most <maxChars> characters after cleaning (got <n>)`, which is what tells
+  you to shorten it. Text that cleans to nothing is refused.
 - A pin whose text and level match one already shown is not added: `Already pinned as #<id>.`
 - A list already at `PI_STICKY_MAX_PINS` is refused, with the current listing quoted.
 - `group` is one line of at most 24 graphemes after sanitizing; a longer one is refused, not cut with
@@ -484,7 +485,7 @@ change.
 | --- | --- | --- | --- |
 | `PI_STICKY_DISABLE` | unset | `1`, `true`, `yes`, `on` | Disables the extension. Case-insensitive, spaces tolerated. |
 | `PI_STICKY_MAX_PINS` | `5` | 1–20 | How many pins the agent may show at a time. |
-| `PI_STICKY_MAX_CHARS` | `400` | 40–2000 | Character budget for one pin's text. |
+| `PI_STICKY_MAX_CHARS` | `400` | 40–2000 | The longest one pin's text may be after cleaning: longer is refused, not cut. |
 | `PI_STICKY_MAX_LINES` | `8` | 3–30 | Lines in the rail, header included. |
 | `PI_STICKY_TOGGLE_KEY` | `ctrl+alt+t` | a pi key id, or `off` | The shortcut that toggles the panel. |
 | `PI_STICKY_FOCUS_KEY` | `ctrl+alt+p` | a pi key id, or `off` | The shortcut that focuses the panel. |
