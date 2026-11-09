@@ -74,7 +74,36 @@ export function reconcilePanelFocus(cells: KeyboardCells): void {
     // Read *at the verdict*, not captured on the way in: the answer must describe the focus as it stands once
     // the ask has returned, not the keystroke before it.
     granted: () => handle.isFocused(),
-    release: () => component.unfocus(),
+    // Contained, because this caller has no try above it: `#frame` runs it inside a composite, `close()` runs
+    // it from `session_start`/`session_tree`/`session_shutdown` and the rebuild from a turn boundary, none of
+    // which is `containKey`. `unfocus()` is the member most likely to throw — the handle, the owner's settle
+    // (`onUnfocus`), a frame request on a TUI whose session is gone — and a throw out of the per-frame path is
+    // an `extension_error` on every render, while a throw out of a boundary leaves the extension holding the
+    // dead session's state.
+    //
+    // The handle is then asked **again**, and that second ask is the substance of this containment rather than
+    // its form. `unfocusPanel` (`panel-component-focus.ts`) moves the flag down as its first statement and
+    // reaches the handle only after it, so the throw arrives with the flag already false: a `catch` that only
+    // wrote the flag — the shape `hidePanel` and `releaseKeysOutsideScreen` below use, where it is the whole
+    // guarantee because *they* are the ones holding the flag — would here write a cell that already said what
+    // it says and stop. The consequence is not cosmetic: pi's cell still names a panel this extension no longer
+    // treats as focused, so every byte keeps going to a component nobody draws, `reconcileOnFrame` gates on the
+    // flag and never asks again, and the dispatcher has handed its own release back. The handle is pi's only
+    // door to that cell, and `unfocus()` is idempotent (`tui.js:463-466`, returns when the component is not the
+    // focused one), so asking it again is safe — and a second throw is swallowed with the first, leaving the
+    // flag down, which is still the state the user can live with.
+    release: () => {
+      try {
+        component.unfocus();
+      } catch {
+        component.setFocused(false);
+        try {
+          component.handle()?.unfocus();
+        } catch {
+          /* The cell may be unreachable; the flag above already took the panel out of this extension's path. */
+        }
+      }
+    },
   });
 }
 

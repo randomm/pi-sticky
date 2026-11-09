@@ -121,16 +121,17 @@ export function panelFocusCells(cells: PanelFocusCells): PanelFocus {
 export function focusPanel(target: PanelFocus): void {
   target.state.resetSelection();
   target.state.setFocused(true);
-  // The grant is in flight for as long as the ask is on the stack: pi-tui's `OverlayHandle.focus()` asks the
-  // overlay's own `visible()` before it honours the ask (`tui.js:431-436`), and that callback is the owner's
-  // per-frame reconciliation point. Asking pi *there* reads the focus cell before the grant lands and releases
-  // the keyboard the ask is in the middle of taking. `panel.ts` reads this cell and skips that one frame.
-  target.beginGrant();
-  try {
-    target.handle?.focus();
-  } finally {
-    target.endGrant();
-  }
+  // The ask is bracketed by one call that both opens and closes the host's grant window. A `beginGrant()`
+  // written outside the `try` left the depth above zero on the path where the ask throws — and the depth is a
+  // counter, so nothing brings it back: `reconcileOnFrame` stays mute for the rest of the session, and that is
+  // the only thing able to release a panel pi left focused. The lockout, with the sign flipped, self-inflicted.
+  //
+  // The window has to cover the ask at all because pi-tui's `OverlayHandle.focus()` asks the overlay's own
+  // `visible()` before it honours it (`tui.js:431-436`), and that callback is the owner's per-frame
+  // reconciliation point — so host code really is on the stack of the ask, and host code can throw. Asking pi
+  // *there* reads the focus cell before the grant lands and releases the keyboard the ask is in the middle of
+  // taking; `panel.ts` reads this cell and skips that one frame.
+  const rethrow = askForGrant(target, () => target.handle?.focus());
   // Asked after the render request so the frame the user is promised exists before the flag is corrected:
   // a release below invalidates it anyway, and a refused ask must not leave the colours it just asked for
   // standing on screen. A component whose handle never arrived has *nothing to ask* — see `asked`.
@@ -142,11 +143,42 @@ export function focusPanel(target: PanelFocus): void {
   // thing a throw must not survive, so it goes down before the handle is touched and a second throw is
   // swallowed with the first. A user whose keystrokes reach nothing is the failure this protects against;
   // a rail that did not get its settle is the lesser loss, and the next draw reconsiders it.
+  //
+  // Which is also why it runs *before* the ask's own failure is handed back: pi answers `isFocused()` false
+  // for a thrown ask and a silently refused one alike, so `releaseRefused` takes the flag down in both cases
+  // and a throw never leaves a modal that believes it holds a keyboard.
   if (asked)
     reconcileFocus(tui, {
       granted: () => target.handle?.isFocused() ?? false,
       release: () => releaseRefused(target),
     });
+  rethrow();
+}
+
+/**
+ * Run the focus ask with the host's grant window open, and hand back the ask's failure as a deferred re-raise.
+ *
+ * Returning the throw rather than throwing from here is the point: the caller still has the reconciliation to
+ * run, and an exception that left with the ask would skip the only statement that takes the flag back down. The
+ * failure is not this verb's to swallow — `PanelOwner.focus()` and the focus shortcut are the callers that
+ * report it — but it is also not allowed to arrive before the panel's own state is correct.
+ */
+function askForGrant(target: PanelFocus, ask: () => void): () => void {
+  target.beginGrant();
+  let failure: unknown;
+  let threw = false;
+  try {
+    ask();
+  } catch (error) {
+    failure = error;
+    threw = true;
+  } finally {
+    // The window closes on this path exactly as it does on the clean one.
+    target.endGrant();
+  }
+  return () => {
+    if (threw) throw failure;
+  };
 }
 
 /** Contained release of a reconciliation's verdict: the flag first, the handle second, neither able to escape. */
@@ -176,9 +208,9 @@ function releaseRefused(target: PanelFocus): void {
 export function unfocusPanel(target: PanelFocus): void {
   target.state.setFocused(false);
   target.handle?.unfocus();
-  // The ending of a *transient* open, announced here rather than in `pi.on("input")` because this is where
-  // the interaction actually ends (U12). Focus is the only way in — the focus key and Enter-from-a-key — so
-  // a panel the user focused and then left is the case the rule is about, and a keystroke into a peek already
+  // The ending of a *transient* open, announced here rather than in `pi.on("input")` because this is where the
+  // interaction actually ends (U12). Focus is the only way in — the focus key and Enter-from-a-key — so a
+  // panel the user focused and then left is the case the rule is about, and a keystroke into a peek already
   // arrives through here via the key dispatcher.
   target.host.unfocus();
   target.host.requestRender();
