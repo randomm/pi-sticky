@@ -18,8 +18,15 @@
  * drawn, and a `uid` is an opaque address matched by `===` against a `pi-sticky.user` entry — and
  * an address rewritten on the way in matches nothing on the way out, so a pin with a
  * hostile-looking uid could never be dismissed or replied to.
+ *
+ * A reply's `text` is cleaned here too, at this read side and not only at the write: a session file is
+ * written by an earlier run and can be edited by anything that can reach it, so the escape-strip that
+ * protects a drawn string runs wherever the string is *read back*, exactly as it does for `at`. It is the
+ * one field the reader cuts as well as cleans, and against the reply's own ceilings — a hand-written entry
+ * is the only writer that can exceed them, and a rebuild that drew one at 100 KB would draw it forever.
  */
 import { MAX_OPTIONS, MIN_OPTIONS, storedField } from "./pin-fields.ts";
+import { sanitizeReplyText } from "./sanitize-reply.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
 
@@ -127,14 +134,24 @@ export function snapshotFromCustom(entry: unknown): PinState | undefined {
  * The data of a `pi-sticky.user` custom entry, if it holds a usable user action. The uid is the
  * pin's own and is compared as stored, so it is copied uncleaned (see the module header); `at` is
  * copied through `cleanPinText`, because it is the timestamp the user-removal error and the replied
- * marker print.
+ * marker print. `text` — the reply's own words — is copied by name through `sanitizeReplyText`, the same
+ * discipline as the three optional pin fields above: a value the pass empties is *no key* rather than an
+ * empty one, so a dismiss entry never grows a `text` a pre-reply entry could not have had.
  */
 export function userActionFrom(entry: unknown): UserAction | undefined {
   if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== USER_TYPE) {
     return undefined;
   }
   if (!isUserAction(entry.data)) return undefined;
-  return { v: 1, uid: entry.data.uid, action: entry.data.action, at: cleanPinText(entry.data.at) };
+  const at = cleanPinText(entry.data.at);
+  const text = entry.data.text === undefined ? undefined : sanitizeReplyText(entry.data.text);
+  return {
+    v: 1,
+    uid: entry.data.uid,
+    action: entry.data.action,
+    at,
+    ...(text === undefined ? {} : { text }),
+  };
 }
 
 /**

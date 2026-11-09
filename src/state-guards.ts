@@ -6,7 +6,13 @@
  * already in use, or already shown to the user and dismissed, is a pin whose number would be
  * reused, and the model would then be told to update one pin while acting on another.
  */
-import { MAX_PINS, MAX_TEXT_UNITS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
+import {
+  MAX_PINS,
+  MAX_REPLY_UNITS,
+  MAX_TEXT_UNITS,
+  REMOVAL_HISTORY,
+  isPositiveSafeInteger,
+} from "./bounds.ts";
 import { isDense } from "./dense.ts";
 import { MAX_FIELD_UNITS, MAX_OPTIONS, MIN_OPTIONS } from "./pin-fields.ts";
 import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
@@ -150,11 +156,26 @@ export function isPinState(x: unknown): x is PinState {
  * A `pi-sticky.user` payload: a uid, a time and one of the two actions the user can take. The uid
  * is the pin's own address and is compared with `===`, so the same shape rule applies — a uid that
  * is empty, hostile or over-long matches no pin and is refused rather than carried into the rebuild.
+ *
+ * `text` is optional, and a bad one costs only itself: absent is valid, and so is a value that is not a
+ * string or runs past `MAX_REPLY_UNITS` — the reply's own ceiling, never `MAX_TEXT_UNITS`, so the guard
+ * cannot accept what the writer would never have written. Either way the entry is still read as a reply
+ * with no text, which is `optionalGroup`'s rule above and for the same reason: one malformed field must
+ * not cost a pin the mark that says the user answered it.
  */
 export function isUserAction(x: unknown): x is UserAction {
   if (!isPlainObject(x) || x.v !== 1) return false;
   if (!isUid(x.uid) || !isBoundedString(x.at)) return false;
-  return x.action === "dismiss" || x.action === "reply";
+  if (x.action !== "dismiss" && x.action !== "reply") return false;
+  // A `text` the guard will not vouch for is no text at all, never a refused entry — but the entry has to
+  // be *shaped* as one first, or a payload whose action is not a user verb reads as a reply whatever it
+  // carries. Same rule the three optional pin fields follow in `optionalGroup` above.
+  return x.text === undefined || isReplyText(x.text);
+}
+
+/** Is this a `text` the guard will vouch for? The reply's own unit ceiling, and nothing else. */
+function isReplyText(x: unknown): boolean {
+  return typeof x === "string" && x.length <= MAX_REPLY_UNITS;
 }
 
 /**

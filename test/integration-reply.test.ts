@@ -27,49 +27,7 @@ import { RecordingUi } from "./recording-ui.ts";
 import { replyTo } from "./reply-support.ts";
 import { stubApi } from "./wiring-stubs.ts";
 
-/**
- * A fresh extension instance for one harness.
- *
- * `integration-support.ts` exports a single module-level instance for the files that never reload a
- * session. This file reloads one, and pi's `session.reload()` tears the runner down and re-runs the
- * factories it was handed: with an instance two harnesses share, the harness the `print` case builds
- * afterwards ends up driving handlers whose closure belongs to a session that has been torn down, and its
- * reply stops being rewritten at all. One instance per harness is what the extension's own rule — a
- * context is a snapshot of one session — already says; the clock stays the shared `LATER` so the stamps
- * stay assertable.
- */
-const sticky = () => createStickyExtension(DEFAULT_CONFIG, () => LATER);
-
-/**
- * What the model must receive for a `Decide X` pin answered with `yes`, spelled out rather than built:
- * the code span around the pin text is the fix this file guards, so it is pinned by a literal here as well
- * as by the golden string in `test/reply-support.ts`.
- */
-const REPLY_TEXT = "Replying to pin #1 (info): `Decide X`\n\nyes";
-
-/** The text of the last user message of the most recent request, which is the message just submitted. */
-function lastUserText(h: Awaited<ReturnType<typeof createHarness>>): string {
-  const request = h.requests[h.requests.length - 1];
-  if (!request) throw new Error("no model request was made");
-  const users = request.messages.filter((message) => message.role === "user");
-  const last = users[users.length - 1];
-  if (!last) throw new Error("the last request holds no user message");
-  const content = last.content;
-  if (typeof content === "string") return content;
-  return content
-    .filter((block) => block.type === "text")
-    .map((block) => (block as { text: string }).text)
-    .join("\n");
-}
-
-/** Script one pin from the model and run a turn for it, leaving the session idle with pin #1 live. */
-async function pinned(...texts: string[]) {
-  const h = await createHarness({ factories: [sticky()] });
-  const steps = texts.map((text) => call("pin_for_user", { action: "pin", text }));
-  h.script([...steps, reply("ok")]);
-  await h.run("go");
-  return h;
-}
+import { REPLY_TEXT, harness, lastUserText, pinned } from "./integration-reply-fixture.ts";
 
 test("a reply reaches the model as the rewritten text, in the same request", async () => {
   const h = await pinned("Decide X");
@@ -94,7 +52,9 @@ test("a reply records one pi-sticky.user entry addressed by the pin's uid", asyn
     // change, and that there is exactly one entry, stamped with the injected clock.
     const uid = (detailsOf(h).pins as { uid: string }[])[0]?.uid;
     expect(uid).toBeTruthy();
-    expect(userEntries(h)).toEqual([{ v: 1, uid, action: "reply", at: LATER }]);
+    // The user's own words ride on the entry, so a reader of the session can name the answer after the
+    // agent has rewritten the pin — which is the whole point of recording them (issue #111).
+    expect(userEntries(h)).toEqual([{ v: 1, uid, action: "reply", at: LATER, text: "yes" }]);
   } finally {
     await h.dispose();
   }
@@ -194,7 +154,12 @@ test("the tool's listing says the pin was replied, in the wording its tests pin"
     await h.run("what is pinned?");
 
     const listing = JSON.stringify(h.requests[h.requests.length - 1]);
-    expect(listing).toInclude(`(replied by the user at ${LATER_TIME})`);
+    // The listing names the answer, not merely that there was one: `text` is what the model reads back
+    // after it updates the pin. The expectation is written against the serialised request, where the row's
+    // own quotes arrive JSON-escaped.
+    expect(listing).toInclude(
+      `#1 [info] Decide X (replied by the user at ${LATER_TIME}: \\"yes\\")`,
+    );
   } finally {
     await h.dispose();
   }
@@ -249,7 +214,7 @@ test("a plain message is neither rewritten nor recorded", async () => {
 test("print mode rewrites and records without notifying", async () => {
   // No uiContext is bound in print mode, so `hasUI` is false: the reply must still reach the model and
   // still be written down, and the warning branch must stay silent rather than throw.
-  const h = await createHarness({ factories: [sticky()], mode: "print" });
+  const h = await harness("print");
   try {
     await pin(h, "Decide X");
     h.appendScript([reply("noted")]);
@@ -257,7 +222,9 @@ test("print mode rewrites and records without notifying", async () => {
 
     expect(lastUserText(h)).toBe(REPLY_TEXT);
     const uid = (detailsOf(h).pins as { uid: string }[])[0]?.uid;
-    expect(userEntries(h)).toEqual([{ v: 1, uid, action: "reply", at: LATER }]);
+    // The words are recorded in print mode too: nothing here draws a surface, so the entry is the only copy
+    // of the answer the model can read back after it rewrites the pin.
+    expect(userEntries(h)).toEqual([{ v: 1, uid, action: "reply", at: LATER, text: "yes" }]);
     expect(h.ui.notifications).toEqual([]);
   } finally {
     await h.dispose();

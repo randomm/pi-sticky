@@ -261,6 +261,14 @@ The rewrite, and the record that this pin was answered, happen for any message w
 are the marker; a draft that merely contains it is an ordinary message. If the id names no visible
 pin you get `No pin #<digits> to reply to.` and the message is sent as typed.
 
+**Your answer is kept, not just forwarded.** The words after the marker are recorded on the session
+beside the pin's id, so they are still there for the agent to read after it has rewritten the pin — a
+`pin_for_user` `update` changes the pin's text and leaves your answer standing beside it. `/pins` prints
+them after an arrow (`#3 [warning] … Deploy blocked → ship it`), and the tool result names them inside the
+reply mark (`(replied by the user at 14:30: "ship it")`). They are the user's own words, so they are cut
+to a length rather than refused, and what reaches the model is quoted so it cannot read them as another
+record.
+
 An answered pin stays on screen until the agent unpins it or the user dismisses it, and the marking
 depends on the surface: the rail and the panel dim the whole row and open its text column with
 `↩ `, while `/pins` and the `pin_for_user` tool result draw no colour and say

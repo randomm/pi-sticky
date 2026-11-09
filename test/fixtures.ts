@@ -84,8 +84,15 @@ export function view(pins: readonly ViewPin[] = [], removed: Removal[] = []): Pi
   return { pins, removed };
 }
 
-export function userAction(uid: string, action: "dismiss" | "reply", at: string = NOW): UserAction {
-  return { v: 1, uid, action, at };
+export function userAction(
+  uid: string,
+  action: "dismiss" | "reply",
+  at: string = NOW,
+  text?: string,
+): UserAction {
+  // `text` is the reply's own words, and only a reply has them: omitted it grows no key, so a dismiss entry
+  // stays byte-identical to one written before replies were recorded.
+  return text === undefined ? { v: 1, uid, action, at } : { v: 1, uid, action, at, text };
 }
 
 /** A branch entry holding a `pin_for_user` tool result with these details. */

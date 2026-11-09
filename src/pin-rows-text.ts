@@ -14,6 +14,12 @@
  * #4 [warning] (group: Now) Fix the gate (options: 1) Pass  2) Block) (compact)
  * ```
  *
+ * Both spellings also carry the user's own last reply, between the text and the reply mark, and in the same
+ * order: `… Fix the gate → ship it (replied by the user at 14:30: "ship it")`. The model's row folds the
+ * reply and quotes it — the user's words must not read as a record of their own to a model that is told to
+ * trust a line — while `/pins` keeps the reply's own breaks and lets the indent below take them. The mark
+ * itself, `(replied by the user at HH:MM)`, is the same string on both surfaces whatever the reply holds.
+ *
  * `group` sits after the level and before the text, and `options` and `compact` come last, after the reply
  * note. Group and every option go through the fold before they reach the row: they were cleaned and
  * bounded when they were stored (`pin-fields.ts`), but the row is one line by this module's own promise, not
@@ -72,20 +78,30 @@ function pinsOptionsLine(pin: ViewPin): string {
   return entries === "" ? "" : `\n${CONTINUATION}${entries}`;
 }
 
-/** The reply note a replied pin carries on both surfaces, or nothing. */
-function repliedSuffix(pin: ViewPin): string {
+/**
+ * The reply note a replied pin carries on both surfaces, or nothing. `text` is the user's own words, which
+ * the model's row carries inside its own quote so the model cannot read them as another record; `/pins`
+ * leaves them verbatim because that surface keeps the text's own breaks and re-indents them.
+ */
+function repliedSuffix(pin: ViewPin, text: string): string {
   if (pin.repliedAt === undefined) return "";
-  return ` (replied by the user at ${formatLocalTime(pin.repliedAt)})`;
+  const answer = text === "" ? "" : `: "${text}"`;
+  return ` (replied by the user at ${formatLocalTime(pin.repliedAt)}${answer})`;
 }
 
 /**
- * The model's row: `#<id> [<level>] (group: <g>) <text> (replied …) (options: 1) <a>  2) <b>) (compact)`.
+ * The model's row: `#<id> [<level>] (group: <g>) <text> (replied by the user at HH:MM: "<reply>")
+ * (options: 1) <a>  2) <b>) (compact)`.
  *
- * One line, whatever any field carries — the text, the group and each option are folded, and the suffix
- * interpolates `formatLocalTime`, which is already ASCII `HH:MM` or `--:--`.
+ * One line, whatever any field carries — the text, the group, each option and the reply are folded, and
+ * the suffix interpolates `formatLocalTime`, which is already ASCII `HH:MM` or `--:--`. The reply sits
+ * between the text and the closing parenthesis of the mark, and inside a quote of its own: a row the model
+ * is told to trust must not let the user's words start a record of their own, and the reply was already cut
+ * to the reply's own ceilings at the write and the read (`sanitize-reply.ts`), so a row is bounded by the
+ * pin's text plus those ceilings plus the unchanged suffix.
  */
 export function modelRow(pin: ViewPin): string {
-  return `#${pin.id} [${pin.level}]${groupPart(pin)} ${foldBreaks(pin.text)}${repliedSuffix(pin)}${optionsPart(pin)}${compactPart(pin)}`;
+  return `#${pin.id} [${pin.level}]${groupPart(pin)} ${foldBreaks(pin.text)}${repliedSuffix(pin, foldBreaks(pin.reply ?? ""))}${optionsPart(pin)}${compactPart(pin)}`;
 }
 
 /**
@@ -99,9 +115,20 @@ export function modelRow(pin: ViewPin): string {
  */
 export function pinsTextRow(pin: ViewPin): string {
   const head = `#${pin.id} [${pin.level}]${groupPart(pin)} ${formatLocalTime(pin.createdAt)} `;
-  const body = `${pin.text}${repliedSuffix(pin)}`;
+  // Text, then the user's words, then the mark that says whose words they were — the order the model's row
+  // uses too, so a user reading their own list sees the answer where the model was told to expect it.
+  const body = `${pin.text}${pinsReply(pin)}${repliedSuffix(pin, pin.reply ?? "")}`;
   // Only breaks the sanitizer left behind (LF) survive here; the indent is applied to the whole body, so a
   // reply note is never stranded at column zero. The options line arrives already indented, having been built
   // from labels that each hold no break of their own.
   return head + body.replaceAll("\n", `\n${CONTINUATION}`) + pinsOptionsLine(pin);
+}
+
+/**
+ * ` → ` plus the user's own words, or nothing when the pin holds none. `/pins` keeps their breaks because
+ * this surface re-indents them below; a reply the sanitizer emptied falls back to the mark alone, since an
+ * arrow with no words behind it would say the user answered with nothing, which is not what happened.
+ */
+function pinsReply(pin: ViewPin): string {
+  return pin.reply === undefined || pin.reply === "" ? "" : ` \u2192 ${pin.reply}`;
 }
