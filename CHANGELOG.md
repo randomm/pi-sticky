@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/randomm/pi-sticky/compare/v0.1.3...v0.2.0) (2026-11-09)
+
+
+### Features
+
+* **reply:** keep the user's last reply visible to the agent ([#114](https://github.com/randomm/pi-sticky/issues/114)) ([13e8b48](https://github.com/randomm/pi-sticky/commit/13e8b482c261fe6f516dbb6625b84b62e9dd68a2))
+* **tool:** refuse over-long pin text instead of cutting it ([#112](https://github.com/randomm/pi-sticky/issues/112)) ([a92d8f7](https://github.com/randomm/pi-sticky/commit/a92d8f73625d6006e6d389e188f8e5b4cd6ee591))
+
 ## [0.1.3](https://github.com/randomm/pi-sticky/compare/v0.1.2...v0.1.3) (2026-11-09)
 
 
