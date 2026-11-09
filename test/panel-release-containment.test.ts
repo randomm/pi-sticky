@@ -27,15 +27,18 @@ import type { Component } from "@earendil-works/pi-tui";
 import { PanelComponent } from "../src/panel-component.ts";
 import { registerEscapeHatch } from "../src/panel-escape-hatch.ts";
 import type { HatchKeyboard } from "../src/panel-escape-hatch.ts";
-import { reconcilePanelFocus } from "../src/panel-owner-keyboard.ts";
+import { createGrantWindow } from "../src/panel-grant-window.ts";
+import { ownerKeyboard, reconcilePanelFocus } from "../src/panel-owner-keyboard.ts";
 import { host as panelHost } from "./panel-component-host.ts";
 import {
   RELEASE_KEYS,
   cellsOf,
   hostileUnfocus,
   keyboardOf,
+  piHandle,
   terminal,
 } from "./panel-lockout-harness.ts";
+import type { StubTui } from "./ui-stubs.ts";
 import { createStubTui } from "./ui-stubs.ts";
 
 // --- the escape hatch ----------------------------------------------------------------------------------
@@ -129,14 +132,7 @@ test("reconcilePanelFocus contains a release that throws", () => {
   // The throw has to be the *handle's*: the reconciliation's release is the component's own ending, and
   // `unfocusPanel` keeps the owner's settle and the frame request inside its own `try` — a fixture whose only
   // hostile member was the host passed with this containment absent and proved nothing.
-  let asked = false;
-  const handle = hostileUnfocus(component, tui, () => {
-    if (!asked) {
-      asked = true;
-      return true;
-    }
-    return false;
-  });
+  const handle = hostileUnfocus(component, tui);
   c.setHandle(handle);
   c.focus();
   // The disagreement this reconciliation exists for: the component's flag says focused while pi's cell has moved
@@ -153,4 +149,85 @@ test("reconcilePanelFocus contains a release that throws", () => {
   // this extension no longer treats as focused — a silent lockout, and one no frame ever asks about again — while
   // a case that read the flag alone would call it green.
   expect([c.isFocused(), tui.getFocusedComponent()]).toEqual([false, tui.editorComponent]);
+});
+
+/** The cells the escape hatch's reader is handed, over a component and a TUI the test owns. */
+function kbCells(component: PanelComponent | undefined, tui: StubTui) {
+  return { component: () => component, tui: () => tui, grants: createGrantWindow() };
+}
+
+test("the owner's keyboard answers with the handle, not the component's flag", () => {
+  // `ownerKeyboard` is the one door the hatch still has on a panel the extension has stopped tracking, so its
+  // gate must be **pi's** answer. A reader that returned the component's flag would be blind in exactly the
+  // case the hatch exists for, and the two cells disagree here on purpose: the flag is up, pi's cell is elsewhere.
+  const tui = createStubTui();
+  const h = panelHost([]);
+  const c = new PanelComponent(h.stub, tui);
+  const component = { render: () => [], invalidate: () => {} } as Component;
+  // The honest handle: this case asks what the reader *reports* and that its release is the component's own
+  // ending, so the release has to be able to land. `hostileUnfocus` is the other file's fixture — it throws on
+  // the first ask by design, which is the containment cases' premise, not this one's.
+  c.setHandle(piHandle(component, tui));
+  // The disagreement is built by the two verbs that are *not* each other: `focus()` takes the flag **and**
+  // pi's cell (the handle's ask), so the flag is then forced back down on its own — the state a reload, another
+  // extension or a withdrawn ask leaves behind, and the one the hatch's gate must not be blind to.
+  c.focus();
+  c.setFocused(false);
+
+  const kb = ownerKeyboard(kbCells(c, tui));
+  expect([kb?.isFocused(), c.isFocused()], "the gate read the flag, not pi's cell").toEqual([
+    true,
+    false,
+  ]);
+  // And the release is the component's own ending, not a flag write the hatch does not own: it takes pi's cell
+  // back to the editor, which is what `release: () => component.unfocus()` is for.
+  kb?.release();
+  expect(tui.getFocusedComponent()).toBe(tui.editorComponent);
+});
+
+test("the owner's keyboard reports a refusal, so a panel pi never granted keeps its gate shut", () => {
+  // The mirror case, and the one that makes the row above a reading rather than a tautology: pi's cell is
+  // elsewhere while nothing has been asked of the handle, so the answer is no and the hatch consumes nothing.
+  const tui = createStubTui();
+  const h = panelHost([]);
+  const c = new PanelComponent(h.stub, tui);
+  const component = { render: () => [], invalidate: () => {} } as Component;
+  c.setHandle(piHandle(component, tui));
+  expect(ownerKeyboard(kbCells(c, tui))?.isFocused()).toBe(false);
+});
+
+test("the owner's keyboard is nothing at all when no panel is drawn", () => {
+  // The hatch must consume nothing for a panel that does not exist: `undefined` (rather than a keyboard whose
+  // `isFocused()` would throw on a missing handle) is what lets the listener answer the byte to pi untouched.
+  const tui = createStubTui();
+  expect(ownerKeyboard(kbCells(undefined, tui))).toBeUndefined();
+  // A component whose overlay factory has not handed over a handle is the same refusal — nothing to ask.
+  const h = panelHost([]);
+  const bare = new PanelComponent(h.stub, tui);
+  expect(ownerKeyboard(kbCells(bare, tui))).toBeUndefined();
+});
+
+test("a release that throws twice still leaves the panel out of the key path", () => {
+  // The second `catch` — the one that swallows the *re-ask*. `always` makes every ask of this handle throw,
+  // so neither the component's ending nor the containment's second ask of pi's door can finish. What the
+  // owner owes the user is the one state the extension can still produce: its flag down, and no throw out of
+  // the reconciliation that `#frame` would pay for on every render.
+  const tui = createStubTui();
+  const h = panelHost([]);
+  const c = new PanelComponent(h.stub, tui);
+  const component = { render: () => [], invalidate: () => {} } as Component;
+  c.setHandle(hostileUnfocus(component, tui));
+  c.focus();
+  // The disagreement the reconciliation is asked about: the flag up, pi's cell elsewhere.
+  tui.setFocus(tui.editorComponent);
+  // `hostileUnfocus`'s first ask always throws, so neither of the containment's two asks can finish. The cell
+  // pi would have moved is therefore still on the editor, and that is the state the case ends in — a release
+  // that could not be completed at all, contained.
+  expect([c.isFocused(), c.handle()?.isFocused()]).toEqual([true, false]);
+
+  expect(() => reconcilePanelFocus(cellsOf(c, tui))).not.toThrow();
+  expect(c.isFocused(), "the re-ask threw and the flag was left up").toBe(false);
+  expect(tui.getFocusedComponent(), "pi still routes to a panel nothing can release").toBe(
+    tui.editorComponent,
+  );
 });

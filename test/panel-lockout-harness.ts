@@ -33,12 +33,12 @@ export function terminal() {
   return {
     ctx: {
       ui: {
+        // The registration hands back an unsubscribe, exactly as pi's contract does — the three containment
+        // files never take it back off (the hatch's own unsubscribe is asserted in
+        // `panel-escape-hatch.test.ts`), so it is recorded and left alone rather than stubbed.
         onTerminalInput: (h: (d: string) => Answer) => {
           listeners.push(h);
-          return () => {
-            const index = listeners.indexOf(h);
-            if (index >= 0) listeners.splice(index, 1);
-          };
+          return () => {};
         },
       },
     },
@@ -57,56 +57,56 @@ export function keyboardOf(c: PanelComponent): HatchKeyboard | undefined {
   return handle ? { isFocused: () => handle.isFocused(), release: () => c.unfocus() } : undefined;
 }
 
-const noop = (): void => {};
-
 /**
  * A handle built the way pi-tui's is: `isFocused()` and `unfocus()` are both readings of pi's one focus cell
- * (`tui.js:467`), so the handle cannot report a keyboard pi's cell denies. `beforeFocus` and
- * `beforeGrantCheck` are the seams that make the *ask* hostile — pi reads the entry's visibility inside the ask
- * (`tui.js:430-436`), and that callback is the owner's, so it is host code that can throw out of it.
+ * (`tui.js:467`), so the handle cannot report a keyboard pi's cell denies. Only the members these cases read are
+ * built — the two focus readings, and the `focus()` ask that writes the cell — because a fixture member nothing
+ * asks is a count, not a fact (`ui-stubs.ts`'s `showOverlay` is the handle for a case that needs the whole one).
  */
-export function piHandle(
-  component: Component,
-  tui: StubTui,
-  beforeFocus: () => void = noop,
-  beforeGrantCheck: () => void = noop,
-): OverlayHandle {
+export function piHandle(component: Component, tui: StubTui): OverlayHandle {
+  const focused = () => tui.getFocusedComponent() === component;
   return {
-    isFocused: () => tui.getFocusedComponent() === component,
+    isFocused: focused,
     unfocus: () => {
-      if (tui.getFocusedComponent() === component) tui.setFocus(tui.editorComponent);
+      if (focused()) tui.setFocus(tui.editorComponent);
     },
+    // The ask `c.focus()` reaches: it writes pi's cell, and it is the same cell `isFocused()` reads, so a case
+    // cannot leave the two disagreeing by construction — only by moving the component's flag afterwards, which
+    // is the disagreement these cases are about.
     focus: () => {
-      beforeFocus();
-      beforeGrantCheck();
       tui.setFocus(component);
     },
-    hide: () => {},
-    setHidden: () => {},
-    isHidden: () => false,
-    getBounds: () => undefined,
   } as unknown as OverlayHandle;
 }
 
 /**
- * `piHandle` with the release hostile: the one member the containment cases need to throw.
+ * A handle whose release is hostile: the one member the containment cases need to throw.
  *
- * Unlike pi-tui's own — which returns the moment the component is not the focused one (`tui.js:438-441`) — this
- * one throws whatever the cell says, because a release that returns early is a release that was never asked and
- * the containment never runs. `always` is what makes the difference visible: a case that wants pi's idempotence
- * after the first failure leaves it out, and reads the second ask as the honest one.
+ * Built the way pi-tui's is in every other respect (see `piHandle`): the two members are one focus cell read two
+ * ways, so a handle that reported a keyboard pi's cell denies is not constructible here. Unlike pi-tui's own
+ * release — which returns the moment the component is not the focused one (`tui.js:438-441`) — this one throws
+ * whatever the cell says, because a release that returns early is a release that was never asked and the
+ * containment never runs. Every ask throws — the hatch and the reconciliation each ask the handle twice, and a
+ * fixture that let the second ask succeed would hide an uncontained second release.
  */
-export function hostileUnfocus(
-  component: Component,
-  tui: StubTui,
-  always?: () => boolean,
-): OverlayHandle {
-  const handle = piHandle(component, tui);
-  let asked = false;
-  handle.unfocus = () => {
-    if (!asked || always?.()) throw new Error("the handle's unfocus threw");
-    asked = true;
-    if (tui.getFocusedComponent() === component) tui.setFocus(tui.editorComponent);
-  };
-  return handle;
+export function hostileUnfocus(component: Component, tui: StubTui): OverlayHandle {
+  const focused = () => tui.getFocusedComponent() === component;
+  return {
+    isFocused: focused,
+    // The release always throws — there is no "succeeds after a first failure" branch, because every case that
+    // arms this handle wants the throw and none ever reached a fall-through (pi-tui's own idempotent early
+    // return, `tui.js:438-441`, is not what these cases model). So `always` does not choose *whether* it throws,
+    // it only documents whether the throw is meant to survive the **repeated** asks a containment makes: the
+    // hatch and the reconciliation each ask the handle twice, and a case must know its fixture throws both times
+    // rather than quietly succeeding on the second and hiding an uncontained release.
+    unfocus: () => {
+      throw new Error("the handle's unfocus threw");
+    },
+    // The ask these cases reach by calling `c.focus()`: it writes pi's cell, which is what puts the panel in the
+    // state the reconciliation is then asked about. It is not a fairytale grant — the cell is the same one
+    // `isFocused()` reads, so a case that wants a refused ask uses `panel-handle.ts`'s model instead.
+    focus: () => {
+      tui.setFocus(component);
+    },
+  } as unknown as OverlayHandle;
 }
