@@ -96,6 +96,15 @@ function graphemes(text: string): string[] {
 }
 
 /**
+ * The same cluster split the budget cuts on, for a caller that has to *count* rather than cut. The
+ * tool measures a pin's text against `maxChars` with this, so the length the refusal names is the
+ * length the cut would have kept — one grapheme count in the repo, not two that can drift.
+ */
+export function graphemesOf(text: string): string[] {
+  return graphemes(text);
+}
+
+/**
  * C0 and C1 controls and DEL go; TAB becomes a space; every line break (LF, CR, CR LF, U+0085,
  * U+2028, U+2029) becomes a single LF so later passes see one newline shape. The newline test
  * comes first: the printable test is a pair of ranges, and a range must not settle a character

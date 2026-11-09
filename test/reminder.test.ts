@@ -30,6 +30,16 @@ const REMINDER_HEADER =
 
 /** Enough volume that the first turn falls before the keep-recent cut and can be summarised. */
 const PAD = "y".repeat(3000);
+/**
+ * The pin's own text, padded to stay inside the tool's budget (`DEFAULT_CONFIG.maxChars`).
+ *
+ * The three turns and the replies below carry the full `PAD`, which is what makes the first turn fall
+ * before the compaction cut; the pin does not need to. It used to, and the tool cut it silently, so the
+ * harness's "no tool result was flagged" check never saw the refusal the budget now returns. A pin of
+ * this size still exercises the same path — one pin in state, its text drawn by the reminder — and the
+ * budget itself is pinned in `tool-guards-text-budget.test.ts`, not here.
+ */
+const PIN_PAD = "y".repeat(200);
 
 /** The number of messages in request `index` whose content carries the reminder header. */
 function reminderCount(requests: readonly unknown[], index: number): number {
@@ -51,7 +61,10 @@ function compactable() {
 
 /** Three padded turns, one pin, then a manual compaction with a canned summary. */
 async function compacted(h: Harness): Promise<void> {
-  h.script([call("pin_for_user", { action: "pin", text: `Decide X ${PAD}` }), reply(`r1 ${PAD}`)]);
+  h.script([
+    call("pin_for_user", { action: "pin", text: `Decide X ${PIN_PAD}` }),
+    reply(`r1 ${PAD}`),
+  ]);
   await h.run(`p1 ${PAD}`);
   h.appendScript([reply(`r2 ${PAD}`)]);
   await h.run(`p2 ${PAD}`);

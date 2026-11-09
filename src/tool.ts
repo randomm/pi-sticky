@@ -10,9 +10,11 @@
  *
  * `execute` builds an `ActionInput` and hands it to `applyAction`, which owns every check: text,
  * level, ids, the limit, the duplicate guard, the user-removal refusal. The one thing the tool
- * does first is run `text` through `sanitizePinText` with the configured budget, because the
+ * does first is measure `text` against the configured budget (`checkTextBudget`), because the
  * budget is config and the reducer has no config to read; the reducer only re-cleans, which is
- * idempotent. A call pi rejects at the schema boundary is pi's to report — `execute` never sees
+ * idempotent. Over budget is a refusal rather than a cut, so the model rewrites the message instead
+ * of reading a truncated one, and the refusal is returned *before* `commit` — a refused call stores
+ * nothing. A call pi rejects at the schema boundary is pi's to report — `execute` never sees
  * it, and there is no result shape here for it.
  */
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -24,7 +26,7 @@ import { isPositiveSafeInteger } from "./bounds.ts";
 import { type StickyDeps, copyState } from "./deps.ts";
 import { applyAction } from "./reducer.ts";
 import { renderList } from "./render.ts";
-import { sanitizePinText } from "./sanitize.ts";
+import { checkTextBudget } from "./text-budget.ts";
 import { TOOL_NAME } from "./types.ts";
 import type { PinLevel, PinState, PinView } from "./types.ts";
 
@@ -168,7 +170,7 @@ function refusal(error: string, state: PinState, deps: StickyDeps): AgentToolRes
 }
 
 /**
- * `<outcome> <listing>`, plus the cut notice when the sanitizer had to shorten the text.
+ * `<outcome> <listing>`.
  *
  * The listing is rendered from the state this call just produced, not from the view the extension
  * last rebuilt: the tool answers *before* the rebuild its own result triggers, and the model must
@@ -176,15 +178,9 @@ function refusal(error: string, state: PinState, deps: StickyDeps): AgentToolRes
  * `reconstruct` moves a reply out of `pins` but never out of the removals and reply records the
  * result state carries — see `test/tool.test.ts` for the case this is about.
  */
-function success(
-  outcome: string,
-  state: PinState,
-  deps: StickyDeps,
-  truncated: boolean,
-): AgentToolResult<PinState> {
-  const cut = truncated ? ` (text was cut to ${deps.config.maxChars} characters)` : "";
+function success(outcome: string, state: PinState, deps: StickyDeps): AgentToolResult<PinState> {
   const view: PinView = { pins: state.pins, removed: state.removed };
-  return textResult(`${outcome} ${renderList(view, deps.config.maxPins)}${cut}`, state, false);
+  return textResult(`${outcome} ${renderList(view, deps.config.maxPins)}`, state, false);
 }
 
 export function createPinTool(deps: StickyDeps): ToolDefinition {
@@ -218,14 +214,18 @@ export function createPinTool(deps: StickyDeps): ToolDefinition {
         return textResult(renderList(view, config.maxPins), deps.getState(), false);
       }
 
-      // The budget is config, so the tool applies it here; `applyAction` only re-cleans.
-      const cleaned =
-        typeof body.text === "string" ? sanitizePinText(body.text, config.maxChars) : undefined;
-      const result = applyAction(
-        deps.getState(),
-        actionInput(body, op, cleaned?.text, deps.now()),
-        { maxPins: config.maxPins },
-      );
+      // The budget is config, so the tool applies it here; `applyAction` only re-cleans. A text
+      // over it is refused before anything is published: the model is told the limit and how long
+      // what it wrote really was, and the state keeps what it had.
+      const budget =
+        typeof body.text === "string"
+          ? checkTextBudget(body.text, config.maxChars)
+          : { ok: true as const, text: undefined };
+      if (!budget.ok) return refusal(budget.error, deps.getState(), deps);
+
+      const result = applyAction(deps.getState(), actionInput(body, op, budget.text, deps.now()), {
+        maxPins: config.maxPins,
+      });
 
       if (!result.ok) return refusal(result.error, deps.getState(), deps);
 
@@ -239,12 +239,7 @@ export function createPinTool(deps: StickyDeps): ToolDefinition {
       deps.commit(result.state, result.affected);
       deps.redraw(ctx);
       const level = isLevel(body.level) ? body.level : "info";
-      return success(
-        outcomeLine(op, result, level),
-        result.state,
-        deps,
-        cleaned?.truncated === true,
-      );
+      return success(outcomeLine(op, result, level), result.state, deps);
     },
   } as ToolDefinition;
 }
