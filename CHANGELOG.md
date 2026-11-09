@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3](https://github.com/randomm/pi-sticky/compare/v0.1.2...v0.1.3) (2026-11-09)
+
+
+### Bug Fixes
+
+* **panel:** act on the pin the bar was drawn on ([#106](https://github.com/randomm/pi-sticky/issues/106)) ([6192af8](https://github.com/randomm/pi-sticky/commit/6192af8e14ef85e6caa5528f2872a528d36a89a8))
+* **panel:** never trap the keyboard on a focused panel ([#108](https://github.com/randomm/pi-sticky/issues/108)) ([8e46d1d](https://github.com/randomm/pi-sticky/commit/8e46d1d5075de6c1c4303d9c278d3e0816eec390))
+* **work:** Fix the A2 spike test so its result no longer depends on which ([#101](https://github.com/randomm/pi-sticky/issues/101)) ([24ce152](https://github.com/randomm/pi-sticky/commit/24ce152e6743de9e246f2e9ad11794cb313d3117))
+
+
+### Documentation
+
+* add a code of conduct and a dependencies and toolchain note ([#104](https://github.com/randomm/pi-sticky/issues/104)) ([5173b8c](https://github.com/randomm/pi-sticky/commit/5173b8c51ac3489dbcb9e98d08ea19d54b1a23ff))
+* rework the README entrance and drop the bun-for-users claim ([#105](https://github.com/randomm/pi-sticky/issues/105)) ([f9ee779](https://github.com/randomm/pi-sticky/commit/f9ee7795a100c5281515dda0321947afe5b8d958))
+
 ## [0.1.2](https://github.com/randomm/pi-sticky/compare/v0.1.1...v0.1.2) (2026-11-04)
 
 
