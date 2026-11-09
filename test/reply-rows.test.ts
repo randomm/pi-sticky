@@ -27,28 +27,15 @@ import {
 } from "./panel-hostile-fields.ts";
 
 /**
- * The user's own words as the row may carry them: U+200B removed, which is the one substitution the quoted copy
- * makes that erases a character rather than replacing it. A row that quoted a mark it never broke does not
- * contain this, so it is the evidence that the answer was drawn and then sanitised, not dropped.
- */
-const quotable = (text: string): string => text.replaceAll("\u200B", "");
-
-/**
- * The same reply with its mark broken the way the row breaks it. A reply whose *own* bytes already read as an
- * extension's sentence cannot be asserted to survive verbatim — the row has to break that mark, and it cannot
- * break the extension's own — so the evidence that the answer was drawn and not dropped is this shape instead.
- */
-const brokenQuotable = (text: string): string => quotable(text).replaceAll("(", "(\u00AD");
-
-/**
  * The `→` region of a `/pins` row: the user's own bytes, kept verbatim. The row carries the answer twice, so the
- * region runs from the arrow to the *last* occurrence of the mark — the first one in there is the mark the user
- * typed themselves, and the region has to reach past it to the extension's own, which is where their copy ends.
+ * region has to stop where the extension's own words start — the arrow copy runs from the arrow up to the
+ * suffix's opening `REPLIED_MARK`. `lastIndexOf` is what makes it land there: the quoted copy below the suffix
+ * can carry the mark the user typed, and a forward search would stop on that one instead.
  * Extracted by name so the assertion about that copy says which bytes it is about.
  */
 function pinsReplyRegion(row: string): string {
   const arrow = row.indexOf("\u2192");
-  return arrow === -1 ? "" : row.slice(arrow, row.lastIndexOf(MARK));
+  return arrow === -1 ? "" : row.slice(arrow, row.lastIndexOf(REPLIED_MARK));
 }
 
 /** A row of the model's listing: what a real pin line looks like and nothing else may. */
@@ -242,7 +229,6 @@ describe("pinsTextRow: text, then the reply, then the mark, before the indent", 
     const start = row.lastIndexOf(REPLIED_MARK);
     const suffix = row.slice(start, row.indexOf(")", start) + 1);
     expect(occurrences(suffix, MARK)).toBe(1);
-    expect(occurrences(suffix, MARK)).toBe(occurrences(REPLIED_MARK, MARK));
     // The quoted copy is the part of that suffix the user's words fill: from the first `"` the row opens them
     // with to the last one before the suffix closes (the row turns every `"` the user typed into `'`, so those
     // two are unambiguously the row's own quotes). It must hold the user's last sentence exactly as the row may

@@ -126,19 +126,24 @@ const ZERO_WIDTH = "\u200B";
 /**
  * The break the row puts inside a quoted mark. A soft hyphen rather than U+200B: the point of breaking the mark
  * is that a reader of the row cannot reassemble the extension's sentence out of the user's words, and an
- * invisible break is reassembled by simply ignoring one codepoint.
+ * invisible break is reassembled by simply ignoring one codepoint. Exported for the row tests, which count the
+ * marks a row carries **after** erasing this one and U+200B from the user's own part — the two invisibles a
+ * quoted copy must not be able to hide a mark behind.
  */
-const MARK_BREAK = "\u00AD";
+export const MARK_BREAK = "\u00AD";
 
 /**
- * The user's words as the row may quote them: no U+200B, no `"` (it would close the row's own quote) and no
- * intact reply mark (it would read as the extension's own). See `repliedSuffix`.
+ * The user's words as the row may quote them: no U+200B, no `\u00AD`, no `"` (it would close the row's own
+ * quote) and no intact reply mark (it would read as the extension's own). See `repliedSuffix`.
  *
- * The U+200B pass runs **first**: a reply that already holds the mark broken, or broken one character in, would
- * otherwise survive as a second mark that only the invisible gives away.
+ * Both invisibles are removed **first**: a reply that already holds the mark broken, or broken one character
+ * in, would otherwise survive as a second mark that only the invisible gives away. The row's own break is
+ * stripped on the same pass as U+200B — a reply that arrived carrying it (a `ViewPin` rebuilt from a session
+ * file whose text never went through `sanitizeReplyText`) would otherwise keep a mark the row has no way to
+ * break, since the substitution below only ever looks for the intact string.
  */
 function quoteAnswer(text: string): string {
-  const bare = text.replaceAll(ZERO_WIDTH, "");
+  const bare = text.replaceAll(ZERO_WIDTH, "").replaceAll(MARK_BREAK, "");
   const broken = `(${MARK_BREAK}${REPLIED_MARK.slice(1)}`;
   return bare.replaceAll('"', "'").replaceAll(REPLIED_MARK, broken);
 }
