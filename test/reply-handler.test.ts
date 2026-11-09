@@ -17,6 +17,7 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, InputEvent } from "@earendil-works/pi-coding-agent";
 
+import { MAX_REPLY_UNITS } from "../src/bounds.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import type { StickyDeps } from "../src/deps.ts";
 import { registerReply } from "../src/reply.ts";
@@ -96,7 +97,7 @@ function drive(
 test("the handler rewrites and records one reply entry, and notifies nothing", () => {
   const { result, actions, notices } = drive(submitted("Re #1: yes"), [DECIDE], { hasUI: true });
   expect(result).toEqual({ action: "transform", text: `${REWRITTEN}\n\nyes` });
-  expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT }]);
+  expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT, text: "yes" }]);
   expect(notices).toEqual([]);
 });
 
@@ -119,7 +120,7 @@ test("the handler reads the view once, so a view that moves mid-submission canno
   );
   expect(viewReads).toBe(1);
   expect(reads).toBe(1);
-  expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT }]);
+  expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT, text: "yes" }]);
 });
 
 test("the entry is addressed by the pin the match found, whatever the rewrite says", () => {
@@ -127,7 +128,7 @@ test("the entry is addressed by the pin the match found, whatever the rewrite sa
   // and the uid the entry carries come from one lookup, so they cannot disagree.
   const renumbered = { ...DECIDE, id: 1, uid: "a1b2c3d4" };
   const { result, actions } = drive(submitted("Re #1: yes"), [renumbered], { hasUI: true });
-  expect(actions).toEqual([{ v: 1, uid: "a1b2c3d4", action: "reply", at: AT }]);
+  expect(actions).toEqual([{ v: 1, uid: "a1b2c3d4", action: "reply", at: AT, text: "yes" }]);
   expect((result as { text: string }).text).toBe("Replying to pin #1 (action): `Decide X`\n\nyes");
 });
 
@@ -149,14 +150,14 @@ test("without a UI the unknown id is still sent unchanged and nothing is notifie
 test("without a UI a matched reply still rewrites and records", () => {
   const { result, actions } = drive(submitted("Re #1: yes"), [DECIDE], { hasUI: false });
   expect(result).toEqual({ action: "transform", text: `${REWRITTEN}\n\nyes` });
-  expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT }]);
+  expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT, text: "yes" }]);
 });
 
 test("the reply is addressed by uid, so a renumbering branch edit cannot misaddress it", () => {
   // The rewrite names id 1; the entry carries the uid of that pin, which is the address U10 requires.
   const renumbered = { ...DECIDE, id: 1, uid: "a1b2c3d4" };
   const { actions } = drive(submitted("Re #1: yes"), [renumbered], { hasUI: true });
-  expect(actions).toEqual([{ v: 1, uid: "a1b2c3d4", action: "reply", at: AT }]);
+  expect(actions).toEqual([{ v: 1, uid: "a1b2c3d4", action: "reply", at: AT, text: "yes" }]);
 });
 
 test("replying twice records two entries, each stamped with the clock of its own submission", () => {
@@ -184,8 +185,8 @@ test("replying twice records two entries, each stamped with the clock of its own
     endEarnedOpen: () => {},
   } as unknown as StickyDeps);
   expect(actions).toEqual([
-    { v: 1, uid: "uid-1", action: "reply", at: NOW },
-    { v: 1, uid: "uid-1", action: "reply", at: LATER },
+    { v: 1, uid: "uid-1", action: "reply", at: NOW, text: "yes" },
+    { v: 1, uid: "uid-1", action: "reply", at: LATER, text: "still yes" },
   ]);
 });
 
@@ -201,5 +202,37 @@ test("the entry records the pin the marker resolved to, whatever the clock and t
   // user typed, read from a pin this file's other cases do not use.
   const other = pin(1, "Ship the panel", "warning", { uid: "ffff9999" });
   const { actions } = drive(submitted("Re #001: go", { source: "rpc" }), [other], { hasUI: true });
-  expect(actions).toEqual([{ v: 1, uid: "ffff9999", action: "reply", at: AT }]);
+  expect(actions).toEqual([{ v: 1, uid: "ffff9999", action: "reply", at: AT, text: "go" }]);
+});
+
+test("a reply with nothing after the marker records no text key at all", () => {
+  // The empty draft is the case that must not mint a key: an entry that read `text: ""` would be drawn as
+  // an answered pin whose answer was nothing, and the guard in `state-guards.ts` treats `""` and an absent
+  // field alike, so only the *absence* keeps the whole-entry shape a reader sees stable.
+  for (const draft of ["Re #1:", "Re #1: ", "Re #1:\t "]) {
+    const { actions } = drive(submitted(draft), [DECIDE], { hasUI: true });
+    expect(actions).toEqual([{ v: 1, uid: "uid-1", action: "reply", at: AT }]);
+    expect(Object.keys(actions[0] as Record<string, unknown>)).not.toInclude("text");
+  }
+});
+
+test("the recorded text is the user's own words, not the rewrite the model reads", () => {
+  // The rewrite quotes the pin and adds a header; the entry carries only what followed the marker, so a
+  // listing can name the answer without restating the question. A marker inside the draft is text.
+  const { actions } = drive(submitted("Re #1: Re #2: nested"), [DECIDE], { hasUI: true });
+  expect((actions[0] as { text: string }).text).toBe("Re #2: nested");
+});
+
+test("the recorded text is cleaned and cut, whatever the user typed", () => {
+  // The write side runs the reply's own sanitizer, so an entry a hostile submission produced never carries
+  // an escape or a control into the listing, and never carries more than the reply's ceilings.
+  const ESC = String.fromCodePoint(0x1b);
+  const { actions } = drive(submitted(`Re #1: ${ESC}[2Jgo`), [DECIDE], { hasUI: true });
+  expect((actions[0] as { text: string }).text).toBe("go");
+
+  const long = "a".repeat(5000);
+  const oversized = drive(submitted(`Re #1: ${long}`), [DECIDE], { hasUI: true });
+  const recorded = (oversized.actions[0] as { text: string }).text;
+  expect(recorded.length).toBeLessThanOrEqual(MAX_REPLY_UNITS);
+  expect(recorded.endsWith("\u2026")).toBe(true);
 });

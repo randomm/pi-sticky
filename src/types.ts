@@ -61,16 +61,27 @@ export interface PinState {
   removed: Removal[];
 }
 
-/** A user action recorded as a `pi-sticky.user` custom entry (session-wide, U10). */
+/**
+ * A user action recorded as a `pi-sticky.user` custom entry (session-wide, U10). `text` is the user's own
+ * words as the reply recorded them — the answer that outlives the pin's next update. Optional, and never
+ * an empty string: a reply with nothing after the marker records no text at all, and a reply whose words
+ * the sanitizer emptied is the same case.
+ */
 export interface UserAction {
   v: 1;
   uid: string;
   action: "dismiss" | "reply";
   at: string;
+  text?: string;
 }
 
-/** A pin as drawn: a replied pin stays visible, dimmed, until it is resolved. */
-export type ViewPin = Pin & { repliedAt?: string };
+/**
+ * A pin as drawn: a replied pin stays visible, dimmed, until it is resolved. `reply` is the user's own
+ * words, projected off the last reply entry for this uid by `viewFrom` (`state.ts`) and written by nothing
+ * else. It is *model- and user-facing listing* text only: the rail, the peek and the panel draw neither
+ * the mark nor the words from it, and neither the ranking (`pin-order.ts`) nor either cache reads it.
+ */
+export type ViewPin = Pin & { repliedAt?: string; reply?: string };
 
 /** What a renderer is given: the visible pins and the removals. */
 export interface PinView {

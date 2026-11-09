@@ -46,8 +46,13 @@
  * The recording is one `pi-sticky.user` action with `action: "reply"`, addressed by the pin's `uid` —
  * the same path a dismissal takes (`commands.ts`) — so the reply sticks session-wide (U10) and survives
  * `/tree` and a reload with no state change here: `reconstruct` derives `repliedAt` from those entries
- * and both surfaces draw the dimmed `↩ ` row from that. Replying twice appends two entries and the
- * latest `at` is the one displayed. The uid comes from the pin the match found, carried out of
+ * and both surfaces draw the dimmed `↩ ` row from that. The entry also carries the user's own words in
+ * `text`, cut to the reply's two ceilings by `sanitize-reply.ts` at the write (an empty result writes no
+ * key at all); `viewFrom` folds the last one into the view's `reply`, which is what keeps the answer
+ * legible to the model after an agent update rewrote the pin. The rewrite handed back below stays
+ * *uncut* on purpose — the model reads the user's whole message, and only the recorded projection is
+ * trimmed. Replying twice appends two entries and the one that wins is decided by array order in
+ * `viewFrom`, not by the stamp. The uid comes from the pin the match found, carried out of
  * `decideReply` on `RewriteDecision`, so `deps.getView()` is read exactly once per submission: re-parsing
  * the rendered header for an id and re-reading the view for it (the old `uidOfRewrite`) made the recording
  * depend on the shape of a display string, and when the second read no longer held the pin the append was
@@ -69,6 +74,7 @@ import type {
 import type { StickyDeps } from "./deps.ts";
 import { endEarnedOpenOnSubmission } from "./panel-transience.ts";
 import { toOneLine } from "./render.ts";
+import { sanitizeReplyText } from "./sanitize-reply.ts";
 import type { ViewPin } from "./types.ts";
 
 /**
@@ -175,15 +181,18 @@ export type ReplyDecision =
   | RewriteDecision;
 
 /**
- * A rewrite, with the pin it answers attached.
+ * A rewrite, with the pin it answers and the user's own words attached.
  *
- * `pin` is not part of pi's result contract — pi reads `action`, `text` and `images` and ignores the rest
- * — and it is present only on a rewrite: the handler addresses its entry with this pin's `uid` instead of
+ * Neither is part of pi's result contract — pi reads `action`, `text` and `images` and ignores the rest —
+ * and both are present only on a rewrite: the handler addresses its entry with this pin's `uid` instead of
  * recovering an address from the text it is about to hand pi, which is what keeps the recording tied to
- * the lookup the user's digits drove.
+ * the lookup the user's digits drove. `rest` is there for the same reason: it is the words the entry
+ * records, and a handler that re-parsed its own rewrite to recover them would be reading a display string
+ * as an address — the failure the `pin` member replaced.
  */
 export type RewriteDecision = Extract<InputEventResult, { action: "transform" }> & {
   pin: ViewPin;
+  rest: string;
 };
 
 /**
@@ -204,8 +213,10 @@ export function decideReply(
   return {
     action: "transform",
     text: rewritten(found.pin, found.rest),
-    // The pin the digits named, carried out for the handler's entry.
+    // The pin the digits named, carried out for the handler's entry, and the words after the marker —
+    // which the handler records on that entry rather than reading back out of `text` above.
     pin: found.pin,
+    rest: found.rest,
     // Images travel with the reply unchanged: the user attached them to this message, and only its
     // first line was rewritten.
     ...(event.images === undefined ? {} : { images: event.images }),
@@ -233,14 +244,25 @@ export function registerReply(pi: ExtensionAPI, deps: StickyDeps): void {
     endEarnedOpenOnSubmission(deps, event);
     const decision = decideReply(event, deps.getView().pins);
     // The two spreads pick off the members that are this module's own — the notice pi's result contract
-    // has no room for, and the pin the entry is addressed by — and pass everything pi reads onwards
-    // untouched. `continue` carries the notice, `transform` the pin, so each destructuring is exact.
+    // has no room for, and the pin and the user's words the entry is addressed and written from — and pass
+    // everything pi reads onwards untouched. `continue` carries the notice, `transform` the pair, so each
+    // destructuring is exact.
     if (decision.action === "transform") {
-      const { pin, ...result } = decision;
+      const { pin, rest, ...result } = decision;
       // One entry per submission, stamped by the deps' clock. `appendUserAction` is what rebuilds and
       // redraws (`extension.ts`), so the dimmed `↩ ` row reaches both surfaces without this module naming
       // either, and a reply is addressed by uid because a branch edit can renumber a pin, never re-key it.
-      deps.appendUserAction({ v: 1, uid: pin.uid, action: "reply", at: deps.now() });
+      // The user's own words ride along, cut to the reply's ceilings: the model reads the whole rewrite
+      // above and the projection reads this, so a long answer stays legible in both without either side
+      // paying for the other's length. An empty cut is *no key*, never `""`.
+      const text = sanitizeReplyText(rest);
+      deps.appendUserAction({
+        v: 1,
+        uid: pin.uid,
+        action: "reply",
+        at: deps.now(),
+        ...(text === undefined ? {} : { text }),
+      });
       return result;
     }
     const { notice, ...result } = decision;

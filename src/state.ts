@@ -57,14 +57,22 @@ function applyUserAction(state: PinState, action: UserAction): PinState {
 
 function viewFrom(state: PinState, actions: readonly UserAction[]): PinView {
   const replied = new Map<string, string>();
+  const answers = new Map<string, string>();
   for (const action of actions) {
-    if (action.action === "reply" && state.pins.some((pin) => pin.uid === action.uid)) {
-      replied.set(action.uid, action.at);
-    }
+    if (action.action !== "reply") continue;
+    // Live pins only: a uid is opaque and never reused, so a reply to a pin that has gone attaches to
+    // nothing, and a pin re-created under a new uid starts with no answer of its own.
+    if (!state.pins.some((pin) => pin.uid === action.uid)) continue;
+    // Array order, not `at`: `reconstruct` walks the entries in the order the session holds them, so the
+    // last reply in that order is the one the user wrote last — a clock the writer does not own.
+    replied.set(action.uid, action.at);
+    if (action.text !== undefined) answers.set(action.uid, action.text);
   }
   const pins: ViewPin[] = state.pins.map((pin) => {
     const repliedAt = replied.get(pin.uid);
-    return repliedAt === undefined ? { ...pin } : { ...pin, repliedAt };
+    if (repliedAt === undefined) return { ...pin };
+    const text = answers.get(pin.uid);
+    return text === undefined ? { ...pin, repliedAt } : { ...pin, repliedAt, reply: text };
   });
   return { pins, removed: state.removed };
 }

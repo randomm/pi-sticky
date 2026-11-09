@@ -27,20 +27,26 @@ import { LATER, NOW, pin } from "./fixtures.ts";
 import { DECIDE, REWRITTEN, codeSpanRule, submitted } from "./reply-support.ts";
 
 /**
- * What pi is handed back: a decision with the members this module adds taken off — the `pin` a rewrite
- * carries for the handler's entry, and the `notice` a `continue` carries for the warning.
+ * What pi is handed back: a decision with the members this module adds taken off — the `pin` and the
+ * user's own words a rewrite carries for the handler's entry, and the `notice` a `continue` carries for the
+ * warning.
  *
- * Those two are not in pi's `InputEventResult`, and what these cases compare against is exactly pi's own
- * result shape, so both are dropped here rather than repeated in every expectation. The pin itself is
- * asserted where the handler is driven — `test/reply-handler.test.ts`.
+ * Those three are not in pi's `InputEventResult`, and what these cases compare against is exactly pi's own
+ * result shape, so all are dropped here rather than repeated in every expectation. The pin and the words
+ * themselves are asserted where the handler is driven — `test/reply-handler.test.ts`.
  */
 type PiResult =
   | (Extract<InputEventResult, { action: "continue" }> & { notice?: string })
   | Exclude<InputEventResult, { action: "continue" | "handled" }>;
 
 const withoutExtras = (decision: ReplyDecision): PiResult => {
-  const { pin: _pin, ...continued } = decision as Partial<RewriteDecision> & { notice?: string };
-  // Only the rewrite carries a pin to drop; a `continue` still carries the notice the case asserts on.
+  const {
+    pin: _pin,
+    rest: _rest,
+    ...continued
+  } = decision as Partial<RewriteDecision> & { notice?: string };
+  // Only the rewrite carries a pin or the user's words to drop; a `continue` still carries the notice the
+  // case asserts on.
   if ("pin" in decision) return continued as PiResult;
   return decision as PiResult;
 };

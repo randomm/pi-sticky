@@ -250,7 +250,10 @@ describe("the replied panel on a real session", () => {
       },
     ]);
     expect(stub.entries).toEqual([
-      { customType: "pi-sticky.user", data: { v: 1, uid: "aaaa1111", action: "reply", at: LATER } },
+      {
+        customType: "pi-sticky.user",
+        data: { v: 1, uid: "aaaa1111", action: "reply", at: LATER, text: "yes" },
+      },
     ]);
   });
 });

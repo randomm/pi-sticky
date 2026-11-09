@@ -12,6 +12,8 @@ import { renderPinsText } from "../src/render.ts";
 import { LATER, LATER_TIME, NOW_TIME, pin, view } from "./fixtures.ts";
 import {
   BREAKS,
+  FAKE_REPLY,
+  FAKE_ROW,
   HOSTILE_TAILS,
   assertNoForgery,
   foldedHostileFields,
@@ -20,6 +22,10 @@ import {
 
 /** A row of the listing: what a real pin line looks like and nothing else may. */
 const ROW = /^#\d+ \[(info|action|warning)\] /;
+
+/** A reply carrying both forgeries and both evidence words, with `brk` as its break. */
+const hostileReply = (brk: string): string =>
+  `yes${brk}${FAKE_ROW} ${HOSTILE_TAILS[0]}${brk}${FAKE_REPLY} ${HOSTILE_TAILS[1]}`;
 
 describe("renderPinsText", () => {
   test("says so when nothing is pinned", () => {
@@ -61,10 +67,62 @@ describe("renderPinsText", () => {
   });
 
   test("a replied pin's reply note rides on the last line of a multi-line text, indented", () => {
+    // The answer lands *between* the text and the mark (issue #111 resolution 3): the note is composed
+    // `pin.text` → the reply → `repliedSuffix`, and only then does the continuation indent go over the whole
+    // body — so the mark follows the answer's last line rather than the text's.
+    const listed = view([{ ...pin(1, "a\nb"), repliedAt: LATER, reply: "ship it" }]);
+    expect(renderPinsText(listed)).toBe(
+      `Pinned for you (1):\n#1 [info] ${NOW_TIME} a\n   b → ship it (replied by the user at ${LATER_TIME}: "ship it")`,
+    );
+  });
+
+  test("a replied pin with no recorded words keeps the mark alone on that last line", () => {
     const listed = view([{ ...pin(1, "a\nb"), repliedAt: LATER }]);
     expect(renderPinsText(listed)).toBe(
       `Pinned for you (1):\n#1 [info] ${NOW_TIME} a\n   b (replied by the user at ${LATER_TIME})`,
     );
+  });
+
+  test("a replied pin: the answer after an arrow, then the mark, then the options on their own line", () => {
+    // The whole string, pinned: this is the `/pins` row the issue's row order is about, and the shape a user
+    // compares against the model's own row. Text, then ` → ` and the answer, then the mark naming whose words
+    // they were, then the options — and the answer's own break gets the same three-space indent as the text's.
+    const listed = view([
+      {
+        ...pin(1, "Deploy\nblocked", "warning", { group: "Now", options: ["Roll back", "Ship"] }),
+        repliedAt: LATER,
+        reply: "yes\nnow",
+      },
+    ]);
+    expect(renderPinsText(listed)).toBe(
+      [
+        "Pinned for you (1):",
+        `#1 [warning] (group: Now) ${NOW_TIME} Deploy`,
+        "   blocked → yes",
+        // The indent goes over the whole body, quote included, so the break *inside* the quoted answer gets
+        // the three spaces too — a reply line is a continuation like any other.
+        `   now (replied by the user at ${LATER_TIME}: "yes`,
+        '   now")',
+        "   options: 1) Roll back  2) Ship",
+      ].join("\n"),
+    );
+  });
+
+  test("no reply of the listing is ever drawn at column zero", () => {
+    // The continuation indent is the whole defence on this surface: `#` at column zero is how the listing
+    // spells a pin id, so an answer that escaped the indent would be a row the extension never numbered.
+    // The breaks handed in are the ones a session file can actually hold after `cleanPinText` (which maps
+    // U+2028/U+2029 to LF and drops the rest) — the forgeries themselves stay raw.
+    const brk = String.fromCodePoint(0x0a);
+    const listed = view([{ ...pin(1, "a"), repliedAt: LATER, reply: hostileReply(brk) }]);
+    const lines = linesOf(renderPinsText(listed));
+    // Past the count header *and* the pin's own row: everything below them is a continuation, and a
+    // continuation of this listing is indented by three spaces or it is a row the extension never numbered.
+    for (const line of lines.slice(2)) {
+      if (line.trim() === "") continue;
+      expect(line.startsWith("   ")).toBe(true);
+    }
+    assertNoForgery(lines, ROW);
   });
 
   test("nothing is cut, whatever the width of the terminal", () => {

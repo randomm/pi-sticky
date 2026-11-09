@@ -150,6 +150,14 @@ export function isPinState(x: unknown): x is PinState {
  * A `pi-sticky.user` payload: a uid, a time and one of the two actions the user can take. The uid
  * is the pin's own address and is compared with `===`, so the same shape rule applies — a uid that
  * is empty, hostile or over-long matches no pin and is refused rather than carried into the rebuild.
+ *
+ * This guard speaks for the **entry's shape and nothing else**, which is why `text` is not checked here at
+ * all: any value the field can hold — absent, `""`, a number, an object, or a string of any length — is
+ * accepted, and the entry still reads as a user action. What the field is worth is decided one pass later, by
+ * `replyTextOf` in `session-entries.ts`, which drops the *field* (never the entry) for a non-string, an
+ * over-long string or one `cleanPinText` empties. That split is what keeps the promise the reducer and the rail
+ * depend on: one malformed word must not cost a pin the mark that says the user answered it. The same rule the
+ * three optional pin fields follow in `optionalGroup` above, and for the same reason.
  */
 export function isUserAction(x: unknown): x is UserAction {
   if (!isPlainObject(x) || x.v !== 1) return false;
