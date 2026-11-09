@@ -69,11 +69,10 @@ describe("isUserAction and a `text`", () => {
   });
 
   test("a text the guard will not vouch for costs the words, not the entry", () => {
-    // The ruling, stated where the reader is asserted: a non-string is judged as *no field* and the entry is
-    // still read as a reply; only a string past the reply's unit ceiling is refused outright, and the writer
-    // cannot produce one. `test/state-guards-reply.test.ts` owns the guard cases themselves.
-    expect(isUserAction({ ...base, text: OVER_CEILING })).toBe(false);
-    for (const bad of [7, ["yes"], { words: "yes" }, true]) {
+    // The ruling, stated where the reader is asserted: a `text` the reader cannot use is judged as *no field*
+    // — a non-string, an over-long string or one the pass empties all read the same way — and the entry is
+    // still a reply. `test/state-guards-reply.test.ts` owns the guard cases themselves.
+    for (const bad of [7, ["yes"], { words: "yes" }, true, OVER_CEILING, "x".repeat(8000)]) {
       expect(isUserAction({ ...base, text: bad })).toBe(true);
       expect(userActionFrom(raw({ ...base, text: bad }))).toEqual({
         v: 1,
@@ -81,6 +80,7 @@ describe("isUserAction and a `text`", () => {
         action: "reply",
         at: LATER,
       });
+      expect(userActionFrom(raw({ ...base, text: bad }))).not.toHaveProperty("text");
     }
   });
 
@@ -138,16 +138,23 @@ describe("userActionFrom copies `text` by name", () => {
     );
   });
 
-  test("a text past the reply's ceiling is refused as an entry, which the writer cannot produce", () => {
-    // `isUserAction` refuses a *string* over `MAX_REPLY_UNITS` and `userActionFrom` refuses the entry with it
-    // — the one shape the "no text at all" rule does not cover, and honest only because the writer cuts the
-    // reply before it stores it (`sanitize-reply.ts`), so no real session ever holds this shape. Pinned so a
-    // change to the writer's order is caught here rather than as an unbounded row reaching the model.
+  test("a text past the reply's ceiling costs the words and keeps the mark", () => {
+    // PM ruling 3 of issue #111, on the reader: the ceiling is judged where the field is, in
+    // `userActionFrom`, and what it drops is the field — never the entry. The mark belongs to the reducer and
+    // the rail, so an entry no writer could have produced still says the user answered; only its words are
+    // gone. `test/reply-text-recorded`'s companion `test/reply-survival-tampered.test.ts` walks the same
+    // shape through the real extension.
     const branch = branchOf(snapshot);
-    expect(userActionFrom(raw({ ...base, text: OVER_CEILING }))).toBeUndefined();
-    expect(
-      reconstruct(branch, [raw({ ...base, text: OVER_CEILING })]).view.pins[0]?.repliedAt,
-    ).toBeUndefined();
+    const c25 = `\u{1F468}${"\u{1F3FB}".repeat(11)}\uFE0F`; // one grapheme, 25 units
+    for (const over of [OVER_CEILING, "x".repeat(8000), c25.repeat(70)]) {
+      expect(over.length).toBeGreaterThan(MAX_REPLY_UNITS);
+      const read = userActionFrom(raw({ ...base, text: over }));
+      expect(read).toEqual({ v: 1, uid: "uid-1", action: "reply", at: LATER });
+      expect(read).not.toHaveProperty("text");
+      const rebuilt = reconstruct(branch, [raw({ ...base, text: over })]);
+      expect(rebuilt.view.pins[0]?.repliedAt).toBe(LATER);
+      expect(rebuilt.view.pins[0]?.reply).toBeUndefined();
+    }
   });
 
   test("a text at the reply's own ceilings is read back whole", () => {
@@ -175,6 +182,28 @@ describe("userActionFrom copies `text` by name", () => {
     const emptied = reconstruct(branch, [raw({ ...base, text: "  " })]);
     expect(emptied.view.pins[0]?.repliedAt).toBe(LATER);
     expect(emptied.view.pins[0]?.reply).toBeUndefined();
+  });
+
+  test("a dismiss entry never carries words, whatever its `text` claims", () => {
+    // A dismissal is a verb, not an utterance: `dismissAction` mints no `text` and the reader must not grow
+    // one. A hand-edited session file can put the key on a dismiss entry, and the copy that came back with a
+    // `text` on it would be a payload the writer could never have produced — with words on it the projection
+    // would be reading an answer nobody gave. The field is dropped before it is looked at, so the pass never
+    // runs over it either.
+    const dismissed = userActionFrom(raw({ ...base, action: "dismiss", text: "  ship it  " }));
+    expect(dismissed).toEqual({ v: 1, uid: "uid-1", action: "dismiss", at: LATER });
+    expect(dismissed).not.toHaveProperty("text");
+    // The over-long shape too: a dismiss entry whose `text` is past the ceiling is still just a dismissal.
+    const long = userActionFrom(raw({ ...base, action: "dismiss", text: OVER_CEILING }));
+    expect(long).toEqual({ v: 1, uid: "uid-1", action: "dismiss", at: LATER });
+    expect(long).not.toHaveProperty("text");
+    // And through the rebuild: the pin is gone, and no other pin inherits the words.
+    const rebuilt = reconstruct(branchOf(snapshot), [
+      userEntry(userAction("uid-1", "reply", LATER)),
+      raw({ ...base, action: "dismiss", text: "not an answer" }),
+    ]);
+    expect(rebuilt.view.pins).toEqual([]);
+    expect(rebuilt.view.removed.map((r) => r.id)).toEqual([1]);
   });
 
   test("only a pi-sticky.user entry is read, and `uid` is copied uncleaned", () => {

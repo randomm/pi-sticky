@@ -6,13 +6,7 @@
  * already in use, or already shown to the user and dismissed, is a pin whose number would be
  * reused, and the model would then be told to update one pin while acting on another.
  */
-import {
-  MAX_PINS,
-  MAX_REPLY_UNITS,
-  MAX_TEXT_UNITS,
-  REMOVAL_HISTORY,
-  isPositiveSafeInteger,
-} from "./bounds.ts";
+import { MAX_PINS, MAX_TEXT_UNITS, REMOVAL_HISTORY, isPositiveSafeInteger } from "./bounds.ts";
 import { isDense } from "./dense.ts";
 import { MAX_FIELD_UNITS, MAX_OPTIONS, MIN_OPTIONS } from "./pin-fields.ts";
 import type { Pin, PinState, Removal, UIShown, UserAction } from "./types.ts";
@@ -157,35 +151,18 @@ export function isPinState(x: unknown): x is PinState {
  * is the pin's own address and is compared with `===`, so the same shape rule applies — a uid that
  * is empty, hostile or over-long matches no pin and is refused rather than carried into the rebuild.
  *
- * `text` is optional, and a bad one costs only itself. Absent is valid, and so is any string inside the
- * reply's own unit ceiling (`MAX_REPLY_UNITS`, never `MAX_TEXT_UNITS`) whatever it contains; a non-string or
- * an over-long one means **the field is absent** and the entry is still read as a reply with no text — the
- * `optionalGroup` rule above, and for the same reason: one malformed word must not cost a pin the mark that
- * says the user answered it. Whether the words are worth recording at all is decided one pass later, by
- * `cleanPinText` over the field in `session-entries.ts`, exactly as it is decided for `at`: a `text` that
- * cleans to nothing is dropped there, so a reply never comes back with an empty quote. Only an over-long
- * *string* is refused outright, since it is the one shape the ceiling can name from the entry alone.
+ * This guard speaks for the **entry's shape and nothing else**, which is why `text` is not checked here at
+ * all: any value the field can hold — absent, `""`, a number, an object, or a string of any length — is
+ * accepted, and the entry still reads as a user action. What the field is worth is decided one pass later, by
+ * `replyTextOf` in `session-entries.ts`, which drops the *field* (never the entry) for a non-string, an
+ * over-long string or one `cleanPinText` empties. That split is what keeps the promise the reducer and the rail
+ * depend on: one malformed word must not cost a pin the mark that says the user answered it. The same rule the
+ * three optional pin fields follow in `optionalGroup` above, and for the same reason.
  */
 export function isUserAction(x: unknown): x is UserAction {
   if (!isPlainObject(x) || x.v !== 1) return false;
   if (!isUid(x.uid) || !isBoundedString(x.at)) return false;
-  if (x.action !== "dismiss" && x.action !== "reply") return false;
-  // A `text` this guard will not vouch for is no text at all, never a refused entry: `replyTextAllowed` speaks
-  // for the field alone, so the three shape checks above are what decide whether this payload is a user
-  // action and a bad `text` cannot make a non-action read as one. Same rule the three optional pin fields
-  // follow in `optionalGroup` above.
-  return x.text === undefined || replyTextAllowed(x.text);
-}
-
-/**
- * The one thing about `text` this guard may refuse an entry for: a *string* past the reply's own unit
- * ceiling. It counts UTF-16 units and nothing else — never `MAX_TEXT_UNITS`, and never a content rule: a
- * clean `"\u001b[2J"` passes and the read side is what empties it. Any other shape the field can hold (a
- * number, an array, an object, a boolean) is not a claim about an entry at all, so it is judged as no field
- * and `cleanPinText` decides whether the words are worth recording.
- */
-function replyTextAllowed(x: unknown): boolean {
-  return typeof x !== "string" || x.length <= MAX_REPLY_UNITS;
+  return x.action === "dismiss" || x.action === "reply";
 }
 
 /**

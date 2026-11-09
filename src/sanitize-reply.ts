@@ -41,12 +41,19 @@ function clusters(text: string): string[] {
 function cut(text: string): string {
   const kept = clusters(text);
   if (text.length <= MAX_REPLY_UNITS && kept.length <= MAX_REPLY_GRAPHEMES) return text;
+  // One grapheme *and* one unit-width are withheld up front, not charged at the end: a loop that breaks when
+  // `taken` alone reaches the unit ceiling is one U+2026 wide over it once the ellipsis is appended, which is
+  // what a 24-unit cluster reaches (67 survivors fill 1 608 units and the mark lands the answer on 1 609).
+  // Measuring the ellipsis's own width rather than trusting it to be one is the same refusal `sanitize.ts`
+  // makes of `string.length` — the ceiling is about what is drawn, and the reserve has to be paid in units.
   const ellipsisUnits = ELLIPSIS.length;
+  const unitBudget = MAX_REPLY_UNITS - ellipsisUnits;
+  const graphemeBudget = MAX_REPLY_GRAPHEMES - 1;
   let taken = "";
   let count = 0;
   for (const cluster of kept) {
-    if (count + 1 > MAX_REPLY_GRAPHEMES - 1) break;
-    if (taken.length + cluster.length + ellipsisUnits > MAX_REPLY_UNITS) break;
+    if (count + 1 > graphemeBudget) break;
+    if (taken.length + cluster.length > unitBudget) break;
     taken += cluster;
     count += 1;
   }

@@ -121,16 +121,22 @@ test("a hostile reply keeps the listing at one line per pin", () => {
 });
 
 test("every hostile payload costs the words, never the replied mark", () => {
-  // The whole fixture, one entry per payload. Whatever each verdict is — words, or nothing — the entry
-  // survives (the ruling of issue #111) and the mark stands.
-  const entries = HOSTILE_REPLY_VALUES.map((value) => hostileReplyEntry(value, "uid-1"));
-  const v = viewOf(entries);
-  expect(v.pins[0]?.repliedAt).toBe(LATER);
-  for (const line of drawn(entries)) expect(offenders(line)).toEqual([]);
+  // The ruling of issue #111, asserted one payload per rebuild. Handing the whole sweep over as a list would
+  // prove nothing: the entries are read oldest first and the last one wins, so a single payload that did cost
+  // the mark would be masked by the ten that follow it. Each payload therefore gets its own `reconstruct`, and
+  // both halves of the promise are asserted on it — the mark stands, and whatever verdict the words got, no
+  // escape reaches a drawn line.
+  for (const value of HOSTILE_REPLY_VALUES) {
+    const v = viewOf([hostileReplyEntry(value, "uid-1")]);
+    expect(v.pins[0]?.repliedAt).toBe(LATER);
+    for (const line of drawn([hostileReplyEntry(value, "uid-1")]))
+      expect(offenders(line)).toEqual([]);
+  }
 });
 
 test("each hostile payload on its own leaves a clean drawn line", () => {
-  // One payload per rebuild, so a later entry cannot overwrite an earlier verdict and hide it.
+  // One payload per rebuild, so a later entry cannot overwrite an earlier verdict and hide it — the same
+  // shape as the test above, on the forgeries rather than the mark.
   for (const value of HOSTILE_REPLY_VALUES) {
     const lines = drawn([hostileReplyEntry(value, "uid-1")]);
     for (const line of lines) expect(offenders(line)).toEqual([]);

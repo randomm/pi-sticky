@@ -39,7 +39,15 @@ export const hostileReplyEntry = (text: unknown, uid = "uid-1"): unknown => ({
   data: { v: 1, uid, action: "reply", at: "2026-10-23T14:30:00.000Z", text },
 });
 
-/** Every shape the `text` field is claimed in, plus the payload-level refusals the guard still makes. */
+/**
+ * Every shape the `text` field is claimed in, plus the payload-level refusals the guard still makes.
+ *
+ * JSON-representable shapes only, on purpose: these payloads are handed to `reconstruct` in a session entry,
+ * and a `Symbol` on an entry is a value no session file can hold — it silently reads as no `text` and can
+ * therefore never be given a verdict of its own. The non-string shapes are the ones a session file can really
+ * carry (`7`, `["yes"]`, `{ words: "yes" }`, `true`, `null`), and the non-string rule itself is asserted with
+ * a `Symbol` in `test/state-guards-reply.test.ts`, where nothing is serialised.
+ */
 export const HOSTILE_REPLY_VALUES: readonly unknown[] = [
   HOSTILE_REPLY_TEXT,
   `${ESC}]8;;https://evil${ST}click${BEL}`,
@@ -50,6 +58,5 @@ export const HOSTILE_REPLY_VALUES: readonly unknown[] = [
   ["yes"],
   { words: "yes" },
   true,
-  Symbol("x"),
   null,
 ];

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { MAX_REPLY_GRAPHEMES, MAX_REPLY_UNITS } from "../src/bounds.ts";
 import { sanitizeReplyText } from "../src/sanitize-reply.ts";
-import { MAX_MARKS_PER_GRAPHEME, graphemesOf } from "../src/sanitize.ts";
+import { MAX_MARKS_PER_GRAPHEME, cleanPinText, graphemesOf } from "../src/sanitize.ts";
 
 // The reply is the user's own words, quoted verbatim into the tool result the model reads, so it passes the
 // same cleaning the pin text passes (`sanitize.ts`) and then the reply's own ceilings (`bounds.ts`). These
@@ -19,6 +19,51 @@ const marks = (n: number) =>
   "a\u0300".repeat(n === 0 ? 0 : 1) + "\u0300".repeat(Math.max(0, n - 1));
 
 const ELLIPSIS = "\u2026";
+
+/**
+ * One grapheme cluster of 25 UTF-16 units: a man, eleven skin-tone modifiers and a variation selector.
+ *
+ * The mark cap of `sanitize.ts` counts `\p{M}` only, so neither the modifiers nor the selector are capped and
+ * a cluster this wide is legal input. It is the shape that makes the two reply ceilings disagree hardest —
+ * sixty-three of them fill the unit ceiling while the grapheme ceiling still has room — and therefore the
+ * shape a cut that appends its ellipsis *after* the budget overshoots on.
+ */
+const C25 = `\u{1F468}${"\u{1F3FB}".repeat(11)}\uFE0F`;
+
+/** 4 975 units in, 63 clusters retained: the unit ceiling binds, the grapheme ceiling does not. */
+const C25_RUN = 199;
+
+/**
+ * A second uncapped wide cluster — regional-indicator pairs with a skin-tone modifier and the mark cap's four
+ * combining marks — 10 units to the grapheme. Its run overshoots the same ceiling in the same way, so the
+ * reserve is not proven on one lucky shape alone.
+ */
+const C10 = cleanPinText(`\u{1F1E6}\u{1F1E6}\u{1F3FB}${"\u0300".repeat(MAX_MARKS_PER_GRAPHEME)}`);
+
+/** 1 610 units in, 159 clusters retained — the mirror of `C25_RUN` on `C10`. */
+const C10_RUN = 161;
+
+/**
+ * The same cut as `sanitizeReplyText`'s, but with the ellipsis appended **after** the budget instead of inside
+ * it: the loop breaks on `taken.length + cluster.length > MAX_REPLY_UNITS` and then adds U+2026. Kept here
+ * because it is the only way to show a fixture really tests the reserve — a fixture the mutant satisfies
+ * certifies nothing.
+ */
+function cutWithoutTheReserve(text: string): string {
+  const kept = graphemesOf(cleanPinText(text));
+  if (cleanPinText(text).length <= MAX_REPLY_UNITS && kept.length <= MAX_REPLY_GRAPHEMES) {
+    return cleanPinText(text);
+  }
+  let taken = "";
+  let count = 0;
+  for (const cluster of kept) {
+    if (count + 1 > MAX_REPLY_GRAPHEMES - 1) break;
+    if (taken.length + cluster.length > MAX_REPLY_UNITS) break;
+    taken += cluster;
+    count += 1;
+  }
+  return `${taken}${ELLIPSIS}`;
+}
 
 test("sanitizeReplyText trims and returns ordinary text untouched", () => {
   expect(sanitizeReplyText("  yes, ship it  ")).toBe("yes, ship it");
@@ -98,6 +143,71 @@ test("sanitizeReplyText keeps the reply's ceilings distinct from the pin's", () 
   // which is the evidence that the reply did not quietly inherit the pin's ceiling.
   const long = chars("x", MAX_REPLY_GRAPHEMES + 100);
   expect(sanitizeReplyText(long)).toBe(chars("x", MAX_REPLY_GRAPHEMES - 1) + ELLIPSIS);
+});
+
+test("the reply's ceilings are their own literals, not a derivation of anything else", () => {
+  // Both numbers are the reply's own decision (issue #111, PM ruling 1): neither is derivable from a pin's
+  // ceiling, the mark cap or the drawn width, so a change to either of those must not move these. Pinned as
+  // literals on purpose — a test that recomputed them from the same expression could not notice a drift.
+  expect(MAX_REPLY_UNITS).toBe(1600);
+  expect(MAX_REPLY_GRAPHEMES).toBe(200);
+});
+
+test("sanitizeReplyText keeps 199 graphemes plus the ellipsis for one grapheme over the ceiling", () => {
+  // The grapheme ceiling on its own, with the unit ceiling nowhere near binding: one grapheme over, and the
+  // answer is 199 survivors plus the reserved U+2026 — 200 graphemes and 200 units, both ceilings met.
+  const cut = sanitizeReplyText("a".repeat(MAX_REPLY_GRAPHEMES + 1));
+  expect(cut).toBe(`${"a".repeat(MAX_REPLY_GRAPHEMES - 1)}${ELLIPSIS}`);
+  expect(cut?.length).toBe(MAX_REPLY_GRAPHEMES);
+  expect(graphemesOf(cut ?? "").length).toBe(MAX_REPLY_GRAPHEMES);
+});
+
+test("sanitizeReplyText reserves the ellipsis's units for a cut of 25-unit clusters", () => {
+  // The overshoot the review found. `C25` is one grapheme of 25 units and the run below is far over the unit
+  // ceiling but under the grapheme one, so the unit ceiling alone decides how many clusters survive — and a
+  // cut that filled the budget and *then* appended U+2026 answered 1 601 units, one past the ceiling its own
+  // header says is reserved. Both ceilings are asserted on the same answer, with the exact retained cluster
+  // count and the exact unit length, because "shorter than the ceiling" is not the promise the cut makes.
+  const input = C25.repeat(C25_RUN);
+  const cut = sanitizeReplyText(input);
+  expect(cut).toBeDefined();
+  expect(cut?.endsWith(ELLIPSIS)).toBe(true);
+  const body = cut?.slice(0, -1) ?? "";
+  expect(graphemesOf(body).every((cluster) => cluster === C25)).toBe(true);
+  expect(graphemesOf(body).length).toBe(63);
+  expect(cut?.length).toBe(graphemesOf(body).length * C25.length + ELLIPSIS.length);
+  expect(cut?.length).toBe(1576);
+  expect(cut?.length).toBeLessThanOrEqual(MAX_REPLY_UNITS);
+  expect(graphemesOf(cut ?? "").length).toBeLessThanOrEqual(MAX_REPLY_GRAPHEMES);
+  // The mutant this fixture exists to catch, shown rather than asserted elsewhere: without the reserve the
+  // same input lands one unit past the ceiling, so the numbers above could not have come from it.
+  expect(cutWithoutTheReserve(input).length).toBe(MAX_REPLY_UNITS + 1);
+  // And the shape is stable as the input grows: more clusters never lengthen the answer past the reserve.
+  for (const run of [C25_RUN + 1, 250, 400]) {
+    const longer = sanitizeReplyText(C25.repeat(run));
+    expect(longer).toBe(cut);
+    expect(longer?.length).toBeLessThanOrEqual(MAX_REPLY_UNITS);
+  }
+});
+
+test("sanitizeReplyText reserves the ellipsis's units for a second wide-cluster shape", () => {
+  // The reserve is not proven on one lucky cluster alone. `C10` is unrelated to `C25` — regional indicators,
+  // a modifier and four combining marks, 10 units to the grapheme — and its run overshoots the same ceiling in
+  // the same way, so a cut that reserved units for the ellipsis on one shape and not the other fails here.
+  expect(graphemesOf(C10).length).toBe(1);
+  expect(C10.length).toBe(10);
+  const input = C10.repeat(C10_RUN);
+  const cut = sanitizeReplyText(input);
+  expect(cut).toBeDefined();
+  expect(cut?.endsWith(ELLIPSIS)).toBe(true);
+  const body = cut?.slice(0, -1) ?? "";
+  expect(graphemesOf(body).every((cluster) => cluster === C10)).toBe(true);
+  expect(graphemesOf(body).length).toBe(159);
+  expect(cut?.length).toBe(graphemesOf(body).length * C10.length + ELLIPSIS.length);
+  expect(cut?.length).toBe(1591);
+  expect(cut?.length).toBeLessThanOrEqual(MAX_REPLY_UNITS);
+  expect(graphemesOf(cut ?? "").length).toBeLessThanOrEqual(MAX_REPLY_GRAPHEMES);
+  expect(cutWithoutTheReserve(input).length).toBe(MAX_REPLY_UNITS + 1);
 });
 
 test("sanitizeReplyText caps combining marks per grapheme before the length cut", () => {

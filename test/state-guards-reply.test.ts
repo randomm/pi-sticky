@@ -20,14 +20,24 @@ import { MAX_REPLY_GRAPHEMES, MAX_REPLY_UNITS, MAX_TEXT_UNITS } from "../src/bou
 import { sanitizeReplyText } from "../src/sanitize-reply.ts";
 import { userActionFrom } from "../src/session-entries.ts";
 import { isUserAction } from "../src/state-guards.ts";
+import { reconstruct } from "../src/state.ts";
 import type { UserAction } from "../src/types.ts";
-import { LATER } from "./fixtures.ts";
+import { LATER, pin, state, toolResultEntry } from "./fixtures.ts";
 
 /** The one shape that is a well-formed reply apart from the field under test. */
 const base = { v: 1, uid: "uid-1", action: "reply", at: LATER } as const;
 
 /** One over the reply's ceiling, in single-unit clusters so the count is the length. */
 const OVER = "x".repeat(MAX_REPLY_UNITS + 1);
+
+/**
+ * The over-long shapes a hand-edited session file can hold and no writer can produce, in three flavours:
+ * ASCII one unit over, the same field wildly over, and the 25-unit wide cluster of `test/sanitize-reply.ts`
+ * pushed past the ceiling. All three are strings, so a guard that speaks for the *field* must drop the field
+ * for each of them and still read the entry as a reply.
+ */
+const C25 = `\u{1F468}${"\u{1F3FB}".repeat(11)}\uFE0F`;
+const OVER_SHAPES: readonly unknown[] = [OVER, "x".repeat(8000), C25.repeat(70)];
 
 /** A `pi-sticky.user` entry holding exactly `data` — what a hand-edited session file writes. */
 const raw = (data: unknown): unknown => ({ type: "custom", customType: "pi-sticky.user", data });
@@ -42,14 +52,36 @@ describe("isUserAction reads a bad `text` as no text, never as a bad entry", () 
     expect(isUserAction({ v: 1, uid: "uid-1", action: "reply", at: LATER })).toBe(true);
   });
 
-  test("a text past the reply's ceiling is refused as an entry, which the writer cannot produce", () => {
-    // The unit ceiling is enforced here and nowhere else on the read path, so this is the shape the guard
-    // refuses outright — honest only because the writer cuts the reply before it stores it
-    // (`sanitize-reply.ts`), so no real session holds one. Pinned so a writer that stopped cutting is caught
-    // here rather than as an unbounded row reaching the model.
-    expect(isUserAction({ ...base, text: OVER })).toBe(false);
-    expect(isUserAction({ ...base, text: "👍".repeat(MAX_REPLY_UNITS) })).toBe(false);
-    expect(userActionFrom(raw({ ...base, text: OVER }))).toBeUndefined();
+  test("an over-long text costs the field, never the entry, and never the mark", () => {
+    // PM ruling 3 of issue #111. A `text` this guard will not vouch for is *no text* — the same verdict a
+    // number or an object gets — so the entry is still read as a reply and the pin keeps the mark that says
+    // the user answered it. Three shapes, because the guard must not learn the field by its flavour: ASCII one
+    // unit over, the same field wildly over, and the wide-cluster shape the writer's own cut produces.
+    const stillAReply: UserAction = { v: 1, uid: "uid-1", action: "reply", at: LATER };
+    for (const text of OVER_SHAPES) {
+      expect(typeof text).toBe("string");
+      expect((text as string).length).toBeGreaterThan(MAX_REPLY_UNITS);
+      expect(isUserAction({ ...base, text })).toBe(true);
+      const read = userActionFrom(raw({ ...base, text }));
+      expect(read).toEqual(stillAReply);
+      expect(read).not.toHaveProperty("text");
+    }
+  });
+
+  test("an over-long text followed by a good reply leaves the good words standing", () => {
+    // The entry order the pair takes in a session that was tampered with and then answered properly: the
+    // broken entry says nothing (it has no words to say) and must not take the surviving answer with it.
+    const branch = [toolResultEntry(state([pin(1, "Decide X")], 2))];
+    const rebuilt = reconstruct(branch, [
+      raw({ ...base, text: OVER }),
+      raw({ ...base, text: "ship it" }),
+    ]);
+    expect(rebuilt.view.pins[0]?.repliedAt).toBe(LATER);
+    expect(rebuilt.view.pins[0]?.reply).toBe("ship it");
+    // And the broken entry alone still marks the pin, which is the half the old guard lost.
+    const alone = reconstruct(branch, [raw({ ...base, text: OVER })]);
+    expect(alone.view.pins[0]?.repliedAt).toBe(LATER);
+    expect(alone.view.pins[0]?.reply).toBeUndefined();
   });
 
   test("a non-string text means the field is absent, and the entry is still read as a reply", () => {

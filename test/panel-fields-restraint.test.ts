@@ -25,12 +25,15 @@ import { railStamp } from "../src/panel-geometry.ts";
 import { NO_PANEL_COLOUR } from "../src/panel-host.ts";
 import { buildPeekLines } from "../src/panel-peek.ts";
 import { panelSections } from "../src/panel-sections.ts";
+import { alreadyDrawn, comparePins } from "../src/pin-order.ts";
 import { renderRailLines } from "../src/rail-lines.ts";
+import { orderPins, renderList } from "../src/render.ts";
 import type { PanelStyle } from "../src/render.ts";
 import { plainStyle } from "../src/render.ts";
 import type { ViewPin } from "../src/types.ts";
 import { RAIL_AGE } from "./fixtures-age.ts";
-import { NOW } from "./fixtures.ts";
+import { NOW, view } from "./fixtures.ts";
+import { linesOf } from "./panel-hostile-fields.ts";
 import { levelPin } from "./panel-sections-fixture.ts";
 
 const style: PanelStyle = { ...plainStyle, ...NO_PANEL_COLOUR };
@@ -125,6 +128,59 @@ test("a field-only change still repaints the panel, because its cache keys on th
   );
   expect(after.flat[0]?.group).toBe("Now");
 });
+
+test("the user's words are no key of the ordering: comparePins, the listing and the sections", () => {
+  // The half the test above leaves open. `replyRank` reads `repliedAt`, and nothing else — but a comparison
+  // that read `reply` as well would sort a pin with a long answer above one with a short one, and the panel,
+  // the rail, the model's listing and `/pins` would all quietly reorder under the user while the bar stayed
+  // put. So the pair here differs in `reply` alone, with `repliedAt` held equal, and the claim is made on all
+  // four surfaces that rank: the comparison itself, `orderPins`, the drawn listing, and the sections.
+  const pair = (reply?: string): ViewPin[] => [
+    {
+      ...levelPin(1, "first", "warning"),
+      repliedAt: NOW,
+      ...(reply === undefined ? {} : { reply }),
+    },
+    {
+      ...levelPin(2, "second", "warning"),
+      repliedAt: NOW,
+      ...(reply === undefined ? {} : { reply }),
+    },
+  ];
+  const answered = pair("ship it, and long enough to be a paragraph of the user's own");
+  const unanswered = pair();
+  // The comparison says the two arrays are the same order, in both directions, for every adjacent pair.
+  for (const answeredPin of answered) {
+    const plain = (unanswered.find((p) => p.id === answeredPin.id) as ViewPin) ?? answeredPin;
+    expect(comparePins(answeredPin, plain)).toBe(0);
+    expect(comparePins(plain, answeredPin)).toBe(0);
+    expect(alreadyDrawn([answeredPin, plain])).toBe(true);
+    expect(alreadyDrawn([plain, answeredPin])).toBe(true);
+  }
+  // The sort: same ids, same positions.
+  expect(orderPins(answered).map((p) => p.id)).toEqual(orderPins(unanswered).map((p) => p.id));
+  const listed = (reply?: string): string[] => linesOf(renderList(view(pair(reply)), 5));
+  expect(listed("ship it").map(rowId)).toEqual(listed().map(rowId));
+  expect(panelSections(answered).flat.map((p) => p.id)).toEqual(
+    panelSections(unanswered).flat.map((p) => p.id),
+  );
+  expect(panelSections(answered).order.map((s) => s.kind)).toEqual(
+    panelSections(unanswered).order.map((s) => s.kind),
+  );
+  // The rail draws no reply at all, so there the rows are byte-identical, not merely in the same order.
+  expect(renderRailLines(view(answered), WIDTH, { maxLines: 4, style, now: NOW })).toEqual(
+    renderRailLines(view(unanswered), WIDTH, { maxLines: 4, style, now: NOW }),
+  );
+  // And `reply` still reaches the one listing that draws it, so the ordering equalities above are not a
+  // listing that dropped the field on the floor: the answer is inside the row, in the order the row spells it.
+  expect(listed("ship it")[1]).toInclude(`: "ship it")`);
+});
+
+/** The id a listing row was drawn for, or the line itself when it is not a row. */
+function rowId(line: string): number | string {
+  const match = /^#(\d+) /.exec(line);
+  return match === null ? line : Number(match[1]);
+}
 
 test("a reply is invisible to the rail, the peek, the frame key and the ordering", () => {
   // AC5, on the two caches and the one strip that must not notice the field. The pair is two pins that differ

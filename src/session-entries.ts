@@ -23,10 +23,12 @@
  * written by an earlier run and can be edited by anything that can reach it, so the escape-strip that
  * protects a drawn string runs wherever the string is *read back*, exactly as it does for `at` — the one
  * pass, `cleanPinText`, and no second cut. The cut belongs to the writer (`sanitize-reply.ts`), the only
- * party that can put a long reply on an entry; what the reader refuses instead is any `text` past
- * `MAX_REPLY_UNITS`, which `isUserAction` counts before this field is copied. A `text` the guard accepts is
- * therefore a `text` the reader hands on whole, and a malformed one costs the words rather than the entry.
+ * party that can put a long reply on an entry. What the reader drops instead is any `text` it cannot use — not
+ * a string, past `MAX_REPLY_UNITS`, or one the pass empties — and it drops **the field, never the entry**: the
+ * judgement is `replyTextOf` below, not `isUserAction`, whose job stops at the entry's shape. A malformed word
+ * therefore costs the words and leaves the pin's `repliedAt` standing.
  */
+import { MAX_REPLY_UNITS } from "./bounds.ts";
 import { MAX_OPTIONS, MIN_OPTIONS, storedField } from "./pin-fields.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
@@ -135,10 +137,15 @@ export function snapshotFromCustom(entry: unknown): PinState | undefined {
  * The data of a `pi-sticky.user` custom entry, if it holds a usable user action. The uid is the
  * pin's own and is compared as stored, so it is copied uncleaned (see the module header); `at` is
  * copied through `cleanPinText`, because it is the timestamp the user-removal error and the replied
- * marker print. `text` — the reply's own words — is copied by name through the same pass, the same
- * discipline as the three optional pin fields above: a value the pass empties, or one that is not a string at
- * all, is *no key* rather than an empty one, so a dismiss entry never grows a `text` a pre-reply entry could
- * not have had and a malformed word costs the words rather than the entry.
+ * marker print.
+ *
+ * `text` is judged here, by this function and nowhere else on the read path. `isUserAction` speaks only for
+ * the entry's shape — a uid, a time, a verb — so every judgement about the *field* lives here: a value that is
+ * not a string, one past the reply's own unit ceiling (`MAX_REPLY_UNITS`), or one `cleanPinText` empties is
+ * *no key*, and the entry is still read as a reply. A dismissal never carries words at all: its `text` is not
+ * even looked at, so a hand-edited dismiss entry cannot grow a key a pre-reply entry could not have had. The
+ * mark belongs to the reducer and the rail, and one unusable word must not take it back — which is why the
+ * ceiling drops the field rather than refusing the entry the way a bad `uid` or a bad verb does.
  */
 export function userActionFrom(entry: unknown): UserAction | undefined {
   if (!isPlainObject(entry) || entry.type !== "custom" || entry.customType !== USER_TYPE) {
@@ -146,11 +153,7 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
   }
   if (!isUserAction(entry.data)) return undefined;
   const at = cleanPinText(entry.data.at);
-  // Read with the one pass `at` is read with — `isUserAction` has already refused anything past the reply's
-  // unit ceiling, so nothing here has to cut. A `text` the pass empties is *no key*: the mark says the user
-  // answered, and an empty quote would claim they answered with nothing.
-  const text =
-    typeof entry.data.text === "string" ? cleanPinText(entry.data.text) || undefined : undefined;
+  const text = replyTextOf(entry.data);
   return {
     v: 1,
     uid: entry.data.uid,
@@ -158,6 +161,26 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
     at,
     ...(text === undefined ? {} : { text }),
   };
+}
+
+/**
+ * The reply's words as the copy may carry them, or `undefined` when there is nothing to record.
+ *
+ * Three verdicts, one absence: not a string, longer than the reply's own unit ceiling, or a string the pass
+ * leaves empty. The ceiling is counted here rather than in `isUserAction` because it is a rule about the
+ * *field* — the same reason `copiedGroup` above holds `group` to its bound instead of the shape guard, and the
+ * reason a `text` this function refuses costs the words and not the entry's `repliedAt`. The pass is the one
+ * `at` is read with, and no second cut runs: the cut belongs to the writer (`sanitize-reply.ts`), which is the
+ * only party that can put a long reply on an entry, so what is read back is handed on whole whenever the
+ * ceiling allows it.
+ */
+function replyTextOf(data: UserAction): string | undefined {
+  // The field is read as the raw `unknown` it still is: `isUserAction` vouched for the entry's shape and
+  // pointedly said nothing about this field, so the three verdicts below run over whatever the entry holds.
+  const text: unknown = data.text;
+  if (data.action !== "reply" || typeof text !== "string") return undefined;
+  if (text.length > MAX_REPLY_UNITS) return undefined;
+  return cleanPinText(text) || undefined;
 }
 
 /**

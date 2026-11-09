@@ -18,7 +18,9 @@
  * order: `… Fix the gate → ship it (replied by the user at 14:30: "ship it")`. The model's row folds the
  * reply and quotes it — the user's words must not read as a record of their own to a model that is told to
  * trust a line — while `/pins` keeps the reply's own breaks and lets the indent below take them. The mark
- * itself, `(replied by the user at HH:MM)`, is the same string on both surfaces whatever the reply holds.
+ * itself, `(replied by the user at HH:MM)`, is the same string on both surfaces whatever the reply holds, and
+ * it appears **exactly once**: the answer is quoted and every `"` inside it is drawn as `'`, so nothing the
+ * user typed can close that quote and stand outside it as the extension's own words. See `repliedSuffix`.
  *
  * `group` sits after the level and before the text, and `options` and `compact` come last, after the reply
  * note. Group and every option go through the fold before they reach the row: they were cleaned and
@@ -82,11 +84,39 @@ function pinsOptionsLine(pin: ViewPin): string {
  * The reply note a replied pin carries on both surfaces, or nothing. `text` is the user's own words, which
  * the model's row carries inside its own quote so the model cannot read them as another record; `/pins`
  * leaves them verbatim because that surface keeps the text's own breaks and re-indents them.
+ *
+ * Two substitutions make the quoted answer *unambiguous* — each is the one string the row's own spelling would
+ * otherwise collide with, and both are made at the row rather than in the sanitizer, so what is stored and the
+ * user's own `→` copy of their words stay untouched:
+ *
+ * - every `"` becomes `'`: the answer is quoted with `"…"`, so a reply holding a quote would close it early and
+ *   everything after it would stop reading as the user's words and start reading as the row's;
+ * - every mark is broken with U+200B: `(replied by the user at` is the one string on the row the model is told
+ *   to read as the extension's own statement of when the user answered, and the row draws exactly one. The
+ *   sanitizer keeps `U+200B` inside words (it strips only *edge* invisibles), so this is the row's job.
+ *
+ * Together they mean a reply can neither open the row's quote nor say the extension's sentence inside it. Both
+ * are display-only, like the fold one line up that turns a break into a space rather than letting it end the row.
  */
 function repliedSuffix(pin: ViewPin, text: string): string {
   if (pin.repliedAt === undefined) return "";
-  const answer = text === "" ? "" : `: "${text}"`;
+  const answer = text === "" ? "" : `: "${quoteAnswer(text)}"`;
   return ` (replied by the user at ${formatLocalTime(pin.repliedAt)}${answer})`;
+}
+
+/** The mark both rows spell — the string a reply must not be able to reproduce inside its own quote. */
+const REPLIED_MARK = "(replied by the user at";
+
+/** U+200B, the one invisible the sanitizer leaves inside words — see `quoteAnswer`. */
+const ZERO_WIDTH = "\u200B";
+
+/**
+ * The user's words as the row may quote them: no `"` (it would close the row's own quote) and no intact reply
+ * mark (it would read as the extension's own). See `repliedSuffix`.
+ */
+function quoteAnswer(text: string): string {
+  const broken = REPLIED_MARK.replace("(", `(${ZERO_WIDTH}`);
+  return text.replaceAll('"', "'").replaceAll(REPLIED_MARK, broken);
 }
 
 /**
