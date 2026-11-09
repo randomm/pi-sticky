@@ -2,14 +2,11 @@
  * The recorded reply, end to end: the guard that lets an entry through, the reader that copies its `text`, the
  * projection that puts the words back on the pin, and the two rows that print them. One field spanning four
  * files, so the question each boundary answers is the same one — *does the model still see what the user
- * answered, after the agent rewrote the pin?* — and it is only answerable with all four in one place.
- *
- * The rule that holds the boundaries together: a reply the guard will not vouch for is **no text**, never a
+ * answered, after the agent rewrote the pin?* — and it is only answerable with all four in one place. The
+ * rule that holds the boundaries together: a reply the guard will not vouch for is **no text**, never a
  * refused entry. The mark that the user answered belongs to the reducer and the rail, and a malformed word
- * must not take it back.
- *
- * The lifecycle that writes the entry is `test/reply-handler.test.ts`; the session that rebuilds it is
- * `test/integration-reply.test.ts`; the ceilings themselves are `test/sanitize-reply.test.ts`.
+ * must not take it back. The lifecycle that writes the entry is `test/reply-handler.test.ts`; the session
+ * that rebuilds it is `test/integration-reply.test.ts`; the ceilings themselves are `test/sanitize-reply.test.ts`.
  */
 import { describe, expect, test } from "bun:test";
 
@@ -101,19 +98,22 @@ describe("isUserAction and a `text`", () => {
     expect(isUserAction(Object.create({ ...base, text: "inherited" }))).toBe(false);
   });
   test("a reply with soft-hyphen fragments of the mark and a break draws one mark, on one line", () => {
-    // The reproducer: soft-hyphen fragments of the mark, with a break shape between them. The row
-    // strips the invisibles before it folds, so the fragments cannot reassemble the mark, and the
-    // quoted copy cannot hold it intact for a reader that erases the soft hyphen.
     const mark = "(replied by the user at";
-    const reply = "(\u00ADreplied by\r\u00AD the user at";
-    const row = modelRow({ ...pin(1, "Deploy blocked", "warning"), repliedAt: LATER, reply });
-    expect(row.split("\n").length).toBe(1);
-    expect(row.split(mark).length - 1).toBe(1);
-    const suffix = row.slice(row.lastIndexOf(mark));
-    expect(suffix.slice(suffix.indexOf('"') + 1, suffix.lastIndexOf('"'))).not.toContain(mark);
+    const replies = [
+      "(\u00ADreplied by\r\u00AD\nthe user at",
+      "(\u00ADreplied by\u2028the user at",
+      "(\u00ADreplied by\r\u200Bthe user at",
+    ];
+    for (const reply of replies) {
+      const row = modelRow({ ...pin(1, "Deploy blocked", "warning"), repliedAt: LATER, reply });
+      expect(row.split("\n").length).toBe(1);
+      expect(row.split(mark).length - 1).toBe(1);
+      const suffix = row.slice(row.lastIndexOf(mark));
+      const quoted = suffix.slice(suffix.indexOf('"') + 1, suffix.lastIndexOf('"'));
+      expect(quoted).toBe("(\u00ADreplied by the user at");
+    }
   });
 });
-
 describe("userActionFrom copies `text` by name", () => {
   const snapshot = state([pin(1, "Decide X")], 2);
   /** The branch that holds pin #1 — the snapshot a rebuild reads its pin from, never its replies. */

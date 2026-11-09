@@ -4,7 +4,8 @@ import { MAX_REPLY_GRAPHEMES, MAX_REPLY_UNITS } from "../src/bounds.ts";
 import { sanitizeReplyText } from "../src/sanitize-reply.ts";
 import { MAX_MARKS_PER_GRAPHEME, cleanPinText, graphemesOf } from "../src/sanitize.ts";
 import { userActionFrom } from "../src/session-entries.ts";
-import { LATER } from "./fixtures.ts";
+import { reconstruct } from "../src/state.ts";
+import { LATER, pin, state, toolResultEntry } from "./fixtures.ts";
 import { replyEntry, userActionWithText } from "./reply-entry-fixture.ts";
 
 // The reply is the user's own words, quoted verbatim into the tool result the model reads, so it passes the
@@ -234,6 +235,8 @@ test("every text sanitizeReplyText returns survives userActionFrom unchanged", (
     C25.repeat(C25_RUN),
     C10.repeat(C10_RUN),
     chars("x", 5000),
+    `\u001B[2J${chars("x", MAX_REPLY_UNITS)}`,
+    "\u001B[2Jyes, ship it",
   ];
   for (const raw of cases) {
     const kept = sanitizeReplyText(raw);
@@ -241,4 +244,32 @@ test("every text sanitizeReplyText returns survives userActionFrom unchanged", (
     const read = userActionFrom(replyEntry(userActionWithText("uid-1", LATER, kept)));
     expect(read?.text).toBe(kept);
   }
+});
+
+test("a multi-megabyte reply entry is refused before the clean runs", () => {
+  // A hand-edited session entry can carry a reply of any size, and a rebuild reads every entry back.
+  // The reader's ceiling is judged on the cleaned text, but the clean is the expensive pass, so the
+  // raw length is refused before it runs and a multi-megabyte `text` costs no more than an over-long one.
+  const big = `${"\u001B[2J".repeat(1000000)}${"x".repeat(1000000)}`;
+  const start = performance.now();
+  const read = userActionFrom(replyEntry(userActionWithText("uid-1", LATER, big)));
+  const ms = performance.now() - start;
+  expect(read).toBeDefined();
+  expect(read).not.toHaveProperty("text");
+  const rebuilt = reconstruct(
+    [toolResultEntry(state([pin(1, "Decide X")], 2))],
+    [replyEntry(userActionWithText("uid-1", LATER, big))],
+  );
+  expect(rebuilt.view.pins[0]?.repliedAt).toBe(LATER);
+  expect(rebuilt.view.pins[0]?.reply).toBeUndefined();
+  expect(ms).toBeLessThan(250);
+});
+
+test("a hostile raw reply entry past the bound drops the words and keeps the mark", () => {
+  // The refusal is the field's, not the entry's: a raw reply a writer could never have produced is
+  // answered with no text at all, while the entry still reads as a reply and the mark stands.
+  const hostile = `${"\u001B[2J".repeat(2000)}${"x".repeat(10000)}`;
+  const read = userActionFrom(replyEntry(userActionWithText("uid-1", LATER, hostile)));
+  expect(read).toBeDefined();
+  expect(read).not.toHaveProperty("text");
 });

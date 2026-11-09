@@ -28,7 +28,7 @@
  * judgement is `replyTextOf` below, not `isUserAction`, whose job stops at the entry's shape. A malformed word
  * therefore costs the words and leaves the pin's `repliedAt` standing.
  */
-import { MAX_REPLY_UNITS } from "./bounds.ts";
+import { MAX_REPLY_UNITS, MAX_TEXT_UNITS } from "./bounds.ts";
 import { MAX_OPTIONS, MIN_OPTIONS, storedField } from "./pin-fields.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
@@ -181,6 +181,11 @@ function replyTextOf(data: UserAction): string | undefined {
   // pointedly said nothing about this field, so the three verdicts below run over whatever the entry holds.
   const text: unknown = data.text;
   if (data.action !== "reply" || typeof text !== "string") return undefined;
+  // The raw length is refused before the pass runs: a hand-edited entry can carry a multi-megabyte
+  // `text`, and the cleaning pass is the expensive one, so the bound that needs no cleaning is checked
+  // first and a value past it costs the same as any other unusable word. The reply's own ceiling is still
+  // judged on the cleaned text below, so a writer answer that cleaned down into the ceiling keeps its words.
+  if (text.length > MAX_TEXT_UNITS) return undefined;
   const cleaned = cleanPinText(text);
   if (cleaned === "") return undefined;
   if (cleaned.length > MAX_REPLY_UNITS) return undefined;
