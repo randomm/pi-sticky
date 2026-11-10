@@ -184,7 +184,7 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
  */
 function replyTextOf(data: UserAction): string | undefined {
   // The field is read as the raw `unknown` it still is: `isUserAction` vouched for the entry's shape and
-  // pointedly said nothing about this field, so the three verdicts below run over whatever the entry holds.
+  // pointedly said nothing about this field, so the four verdicts below run over whatever the entry holds.
   const text: unknown = data.text;
   if (data.action !== "reply" || typeof text !== "string") return undefined;
   // The raw length is refused before the pass runs: a hand-edited entry can carry a multi-megabyte

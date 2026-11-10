@@ -18,6 +18,10 @@ import { replyEntry, userActionWithText } from "./reply-entry-fixture.ts";
 /** `n` grapheme clusters of one code point each. */
 const chars = (char: string, n: number) => char.repeat(n);
 
+/** `CLEAR` is a screen clear — four units the cleaning pass eats; `SHORT` is the plain words it keeps. */
+const CLEAR = "\u001B[2J";
+const SHORT = "confirmed";
+
 /** A cluster of one letter followed by `n` combining marks. */
 const marks = (n: number) =>
   "a\u0300".repeat(n === 0 ? 0 : 1) + "\u0300".repeat(Math.max(0, n - 1));
@@ -267,7 +271,10 @@ test("a hostile raw reply entry past the bound drops the words and keeps the mar
   // after it, so deleting `text.length > MAX_TEXT_UNITS` from `replyTextOf` would let this text through on
   // `cleaned.length` alone. The refusal is still the field's, not the entry's: the words are gone and the
   // mark stands.
-  const hostile = `${"\u001B[2J".repeat(2000)}${"x".repeat(1000)}`;
+  // Counts derived from the bounds so a bump to either keeps the shape honest: `CLEAR` is four units the pass
+  // eats, so the repeat puts the raw length past MAX_TEXT_UNITS while `SHORT` is all that survives it — and
+  // the cleaned text has to fit MAX_REPLY_UNITS for this to isolate the raw gate rather than the ceiling.
+  const hostile = `${CLEAR.repeat(Math.ceil((MAX_TEXT_UNITS + 1) / CLEAR.length))}${SHORT}`;
   // Raw past the pre-clean bound, cleaned within the reply's own ceiling — the shape that isolates the gate.
   expect(hostile.length).toBeGreaterThan(MAX_TEXT_UNITS);
   expect(cleanPinText(hostile).length).toBeLessThanOrEqual(MAX_REPLY_UNITS);
