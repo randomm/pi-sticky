@@ -2,14 +2,11 @@
  * The recorded reply, end to end: the guard that lets an entry through, the reader that copies its `text`, the
  * projection that puts the words back on the pin, and the two rows that print them. One field spanning four
  * files, so the question each boundary answers is the same one — *does the model still see what the user
- * answered, after the agent rewrote the pin?* — and it is only answerable with all four in one place.
- *
- * The rule that holds the boundaries together: a reply the guard will not vouch for is **no text**, never a
+ * answered, after the agent rewrote the pin?* — and it is only answerable with all four in one place. The
+ * rule that holds the boundaries together: a reply the guard will not vouch for is **no text**, never a
  * refused entry. The mark that the user answered belongs to the reducer and the rail, and a malformed word
- * must not take it back.
- *
- * The lifecycle that writes the entry is `test/reply-handler.test.ts`; the session that rebuilds it is
- * `test/integration-reply.test.ts`; the ceilings themselves are `test/sanitize-reply.test.ts`.
+ * must not take it back. The lifecycle that writes the entry is `test/reply-handler.test.ts`; the session
+ * that rebuilds it is `test/integration-reply.test.ts`; the ceilings themselves are `test/sanitize-reply.test.ts`.
  */
 import { describe, expect, test } from "bun:test";
 
@@ -100,8 +97,23 @@ describe("isUserAction and a `text`", () => {
     // entry's own fields. It reads plain objects only, so this payload is not an action at all.
     expect(isUserAction(Object.create({ ...base, text: "inherited" }))).toBe(false);
   });
+  test("a reply with soft-hyphen fragments of the mark and a break draws one mark, on one line", () => {
+    const mark = "(replied by the user at";
+    const replies = [
+      "(\u00ADreplied by\r\u00AD\nthe user at",
+      "(\u00ADreplied by\u2028the user at",
+      "(\u00ADreplied by\r\u200Bthe user at",
+    ];
+    for (const reply of replies) {
+      const row = modelRow({ ...pin(1, "Deploy blocked", "warning"), repliedAt: LATER, reply });
+      expect(row.split("\n").length).toBe(1);
+      expect(row.split(mark).length - 1).toBe(1);
+      const suffix = row.slice(row.lastIndexOf(mark));
+      const quoted = suffix.slice(suffix.indexOf('"') + 1, suffix.lastIndexOf('"'));
+      expect(quoted).toBe("(\u00ADreplied by the user at");
+    }
+  });
 });
-
 describe("userActionFrom copies `text` by name", () => {
   const snapshot = state([pin(1, "Decide X")], 2);
   /** The branch that holds pin #1 — the snapshot a rebuild reads its pin from, never its replies. */
@@ -169,6 +181,14 @@ describe("userActionFrom copies `text` by name", () => {
     // And the wide form, where the two reply ceilings disagree: still read back whole.
     const wide = "\u{1F44D}".repeat(MAX_REPLY_GRAPHEMES);
     expect(userActionFrom(raw({ ...base, text: wide }))?.text).toBe(wide);
+  });
+
+  test("a reply that cleans to the reply's ceiling keeps its words", () => {
+    // The reader's ceiling is judged on the cleaned text, the same text the writer's cut answers, so a
+    // reply that cleaned down to the ceiling — an escape a pass eats — keeps its words rather than being
+    // refused for the bytes the pass threw away.
+    const ceiling = "x".repeat(MAX_REPLY_UNITS);
+    expect(userActionFrom(raw({ ...base, text: `\u001B[2J${ceiling}` }))?.text).toBe(ceiling);
   });
 
   test("an entry without a text still marks the pin replied, on the surface the model reads", () => {

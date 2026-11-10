@@ -28,7 +28,7 @@
  * judgement is `replyTextOf` below, not `isUserAction`, whose job stops at the entry's shape. A malformed word
  * therefore costs the words and leaves the pin's `repliedAt` standing.
  */
-import { MAX_REPLY_UNITS } from "./bounds.ts";
+import { MAX_REPLY_UNITS, MAX_TEXT_UNITS } from "./bounds.ts";
 import { MAX_OPTIONS, MIN_OPTIONS, storedField } from "./pin-fields.ts";
 import { cleanPinText } from "./sanitize.ts";
 import { isPinState, isPlainObject, isUIShown, isUserAction } from "./state-guards.ts";
@@ -141,8 +141,9 @@ export function snapshotFromCustom(entry: unknown): PinState | undefined {
  *
  * `text` is judged here, by this function and nowhere else on the read path. `isUserAction` speaks only for
  * the entry's shape — a uid, a time, a verb — so every judgement about the *field* lives here: a value that is
- * not a string, one past the reply's own unit ceiling (`MAX_REPLY_UNITS`), or one `cleanPinText` empties is
- * *no key*, and the entry is still read as a reply. A dismissal never carries words at all: its `text` is not
+ * not a string, one past the reply's own unit ceiling (`MAX_REPLY_UNITS`) once the pass has cleaned it, or
+ * one `cleanPinText` empties is *no key*, and the entry is still read as a reply. A dismissal never carries
+ * words at all: its `text` is not
  * even looked at, so a hand-edited dismiss entry cannot grow a key a pre-reply entry could not have had. The
  * mark belongs to the reducer and the rail, and one unusable word must not take it back — which is why the
  * ceiling drops the field rather than refusing the entry the way a bad `uid` or a bad verb does.
@@ -166,10 +167,11 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
 /**
  * The reply's words as the copy may carry them, or `undefined` when there is nothing to record.
  *
- * Three verdicts, one absence: not a string, longer than the reply's own unit ceiling, or a string the pass
- * leaves empty. The ceiling is counted here rather than in `isUserAction` because it is a rule about the
- * *field* — the same reason `copiedGroup` above holds `group` to its bound instead of the shape guard, and the
- * reason a `text` this function refuses costs the words and not the entry's `repliedAt`. The pass is the one
+ * Three verdicts, one absence: not a string, longer than the reply's own unit ceiling once the pass has
+ * cleaned it, or a string the pass leaves empty. The ceiling is counted here rather than in `isUserAction`
+ * because it is a rule about the *field* — the same reason `copiedGroup` above holds `group` to its bound
+ * instead of the shape guard, and the reason a `text` this function refuses costs the words and not the
+ * entry's `repliedAt`. The pass is the one
  * `at` is read with, and no second cut runs: the cut belongs to the writer (`sanitize-reply.ts`), which is the
  * only party that can put a long reply on an entry, so what is read back is handed on whole whenever the
  * ceiling allows it.
@@ -179,8 +181,15 @@ function replyTextOf(data: UserAction): string | undefined {
   // pointedly said nothing about this field, so the three verdicts below run over whatever the entry holds.
   const text: unknown = data.text;
   if (data.action !== "reply" || typeof text !== "string") return undefined;
-  if (text.length > MAX_REPLY_UNITS) return undefined;
-  return cleanPinText(text) || undefined;
+  // The raw length is refused before the pass runs: a hand-edited entry can carry a multi-megabyte
+  // `text`, and the cleaning pass is the expensive one, so the bound that needs no cleaning is checked
+  // first and a value past it costs the same as any other unusable word. The reply's own ceiling is still
+  // judged on the cleaned text below, so a writer answer that cleaned down into the ceiling keeps its words.
+  if (text.length > MAX_TEXT_UNITS) return undefined;
+  const cleaned = cleanPinText(text);
+  if (cleaned === "") return undefined;
+  if (cleaned.length > MAX_REPLY_UNITS) return undefined;
+  return cleaned;
 }
 
 /**
