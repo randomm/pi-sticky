@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { MAX_REPLY_GRAPHEMES, MAX_REPLY_UNITS } from "../src/bounds.ts";
+import { MAX_REPLY_GRAPHEMES, MAX_REPLY_UNITS, MAX_TEXT_UNITS } from "../src/bounds.ts";
 import { sanitizeReplyText } from "../src/sanitize-reply.ts";
 import { MAX_MARKS_PER_GRAPHEME, cleanPinText, graphemesOf } from "../src/sanitize.ts";
 import { userActionFrom } from "../src/session-entries.ts";
@@ -248,12 +248,10 @@ test("every text sanitizeReplyText returns survives userActionFrom unchanged", (
 
 test("a multi-megabyte reply entry is refused before the clean runs", () => {
   // A hand-edited session entry can carry a reply of any size, and a rebuild reads every entry back.
-  // The reader's ceiling is judged on the cleaned text, but the clean is the expensive pass, so the
-  // raw length is refused before it runs and a multi-megabyte `text` costs no more than an over-long one.
+  // The raw length is refused before the clean runs, so a multi-megabyte `text` costs no more than an
+  // over-long one. What is pinned is the outcome, not the wall clock: the words are gone and the mark stands.
   const big = `${"\u001B[2J".repeat(1000000)}${"x".repeat(1000000)}`;
-  const start = performance.now();
   const read = userActionFrom(replyEntry(userActionWithText("uid-1", LATER, big)));
-  const ms = performance.now() - start;
   expect(read).toBeDefined();
   expect(read).not.toHaveProperty("text");
   const rebuilt = reconstruct(
@@ -262,13 +260,17 @@ test("a multi-megabyte reply entry is refused before the clean runs", () => {
   );
   expect(rebuilt.view.pins[0]?.repliedAt).toBe(LATER);
   expect(rebuilt.view.pins[0]?.reply).toBeUndefined();
-  expect(ms).toBeLessThan(250);
 });
 
 test("a hostile raw reply entry past the bound drops the words and keeps the mark", () => {
-  // The refusal is the field's, not the entry's: a raw reply a writer could never have produced is
-  // answered with no text at all, while the entry still reads as a reply and the mark stands.
-  const hostile = `${"\u001B[2J".repeat(2000)}${"x".repeat(10000)}`;
+  // The refusal is the raw gate's, not the cleaned ceiling's: the fixture is long before the pass and short
+  // after it, so deleting `text.length > MAX_TEXT_UNITS` from `replyTextOf` would let this text through on
+  // `cleaned.length` alone. The refusal is still the field's, not the entry's: the words are gone and the
+  // mark stands.
+  const hostile = `${"\u001B[2J".repeat(2000)}${"x".repeat(1000)}`;
+  // Raw past the pre-clean bound, cleaned within the reply's own ceiling — the shape that isolates the gate.
+  expect(hostile.length).toBeGreaterThan(MAX_TEXT_UNITS);
+  expect(cleanPinText(hostile).length).toBeLessThanOrEqual(MAX_REPLY_UNITS);
   const read = userActionFrom(replyEntry(userActionWithText("uid-1", LATER, hostile)));
   expect(read).toBeDefined();
   expect(read).not.toHaveProperty("text");
