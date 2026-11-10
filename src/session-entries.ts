@@ -22,10 +22,14 @@
  * A reply's `text` is cleaned here too, at this read side and not only at the write: a session file is
  * written by an earlier run and can be edited by anything that can reach it, so the escape-strip that
  * protects a drawn string runs wherever the string is *read back*, exactly as it does for `at` — the one
- * pass, `cleanPinText`, and no second cut. The cut belongs to the writer (`sanitize-reply.ts`), the only
- * party that can put a long reply on an entry. What the reader drops instead is any `text` it cannot use — not
- * a string, past `MAX_REPLY_UNITS`, or one the pass empties — and it drops **the field, never the entry**: the
- * judgement is `replyTextOf` below, not `isUserAction`, whose job stops at the entry's shape. A malformed word
+ * pass, `cleanPinText`. The reader runs two gates around that pass, both of them the field's rather than
+ * the entry's: the raw text past the pre-clean bound `MAX_TEXT_UNITS` is dropped *before* the pass runs —
+ * the pass is the expensive one and a hand-edited entry can carry any size — and the cleaned text past the
+ * reply's own ceiling `MAX_REPLY_UNITS` is dropped after it. Truncating a reply to its ceiling stays the
+ * writer's job (`sanitize-reply.ts`), the only party that can put a long reply on an entry, so the reader
+ * shortens nothing: what it drops is any `text` it cannot use — not a string, past either bound, or one the
+ * pass empties — and it drops **the field, never the entry**: the judgement is `replyTextOf` below, not
+ * `isUserAction`, whose job stops at the entry's shape. A malformed word
  * therefore costs the words and leaves the pin's `repliedAt` standing.
  */
 import { MAX_REPLY_UNITS, MAX_TEXT_UNITS } from "./bounds.ts";
@@ -141,11 +145,11 @@ export function snapshotFromCustom(entry: unknown): PinState | undefined {
  *
  * `text` is judged here, by this function and nowhere else on the read path. `isUserAction` speaks only for
  * the entry's shape — a uid, a time, a verb — so every judgement about the *field* lives here: a value that is
- * not a string, one past the reply's own unit ceiling (`MAX_REPLY_UNITS`) once the pass has cleaned it, or
- * one `cleanPinText` empties is *no key*, and the entry is still read as a reply. A dismissal never carries
- * words at all: its `text` is not
- * even looked at, so a hand-edited dismiss entry cannot grow a key a pre-reply entry could not have had. The
- * mark belongs to the reducer and the rail, and one unusable word must not take it back — which is why the
+ * not a string, one past the pre-clean bound (`MAX_TEXT_UNITS`) before the pass has run, one past the reply's
+ * own unit ceiling (`MAX_REPLY_UNITS`) once it has, or one `cleanPinText` empties is *no key*, and the entry
+ * is still read as a reply. A dismissal never carries words at all: its `text` is not even looked at, so a
+ * hand-edited dismiss entry cannot grow a key a pre-reply entry could not have had. The mark belongs to the
+ * reducer and the rail, and one unusable word must not take it back — which is why the
  * ceiling drops the field rather than refusing the entry the way a bad `uid` or a bad verb does.
  */
 export function userActionFrom(entry: unknown): UserAction | undefined {
@@ -167,14 +171,16 @@ export function userActionFrom(entry: unknown): UserAction | undefined {
 /**
  * The reply's words as the copy may carry them, or `undefined` when there is nothing to record.
  *
- * Three verdicts, one absence: not a string, longer than the reply's own unit ceiling once the pass has
- * cleaned it, or a string the pass leaves empty. The ceiling is counted here rather than in `isUserAction`
- * because it is a rule about the *field* — the same reason `copiedGroup` above holds `group` to its bound
+ * Four verdicts, one absence: not a string, longer than the pre-clean bound `MAX_TEXT_UNITS` before the pass
+ * has run, longer than the reply's own unit ceiling `MAX_REPLY_UNITS` once it has, or a string the pass leaves
+ * empty. The ceilings are counted here rather than in `isUserAction` because they are rules about the *field*
+ * — the same reason `copiedGroup` above holds `group` to its bound
  * instead of the shape guard, and the reason a `text` this function refuses costs the words and not the
- * entry's `repliedAt`. The pass is the one
- * `at` is read with, and no second cut runs: the cut belongs to the writer (`sanitize-reply.ts`), which is the
- * only party that can put a long reply on an entry, so what is read back is handed on whole whenever the
- * ceiling allows it.
+ * entry's `repliedAt`. The pass is the one `at` is read with and shortens nothing; shortening a reply to its
+ * ceiling is the writer's job
+ * (`sanitize-reply.ts`), the only party that can put a long reply on an entry. So the reader truncates no
+ * reply: it refuses the raw text past its own cheap bound first, and the cleaned text past the reply's
+ * ceiling second, and hands back a writer answer whole whenever both allow it.
  */
 function replyTextOf(data: UserAction): string | undefined {
   // The field is read as the raw `unknown` it still is: `isUserAction` vouched for the entry's shape and
